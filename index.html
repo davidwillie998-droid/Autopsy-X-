@@ -1,0 +1,2397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AUTOPSY X — Institutional Trade Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/metaapi.cloud-sdk"></script>
+<style>
+  :root{
+    --obsidian:#0A0B0C;
+    --panel:#131417;
+    --panel-raised:#1A1B1F;
+    --hairline:#2B2C31;
+    --gold:#B8923E;
+    --gold-bright:#D9B25C;
+    --bone:#EAE6DC;
+    --bone-dim:#8C8A83;
+    --grey:#5C5E64;
+    --emerald:#3A6E52;
+    --emerald-bright:#5C9B78;
+    --oxblood:#8A3A32;
+    --oxblood-bright:#C25A4E;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--obsidian);color:var(--bone);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;padding:0 0 80px;}
+  ::selection{background:var(--gold);color:var(--obsidian);}
+
+  .masthead{border-bottom:1px solid var(--hairline);padding:36px 48px 28px;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:20px;}
+  .masthead-mark{font-family:'Fraunces',serif;font-optical-sizing:auto;font-weight:500;font-size:34px;letter-spacing:0.4px;color:var(--bone);}
+  .masthead-mark span{color:var(--gold-bright);font-style:italic;font-weight:400;}
+  .masthead-sub{font-size:12.5px;color:var(--bone-dim);margin-top:6px;max-width:420px;line-height:1.5;}
+  .masthead-meta{text-align:right;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--grey);line-height:1.9;}
+  .masthead-meta b{color:var(--bone-dim);font-weight:500;}
+
+  .shell{max-width:1180px;margin:0 auto;padding:0 48px;}
+
+  .console{
+    margin-top:28px;
+    background:var(--panel);
+    border:1px solid var(--hairline);
+    padding:22px 26px;
+    display:flex;
+    gap:14px;
+    align-items:center;
+    flex-wrap:wrap;
+  }
+  .console label{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--grey);letter-spacing:0.4px;}
+  .console-field{display:flex;flex-direction:column;gap:6px;}
+  .console input{
+    background:var(--panel-raised);
+    border:1px solid var(--hairline);
+    color:var(--bone);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:14px;
+    padding:10px 12px;
+    width:180px;
+    outline:none;
+  }
+  .console input:focus{border-color:var(--gold);}
+  .console button{
+    background:var(--gold);
+    color:var(--obsidian);
+    border:none;
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:13px;
+    padding:12px 22px;
+    cursor:pointer;
+    letter-spacing:0.2px;
+    align-self:flex-end;
+    transition:background 0.15s ease;
+  }
+  .console button:hover:not(:disabled){background:var(--gold-bright);}
+  .console button:disabled{background:var(--hairline);color:var(--grey);cursor:not-allowed;}
+  .console-hint{font-size:11.5px;color:var(--grey);align-self:flex-end;padding-bottom:11px;}
+
+  .strip-note{
+    margin-top:16px;
+    padding:12px 16px;
+    background:rgba(184,146,62,0.07);
+    border:1px solid rgba(184,146,62,0.25);
+    border-radius:2px;
+    font-size:12px;
+    color:var(--gold-bright);
+    line-height:1.6;
+  }
+
+  .status-line{
+    margin-top:18px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    color:var(--bone-dim);
+    display:none;
+    align-items:center;
+    gap:10px;
+  }
+  .status-line.active{display:flex;}
+  .dot{width:6px;height:6px;background:var(--gold);border-radius:50%;animation:pulse 1.1s infinite ease-in-out;}
+  @keyframes pulse{0%,100%{opacity:0.25;}50%{opacity:1;}}
+
+  .error-box{
+    margin-top:18px;
+    padding:14px 16px;
+    background:rgba(194,90,78,0.08);
+    border:1px solid rgba(194,90,78,0.35);
+    color:var(--oxblood-bright);
+    font-size:12.5px;
+    display:none;
+  }
+  .error-box.active{display:block;}
+
+  .trunc-notice{
+    margin-top:18px;
+    padding:12px 16px;
+    background:rgba(184,146,62,0.08);
+    border:1px solid rgba(184,146,62,0.3);
+    color:var(--gold-bright);
+    font-size:12px;
+    line-height:1.6;
+    display:none;
+  }
+  .trunc-notice.active{display:block;}
+
+  .pill.bull{background:rgba(92,155,120,0.12);color:var(--emerald-bright);border:1px solid rgba(92,155,120,0.3);}
+  .pill.bear{background:rgba(194,90,78,0.12);color:var(--oxblood-bright);border:1px solid rgba(194,90,78,0.3);}
+  .pill.neutral{background:rgba(255,255,255,0.04);color:var(--bone-dim);border:1px solid var(--hairline);}
+  .pill.alpha{background:rgba(217,178,92,0.14);color:var(--gold-bright);border:1px solid rgba(217,178,92,0.4);}
+  .pill.conditional{background:rgba(217,178,92,0.06);color:var(--gold);border:1px solid rgba(217,178,92,0.25);}
+  .pill.watch{background:rgba(255,255,255,0.04);color:var(--bone-dim);border:1px solid var(--hairline);}
+
+  .survival-panel{
+    display:grid;
+    grid-template-columns:1.2fr 1fr;
+    gap:1px;
+    background:var(--hairline);
+    border:1px solid var(--hairline);
+    margin-top:8px;
+    margin-bottom:14px;
+  }
+  @media(max-width:800px){.survival-panel{grid-template-columns:1fr;}}
+  .survival-scores{background:var(--panel);padding:24px 26px;}
+  .survival-scores .sv-row{margin-bottom:13px;}
+  .survival-scores .sv-row:last-child{margin-bottom:0;}
+  .survival-scores .sv-label{
+    display:flex;justify-content:space-between;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;color:var(--bone-dim);margin-bottom:5px;
+  }
+  .survival-scores .sv-label b{color:var(--bone);font-weight:600;}
+  .sv-track{height:6px;background:var(--hairline);border-radius:3px;overflow:hidden;}
+  .sv-fill{height:100%;border-radius:3px;background:var(--gold-bright);}
+
+  .evidence-list{background:var(--panel);padding:24px 26px;}
+  .evidence-list .ev-kicker{
+    font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--gold);
+    letter-spacing:0.3px;margin-bottom:14px;display:block;
+  }
+  .ev-row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);}
+  .ev-row:last-child{border-bottom:none;}
+  .ev-claim{font-size:12px;color:var(--bone);line-height:1.5;}
+  .ev-state{
+    font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:0.3px;
+    padding:2px 7px;border-radius:2px;white-space:nowrap;flex-shrink:0;
+  }
+  .ev-state.verified{background:rgba(92,155,120,0.14);color:var(--emerald-bright);}
+  .ev-state.partial{background:rgba(217,178,92,0.14);color:var(--gold-bright);}
+  .ev-state.conflicting{background:rgba(194,90,78,0.14);color:var(--oxblood-bright);}
+  .ev-state.stale,.ev-state.unavailable{background:rgba(255,255,255,0.04);color:var(--grey);}
+
+  .mt5-panel{
+    background:var(--panel);
+    border:1px solid var(--hairline);
+    padding:22px 26px;
+    margin-top:14px;
+  }
+  .mt5-header{
+    display:flex;justify-content:space-between;align-items:center;
+    margin-bottom:16px;flex-wrap:wrap;gap:10px;
+  }
+  .mt5-title{font-family:'Fraunces',serif;font-size:16px;color:var(--bone);}
+  .mt5-status{
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:0.3px;
+    padding:4px 10px;border-radius:2px;display:flex;align-items:center;gap:6px;
+  }
+  .mt5-status .dot2{width:6px;height:6px;border-radius:50%;}
+  .mt5-status.disconnected{background:rgba(255,255,255,0.04);color:var(--grey);}
+  .mt5-status.disconnected .dot2{background:var(--grey);}
+  .mt5-status.connecting{background:rgba(217,178,92,0.1);color:var(--gold-bright);}
+  .mt5-status.connecting .dot2{background:var(--gold-bright);animation:pulse 1.1s infinite ease-in-out;}
+  .mt5-status.connected{background:rgba(92,155,120,0.1);color:var(--emerald-bright);}
+  .mt5-status.connected .dot2{background:var(--emerald-bright);}
+  .mt5-status.error{background:rgba(194,90,78,0.1);color:var(--oxblood-bright);}
+  .mt5-status.error .dot2{background:var(--oxblood-bright);}
+
+  .mt5-form{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;}
+  .mt5-field{display:flex;flex-direction:column;gap:6px;}
+  .mt5-field label{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--grey);letter-spacing:0.3px;}
+  .mt5-field input{
+    background:var(--panel-raised);border:1px solid var(--hairline);color:var(--bone);
+    font-family:'IBM Plex Mono',monospace;font-size:13px;padding:9px 11px;width:220px;outline:none;
+  }
+  .mt5-field input:focus{border-color:var(--gold);}
+  .mt5-form button{
+    background:var(--gold);color:var(--obsidian);border:none;font-family:'Inter',sans-serif;
+    font-weight:600;font-size:12.5px;padding:11px 18px;cursor:pointer;
+  }
+  .mt5-form button:hover:not(:disabled){background:var(--gold-bright);}
+  .mt5-form button:disabled{background:var(--hairline);color:var(--grey);cursor:not-allowed;}
+  .mt5-form button.disconnect{background:transparent;border:1px solid var(--hairline);color:var(--bone-dim);}
+  .mt5-note{font-size:11px;color:var(--grey);margin-top:12px;line-height:1.6;}
+  .mt5-error{font-size:12px;color:var(--oxblood-bright);margin-top:10px;display:none;}
+  .mt5-error.active{display:block;}
+
+  .mt5-account-grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+    gap:14px;margin-top:18px;padding-top:16px;border-top:1px solid var(--hairline);
+  }
+  .mt5-account-grid .stat-label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--grey);margin-bottom:4px;}
+  .mt5-account-grid .stat-val{font-family:'IBM Plex Mono',monospace;font-size:15px;color:var(--bone);}
+
+  .mt5-positions{margin-top:16px;}
+  .mt5-position-row{
+    display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;
+    font-size:11.5px;color:var(--bone-dim);padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04);
+  }
+  .mt5-position-row .p-symbol{color:var(--bone);font-weight:600;}
+
+  .order-panel{
+    margin-top:20px;padding-top:18px;border-top:1px solid rgba(194,90,78,0.25);
+    display:none;
+  }
+  .order-panel.active{display:block;}
+  .order-warning{
+    background:rgba(194,90,78,0.08);border:1px solid rgba(194,90,78,0.3);
+    padding:12px 14px;font-size:11.5px;color:var(--oxblood-bright);line-height:1.6;margin-bottom:14px;
+  }
+  .order-confirm-input{
+    background:var(--panel-raised);border:1px solid var(--oxblood);color:var(--bone);
+    font-family:'IBM Plex Mono',monospace;font-size:13px;padding:9px 11px;width:200px;outline:none;
+  }
+  .send-order-btn{
+    background:var(--oxblood);color:var(--bone);border:none;font-family:'Inter',sans-serif;
+    font-weight:600;font-size:12.5px;padding:11px 18px;cursor:pointer;
+  }
+  .send-order-btn:disabled{background:var(--hairline);color:var(--grey);cursor:not-allowed;}
+
+  .glance-grid{
+    display:grid;grid-template-columns:1fr 1fr;gap:1px;
+    background:var(--hairline);border:1px solid var(--hairline);margin-top:8px;
+  }
+  @media(max-width:800px){.glance-grid{grid-template-columns:1fr;}}
+  .align-panel,.risk-panel{background:var(--panel);padding:22px 24px;}
+
+  .align-verdict{
+    text-align:center;padding:16px 10px 20px;border-bottom:1px solid var(--hairline);margin-bottom:16px;
+  }
+  .align-verdict .av-label{
+    font-family:'Fraunces',serif;font-style:italic;font-size:19px;letter-spacing:0.3px;
+  }
+  .align-verdict.full .av-label{color:var(--emerald-bright);}
+  .align-verdict.partial .av-label{color:var(--gold-bright);}
+  .align-verdict.divergent .av-label{color:var(--oxblood-bright);}
+  .align-verdict .av-conf{
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--grey);margin-top:6px;letter-spacing:0.3px;
+  }
+  .align-verdict .av-conf b{color:var(--bone);font-weight:600;}
+  .align-header,.risk-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+  .align-title{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--gold);letter-spacing:0.3px;}
+  .align-conf{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--bone-dim);}
+
+  .align-tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .align-tile{
+    background:var(--panel-raised);border:1px solid var(--hairline);
+    padding:12px 14px;text-align:center;
+  }
+  .align-tile .at-label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--grey);margin-bottom:5px;letter-spacing:0.3px;}
+  .align-tile .at-val{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;}
+  .align-tile.bullish .at-val{color:var(--emerald-bright);}
+  .align-tile.bearish .at-val{color:var(--oxblood-bright);}
+  .align-tile.neutral .at-val{color:var(--bone-dim);}
+
+  .align-divergence{
+    margin-top:12px;padding:10px 12px;font-size:11.5px;line-height:1.5;
+    border-left:2px solid var(--hairline);color:var(--bone-dim);
+  }
+  .align-divergence.warn{border-left-color:var(--oxblood-bright);color:var(--oxblood-bright);background:rgba(194,90,78,0.06);}
+  .align-divergence.clean{border-left-color:var(--emerald-bright);color:var(--emerald-bright);background:rgba(92,155,120,0.06);}
+
+  .risk-countdown{
+    font-family:'IBM Plex Mono',monospace;font-size:26px;color:var(--gold-bright);
+    letter-spacing:1px;margin-bottom:14px;
+  }
+  .risk-countdown.past{color:var(--grey);font-size:13px;}
+  .risk-list .risk-row{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:11.5px;
+  }
+  .risk-list .risk-row:last-child{border-bottom:none;}
+  .risk-list .risk-name{color:var(--bone);}
+  .risk-list .risk-time{color:var(--grey);font-family:'IBM Plex Mono',monospace;font-size:10.5px;}
+  .risk-impact{
+    font-family:'IBM Plex Mono',monospace;font-size:9px;padding:2px 7px;border-radius:2px;letter-spacing:0.3px;
+  }
+  .risk-impact.high{background:rgba(194,90,78,0.14);color:var(--oxblood-bright);}
+  .risk-impact.medium{background:rgba(217,178,92,0.14);color:var(--gold-bright);}
+  .risk-impact.low{background:rgba(255,255,255,0.04);color:var(--grey);}
+
+  .verdict-sticky{
+    position:fixed;left:0;right:0;bottom:0;z-index:50;
+    background:#08090A;border-top:1px solid var(--hairline);
+    padding:12px 24px;display:none;
+    align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;
+  }
+  .verdict-sticky.active{display:flex;}
+  .verdict-sticky .vs-left{display:flex;align-items:center;gap:14px;}
+  .verdict-sticky .vs-asset{font-family:'Fraunces',serif;font-size:15px;color:var(--bone);}
+  .verdict-sticky .vs-status{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:0.4px;padding:4px 10px;border-radius:2px;}
+  .verdict-sticky .vs-note{font-size:11.5px;color:var(--bone-dim);}
+  .verdict-sticky .vs-close{background:none;border:none;color:var(--grey);cursor:pointer;font-size:16px;padding:0 6px;}
+
+  .mode-panel{background:var(--panel);border:1px solid var(--hairline);padding:22px 26px;margin-top:14px;}
+  .mode-panel select{
+    background:var(--panel-raised);border:1px solid var(--hairline);color:var(--bone);
+    font-family:'IBM Plex Mono',monospace;font-size:12.5px;padding:9px 11px;width:100%;outline:none;
+  }
+  .mode-panel select:focus{border-color:var(--gold);}
+  .mode-status{
+    margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--bone-dim);
+    display:none;align-items:center;gap:8px;
+  }
+  .mode-status.active{display:flex;}
+  .mode-error{
+    margin-top:14px;padding:12px 14px;background:rgba(194,90,78,0.08);border:1px solid rgba(194,90,78,0.3);
+    color:var(--oxblood-bright);font-size:12px;display:none;
+  }
+  .mode-error.active{display:block;}
+
+  .report-output{margin-top:18px;}
+  .report-output:empty{display:none;}
+  .report-output h1,.report-output h2,.report-output h3{
+    font-family:'Fraunces',serif;color:var(--bone);margin:18px 0 10px;line-height:1.3;
+  }
+  .report-output h1:first-child,.report-output h2:first-child,.report-output h3:first-child{margin-top:0;}
+  .report-output h1{font-size:20px;}
+  .report-output h2{font-size:17px;color:var(--gold-bright);}
+  .report-output h3{font-size:14px;}
+  .report-output p{font-size:13px;color:var(--bone-dim);line-height:1.7;margin-bottom:12px;}
+  .report-output ul,.report-output ol{margin:0 0 12px 20px;}
+  .report-output li{font-size:13px;color:var(--bone-dim);line-height:1.7;margin-bottom:4px;}
+  .report-output strong{color:var(--bone);font-weight:600;}
+  .report-output table{width:100%;border-collapse:collapse;margin:12px 0 16px;font-size:12px;}
+  .report-output th{
+    text-align:left;padding:8px 10px;color:var(--gold);font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;border-bottom:1px solid var(--hairline);
+  }
+  .report-output td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.04);color:var(--bone-dim);}
+  .report-output hr{border:none;border-top:1px solid var(--hairline);margin:18px 0;}
+
+  .size-panel{background:var(--panel);border:1px solid var(--hairline);padding:22px 26px;margin-top:14px;}
+  .size-source{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--grey);letter-spacing:0.3px;}
+  .size-error{
+    margin-top:14px;padding:10px 12px;background:rgba(194,90,78,0.08);border:1px solid rgba(194,90,78,0.3);
+    color:var(--oxblood-bright);font-size:12px;display:none;
+  }
+  .size-error.active{display:block;}
+  .size-result{margin-top:18px;padding-top:16px;border-top:1px solid var(--hairline);}
+  .size-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:14px;}
+  .size-grid .stat-label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--grey);margin-bottom:4px;}
+  .size-grid .stat-val{font-family:'IBM Plex Mono',monospace;font-size:16px;color:var(--bone);}
+  .size-grid .stat-val.gold{color:var(--gold-bright);}
+  .size-warning{
+    margin-top:16px;padding:12px 14px;background:rgba(194,90,78,0.08);border-left:2px solid var(--oxblood-bright);
+    color:var(--oxblood-bright);font-size:12px;line-height:1.6;
+  }
+
+  .synthesis-hero{background:var(--panel);border:1px solid var(--gold);padding:26px 30px;margin-top:8px;}
+  .syn-top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;margin-bottom:20px;}
+  .syn-composite-label{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--grey);letter-spacing:0.4px;margin-bottom:4px;}
+  .syn-composite{font-family:'Fraunces',serif;font-size:44px;color:var(--gold-bright);line-height:1;}
+  .syn-decision-pill{
+    font-family:'Fraunces',serif;font-style:italic;font-size:20px;padding:10px 22px;border-radius:2px;
+  }
+  .syn-gates{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:16px;}
+  .syn-gate{display:flex;gap:10px;align-items:flex-start;background:var(--panel-raised);border:1px solid var(--hairline);padding:12px 14px;}
+  .syn-gate-icon{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;flex-shrink:0;}
+  .syn-gate.pass .syn-gate-icon{color:var(--emerald-bright);}
+  .syn-gate.fail .syn-gate-icon{color:var(--oxblood-bright);}
+  .syn-gate-name{font-size:12px;color:var(--bone);font-weight:600;margin-bottom:3px;}
+  .syn-gate-detail{font-size:11px;color:var(--bone-dim);line-height:1.5;}
+  .syn-override{
+    padding:12px 14px;background:rgba(217,178,92,0.08);border-left:2px solid var(--gold);
+    color:var(--gold-bright);font-size:12px;line-height:1.6;margin-bottom:14px;
+  }
+  .syn-note{font-size:11px;color:var(--grey);line-height:1.6;}
+
+  .scanner-panel{background:var(--panel);border:1px solid var(--hairline);padding:22px 26px;margin-top:14px;}
+  .scanner-status-badge{
+    font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:0.4px;
+    padding:4px 10px;border-radius:2px;background:rgba(255,255,255,0.04);color:var(--grey);
+  }
+  .scanner-status-badge.running{background:rgba(217,178,92,0.1);color:var(--gold-bright);}
+  .scanner-status-badge.found{background:rgba(92,155,120,0.1);color:var(--emerald-bright);}
+  .scanner-progress{
+    margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--bone-dim);
+    display:none;align-items:center;gap:8px;
+  }
+  .scanner-progress.active{display:flex;}
+  .scanner-error{
+    margin-top:14px;padding:10px 12px;background:rgba(194,90,78,0.08);border:1px solid rgba(194,90,78,0.3);
+    color:var(--oxblood-bright);font-size:12px;display:none;
+  }
+  .scanner-error.active{display:block;}
+  .scanner-log{margin-top:16px;}
+  .scanner-log:empty{display:none;}
+  .scanner-log-row{
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:12px;
+  }
+  .scanner-log-row:last-child{border-bottom:none;}
+  .scanner-log-symbol{color:var(--bone);font-weight:600;font-family:'IBM Plex Mono',monospace;}
+  .scanner-log-time{color:var(--grey);font-family:'IBM Plex Mono',monospace;font-size:10.5px;}
+  .scanner-log-flag{font-family:'IBM Plex Mono',monospace;font-size:10px;}
+  .scanner-log-flag.hit{color:var(--gold-bright);}
+
+  .bridge-panel{background:var(--panel);border:1px solid var(--hairline);padding:22px 26px;margin-top:14px;}
+
+  .exec-mode-toggle{display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap;}
+  .exec-mode-label{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--grey);letter-spacing:0.4px;}
+  .exec-mode-buttons{display:flex;gap:0;border:1px solid var(--hairline);}
+  .exec-mode-btn{
+    background:var(--panel-raised);border:none;color:var(--bone-dim);
+    font-family:'IBM Plex Mono',monospace;font-size:11px;padding:8px 16px;cursor:pointer;
+  }
+  .exec-mode-btn.active{background:rgba(92,155,120,0.12);color:var(--emerald-bright);}
+  .exec-mode-btn#execModeLiveBtn.active{background:rgba(194,90,78,0.14);color:var(--oxblood-bright);}
+
+  .scanner-table-wrap{margin-top:16px;overflow-x:auto;}
+  .scanner-table{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:12px;}
+  .scanner-table th{
+    text-align:left;padding:8px 10px;color:var(--grey);font-weight:500;font-size:10px;
+    letter-spacing:0.3px;border-bottom:1px solid var(--hairline);cursor:pointer;user-select:none;white-space:nowrap;
+  }
+  .scanner-table th:hover{color:var(--gold);}
+  .scanner-table td{padding:9px 10px;border-bottom:1px solid rgba(255,255,255,0.04);color:var(--bone-dim);white-space:nowrap;}
+  .scanner-table td.symbol{color:var(--bone);font-weight:600;}
+  .scanner-table td.composite{color:var(--gold-bright);font-weight:600;}
+  .scanner-table tr.hit td{background:rgba(217,178,92,0.05);}
+  .scanner-table td.error-cell{color:var(--oxblood-bright);}
+
+  #results{display:none;}
+  #results.active{display:block;}
+
+  .chart-panel{
+    margin-top:8px;
+    background:#0D0E11;
+    border:1px solid var(--hairline);
+  }
+  .chart-topbar{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:14px 18px;
+    border-bottom:1px solid var(--hairline);
+    flex-wrap:wrap;
+    gap:10px;
+  }
+  .chart-symbol{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:13px;
+    color:var(--bone);
+    letter-spacing:0.3px;
+  }
+  .chart-legend{display:flex;gap:16px;flex-wrap:wrap;}
+  .chart-legend span{
+    display:flex;align-items:center;gap:6px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;
+    color:var(--grey);
+  }
+  .dotline{width:12px;height:2px;display:inline-block;}
+  .dotline.gold{background:var(--gold-bright);}
+  .dotline.red{background:var(--oxblood-bright);}
+  .dotline.green{background:var(--emerald-bright);}
+  .dotline.dim{background:var(--grey);}
+  .chart-canvas-wrap{position:relative;padding:10px 0;}
+  #chartCanvas{display:block;width:100%;height:380px;}
+  .chart-empty{
+    position:absolute;
+    top:0;left:0;right:0;bottom:0;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    color:var(--grey);
+    padding:20px;
+  }
+  .chart-empty.active{display:flex;}
+  .chart-footnote{
+    padding:10px 18px 14px;
+    font-size:11px;
+    color:var(--grey);
+    border-top:1px solid var(--hairline);
+  }
+
+  .watchlist{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-top:14px;
+  }
+  .watchlist:empty{display:none;}
+  .watch-chip{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    background:var(--panel);
+    border:1px solid var(--hairline);
+    padding:7px 12px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11.5px;
+    color:var(--bone-dim);
+    cursor:pointer;
+    transition:border-color 0.15s ease;
+  }
+  .watch-chip:hover{border-color:var(--gold);}
+  .watch-chip.active{border-color:var(--gold);color:var(--bone);}
+  .watch-chip .wc-asset{color:var(--bone);font-weight:600;}
+  .watch-chip .wc-dot{width:6px;height:6px;border-radius:50%;}
+  .watch-chip .wc-dot.bull{background:var(--emerald-bright);}
+  .watch-chip .wc-dot.bear{background:var(--oxblood-bright);}
+  .watch-chip .wc-dot.neutral{background:var(--grey);}
+  .watch-chip .wc-score{color:var(--gold-bright);}
+
+  .gauge-wrap{position:relative;width:76px;height:76px;}
+  .gauge-wrap svg{transform:rotate(-90deg);}
+  .gauge-num{
+    position:absolute;inset:0;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+  }
+  .gauge-num .n{font-family:'Fraunces',serif;font-size:22px;color:var(--gold-bright);line-height:1;}
+  .gauge-num .l{font-family:'IBM Plex Mono',monospace;font-size:8.5px;color:var(--grey);margin-top:2px;}
+
+  .prob-row{margin-bottom:14px;}
+  .prob-row .prob-label{
+    display:flex;justify-content:space-between;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;color:var(--grey);
+    margin-bottom:5px;
+  }
+  .prob-row .prob-label b{color:var(--bone);font-weight:600;}
+  .prob-track{height:6px;background:var(--hairline);border-radius:3px;overflow:hidden;margin-bottom:5px;}
+  .prob-fill{height:100%;border-radius:3px;}
+  .prob-desc{font-size:11.5px;color:var(--bone-dim);line-height:1.5;}
+
+  .strength-panel{
+    background:var(--panel);
+    border:1px solid var(--hairline);
+    padding:24px 28px;
+    margin-top:8px;
+  }
+  .strength-row{
+    display:grid;
+    grid-template-columns:44px 1fr 48px;
+    align-items:center;
+    gap:12px;
+    padding:8px 0;
+  }
+  .strength-row .cur{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--bone);font-weight:600;}
+  .strength-track{position:relative;height:8px;background:var(--hairline);border-radius:2px;}
+  .strength-track .mid{position:absolute;left:50%;top:-3px;bottom:-3px;width:1px;background:var(--grey);}
+  .strength-fill{position:absolute;top:0;bottom:0;border-radius:2px;}
+  .strength-row .val{font-family:'IBM Plex Mono',monospace;font-size:11.5px;text-align:right;}
+  .strength-row .val.pos{color:var(--emerald-bright);}
+  .strength-row .val.neg{color:var(--oxblood-bright);}
+  .strength-row .val.zero{color:var(--grey);}
+
+  .corr-panel{
+    background:var(--panel);
+    border:1px solid var(--hairline);
+    padding:18px 22px;
+    margin-top:14px;
+    display:none;
+  }
+  .corr-panel.active{display:block;}
+  .corr-panel .corr-title{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:0.4px;
+    margin-bottom:10px;
+  }
+  .corr-panel.warn .corr-title{color:var(--oxblood-bright);}
+  .corr-panel.clear .corr-title{color:var(--emerald-bright);}
+  .corr-panel .corr-detail{font-size:12.5px;color:var(--bone-dim);line-height:1.6;}
+  .corr-panel .corr-detail b{color:var(--bone);}
+
+  .section-head{display:flex;align-items:baseline;gap:14px;margin:48px 0 18px;}
+  .section-head .idx{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--gold);}
+  .section-head h2{font-family:'Fraunces',serif;font-weight:500;font-size:20px;color:var(--bone);letter-spacing:0.2px;}
+  .section-head .rule{flex:1;height:1px;background:var(--hairline);}
+
+  .grid{display:grid;grid-template-columns:1.05fr 1.35fr;gap:1px;background:var(--hairline);border:1px solid var(--hairline);margin-top:8px;}
+  @media(max-width:860px){.grid{grid-template-columns:1fr;}}
+
+  .card{background:var(--panel);padding:32px;}
+  .card-top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--hairline);padding-bottom:20px;margin-bottom:20px;}
+  .card-asset{font-family:'Fraunces',serif;font-size:30px;font-weight:500;color:var(--bone);}
+  .card-bias{font-family:'IBM Plex Mono',monospace;font-size:12px;margin-top:6px;}
+  .card-bias.bull{color:var(--emerald-bright);}
+  .card-bias.bear{color:var(--oxblood-bright);}
+  .card-bias.neutral{color:var(--bone-dim);}
+  .card-score{text-align:right;}
+  .card-score .num{font-family:'Fraunces',serif;font-size:30px;color:var(--gold-bright);}
+  .card-score .lbl{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--grey);letter-spacing:0.4px;}
+
+  .kv-row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:13px;}
+  .kv-row .k{color:var(--grey);}
+  .kv-row .v{color:var(--bone);font-family:'IBM Plex Mono',monospace;font-size:12.5px;text-align:right;}
+  .kv-row .v.gold{color:var(--gold-bright);}
+  .kv-row .v.green{color:var(--emerald-bright);}
+  .kv-row .v.red{color:var(--oxblood-bright);}
+
+  .status-band{margin-top:22px;padding:14px 16px;background:rgba(217,178,92,0.08);border-left:2px solid var(--gold);display:flex;justify-content:space-between;align-items:center;}
+  .status-band.no-trade{background:rgba(255,255,255,0.03);border-left-color:var(--grey);}
+  .status-band.conditional{background:rgba(217,178,92,0.05);border-left-color:var(--gold);}
+  .status-band .status-label{font-size:11px;color:var(--bone-dim);letter-spacing:0.3px;}
+  .status-band .status-value{font-family:'Fraunces',serif;font-style:italic;font-size:17px;color:var(--gold-bright);}
+  .status-band.no-trade .status-value{color:var(--bone-dim);}
+
+  .narrative{background:var(--panel);padding:32px;}
+  .narrative h3{font-family:'Fraunces',serif;font-weight:500;font-size:16px;color:var(--bone);margin-bottom:4px;}
+  .narrative .kicker{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--gold);letter-spacing:0.3px;margin-bottom:16px;display:block;}
+  .qa{margin-bottom:18px;}
+  .qa .q{font-size:12.5px;color:var(--bone-dim);margin-bottom:5px;}
+  .qa .a{font-size:13.5px;color:var(--bone);line-height:1.6;}
+
+  .critic-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:8px;}
+  @media(max-width:700px){.critic-grid{grid-template-columns:1fr;}}
+  .critic-item{background:var(--panel);border:1px solid var(--hairline);padding:18px 20px;}
+  .critic-item .q{font-size:12.5px;color:var(--oxblood-bright);font-style:italic;margin-bottom:8px;}
+  .critic-item .a{font-size:12.5px;color:var(--bone-dim);line-height:1.6;}
+
+  .verdict-line{text-align:center;margin-top:24px;padding:16px;border:1px solid rgba(92,155,120,0.35);background:rgba(92,155,120,0.06);font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:0.6px;color:var(--emerald-bright);}
+  .verdict-line.destroyed{border-color:rgba(194,90,78,0.35);background:rgba(194,90,78,0.06);color:var(--oxblood-bright);}
+
+  .verdict-card{background:var(--panel);border:1px solid var(--hairline);padding:36px 40px;margin-top:8px;}
+  .verdict-header{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--hairline);padding-bottom:18px;margin-bottom:22px;flex-wrap:wrap;gap:10px;}
+  .verdict-header h3{font-family:'Fraunces',serif;font-weight:500;font-size:19px;color:var(--bone);}
+  .verdict-header .decision{font-family:'Fraunces',serif;font-style:italic;font-size:22px;color:var(--gold-bright);}
+  .verdict-cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:32px;}
+  @media(max-width:760px){.verdict-cols{grid-template-columns:1fr;gap:20px;}}
+  .verdict-cols .vk{font-size:10.5px;color:var(--grey);letter-spacing:0.3px;margin-bottom:5px;}
+  .verdict-cols .vv{font-size:13.5px;color:var(--bone);line-height:1.6;margin-bottom:16px;}
+
+  .empty-state{
+    margin-top:60px;
+    text-align:center;
+    padding:60px 20px;
+    border:1px dashed var(--hairline);
+  }
+  .empty-state p{color:var(--grey);font-size:13px;font-family:'IBM Plex Mono',monospace;}
+
+  footer{max-width:1180px;margin:60px auto 0;padding:24px 48px 0;border-top:1px solid var(--hairline);font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--grey);line-height:1.8;}
+</style>
+</head>
+<body>
+
+  <div class="masthead">
+    <div>
+      <div class="masthead-mark">AUTOPSY <span>X</span></div>
+      <div class="masthead-sub">Institutional multi-asset intelligence and trade construction engine. Built to reject inferior conditions as readily as it identifies asymmetric ones.</div>
+    </div>
+    <div class="masthead-meta">
+      SESSION: <b id="sessionLabel">—</b><br>
+      DATA INTEGRITY: <b id="integrityLabel">AWAITING RUN</b><br>
+      GENERATED: <b id="timeLabel">—</b>
+    </div>
+  </div>
+
+  <div class="shell">
+
+    <div class="console">
+      <div class="console-field">
+        <label for="assetInput">ASSET / SYMBOL</label>
+        <input id="assetInput" type="text" placeholder="e.g. XAUUSD, GBPJPY, DXY" value="XAUUSD">
+      </div>
+      <button id="runBtn" onclick="runAutopsy()">Run Autopsy</button>
+      <div class="console-hint">Live web search grounds the read. Model still won't invent a number it can't source.</div>
+    </div>
+
+    <div class="watchlist" id="watchlist"></div>
+    <div class="corr-panel" id="corrPanel"></div>
+
+    <div class="scanner-panel">
+      <div class="mt5-header">
+        <div class="mt5-title">Scanner</div>
+        <span class="scanner-status-badge" id="scannerBadge">IDLE</span>
+      </div>
+      <div class="mt5-note" style="margin-top:0;margin-bottom:14px;">Runs a full pass on each symbol in order and notifies you when one clears your threshold. Each symbol is a real API call with real search, this isn't free or instant — five symbols means five full runs.</div>
+
+      <div class="mt5-form">
+        <div class="mt5-field" style="flex:1;min-width:260px;">
+          <label for="scannerSymbols">SYMBOLS (COMMA-SEPARATED)</label>
+          <input id="scannerSymbols" type="text" value="XAUUSD, GBPJPY, GBPCAD, GBPAUD">
+        </div>
+        <div class="mt5-field">
+          <label for="scannerThreshold">NOTIFY ON</label>
+          <select id="scannerThreshold">
+            <option value="ALPHA">ALPHA only</option>
+            <option value="HIGH CONVICTION">HIGH CONVICTION or better</option>
+            <option value="CONDITIONAL">CONDITIONAL or better</option>
+          </select>
+        </div>
+        <button id="scannerBtn" onclick="toggleScan()">Start Scan</button>
+      </div>
+
+      <div class="mt5-form" style="margin-top:12px;">
+        <div class="mt5-field" style="flex-direction:row;align-items:center;gap:8px;">
+          <input id="scannerRepeat" type="checkbox" style="width:auto;">
+          <label for="scannerRepeat" style="font-size:11px;">REPEAT EVERY</label>
+        </div>
+        <div class="mt5-field" style="width:90px;">
+          <input id="scannerInterval" type="text" value="15" placeholder="minutes">
+        </div>
+        <div class="mt5-field" style="justify-content:center;">
+          <label style="visibility:hidden;">min</label>
+          <span style="font-size:11px;color:var(--grey);padding-bottom:9px;">minutes</span>
+        </div>
+      </div>
+
+      <div class="scanner-progress" id="scannerProgress"></div>
+      <div class="scanner-error" id="scannerError"></div>
+      <div class="scanner-table-wrap" id="scannerTableWrap" style="display:none;">
+        <table class="scanner-table">
+          <thead>
+            <tr>
+              <th onclick="setSortKey('symbol')">SYMBOL</th>
+              <th onclick="setSortKey('regime')">REGIME</th>
+              <th onclick="setSortKey('direction')">BIAS</th>
+              <th onclick="setSortKey('composite')" id="sortCompositeHead">SCORE ▾</th>
+              <th onclick="setSortKey('decision')">DECISION</th>
+              <th>TIME</th>
+            </tr>
+          </thead>
+          <tbody id="scannerLog"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="size-panel">
+      <div class="mt5-header">
+        <div class="mt5-title">Position Size Calculator</div>
+        <span class="size-source" id="sizeSource">MANUAL INPUTS</span>
+      </div>
+      <div class="mt5-note" style="margin-top:0;margin-bottom:14px;">This decides whether a bad trade costs you 1% of the account or 30% of it. Contract sizes below are standard defaults — verify against your actual broker's contract specification before using real numbers, brokers vary.</div>
+
+      <div class="mt5-form">
+        <div class="mt5-field">
+          <label for="sizeBalance">ACCOUNT BALANCE ($)</label>
+          <input id="sizeBalance" type="text" placeholder="e.g. 100">
+        </div>
+        <div class="mt5-field">
+          <label for="sizeRisk">RISK PER TRADE (%)</label>
+          <input id="sizeRisk" type="text" placeholder="1" value="1">
+        </div>
+        <div class="mt5-field">
+          <label for="sizeContract">CONTRACT TYPE</label>
+          <select id="sizeContract" onchange="onContractChange()">
+            <option value="100000">Forex Standard (100,000 units)</option>
+            <option value="100">Gold — XAUUSD (100 oz)</option>
+            <option value="5000">Silver — XAGUSD (5,000 oz)</option>
+            <option value="custom">Custom units per lot</option>
+          </select>
+        </div>
+        <div class="mt5-field" id="sizeCustomField" style="display:none;">
+          <label for="sizeCustomUnits">UNITS PER 1.0 LOT</label>
+          <input id="sizeCustomUnits" type="text" placeholder="e.g. 10">
+        </div>
+      </div>
+      <div class="mt5-form" style="margin-top:12px;">
+        <div class="mt5-field">
+          <label for="sizeEntry">ENTRY PRICE</label>
+          <input id="sizeEntry" type="text" placeholder="e.g. 2434.00">
+        </div>
+        <div class="mt5-field">
+          <label for="sizeStop">STOP PRICE</label>
+          <input id="sizeStop" type="text" placeholder="e.g. 2417.90">
+        </div>
+        <button onclick="calculatePositionSize()">Calculate</button>
+      </div>
+
+      <div class="size-error" id="sizeError"></div>
+      <div class="size-result" id="sizeResult" style="display:none;">
+        <div class="size-grid">
+          <div><div class="stat-label">RISK AMOUNT</div><div class="stat-val" id="sizeRiskAmt">—</div></div>
+          <div><div class="stat-label">STOP DISTANCE</div><div class="stat-val" id="sizeStopDist">—</div></div>
+          <div><div class="stat-label">RECOMMENDED LOT</div><div class="stat-val gold" id="sizeLot">—</div></div>
+          <div><div class="stat-label">ACTUAL RISK AT THIS LOT</div><div class="stat-val" id="sizeActualRisk">—</div></div>
+        </div>
+        <div class="size-warning" id="sizeWarning" style="display:none;"></div>
+      </div>
+    </div>
+
+    <div class="mode-panel">
+      <div class="mt5-header">
+        <div class="mt5-title">Research Modes</div>
+      </div>
+      <div class="mt5-note" style="margin-top:0;margin-bottom:14px;">Separate from the trade engine above — these are equity/portfolio research lenses, not forex trade calls. Analysis and scenarios, not a personal recommendation to act on.</div>
+      <div class="mt5-form">
+        <div class="mt5-field" style="width:280px;">
+          <label for="modeSelect">MODE</label>
+          <select id="modeSelect" onchange="onModeChange()">
+            <option value="stock_screener">Goldman Sachs — Stock Screener</option>
+            <option value="dcf_valuation">Morgan Stanley — DCF Valuation</option>
+            <option value="risk_analysis">Bridgewater — Portfolio Risk</option>
+            <option value="earnings_breakdown">JPMorgan — Earnings Breakdown</option>
+            <option value="portfolio_construction">BlackRock — Portfolio Construction</option>
+            <option value="technical_analysis">Citadel — Technical Analysis</option>
+            <option value="dividend_strategy">Harvard Endowment — Dividend Strategy</option>
+            <option value="competitive_analysis">Bain — Competitive Analysis</option>
+            <option value="pattern_finder">Renaissance — Pattern Finder</option>
+            <option value="macro_impact">McKinsey — Macro Impact</option>
+          </select>
+        </div>
+        <div class="mt5-field" id="modeInputContainer" style="flex:1;min-width:260px;">
+          <label id="modeInputLabel">INPUT</label>
+          <input id="modeInput" type="text" placeholder="">
+        </div>
+        <button id="modeRunBtn" onclick="runMode()">Run</button>
+      </div>
+      <div class="mode-status" id="modeStatus"></div>
+      <div class="mode-error" id="modeError"></div>
+      <div class="report-output" id="reportOutput"></div>
+    </div>
+
+    <div class="bridge-panel">
+      <div class="mt5-header">
+        <div class="mt5-title">Live Bridge (self-hosted server.js + MT5 EA)</div>
+        <div class="mt5-status disconnected" id="bridgeStatusBadge"><span class="dot2"></span><span id="bridgeStatusText">DISCONNECTED</span></div>
+      </div>
+      <div class="mt5-note" style="margin-top:0;margin-bottom:14px;">Only relevant if you're running the standalone server.js + AutopsyXBridge.mq5 EA outside this chat. Connects to your own local/VPS bridge, not MetaApi.</div>
+
+      <div class="mt5-form" id="bridgeConnectForm">
+        <div class="mt5-field">
+          <label for="bridgeUrl">BRIDGE SERVER URL</label>
+          <input id="bridgeUrl" type="text" value="http://127.0.0.1:8787">
+        </div>
+        <div class="mt5-field">
+          <label for="bridgeKey">BRIDGE KEY</label>
+          <input id="bridgeKey" type="password" placeholder="matches BRIDGE_KEY on the server">
+        </div>
+        <button id="bridgeConnectBtn" onclick="connectBridge()">Connect</button>
+      </div>
+      <div class="mt5-error" id="bridgeError"></div>
+
+      <div id="bridgeLivePanel" style="display:none;">
+        <div class="mt5-account-grid" id="bridgeTicker"></div>
+        <div class="mt5-form" style="margin-top:16px;">
+          <div class="mt5-field" style="flex-direction:row;align-items:center;gap:8px;">
+            <input id="bridgeRouteAnalysis" type="checkbox" style="width:auto;">
+            <label for="bridgeRouteAnalysis" style="font-size:11px;">Route analysis through this bridge's /analyze (keeps your Anthropic key server-side)</label>
+          </div>
+        </div>
+        <button style="margin-top:12px;background:transparent;border:1px solid var(--hairline);color:var(--bone-dim);padding:8px 14px;cursor:pointer;font-family:'Inter',sans-serif;font-size:12px;" onclick="disconnectBridge()">Disconnect</button>
+      </div>
+    </div>
+
+    <div class="mt5-panel">
+      <div class="mt5-header">
+        <div class="mt5-title">MT5 Live Connection</div>
+        <div class="mt5-status disconnected" id="mt5StatusBadge"><span class="dot2"></span><span id="mt5StatusText">DISCONNECTED</span></div>
+      </div>
+
+      <div class="mt5-form" id="mt5ConnectForm">
+        <div class="mt5-field">
+          <label for="mt5Token">METAAPI TOKEN</label>
+          <input id="mt5Token" type="password" placeholder="account access token">
+        </div>
+        <div class="mt5-field">
+          <label for="mt5AccountId">MT5 ACCOUNT ID</label>
+          <input id="mt5AccountId" type="text" placeholder="metaapi account id">
+        </div>
+        <button id="mt5ConnectBtn" onclick="connectMT5()">Connect</button>
+      </div>
+
+      <div class="mt5-error" id="mt5Error"></div>
+      <div class="mt5-note">Connects via MetaApi's cloud bridge, not a direct link to your terminal. Get a token and account id at app.metaapi.cloud. Use a demo account until you've verified this behaves the way you expect.</div>
+
+      <div id="mt5AccountPanel" style="display:none;">
+        <div class="mt5-account-grid" id="mt5AccountGrid"></div>
+        <div class="mt5-positions" id="mt5Positions"></div>
+
+        <div class="order-panel" id="orderPanel">
+          <div class="exec-mode-toggle">
+            <span class="exec-mode-label">EXECUTION MODE</span>
+            <div class="exec-mode-buttons">
+              <button type="button" class="exec-mode-btn active" id="execModePaperBtn" onclick="setExecutionMode('PAPER')">PAPER — safe</button>
+              <button type="button" class="exec-mode-btn" id="execModeLiveBtn" onclick="setExecutionMode('LIVE')">LIVE — real orders</button>
+            </div>
+          </div>
+          <div class="order-warning">This places a real order on the connected account. Verify symbol, side, volume, stop, and targets before sending. There is no undo.</div>
+          <div class="mt5-form">
+            <div class="mt5-field">
+              <label for="orderSymbol">SYMBOL</label>
+              <input id="orderSymbol" type="text" placeholder="e.g. XAUUSD">
+            </div>
+            <div class="mt5-field">
+              <label for="orderSide">SIDE</label>
+              <input id="orderSide" type="text" placeholder="BUY or SELL">
+            </div>
+            <div class="mt5-field">
+              <label for="orderVolume">VOLUME (LOTS)</label>
+              <input id="orderVolume" type="text" placeholder="0.01">
+            </div>
+            <div class="mt5-field">
+              <label for="orderSL">STOP LOSS</label>
+              <input id="orderSL" type="text" placeholder="optional">
+            </div>
+            <div class="mt5-field">
+              <label for="orderTP">TAKE PROFIT</label>
+              <input id="orderTP" type="text" placeholder="optional">
+            </div>
+          </div>
+          <div class="mt5-form" style="margin-top:14px;">
+            <div class="mt5-field">
+              <label for="orderConfirm">TYPE "SEND" TO ARM</label>
+              <input class="order-confirm-input" id="orderConfirm" type="text" oninput="toggleSendButton()">
+            </div>
+            <button class="send-order-btn" id="sendOrderBtn" disabled onclick="sendOrder()">Send Order to MT5</button>
+          </div>
+          <div class="mt5-error" id="orderError"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="strip-note">
+      Every figure below is generated by Claude reasoning over live search results at the moment you click Run, not a connected market data feed or broker API. Treat it as a research draft you verify against your own terminal before sizing anything, exactly as the engine's own anti-hallucination protocol requires.
+    </div>
+
+    <div class="status-line" id="statusLine"><div class="dot"></div><span id="statusText">Running analysis...</span></div>
+    <div class="trunc-notice" id="truncNotice"></div>
+    <div class="error-box" id="errorBox"></div>
+
+    <div id="results">
+
+      <div class="section-head"><span class="idx">24</span><h2>Institutional Trade Gate — Synthesized Verdict</h2><div class="rule"></div></div>
+      <div class="synthesis-hero">
+        <div class="syn-top">
+          <div>
+            <div class="syn-composite-label">COMPOSITE SCORE</div>
+            <div class="syn-composite" id="synComposite">—</div>
+          </div>
+          <div class="syn-decision-pill pill" id="synDecision">—</div>
+        </div>
+        <div class="syn-gates" id="synGates"></div>
+        <div class="syn-override" id="synOverride" style="display:none;"></div>
+        <div class="syn-note">One decision, computed deterministically from every module above (survival scores, alignment, evidence integrity, R:R, event risk) — not the model's own self-report taken at face value. This is what drives the dashboard, trade card, and sticky bar below.</div>
+      </div>
+
+      <div class="section-head"><span class="idx">CHART</span><h2>Annotated Chart</h2><div class="rule"></div></div>
+      <div class="chart-panel">
+        <div class="chart-topbar">
+          <div class="chart-symbol" id="chartSymbol">—</div>
+          <div class="chart-legend">
+            <span><i class="dotline gold"></i>Entry</span>
+            <span><i class="dotline red"></i>Stop</span>
+            <span><i class="dotline green"></i>TP1–3</span>
+            <span><i class="dotline dim"></i>Liquidity</span>
+          </div>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="chartCanvas"></canvas>
+          <div class="chart-empty" id="chartEmpty">Not enough numeric levels returned to plot an annotated structure.</div>
+        </div>
+        <div class="chart-footnote" id="chartFootnote">Schematic price structure built from the engine's own returned levels, not a live OHLC feed. Treat it as an order-line map, not a chart to trade off directly.</div>
+      </div>
+
+      <div class="glance-grid">
+        <div class="align-panel">
+          <div class="align-header">
+            <span class="align-title">Alignment Matrix</span>
+            <span class="align-conf" id="alignConf"></span>
+          </div>
+          <div class="align-verdict" id="alignVerdict"></div>
+          <div class="align-tiles" id="alignTiles"></div>
+          <div class="align-divergence" id="alignDivergence"></div>
+        </div>
+
+        <div class="risk-panel">
+          <div class="risk-header">
+            <span class="align-title">Upcoming Risk</span>
+          </div>
+          <div class="risk-countdown" id="riskCountdown">—</div>
+          <div class="risk-list" id="riskList"></div>
+        </div>
+      </div>
+
+      <div class="section-head"><span class="idx">25</span><h2>Dashboard Row</h2><div class="rule"></div></div>
+      <table style="width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:12.5px;">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:10px 14px;color:var(--grey);font-weight:500;font-size:10.5px;border-bottom:1px solid var(--hairline);">Asset</th>
+            <th style="text-align:left;padding:10px 14px;color:var(--grey);font-weight:500;font-size:10.5px;border-bottom:1px solid var(--hairline);">Direction</th>
+            <th style="text-align:left;padding:10px 14px;color:var(--grey);font-weight:500;font-size:10.5px;border-bottom:1px solid var(--hairline);">Regime</th>
+            <th style="text-align:left;padding:10px 14px;color:var(--grey);font-weight:500;font-size:10.5px;border-bottom:1px solid var(--hairline);">Score</th>
+            <th style="text-align:left;padding:10px 14px;color:var(--grey);font-weight:500;font-size:10.5px;border-bottom:1px solid var(--hairline);">R:R</th>
+            <th style="text-align:left;padding:10px 14px;color:var(--grey);font-weight:500;font-size:10.5px;border-bottom:1px solid var(--hairline);">Decision</th>
+          </tr>
+        </thead>
+        <tbody id="dashRow"></tbody>
+      </table>
+
+      <div class="section-head"><span class="idx">6</span><h2>Currency Strength Matrix</h2><div class="rule"></div></div>
+      <div class="strength-panel" id="strengthPanel"></div>
+
+      <div class="section-head"><span class="idx">26 / 27</span><h2>Trade Card &amp; Autopsy Narrative</h2><div class="rule"></div></div>
+      <div class="grid">
+        <div class="card" id="tradeCard"></div>
+        <div class="narrative" id="narrativePane"></div>
+      </div>
+
+      <div class="section-head"><span class="idx">28</span><h2>Kill-Critic Mode</h2><div class="rule"></div></div>
+      <div class="survival-panel">
+        <div class="survival-scores" id="survivalScores"></div>
+        <div class="evidence-list" id="evidenceList"></div>
+      </div>
+      <div class="critic-grid" id="criticGrid"></div>
+      <div class="verdict-line" id="verdictLine"></div>
+
+      <div class="section-head"><span class="idx">29</span><h2>Institutional Verdict</h2><div class="rule"></div></div>
+      <div class="verdict-card" id="verdictCard"></div>
+
+    </div>
+
+    <div class="empty-state" id="emptyState">
+      <p>ENTER AN ASSET AND RUN THE ENGINE TO POPULATE THE DESK</p>
+    </div>
+
+  </div>
+
+  <footer>
+    AUTOPSY X™ — capital preservation is a valid institutional decision. No trade is manufactured to satisfy a request.
+  </footer>
+
+  <div class="verdict-sticky" id="verdictSticky">
+    <div class="vs-left">
+      <span class="vs-asset" id="vsAsset">—</span>
+      <span class="vs-status" id="vsStatus">—</span>
+      <span class="vs-note" id="vsNote"></span>
+    </div>
+    <button class="vs-close" onclick="document.getElementById('verdictSticky').classList.remove('active')">✕</button>
+  </div>
+
+<script>
+const SYSTEM_PROMPT = `You are AUTOPSY X, an institutional-grade quantitative macro intelligence engine analyzing forex, gold and precious metals, indices, commodities, cryptocurrencies, major futures, and selected fixed-income instruments.
+
+You do not exist to generate frequent trade signals. You exist to identify asymmetric institutional opportunities, reject inferior conditions, quantify uncertainty, and explain precisely why a market should or should not be traded. Never manufacture evidence. Never convert missing data into assumptions. When evidence conflicts, reduce confidence or reject the setup. Capital preservation (NO TRADE) is a valid, often correct, output. Never distort a stop or R:R merely to manufacture a higher score.
+
+Use the web_search tool to ground your read in current price action, recent macro data, and news for the asset given. If you cannot verify something, say so in the relevant field rather than inventing it.
+
+Apply this evidence stack before answering, in order: live price and current regime -> multi-timeframe market structure -> volatility regime -> liquidity mapping -> macro drivers -> intermarket/cross-asset confirmation -> positioning -> catalyst/event calendar -> scenario tree -> entry, invalidation, and targets -> kill-critic self-attack -> final decision. Treat this as a decision-support process, not a price-prediction one: the question is whether the evidence justifies taking risk, not what the price will do. NO TRADE / CONDITIONAL are first-class, often-correct outputs, not failure states.
+
+For every load-bearing claim you make (a structure read, a liquidity level, a macro driver, a positioning read), assign it an evidence state: VERIFIED (you found direct current confirmation), PARTIAL (some support, not fully confirmed), CONFLICTING (sources disagree), STALE (real but dated), or UNAVAILABLE (you have no real signal, don't invent one). List the 3-4 most important ones in the evidence array. Your five survival scores (0-100 each) should follow directly from how strong that evidence actually was, not be asserted independently of it: thesis (does the core read hold together), evidence (how much of the above was VERIFIED vs UNAVAILABLE/CONFLICTING), asymmetry (reward vs risk quality), execution (is the entry/timing clean or already late), critic (how well the thesis survived your own kill-critic attack).
+
+Also estimate a relative strength score from -100 (weakest) to 100 (strongest) for each of the 8 major currencies (USD, EUR, GBP, JPY, CHF, CAD, AUD, NZD) based on current rate differentials, recent macro surprises, and price action you can verify. If you have no real signal for a currency, use 0 rather than guessing.
+
+Search for the next 1-3 real scheduled high-impact events relevant to this asset (CPI, NFP, central bank decisions, PMI, etc.) and return their actual name and real UTC datetime, soonest first, in the catalysts array. Do not invent a date you can't verify; if you can't confirm a real upcoming event, return an empty catalysts array rather than fabricating one.
+
+Also independently read four sub-signals as BULLISH, BEARISH, or NEUTRAL: macro (rates/data), structure (price action/timeframes), liquidity (where liquidity sits and how it's being taken), positioning (COT/sentiment/crowding). Set alignment.divergence to true if these meaningfully disagree with each other or with your overall direction, and give divergence_confidence (0-100) for how much that disagreement should worry someone about the setup. Agreement across all four is not required for a trade, but divergence should lower your thesis and critic scores.
+
+Respond with ONLY a single valid JSON object, no markdown fences, no prose before or after. This is a hard constraint: you are working inside a fixed, limited output budget. Keep every text field short (most under 12 words, narrative and kill-critic fields under 18 words) so the ENTIRE object closes with valid JSON before you run out of room. A complete, terse JSON object is always more useful than a longer one that gets cut off. If you are running low on space, shorten remaining fields further rather than leaving the object unclosed. Schema:
+
+{
+ "asset": string,
+ "direction": "BULLISH" | "BEARISH" | "NEUTRAL",
+ "regime": string,
+ "score": number,
+ "confidence": number,
+ "rr": string,
+ "decision": "ALPHA" | "HIGH CONVICTION" | "CONDITIONAL" | "WATCHLIST" | "NO TRADE",
+ "liquidity_primary": string,
+ "liquidity_secondary": string,
+ "entry_zone": string,
+ "ote": string,
+ "invalidation": string,
+ "stop": string,
+ "tp1": string,
+ "tp2": string,
+ "tp3": string,
+ "holding_period": string,
+ "event_risk": "LOW" | "MODERATE" | "HIGH" | "EXTREME",
+ "scores": {"thesis": number, "evidence": number, "asymmetry": number, "execution": number, "critic": number},
+ "evidence": [ {"claim": string, "state": "VERIFIED" | "PARTIAL" | "CONFLICTING" | "STALE" | "UNAVAILABLE"} ],
+ "narrative": {
+   "thesis": string,
+   "macro_driver": string,
+   "invalidation_condition": string,
+   "contradiction": string
+ },
+ "kill_critic": [ {"q": string, "a": string}, {"q": string, "a": string}, {"q": string, "a": string} ],
+ "thesis_survives": boolean,
+ "scenarios": [ {"name": "Primary", "prob": number, "desc": string}, {"name": "Alternative", "prob": number, "desc": string}, {"name": "Tail", "prob": number, "desc": string} ],
+ "key_catalyst": string,
+ "key_contradiction": string,
+ "session": string,
+ "data_integrity": string,
+ "currency_strength": {"USD": number, "EUR": number, "GBP": number, "JPY": number, "CHF": number, "CAD": number, "AUD": number, "NZD": number},
+ "catalysts": [ {"name": string, "time_utc": string, "impact": "LOW" | "MEDIUM" | "HIGH"} ],
+ "alignment": {"macro": "BULLISH" | "BEARISH" | "NEUTRAL", "structure": "BULLISH" | "BEARISH" | "NEUTRAL", "liquidity": "BULLISH" | "BEARISH" | "NEUTRAL", "positioning": "BULLISH" | "BEARISH" | "NEUTRAL", "divergence": boolean, "divergence_confidence": number}
+}
+
+If the setup fails the gate, still fill every field: set decision to "NO TRADE", entry/stop/targets to "—", and use the narrative and kill-critic fields to explain why capital should stay on the sidelines.`;
+
+function esc(s){
+  if(s===undefined||s===null) return '';
+  const d=document.createElement('div');
+  d.textContent=String(s);
+  return d.innerHTML;
+}
+
+function renderSurvival(p){
+  const s=p.scores||{};
+  const rows=[
+    ['THESIS', s.thesis], ['EVIDENCE', s.evidence], ['ASYMMETRY', s.asymmetry],
+    ['EXECUTION', s.execution], ['CRITIC', s.critic]
+  ];
+  document.getElementById('survivalScores').innerHTML=rows.map(([label,val])=>{
+    const v=Math.max(0,Math.min(100,Number(val)||0));
+    return `<div class="sv-row">
+      <div class="sv-label"><span>${label}</span><b>${val!==undefined && val!==null ? esc(val)+'/100' : '—'}</b></div>
+      <div class="sv-track"><div class="sv-fill" style="width:${v}%;"></div></div>
+    </div>`;
+  }).join('');
+
+  const evidence=p.evidence||[];
+  const stateClass=st=>({VERIFIED:'verified',PARTIAL:'partial',CONFLICTING:'conflicting',STALE:'stale',UNAVAILABLE:'unavailable'}[st]||'stale');
+  document.getElementById('evidenceList').innerHTML=`
+    <span class="ev-kicker">DATA INTEGRITY ENGINE</span>
+    ${evidence.map(e=>`
+      <div class="ev-row">
+        <span class="ev-claim">${esc(e.claim)}</span>
+        <span class="ev-state ${stateClass(e.state)}">${esc(e.state)}</span>
+      </div>`).join('') || '<div class="ev-claim" style="color:var(--grey);">No evidence items returned.</div>'}`;
+}
+
+function decisionPillClass(decision){
+  if(decision==='ALPHA') return 'alpha';
+  if(decision==='CONDITIONAL') return 'conditional';
+  return 'watch';
+}
+
+function pillClass(direction){
+  if(direction==='BULLISH') return 'bull';
+  if(direction==='BEARISH') return 'bear';
+  return 'neutral';
+}
+
+function eventRiskClass(risk){
+  if(risk==='LOW') return 'green';
+  if(risk==='MODERATE') return 'gold';
+  return 'red';
+}
+
+function getCss(varName){
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+}
+
+const HOUSE_STYLE = `House rules for this analysis: search the web for real, current, verifiable data before writing anything factual — don't invent tickers, prices, financials, or dates. Where you can't verify something, say "unverified" or "estimate" rather than stating it as fact. This is analysis to inform the reader's own decision, not a personalized recommendation to act — present the reasoning and let them conclude, and don't tell them what to personally do with their money. Output GitHub-flavored markdown only (headers, bold, bullet lists, and simple pipe tables where a table is the clearest format) — no code fences, no preamble. You have a hard, limited output budget: stay under roughly 500 words total, trim item counts and depth rather than leaving sections unfinished, and end with a short "Key uncertainties" line naming what would most change the picture.`;
+
+const MODE_PROMPTS = {
+  stock_screener: {
+    label:'Goldman Sachs — Stock Screener', inputLabel:'YOUR CRITERIA',
+    placeholder:'e.g. large-cap tech, moderate risk, $50k, 5-year horizon',
+    system:`You are a senior equity analyst screening stocks for a client. Given their criteria, search for and return: 6 candidate tickers matching the criteria, each with P/E vs sector average, 5-year revenue growth trend, debt-to-equity read, dividend yield if any, a one-line competitive moat rating (weak/moderate/strong), and a 1-10 risk rating with a one-line reason. Present as a summary table, then 1-2 sentences per pick on why it made the list. ${HOUSE_STYLE}`
+  },
+  dcf_valuation: {
+    label:'Morgan Stanley — DCF Valuation', inputLabel:'TICKER & COMPANY',
+    placeholder:'e.g. AAPL, Apple Inc.',
+    system:`You are a VP-level investment banker building a discounted cash flow valuation. Search for the company's real recent financials, then produce: a condensed 5-year revenue and FCF projection with your growth assumptions stated, a WACC estimate with its inputs, a terminal value under both exit-multiple and perpetuity-growth methods, a compact sensitivity table (fair value at 3 discount rates), the resulting fair value vs current market price, and a clear undervalued/fairly valued/overvalued verdict. Name the single assumption most likely to break the model. ${HOUSE_STYLE}`
+  },
+  risk_analysis: {
+    label:'Bridgewater — Portfolio Risk', inputLabel:'YOUR HOLDINGS',
+    placeholder:'e.g. 40% AAPL, 30% BND, 30% VTI, $200k total',
+    system:`You are a senior risk analyst trained in radical-transparency risk assessment. Given the stated holdings, evaluate: correlation between the positions, sector and geographic concentration, interest-rate sensitivity, a rough recession stress-test (estimated drawdown range), liquidity risk, and the single biggest tail risk with its rough probability. Close with 2-3 concrete hedging or rebalancing ideas and what each would cost in expected return. ${HOUSE_STYLE}`
+  },
+  earnings_breakdown: {
+    label:'JPMorgan — Earnings Breakdown', inputLabel:'COMPANY & EARNINGS DATE',
+    placeholder:'e.g. NVIDIA, reports Nov 19',
+    system:`You are a senior equity research analyst writing a pre-earnings brief. Search for the company's real last 4 quarters (beat/miss history), current revenue and EPS consensus for the upcoming print, the 2-3 metrics the Street is actually watching this quarter, options-implied move for earnings day if you can find it, and how the stock has historically reacted the day after earnings. Give a bull case and a bear case with rough price impact ranges for each. ${HOUSE_STYLE}`
+  },
+  portfolio_construction: {
+    label:'BlackRock — Portfolio Construction', inputLabel:'YOUR PROFILE',
+    placeholder:'e.g. age 34, $80k income, $50k savings, moderate risk, Roth IRA',
+    system:`You are a portfolio strategist building an asset allocation framework for the stated profile. Produce: a percentage allocation across stocks/bonds/alternatives appropriate to the stated risk tolerance and horizon, 4-6 specific low-cost ETF tickers mapped to each sleeve (core vs satellite labeled), an expected annual return range and expected worst-year drawdown based on historical analogues, a rebalancing trigger rule, and a one-line tax-efficiency note for the stated account type. Frame this as an illustrative allocation framework, not a directive. ${HOUSE_STYLE}`
+  },
+  technical_analysis: {
+    label:'Citadel — Technical Analysis', inputLabel:'TICKER & POSITION',
+    placeholder:'e.g. TSLA, no current position',
+    system:`You are a quantitative trader combining technicals with statistics. Search for the stock's real current price and recent action, then give: trend direction across daily/weekly/monthly, key support and resistance with real price levels, where price sits relative to the 50/100/200-day moving averages, RSI and MACD reads in plain English, one relevant chart pattern if genuinely present, and a Fibonacci retracement zone worth watching. Close with an illustrative entry zone, stop, target, and resulting R:R — framed as a setup to evaluate, not an instruction to execute. ${HOUSE_STYLE}`
+  },
+  dividend_strategy: {
+    label:'Harvard Endowment — Dividend Strategy', inputLabel:'YOUR SITUATION',
+    placeholder:'e.g. $100k to invest, $500/mo income goal, taxable account',
+    system:`You are an income-strategy specialist building a dividend framework for the stated situation. Return 8 real dividend-paying tickers with current yield, a 1-10 dividend safety score each, consecutive years of dividend growth, and payout ratio flag if it looks unsustainable. Show sector spread to flag concentration, a monthly income projection at the stated investment amount, and a one-line tax note for the stated account type. Rank the list safest to most aggressive. ${HOUSE_STYLE}`
+  },
+  competitive_analysis: {
+    label:'Bain — Competitive Analysis', inputLabel:'SECTOR / INDUSTRY',
+    placeholder:'e.g. cloud infrastructure',
+    system:`You are a senior strategy consultant mapping a competitive landscape. Search for and identify the top 5 real competitors in the stated sector with market cap and recent revenue/margin comparison in a table, a one-line competitive moat type per company (brand/cost/network/switching), the 1-2 biggest sector-wide threats (regulation, disruption, macro), and a brief SWOT for the top 2 players. Name which company looks best-positioned and why, and the catalyst most likely to move that view in the next 12 months. ${HOUSE_STYLE}`
+  },
+  pattern_finder: {
+    label:'Renaissance — Pattern Finder', inputLabel:'TICKER & PERIOD',
+    placeholder:'e.g. AMD, last 3 years',
+    system:`You are a quantitative researcher looking for statistical patterns, not narratives. For the stated ticker and period, search for and report anything you can actually verify: seasonal best/worst months if a real pattern exists, notable price behavior around earnings (pre-run or post-gap tendencies), recent institutional ownership direction, short interest level and squeeze potential if elevated, and correlation to major macro events. If you find no real statistical edge, say so plainly rather than manufacturing one — "no discernible edge found" is a legitimate and useful answer here. ${HOUSE_STYLE}`
+  },
+  macro_impact: {
+    label:'McKinsey — Macro Impact', inputLabel:'HOLDINGS & CONCERN',
+    placeholder:'e.g. 60% equities/40% bonds; worried about sticky inflation',
+    system:`You are a macro strategist advising on how current conditions affect the stated portfolio and concern. Search for real current data, then cover: the current rate environment's effect on growth vs value, which sectors benefit or suffer from the current inflation trend, USD strength's effect on international vs domestic holdings, the Fed's likely policy path over the next 6-12 months, and the single biggest global risk factor right now. Close with a short, honest read on whether the stated concern is well-founded given the evidence, and a rough timeline for when it could matter. ${HOUSE_STYLE}`
+  }
+};
+
+function onContractChange(){
+  const val=document.getElementById('sizeContract').value;
+  document.getElementById('sizeCustomField').style.display = val==='custom' ? 'flex' : 'none';
+}
+
+function calculatePositionSize(){
+  const errorEl=document.getElementById('sizeError');
+  const resultEl=document.getElementById('sizeResult');
+  const warnEl=document.getElementById('sizeWarning');
+  errorEl.classList.remove('active');
+  warnEl.style.display='none';
+
+  const balance=parseFloat(document.getElementById('sizeBalance').value);
+  const riskPct=parseFloat(document.getElementById('sizeRisk').value);
+  const entry=parseFloat(document.getElementById('sizeEntry').value.replace(/,/g,''));
+  const stop=parseFloat(document.getElementById('sizeStop').value.replace(/,/g,''));
+  const contractVal=document.getElementById('sizeContract').value;
+  const contractSize = contractVal==='custom'
+    ? parseFloat(document.getElementById('sizeCustomUnits').value)
+    : parseFloat(contractVal);
+
+  if([balance,riskPct,entry,stop,contractSize].some(v=>isNaN(v)||v<=0)){
+    errorEl.textContent='All fields need valid positive numbers, including entry and stop as two different prices.';
+    errorEl.classList.add('active');
+    resultEl.style.display='none';
+    return;
+  }
+
+  const stopDistance=Math.abs(entry-stop);
+  if(stopDistance<=0){
+    errorEl.textContent='Entry and stop can\'t be the same price.';
+    errorEl.classList.add('active');
+    resultEl.style.display='none';
+    return;
+  }
+
+  const riskAmount=balance*(riskPct/100);
+  const rawLot=riskAmount/(stopDistance*contractSize);
+  const lot=Math.floor(rawLot*100)/100;
+  const actualRisk=lot*stopDistance*contractSize;
+
+  document.getElementById('sizeRiskAmt').textContent='$'+riskAmount.toFixed(2);
+  document.getElementById('sizeStopDist').textContent=stopDistance.toFixed(5).replace(/0+$/,'').replace(/\.$/,'');
+  document.getElementById('sizeLot').textContent=lot.toFixed(2)+' lots';
+  document.getElementById('sizeActualRisk').textContent='$'+actualRisk.toFixed(2);
+  resultEl.style.display='block';
+
+  if(lot<0.01){
+    warnEl.style.display='block';
+    warnEl.textContent='This risk budget is smaller than one micro lot (0.01) at this stop distance. Widen the stop-distance-to-risk ratio, raise the risk %, or treat this as NO TRADE for this account size — sizing to zero is a legitimate outcome, not a failure of the calculator.';
+  }else if(riskPct>3){
+    warnEl.style.display='block';
+    warnEl.textContent='Risking over 3% of a small account on one trade means a short losing streak can do serious damage. Worth a second look before sending it.';
+  }
+
+  const assumeNote='Assumes the pair\'s quote currency matches your account currency (USD). For USD/XXX pairs (USDJPY, USDCAD, etc.), verify against your broker\'s real contract spec.';
+  if(!warnEl.textContent.includes(assumeNote) && contractVal==='100000'){
+    warnEl.style.display='block';
+    warnEl.textContent=(warnEl.textContent?warnEl.textContent+' ':'')+assumeNote;
+  }
+}
+
+function onModeChange(){
+  const mode=MODE_PROMPTS[document.getElementById('modeSelect').value];
+  document.getElementById('modeInputLabel').textContent=mode.inputLabel;
+  document.getElementById('modeInput').placeholder=mode.placeholder;
+  document.getElementById('modeInput').value='';
+  document.getElementById('modeError').classList.remove('active');
+}
+onModeChange();
+
+function mdToHtml(md){
+  const lines=md.split('\n');
+  let html='';
+  let inList=false, listType=null;
+  let tableRows=[];
+  let inTable=false;
+
+  function flushList(){ if(inList){ html+='</'+listType+'>'; inList=false; listType=null; } }
+  function flushTable(){
+    if(inTable && tableRows.length){
+      const header=tableRows[0];
+      const body=tableRows.slice(2);
+      html+='<table><thead><tr>'+header.map(h=>'<th>'+inline(h)+'</th>').join('')+'</tr></thead><tbody>';
+      body.forEach(row=>{ html+='<tr>'+row.map(c=>'<td>'+inline(c)+'</td>').join('')+'</tr>'; });
+      html+='</tbody></table>';
+    }
+    inTable=false; tableRows=[];
+  }
+  function inline(s){
+    return esc(s).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\*(.+?)\*/g,'<em>$1</em>');
+  }
+
+  for(const raw of lines){
+    const line=raw.trim();
+    if(line.startsWith('|')){
+      flushList();
+      inTable=true;
+      const cells=line.split('|').slice(1,-1).map(c=>c.trim());
+      if(!(cells.every(c=>/^-+$/.test(c)))) tableRows.push(cells);
+      continue;
+    } else if(inTable){ flushTable(); }
+
+    if(line.startsWith('### ')){ flushList(); html+='<h3>'+inline(line.slice(4))+'</h3>'; }
+    else if(line.startsWith('## ')){ flushList(); html+='<h2>'+inline(line.slice(3))+'</h2>'; }
+    else if(line.startsWith('# ')){ flushList(); html+='<h1>'+inline(line.slice(2))+'</h1>'; }
+    else if(line.startsWith('- ')||line.startsWith('* ')){
+      if(!inList||listType!=='ul'){ flushList(); html+='<ul>'; inList=true; listType='ul'; }
+      html+='<li>'+inline(line.slice(2))+'</li>';
+    }
+    else if(/^\d+\.\s/.test(line)){
+      if(!inList||listType!=='ol'){ flushList(); html+='<ol>'; inList=true; listType='ol'; }
+      html+='<li>'+inline(line.replace(/^\d+\.\s/,''))+'</li>';
+    }
+    else if(line==='---'){ flushList(); html+='<hr>'; }
+    else if(line===''){ flushList(); }
+    else { flushList(); html+='<p>'+inline(line)+'</p>'; }
+  }
+  flushList(); flushTable();
+  return html;
+}
+
+async function runMode(){
+  const modeKey=document.getElementById('modeSelect').value;
+  const mode=MODE_PROMPTS[modeKey];
+  const input=document.getElementById('modeInput').value.trim();
+  const btn=document.getElementById('modeRunBtn');
+  const statusEl=document.getElementById('modeStatus');
+  const errorEl=document.getElementById('modeError');
+  const outputEl=document.getElementById('reportOutput');
+
+  if(!input){
+    errorEl.textContent='This mode needs an input — see the field label for the expected format.';
+    errorEl.classList.add('active');
+    return;
+  }
+
+  btn.disabled=true;
+  statusEl.classList.add('active');
+  statusEl.textContent='Running '+mode.label+'...';
+  errorEl.classList.remove('active');
+  outputEl.innerHTML='';
+
+  try{
+    const response=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-6',
+        max_tokens:1000,
+        system:mode.system,
+        messages:[{role:'user',content:input}],
+        tools:[{type:'web_search_20250305',name:'web_search'}]
+      })
+    });
+
+    if(!response.ok) throw new Error('API request failed with status '+response.status);
+
+    const data=await response.json();
+    const fullText=data.content.map(b=>b.type==='text'?b.text:'').filter(Boolean).join('\n');
+    if(!fullText.trim()) throw new Error('Empty response from engine.');
+
+    outputEl.innerHTML=mdToHtml(fullText);
+    if(data.stop_reason==='max_tokens'){
+      errorEl.style.color='var(--gold-bright)';
+      errorEl.textContent='This report hit the output limit and may be cut off mid-section. Rerun for a shorter, complete pass if needed.';
+      errorEl.classList.add('active');
+    }
+  }catch(err){
+    errorEl.style.color='var(--oxblood-bright)';
+    errorEl.textContent='Run failed: '+err.message;
+    errorEl.classList.add('active');
+  }finally{
+    statusEl.classList.remove('active');
+    btn.disabled=false;
+  }
+}
+
+let bridge={url:'', key:'', connected:false, pollHandle:null, lastState:null};
+
+function setBridgeStatus(state,text){
+  const badge=document.getElementById('bridgeStatusBadge');
+  badge.className='mt5-status '+state;
+  document.getElementById('bridgeStatusText').textContent=text;
+}
+
+function showBridgeError(msg){
+  const el=document.getElementById('bridgeError');
+  el.textContent=msg;
+  el.classList.add('active');
+}
+
+async function connectBridge(){
+  const url=document.getElementById('bridgeUrl').value.trim().replace(/\/$/,'');
+  const key=document.getElementById('bridgeKey').value.trim();
+  const errEl=document.getElementById('bridgeError');
+  const btn=document.getElementById('bridgeConnectBtn');
+  errEl.classList.remove('active');
+
+  if(!url){ showBridgeError('Bridge server URL is required.'); return; }
+
+  btn.disabled=true;
+  setBridgeStatus('connecting','CONNECTING');
+
+  try{
+    const healthRes=await fetch(url+'/health');
+    if(!healthRes.ok) throw new Error('Health check failed with status '+healthRes.status);
+    const health=await healthRes.json();
+
+    bridge.url=url;
+    bridge.key=key;
+    bridge.connected=true;
+
+    setBridgeStatus('connected', health.hasAnthropicKey ? 'CONNECTED — ANALYSIS READY' : 'CONNECTED — NO SERVER KEY SET');
+    document.getElementById('bridgeConnectForm').style.display='none';
+    document.getElementById('bridgeLivePanel').style.display='block';
+
+    await pollBridgeOnce();
+    bridge.pollHandle=setInterval(pollBridgeOnce, 2000);
+
+  }catch(err){
+    bridge.connected=false;
+    setBridgeStatus('error','CONNECTION FAILED');
+    showBridgeError('Connect failed: '+err.message+'. Check the URL, that server.js is running, and that this page can reach it (mixed http/https or CORS can block this).');
+  }finally{
+    btn.disabled=false;
+  }
+}
+
+function disconnectBridge(){
+  if(bridge.pollHandle){ clearInterval(bridge.pollHandle); bridge.pollHandle=null; }
+  bridge={url:'', key:'', connected:false, pollHandle:null, lastState:null};
+  setBridgeStatus('disconnected','DISCONNECTED');
+  document.getElementById('bridgeConnectForm').style.display='flex';
+  document.getElementById('bridgeLivePanel').style.display='none';
+  document.getElementById('bridgeError').classList.remove('active');
+}
+
+async function pollBridgeOnce(){
+  if(!bridge.connected) return;
+  try{
+    const res=await fetch(bridge.url+'/state');
+    if(!res.ok) throw new Error('status '+res.status);
+    const state=await res.json();
+    bridge.lastState=state;
+    renderBridgeTicker(state);
+
+    if(state.account && typeof state.account.balance==='number'){
+      const balEl=document.getElementById('sizeBalance');
+      if(balEl){
+        balEl.value=state.account.balance.toFixed(2);
+        document.getElementById('sizeSource').textContent='LIVE FROM MT5 BRIDGE';
+      }
+    }
+  }catch(err){
+    setBridgeStatus('error','POLL FAILED — '+err.message);
+  }
+}
+
+function renderBridgeTicker(state){
+  const grid=document.getElementById('bridgeTicker');
+  const symbols=Object.values(state.symbols||{});
+  const stalenessSec = state.staleness_ms!=null ? (state.staleness_ms/1000).toFixed(1) : '—';
+
+  const tiles = symbols.slice(0,4).map(s=>{
+    const domTag = s.dom && s.dom.available
+      ? '<span style="color:var(--emerald-bright);">DOM: '+ (s.dom.levels?s.dom.levels.length:0) +' levels</span>'
+      : '<span style="color:var(--grey);">DOM: not provided by broker</span>';
+    return `<div><div class="stat-label">${esc(s.symbol)} BID/ASK</div><div class="stat-val">${esc(s.bid)} / ${esc(s.ask)}</div><div style="font-size:10px;margin-top:3px;">${domTag}</div></div>`;
+  });
+  tiles.push(`<div><div class="stat-label">LAST TICK AGE</div><div class="stat-val">${stalenessSec}s</div></div>`);
+  if(state.account){
+    tiles.push(`<div><div class="stat-label">EQUITY</div><div class="stat-val">${esc(state.account.equity)} ${esc(state.account.currency||'')}</div></div>`);
+  }
+  grid.innerHTML = tiles.join('') || '<div style="color:var(--grey);font-size:12px;">No ticks received yet — is the EA attached and pushing?</div>';
+}
+
+function getBridgeLivePrice(asset){
+  if(!bridge.connected || !bridge.lastState || !bridge.lastState.symbols) return null;
+  const upper=(asset||'').toUpperCase();
+  const entry=bridge.lastState.symbols[upper];
+  if(!entry || typeof entry.bid!=='number') return null;
+  const ageMs = Date.now() - (entry.receivedAt||0);
+  if(ageMs > 30000) return null; // stale beyond 30s — don't anchor the chart to a dead feed
+  return entry.bid;
+}
+
+let mt5={api:null,account:null,connection:null,connected:false};
+
+function setMT5Status(state,text){
+  const badge=document.getElementById('mt5StatusBadge');
+  badge.className='mt5-status '+state;
+  document.getElementById('mt5StatusText').textContent=text;
+}
+
+function showMT5Error(msg){
+  const box=document.getElementById('mt5Error');
+  box.textContent=msg;
+  box.classList.add('active');
+}
+
+async function connectMT5(){
+  const token=document.getElementById('mt5Token').value.trim();
+  const accountId=document.getElementById('mt5AccountId').value.trim();
+  const btn=document.getElementById('mt5ConnectBtn');
+  const errBox=document.getElementById('mt5Error');
+  errBox.classList.remove('active');
+
+  if(!token||!accountId){
+    showMT5Error('Both a MetaApi token and account id are required.');
+    return;
+  }
+  if(typeof MetaApi==='undefined'){
+    showMT5Error('MetaApi SDK did not load. Check your internet connection and reload this file.');
+    return;
+  }
+
+  btn.disabled=true;
+  setMT5Status('connecting','CONNECTING');
+
+  try{
+    mt5.api=new MetaApi.default(token);
+    mt5.account=await mt5.api.metatraderAccountApi.getAccount(accountId);
+    mt5.connection=mt5.account.getRPCConnection();
+    await mt5.connection.connect();
+    await mt5.connection.waitSynchronized();
+
+    const accountInfo=await mt5.connection.getAccountInformation();
+    const positions=await mt5.connection.getPositions();
+
+    mt5.connected=true;
+    setMT5Status('connected','CONNECTED — '+(accountInfo.login||accountId));
+    renderMT5Account(accountInfo,positions);
+    document.getElementById('mt5AccountPanel').style.display='block';
+    document.getElementById('mt5ConnectForm').style.display='none';
+    document.getElementById('orderPanel').classList.add('active');
+
+  }catch(err){
+    mt5.connected=false;
+    setMT5Status('error','CONNECTION FAILED');
+    showMT5Error('Connect failed: '+(err.message||String(err))+'. Double-check the token, account id, and that the account is deployed on MetaApi.');
+  }finally{
+    btn.disabled=false;
+  }
+}
+
+function disconnectMT5(){
+  try{ if(mt5.connection) mt5.connection.close(); }catch(e){}
+  mt5={api:null,account:null,connection:null,connected:false};
+  setMT5Status('disconnected','DISCONNECTED');
+  document.getElementById('mt5AccountPanel').style.display='none';
+  document.getElementById('mt5ConnectForm').style.display='flex';
+  document.getElementById('orderPanel').classList.remove('active');
+  document.getElementById('mt5Error').classList.remove('active');
+}
+
+function renderMT5Account(info,positions){
+  const balanceEl=document.getElementById('sizeBalance');
+  if(balanceEl && typeof info.balance==='number'){
+    balanceEl.value=info.balance.toFixed(2);
+    document.getElementById('sizeSource').textContent='LIVE FROM MT5';
+  }
+
+  const grid=document.getElementById('mt5AccountGrid');
+  const stats=[
+    ['BALANCE', info.balance, info.currency],
+    ['EQUITY', info.equity, info.currency],
+    ['MARGIN', info.margin, info.currency],
+    ['FREE MARGIN', info.freeMargin, info.currency],
+    ['LEVERAGE', info.leverage?('1:'+info.leverage):'—', ''],
+    ['MODE', info.type||'—', '']
+  ];
+  grid.innerHTML=stats.map(([label,val,unit])=>`
+    <div><div class="stat-label">${esc(label)}</div><div class="stat-val">${typeof val==='number'?val.toFixed(2):esc(val)} ${esc(unit)}</div></div>`
+  ).join('')+`<button class="mt5-form button disconnect" style="background:transparent;border:1px solid var(--hairline);color:var(--bone-dim);padding:8px 14px;cursor:pointer;font-family:'Inter',sans-serif;font-size:12px;" onclick="disconnectMT5()">Disconnect</button>`;
+
+  const posBox=document.getElementById('mt5Positions');
+  if(!positions||positions.length===0){
+    posBox.innerHTML='<div style="color:var(--grey);font-size:12px;font-family:\'IBM Plex Mono\',monospace;">No open positions.</div>';
+  }else{
+    posBox.innerHTML=positions.map(p=>`
+      <div class="mt5-position-row">
+        <span class="p-symbol">${esc(p.symbol)} ${esc(p.type)}</span>
+        <span>${esc(p.volume)} lots @ ${esc(p.openPrice)}</span>
+        <span style="color:${(p.profit||0)>=0?'var(--emerald-bright)':'var(--oxblood-bright)'}">${(p.profit||0).toFixed(2)}</span>
+      </div>`).join('');
+  }
+}
+
+let executionMode='PAPER';
+let paperTradeLog=[];
+
+function setExecutionMode(mode){
+  executionMode=mode;
+  document.getElementById('execModePaperBtn').classList.toggle('active', mode==='PAPER');
+  document.getElementById('execModeLiveBtn').classList.toggle('active', mode==='LIVE');
+}
+
+function toggleSendButton(){
+  const val=document.getElementById('orderConfirm').value.trim().toUpperCase();
+  document.getElementById('sendOrderBtn').disabled = !(val==='SEND' && mt5.connected);
+}
+
+async function sendOrder(){
+  const errBox=document.getElementById('orderError');
+  errBox.classList.remove('active');
+
+  if(!mt5.connected||!mt5.connection){
+    errBox.textContent='Not connected to MT5.';
+    errBox.classList.add('active');
+    return;
+  }
+
+  const symbol=document.getElementById('orderSymbol').value.trim().toUpperCase();
+  const side=document.getElementById('orderSide').value.trim().toUpperCase();
+  const volume=parseFloat(document.getElementById('orderVolume').value);
+  const slRaw=document.getElementById('orderSL').value.trim();
+  const tpRaw=document.getElementById('orderTP').value.trim();
+  const sl=slRaw?parseFloat(slRaw.replace(/,/g,'')):undefined;
+  const tp=tpRaw?parseFloat(tpRaw.replace(/,/g,'')):undefined;
+
+  if(!symbol||!volume||isNaN(volume)||(side!=='BUY'&&side!=='SELL')){
+    errBox.textContent='Symbol, side (BUY/SELL), and a valid volume are required.';
+    errBox.classList.add('active');
+    return;
+  }
+
+  const btn=document.getElementById('sendOrderBtn');
+
+  if(executionMode!=='LIVE'){
+    paperTradeLog.unshift({symbol, side, volume, sl, tp, time:new Date().toLocaleTimeString()});
+    errBox.style.color='var(--gold-bright)';
+    errBox.textContent='PAPER MODE — nothing was sent to MT5. Would have placed: '+side+' '+volume+' lots '+symbol+
+      (sl?' · SL '+sl:'')+(tp?' · TP '+tp:'')+'. Switch to LIVE to actually execute.';
+    errBox.classList.add('active');
+    document.getElementById('orderConfirm').value='';
+    toggleSendButton();
+    return;
+  }
+
+  btn.disabled=true;
+  btn.textContent='Sending...';
+
+  try{
+    const result = side==='BUY'
+      ? await mt5.connection.createMarketBuyOrder(symbol, volume, sl, tp)
+      : await mt5.connection.createMarketSellOrder(symbol, volume, sl, tp);
+    errBox.style.color='var(--emerald-bright)';
+    errBox.textContent='Order sent. Result: '+JSON.stringify(result);
+    errBox.classList.add('active');
+    document.getElementById('orderConfirm').value='';
+
+    const accountInfo=await mt5.connection.getAccountInformation();
+    const positions=await mt5.connection.getPositions();
+    renderMT5Account(accountInfo,positions);
+  }catch(err){
+    errBox.style.color='var(--oxblood-bright)';
+    errBox.textContent='Order failed: '+(err.message||String(err));
+    errBox.classList.add('active');
+  }finally{
+    btn.textContent='Send Order to MT5';
+    toggleSendButton();
+  }
+}
+
+let runHistory=[];
+
+function directionDotClass(d){
+  if(d==='BULLISH') return 'bull';
+  if(d==='BEARISH') return 'bear';
+  return 'neutral';
+}
+
+function addToWatchlist(p){
+  const existingIdx=runHistory.findIndex(r=>r.asset===p.asset);
+  if(existingIdx!==-1) runHistory.splice(existingIdx,1);
+  runHistory.unshift(p);
+  if(runHistory.length>8) runHistory.pop();
+  renderWatchlist();
+  renderCorrelation();
+}
+
+function renderWatchlist(){
+  const wl=document.getElementById('watchlist');
+  wl.innerHTML=runHistory.map((p,i)=>`
+    <div class="watch-chip${i===0?' active':''}" onclick="selectFromWatchlist(${i})">
+      <span class="wc-dot ${directionDotClass(p.direction)}"></span>
+      <span class="wc-asset">${esc(p.asset)}</span>
+      <span class="wc-score">${esc(p.score)}</span>
+    </div>`).join('');
+}
+
+function selectFromWatchlist(i){
+  const p=runHistory[i];
+  if(!p) return;
+  showResult(p);
+  document.querySelectorAll('.watch-chip').forEach((el,idx)=>el.classList.toggle('active',idx===i));
+}
+
+function extractCurrencies(asset){
+  const s=(asset||'').toUpperCase().replace(/[^A-Z]/g,'');
+  const majors=['USD','EUR','GBP','JPY','CHF','CAD','AUD','NZD'];
+  const found=[];
+  majors.forEach(c=>{ if(s.includes(c)) found.push(c); });
+  if(s.includes('XAU')) found.push('XAU');
+  if(s.includes('XAG')) found.push('XAG');
+  return found;
+}
+
+function renderCorrelation(){
+  const panel=document.getElementById('corrPanel');
+  if(runHistory.length<2){ panel.className='corr-panel'; panel.innerHTML=''; return; }
+
+  const [a,b]=runHistory;
+  const curA=extractCurrencies(a.asset), curB=extractCurrencies(b.asset);
+  const shared=curA.filter(c=>curB.includes(c));
+
+  if(shared.length===0){ panel.className='corr-panel'; panel.innerHTML=''; return; }
+
+  const sameDir = a.direction===b.direction && a.direction!=='NEUTRAL';
+
+  panel.className='corr-panel active '+(sameDir?'warn':'clear');
+  panel.innerHTML=`<div class="corr-title">${sameDir?'CORRELATION FLAG':'CORRELATION NOTED'}</div>
+    <div class="corr-detail"><b>${esc(a.asset)}</b> and <b>${esc(b.asset)}</b> share exposure to <b>${shared.join(', ')}</b>${sameDir?', and both currently read '+esc(a.direction)+' — stacking these isn\'t two independent bets, it\'s one directional view expressed twice.':', but the current reads don\'t stack into one repeated bet.'}</div>`;
+}
+
+let countdownInterval=null;
+
+function renderAlignment(p){
+  const a=p.alignment||{};
+  const dims=[['MACRO',a.macro],['STRUCTURE',a.structure],['LIQUIDITY',a.liquidity],['POSITIONING',a.positioning]];
+  const cls=v=>v==='BULLISH'?'bullish':(v==='BEARISH'?'bearish':'neutral');
+
+  document.getElementById('alignTiles').innerHTML=dims.map(([label,val])=>`
+    <div class="align-tile ${cls(val)}">
+      <div class="at-label">${label}</div>
+      <div class="at-val">${esc(val||'—')}</div>
+    </div>`).join('');
+
+  const values=dims.map(([,v])=>v).filter(Boolean);
+  const bullCount=values.filter(v=>v==='BULLISH').length;
+  const bearCount=values.filter(v=>v==='BEARISH').length;
+  const agree=Math.max(bullCount,bearCount);
+  const verdictEl=document.getElementById('alignVerdict');
+  const confidence=Math.max(0,Math.min(100,100-(Number(a.divergence_confidence)||0)));
+
+  let vClass,vLabel;
+  if(a.divergence===true || agree<=2){ vClass='divergent'; vLabel='DIVERGENT SIGNALS'; }
+  else if(agree===4){ vClass='full'; vLabel='FULL ALIGNMENT'; }
+  else { vClass='partial'; vLabel='PARTIAL ALIGNMENT'; }
+
+  verdictEl.className='align-verdict '+vClass;
+  verdictEl.innerHTML=`<div class="av-label">${vLabel}</div><div class="av-conf">CONFIDENCE <b>${confidence}%</b> · ${agree} of ${values.length||4} sub-signals agree</div>`;
+
+  const confEl=document.getElementById('alignConf');
+  confEl.textContent = a.divergence!==undefined ? 'CONF '+esc(a.divergence_confidence)+'%' : '';
+
+  const divBox=document.getElementById('alignDivergence');
+  if(a.divergence===true){
+    divBox.className='align-divergence warn';
+    divBox.textContent='MACRO DIVERGENCE — sub-signals disagree with each other or with the overall call. Treat conviction accordingly.';
+  }else if(a.divergence===false){
+    divBox.className='align-divergence clean';
+    divBox.textContent='Sub-signals broadly agree with the overall direction.';
+  }else{
+    divBox.className='align-divergence';
+    divBox.textContent='No alignment data returned.';
+  }
+}
+
+function renderRiskCountdown(p){
+  if(countdownInterval) clearInterval(countdownInterval);
+  const catalysts=(p.catalysts||[]).filter(c=>c.time_utc && !isNaN(Date.parse(c.time_utc)));
+  const countdownEl=document.getElementById('riskCountdown');
+  const listEl=document.getElementById('riskList');
+
+  if(catalysts.length===0){
+    countdownEl.textContent='No verified upcoming catalysts';
+    countdownEl.className='risk-countdown past';
+    listEl.innerHTML='';
+    return;
+  }
+
+  catalysts.sort((a,b)=>Date.parse(a.time_utc)-Date.parse(b.time_utc));
+  listEl.innerHTML=catalysts.map(c=>{
+    const impactCls=(c.impact||'LOW').toLowerCase();
+    const d=new Date(c.time_utc);
+    const timeStr=isNaN(d) ? c.time_utc : d.toUTCString().replace(':00 GMT',' UTC');
+    return `<div class="risk-row">
+      <span class="risk-name">${esc(c.name)}</span>
+      <span class="risk-time">${esc(timeStr)}</span>
+      <span class="risk-impact ${impactCls}">${esc(c.impact)}</span>
+    </div>`;
+  }).join('');
+
+  function tick(){
+    const target=Date.parse(catalysts[0].time_utc);
+    const diff=target-Date.now();
+    if(diff<=0){
+      countdownEl.textContent=esc(catalysts[0].name)+' — now';
+      countdownEl.className='risk-countdown past';
+      clearInterval(countdownInterval);
+      return;
+    }
+    const totalSec=Math.floor(diff/1000);
+    const d=Math.floor(totalSec/86400);
+    const h=Math.floor((totalSec%86400)/3600);
+    const m=Math.floor((totalSec%3600)/60);
+    const s=totalSec%60;
+    const pad=n=>String(n).padStart(2,'0');
+    countdownEl.className='risk-countdown';
+    countdownEl.textContent=(d>0?d+'d ':'')+pad(h)+':'+pad(m)+':'+pad(s)+' to '+catalysts[0].name;
+  }
+  tick();
+  countdownInterval=setInterval(tick,1000);
+}
+
+function updateStickyVerdict(p){
+  const bar=document.getElementById('verdictSticky');
+  document.getElementById('vsAsset').textContent=p.asset||'—';
+  const statusEl=document.getElementById('vsStatus');
+  statusEl.textContent=p.decision||'—';
+  statusEl.className='vs-status pill '+decisionPillClass(p.decision);
+  document.getElementById('vsNote').textContent=(p.direction||'')+' · '+(p.regime||'');
+  bar.classList.add('active');
+}
+
+function parseLevel(raw){
+  if(raw===undefined||raw===null) return null;
+  const s=String(raw);
+  const m=s.match(/-?\d[\d,]*\.?\d*/);
+  if(!m) return null;
+  const n=parseFloat(m[0].replace(/,/g,''));
+  return isNaN(n)?null:n;
+}
+
+function prefillOrderForm(p){
+  const symbolEl=document.getElementById('orderSymbol');
+  const sideEl=document.getElementById('orderSide');
+  const slEl=document.getElementById('orderSL');
+  const tpEl=document.getElementById('orderTP');
+  if(!symbolEl) return;
+  symbolEl.value=p.asset||'';
+  sideEl.value=p.direction==='BULLISH'?'BUY':(p.direction==='BEARISH'?'SELL':'');
+  slEl.value=p.stop&&p.stop!=='—'?p.stop:'';
+  tpEl.value=p.tp1&&p.tp1!=='—'?p.tp1:'';
+
+  const entryVal=parseLevel(p.entry_zone);
+  const stopVal=parseLevel(p.stop);
+  const sizeEntryEl=document.getElementById('sizeEntry');
+  const sizeStopEl=document.getElementById('sizeStop');
+  const sizeContractEl=document.getElementById('sizeContract');
+  if(sizeEntryEl && entryVal!==null) sizeEntryEl.value=entryVal;
+  if(sizeStopEl && stopVal!==null) sizeStopEl.value=stopVal;
+  if(sizeContractEl){
+    const upper=(p.asset||'').toUpperCase();
+    if(upper.includes('XAU')) sizeContractEl.value='100';
+    else if(upper.includes('XAG')) sizeContractEl.value='5000';
+    else sizeContractEl.value='100000';
+    onContractChange();
+  }
+}
+
+function synthesizeDecision(p){
+  const s=p.scores||{};
+  const thesis=Number(s.thesis)||0, evidence=Number(s.evidence)||0, asymmetry=Number(s.asymmetry)||0,
+        execution=Number(s.execution)||0, critic=Number(s.critic)||0;
+  const rawComposite = thesis*0.25 + evidence*0.20 + asymmetry*0.15 + execution*0.15 + critic*0.25;
+
+  const rrNum=parseFloat(String(p.rr||'').replace(/[^\d.]/g,''))||0;
+  const align=p.alignment||{};
+  const diverges=align.divergence===true;
+  const evArr=p.evidence||[];
+  const badEvidence=evArr.filter(e=>e.state==='UNAVAILABLE'||e.state==='CONFLICTING').length;
+  const evidenceOK = evArr.length===0 ? true : (badEvidence/evArr.length)<=0.4;
+  const rrOK = rrNum>=2.0;
+  const eventRiskOK = p.event_risk!=='EXTREME';
+
+  let adjusted=rawComposite;
+  if(diverges) adjusted -= (Number(align.divergence_confidence)||30)*0.2;
+  if(!eventRiskOK) adjusted-=12; else if(p.event_risk==='HIGH') adjusted-=5;
+  adjusted=Math.max(0,Math.min(100,adjusted));
+  adjusted=Math.round(adjusted);
+
+  const gates=[
+    {name:'Asymmetry — R:R ≥ 2.0', passed:rrOK, detail:'Reads '+(p.rr||'—')},
+    {name:'Evidence Integrity', passed:evidenceOK, detail:badEvidence+' of '+evArr.length+' evidence items unverified or conflicting'},
+    {name:'Alignment — no divergence', passed:!diverges, detail: diverges ? 'Sub-signals diverge, '+(align.divergence_confidence||'—')+'% confidence' : 'Macro/structure/liquidity/positioning agree'},
+    {name:'Event Risk', passed:eventRiskOK, detail:'Reads '+(p.event_risk||'—')}
+  ];
+  const allPassed=gates.every(g=>g.passed);
+
+  let decision;
+  if(!rrOK||!evidenceOK){
+    decision = adjusted>=40 ? 'WATCHLIST' : 'NO TRADE';
+  }else if(adjusted>=85 && allPassed){
+    decision='ALPHA';
+  }else if(adjusted>=70){
+    decision='HIGH CONVICTION';
+  }else if(adjusted>=55){
+    decision='CONDITIONAL';
+  }else if(adjusted>=40){
+    decision='WATCHLIST';
+  }else{
+    decision='NO TRADE';
+  }
+
+  return {composite:adjusted, rawComposite:Math.round(rawComposite), decision, gates, allPassed};
+}
+
+function renderSynthesis(p){
+  const syn=p.synthesis;
+  if(!syn) return;
+  const overridden = p.model_decision && p.model_decision!==syn.decision;
+
+  document.getElementById('synComposite').textContent=syn.composite;
+  document.getElementById('synDecision').textContent=syn.decision;
+  document.getElementById('synDecision').className='syn-decision-pill pill '+decisionPillClass(syn.decision);
+
+  document.getElementById('synGates').innerHTML=syn.gates.map(g=>`
+    <div class="syn-gate ${g.passed?'pass':'fail'}">
+      <span class="syn-gate-icon">${g.passed?'✓':'✗'}</span>
+      <div><div class="syn-gate-name">${esc(g.name)}</div><div class="syn-gate-detail">${esc(g.detail)}</div></div>
+    </div>`).join('');
+
+  const overrideEl=document.getElementById('synOverride');
+  if(overridden){
+    overrideEl.style.display='block';
+    overrideEl.textContent='The model\'s own read called this '+esc(p.model_decision)+'. The gate check above overrides that to '+esc(syn.decision)+' based on the composite score and the module data actually returned.';
+  }else{
+    overrideEl.style.display='none';
+  }
+}
+
+function render(p){
+  document.getElementById('dashRow').innerHTML=`
+    <tr>
+      <td style="padding:10px 14px;">${esc(p.asset)}</td>
+      <td style="padding:10px 14px;"><span class="pill ${pillClass(p.direction)}">${esc(p.direction)}</span></td>
+      <td style="padding:10px 14px;">${esc(p.regime)}</td>
+      <td style="padding:10px 14px;color:var(--gold-bright);">${esc(p.score)}</td>
+      <td style="padding:10px 14px;">${esc(p.rr)}</td>
+      <td style="padding:10px 14px;"><span class="pill ${decisionPillClass(p.decision)}">${esc(p.decision)}</span></td>
+    </tr>`;
+
+  const noTrade = p.decision==='NO TRADE';
+  const rows=[
+    ['Entry zone', p.entry_zone,''], ['Optimal entry', p.ote,''], ['Invalidation', p.invalidation,''],
+    ['Stop', p.stop,'red'], ['TP1', p.tp1,'green'], ['TP2', p.tp2,'green'], ['TP3', p.tp3,'green'],
+    ['Holding period', p.holding_period,''], ['Event risk', p.event_risk, eventRiskClass(p.event_risk)]
+  ];
+  document.getElementById('tradeCard').innerHTML=`
+    <div class="card-top">
+      <div>
+        <div class="card-asset">${esc(p.asset)}</div>
+        <div class="card-bias ${p.direction==='BULLISH'?'bull':(p.direction==='BEARISH'?'bear':'neutral')}">${esc(p.direction)} · ${esc(p.regime)}</div>
+      </div>
+      <div class="card-score"><div class="num">${esc(p.score)}</div><div class="lbl">COMPOSITE ${p.synthesis?esc(p.synthesis.composite):''}</div></div>
+    </div>
+    ${rows.map(([k,v,cls])=>`<div class="kv-row"><span class="k">${k}</span><span class="v ${cls}">${esc(v)}</span></div>`).join('')}
+    <div class="status-band ${noTrade?'no-trade':(p.decision==='CONDITIONAL'?'conditional':'')}">
+      <span class="status-label">GATE OUTPUT</span>
+      <span class="status-value">${esc(p.decision)}</span>
+    </div>`;
+
+  const n=p.narrative||{};
+  document.getElementById('narrativePane').innerHTML=`
+    <span class="kicker">AUTOPSY NARRATIVE</span>
+    <h3>Why this read</h3>
+    ${[['Thesis',n.thesis],['Macro driver',n.macro_driver],['Invalidation condition',n.invalidation_condition],['Key contradiction',n.contradiction]]
+      .map(([q,a])=>`<div class="qa"><div class="q">${q}</div><div class="a">${esc(a)}</div></div>`).join('')}`;
+
+  const critics=p.kill_critic||[];
+  document.getElementById('criticGrid').innerHTML=critics.map(c=>`
+    <div class="critic-item"><div class="q">${esc(c.q)}</div><div class="a">${esc(c.a)}</div></div>`).join('');
+
+  const survives=p.thesis_survives!==false;
+  const vLine=document.getElementById('verdictLine');
+  vLine.className='verdict-line'+(survives?'':' destroyed');
+  vLine.textContent = survives ? 'THESIS SURVIVES KILL-CRITIC ATTACK' : 'THESIS DOES NOT SURVIVE KILL-CRITIC ATTACK';
+
+  const scenarios=p.scenarios||[];
+  document.getElementById('verdictCard').innerHTML=`
+    <div class="verdict-header">
+      <h3>${esc(p.asset)} — Institutional Verdict</h3>
+      <span class="decision">${esc(p.decision)}</span>
+    </div>
+    <div class="verdict-cols">
+      ${scenarios.map(s=>`<div><div class="vk">${esc((s.name||'').toUpperCase())} · ${esc(s.prob)}%</div><div class="vv">${esc(s.desc)}</div></div>`).join('')}
+    </div>
+    <div class="kv-row" style="margin-top:12px;"><span class="k">Key catalyst</span><span class="v">${esc(p.key_catalyst)}</span></div>
+    <div class="kv-row"><span class="k">Key contradiction</span><span class="v">${esc(p.key_contradiction)}</span></div>`;
+
+  renderSurvival(p);
+}
+
+function renderChart(p){
+  const canvas=document.getElementById('chartCanvas');
+  const wrap=canvas.parentElement;
+  const emptyEl=document.getElementById('chartEmpty');
+  document.getElementById('chartSymbol').textContent=esc(p.asset)+' · '+esc(p.direction);
+
+  const levels=[
+    {label:'TP3', val:parseLevel(p.tp3), color:getCss('--emerald-bright'), dashed:false},
+    {label:'TP2', val:parseLevel(p.tp2), color:getCss('--emerald-bright'), dashed:false},
+    {label:'TP1', val:parseLevel(p.tp1), color:getCss('--emerald-bright'), dashed:false},
+    {label:'ENTRY', val:parseLevel(p.entry_zone), color:getCss('--gold-bright'), dashed:false},
+    {label:'STOP', val:parseLevel(p.stop), color:getCss('--oxblood-bright'), dashed:false},
+    {label:'LIQ PRI', val:parseLevel(p.liquidity_primary), color:getCss('--grey'), dashed:true},
+    {label:'LIQ SEC', val:parseLevel(p.liquidity_secondary), color:getCss('--grey'), dashed:true}
+  ].filter(l=>l.val!==null);
+
+  if(levels.length<2){
+    emptyEl.classList.add('active');
+    canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height);
+    return;
+  }
+  emptyEl.classList.remove('active');
+
+  const dpr=window.devicePixelRatio||1;
+  const w=wrap.clientWidth||900, h=380;
+  canvas.width=w*dpr; canvas.height=h*dpr;
+  canvas.style.width=w+'px'; canvas.style.height=h+'px';
+  const ctx=canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+
+  const vals=levels.map(l=>l.val);
+  const max=Math.max(...vals), min=Math.min(...vals);
+  const span=(max-min)||Math.abs(max*0.01)||1;
+  const pad=span*0.15;
+  const top=max+pad, bottom=min-pad;
+  const marginL=78, marginR=20, marginTop=16, marginBottom=16;
+  const plotH=h-marginTop-marginBottom;
+
+  function yFor(v){ return marginTop + (top-v)/(top-bottom)*plotH; }
+
+  ctx.font='11px "IBM Plex Mono", monospace';
+  ctx.textBaseline='middle';
+  levels.forEach(l=>{
+    const y=yFor(l.val);
+    ctx.strokeStyle=l.color; ctx.lineWidth=1;
+    ctx.setLineDash(l.dashed?[4,4]:[]);
+    ctx.beginPath(); ctx.moveTo(marginL,y); ctx.lineTo(w-marginR,y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle=l.color;
+    ctx.fillText(l.label+' '+l.val, 4, y);
+  });
+}
+
+function renderStrength(p){
+  const cs=p.currency_strength||{};
+  const entries=Object.entries(cs).filter(([,v])=>typeof v==='number');
+  entries.sort((a,b)=>b[1]-a[1]);
+  const maxAbs=Math.max(1,...entries.map(([,v])=>Math.abs(v)));
+
+  document.getElementById('strengthPanel').innerHTML = entries.length ? entries.map(([code,val])=>{
+    const pct=Math.min(50, Math.abs(val)/maxAbs*50);
+    const cls=val>0?'pos':(val<0?'neg':'zero');
+    const fillStyle = val>=0
+      ? `left:50%;width:${pct}%;background:var(--emerald-bright);`
+      : `right:50%;width:${pct}%;background:var(--oxblood-bright);`;
+    return `<div class="strength-row">
+      <div class="cur">${esc(code)}</div>
+      <div class="strength-track"><div class="mid"></div><div class="strength-fill" style="${fillStyle}"></div></div>
+      <div class="val ${cls}">${val>0?'+':''}${esc(val)}</div>
+    </div>`;
+  }).join('') : '<div style="color:var(--grey);font-size:12px;">No currency strength data returned.</div>';
+}
+
+function showResult(p){
+  const results=document.getElementById('results');
+  render(p);
+  renderChart(p);
+  renderStrength(p);
+  renderAlignment(p);
+  renderRiskCountdown(p);
+  renderSynthesis(p);
+  updateStickyVerdict(p);
+  prefillOrderForm(p);
+  results.classList.add('active');
+  document.getElementById('sessionLabel').textContent=(p.session||'—').toUpperCase();
+  document.getElementById('integrityLabel').textContent=(p.data_integrity||'UNVERIFIED').toUpperCase();
+  document.getElementById('timeLabel').textContent=new Date().toUTCString().replace('GMT','UTC');
+}
+
+function naiveClose(raw){
+  let s=raw;
+  const stack=[];
+  let inString=false;
+  let escape=false;
+
+  for(let i=0;i<s.length;i++){
+    const ch=s[i];
+    if(inString){
+      if(escape){escape=false;}
+      else if(ch==='\\'){escape=true;}
+      else if(ch==='"'){inString=false;}
+      continue;
+    }
+    if(ch==='"'){inString=true;continue;}
+    if(ch==='{'||ch==='['){stack.push(ch);}
+    else if(ch==='}'||ch===']'){stack.pop();}
+  }
+
+  // A dangling backslash right at the cutoff means an unterminated escape —
+  // stripping it before closing the string prevents the appended quote from
+  // being read as an escaped character instead of a real closing quote.
+  if(inString && escape) s=s.slice(0,-1);
+  if(inString) s+='"';
+  s=s.replace(/,\s*$/,'');
+  while(stack.length){
+    const opener=stack.pop();
+    s+=(opener==='{' ? '}' : ']');
+  }
+  return s;
+}
+
+function repairJson(raw){
+  // Fast path: the cutoff happened somewhere that naive bracket-closing can fix
+  // (mid-string, mid-array, missing closers).
+  const naive=naiveClose(raw);
+  try{ JSON.parse(naive); return naive; }catch(e){}
+
+  // Fallback: the cutoff happened somewhere naive closing can't repair — a
+  // dangling key with no value yet, a truncated keyword/number, etc. Rather
+  // than trying to patch a malformed tail, walk backward through every
+  // top-level comma boundary (tracked outside of strings) and discard
+  // whatever incomplete element came after it, then close from there. This
+  // trades a little data (the last, incomplete field) for a result that
+  // actually parses.
+  let stack=[];
+  let inString=false, escape=false;
+  const checkpoints=[];
+  for(let i=0;i<raw.length;i++){
+    const ch=raw[i];
+    if(inString){
+      if(escape) escape=false;
+      else if(ch==='\\') escape=true;
+      else if(ch==='"') inString=false;
+      continue;
+    }
+    if(ch==='"'){ inString=true; continue; }
+    if(ch==='{'||ch==='['){ stack.push(ch); }
+    else if(ch==='}'||ch===']'){ stack.pop(); }
+    else if(ch===','){ checkpoints.push({index:i, stack:stack.slice()}); }
+  }
+
+  for(let k=checkpoints.length-1;k>=0;k--){
+    const cp=checkpoints[k];
+    let candidate=raw.slice(0,cp.index);
+    for(let j=cp.stack.length-1;j>=0;j--){
+      candidate+=(cp.stack[j]==='{' ? '}' : ']');
+    }
+    try{ JSON.parse(candidate); return candidate; }catch(e){ continue; }
+  }
+
+  return naive;
+}
+
+async function analyzeAsset(asset, onStatus){
+  const status=onStatus||function(){};
+  status('Pulling current data for '+asset+'...');
+
+  const useBridge = bridge.connected && document.getElementById('bridgeRouteAnalysis') && document.getElementById('bridgeRouteAnalysis').checked;
+  const livePrice=getBridgeLivePrice(asset);
+  const userContent = livePrice!==null
+    ? 'Analyze '+asset+'. Live bridge feed shows current bid '+livePrice+' — treat this as the authoritative current price and reconcile any web-sourced price against it rather than the other way around.'
+    : 'Analyze '+asset+'.';
+
+  let data;
+  if(useBridge){
+    status('Routing through your bridge server...');
+    const res=await fetch(bridge.url+'/analyze',{
+      method:'POST',
+      headers:{'Content-Type':'application/json', 'x-bridge-key': bridge.key},
+      body:JSON.stringify({system:SYSTEM_PROMPT, prompt:userContent, useSearch:true})
+    });
+    if(!res.ok){
+      const errBody=await res.json().catch(()=>({}));
+      throw new Error(errBody.error || ('Bridge /analyze failed with status '+res.status));
+    }
+    data=await res.json();
+  }else{
+    status('Searching and reasoning over '+asset+'...');
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-6',
+        max_tokens:1000,
+        system:SYSTEM_PROMPT,
+        messages:[{role:'user', content:userContent}],
+        tools:[{type:'web_search_20250305', name:'web_search'}]
+      })
+    });
+    if(!res.ok) throw new Error('API request failed with status '+res.status);
+    data=await res.json();
+  }
+
+  const fullText=(data.content||[]).map(b=>b.type==='text'?b.text:'').filter(Boolean).join('\n').trim();
+  if(!fullText) throw new Error('Empty response from engine.');
+
+  const cleaned=fullText.replace(/^```json\s*/i,'').replace(/```\s*$/,'').trim();
+  const truncated = data.stop_reason==='max_tokens';
+
+  let parsed;
+  try{
+    parsed=JSON.parse(cleaned);
+  }catch(e){
+    try{
+      parsed=JSON.parse(repairJson(cleaned));
+    }catch(e2){
+      throw new Error('Could not parse engine output as JSON: '+e2.message);
+    }
+  }
+
+  parsed.model_decision=parsed.decision;
+  parsed.synthesis=synthesizeDecision(parsed);
+  parsed.decision=parsed.synthesis.decision;
+  parsed._truncated=truncated;
+  return parsed;
+}
+
+async function runAutopsy(){
+  const asset=document.getElementById('assetInput').value.trim().toUpperCase();
+  const btn=document.getElementById('runBtn');
+  const statusLine=document.getElementById('statusLine');
+  const statusText=document.getElementById('statusText');
+  const errorBox=document.getElementById('errorBox');
+  const truncNotice=document.getElementById('truncNotice');
+
+  if(!asset){
+    errorBox.textContent='Enter an asset or symbol first.';
+    errorBox.classList.add('active');
+    return;
+  }
+
+  btn.disabled=true;
+  statusLine.classList.add('active');
+  errorBox.classList.remove('active');
+  truncNotice.classList.remove('active');
+  document.getElementById('emptyState').style.display='none';
+
+  try{
+    const p=await analyzeAsset(asset, msg=>{ statusText.textContent=msg; });
+    showResult(p);
+    addToWatchlist(p);
+    if(p._truncated){
+      truncNotice.textContent='This run hit the output limit and some fields may be shortened or missing. Rerun for a cleaner pass if something looks off.';
+      truncNotice.classList.add('active');
+    }
+  }catch(err){
+    errorBox.textContent='Run failed: '+err.message;
+    errorBox.classList.add('active');
+  }finally{
+    statusLine.classList.remove('active');
+    btn.disabled=false;
+  }
+}
+
+let scanState={running:false, results:[], sortKey:'composite', sortDir:'desc', repeatHandle:null};
+
+function decisionRank(d){
+  return {ALPHA:5,'HIGH CONVICTION':4,CONDITIONAL:3,WATCHLIST:2,'NO TRADE':1}[d]||0;
+}
+
+function meetsThreshold(decision, threshold){
+  const rank=decisionRank(decision);
+  if(threshold==='ALPHA') return rank>=5;
+  if(threshold==='HIGH CONVICTION') return rank>=4;
+  return rank>=3; // CONDITIONAL or better
+}
+
+function toggleScan(){
+  if(scanState.running){ stopScan(); } else { startScan(); }
+}
+
+async function startScan(){
+  const symbols=document.getElementById('scannerSymbols').value.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean);
+  const threshold=document.getElementById('scannerThreshold').value;
+  const errorEl=document.getElementById('scannerError');
+  const progressEl=document.getElementById('scannerProgress');
+  const badge=document.getElementById('scannerBadge');
+  const btn=document.getElementById('scannerBtn');
+  const tableWrap=document.getElementById('scannerTableWrap');
+
+  errorEl.classList.remove('active');
+  if(symbols.length===0){
+    errorEl.textContent='Enter at least one symbol.';
+    errorEl.classList.add('active');
+    return;
+  }
+
+  scanState.running=true;
+  scanState.results=[];
+  btn.textContent='Stop Scan';
+  badge.className='scanner-status-badge running';
+  badge.textContent='RUNNING';
+  progressEl.classList.add('active');
+  tableWrap.style.display='block';
+  renderScannerTable();
+
+  for(let i=0;i<symbols.length;i++){
+    if(!scanState.running) break;
+    const sym=symbols[i];
+    progressEl.innerHTML=`<div class="dot"></div><span>Running ${i+1} of ${symbols.length} — ${sym}...</span>`;
+    try{
+      const p=await analyzeAsset(sym);
+      const hit=meetsThreshold(p.decision, threshold);
+      scanState.results.push({symbol:sym, regime:p.regime, direction:p.direction, composite:p.synthesis.composite, decision:p.decision, hit, time:new Date().toLocaleTimeString(), error:null});
+      if(hit){
+        badge.className='scanner-status-badge found';
+        badge.textContent='HIT — '+sym;
+      }
+    }catch(err){
+      scanState.results.push({symbol:sym, regime:'—', direction:'—', composite:0, decision:'ERROR', hit:false, time:new Date().toLocaleTimeString(), error:err.message});
+    }
+    renderScannerTable();
+  }
+
+  progressEl.classList.remove('active');
+  if(scanState.running && !scanState.results.some(r=>r.hit)){
+    badge.className='scanner-status-badge';
+    badge.textContent='DONE — NO HITS';
+  }
+
+  const repeatChecked=document.getElementById('scannerRepeat').checked;
+  const intervalMin=parseFloat(document.getElementById('scannerInterval').value)||15;
+  if(scanState.running && repeatChecked){
+    scanState.repeatHandle=setTimeout(()=>{ if(scanState.running) startScan(); }, intervalMin*60000);
+  }else{
+    stopScan();
+  }
+}
+
+function stopScan(){
+  scanState.running=false;
+  if(scanState.repeatHandle){ clearTimeout(scanState.repeatHandle); scanState.repeatHandle=null; }
+  document.getElementById('scannerBtn').textContent='Start Scan';
+  document.getElementById('scannerProgress').classList.remove('active');
+}
+
+function setSortKey(key){
+  if(scanState.sortKey===key){ scanState.sortDir = scanState.sortDir==='desc'?'asc':'desc'; }
+  else { scanState.sortKey=key; scanState.sortDir='desc'; }
+  renderScannerTable();
+}
+
+function renderScannerTable(){
+  const key=scanState.sortKey, dir=scanState.sortDir;
+  const sorted=[...scanState.results].sort((a,b)=>{
+    let av=a[key], bv=b[key];
+    if(typeof av==='string'){ av=av||''; bv=bv||''; return dir==='desc'?bv.localeCompare(av):av.localeCompare(bv); }
+    return dir==='desc'?(bv-av):(av-bv);
+  });
+
+  document.getElementById('sortCompositeHead').textContent='SCORE '+(key==='composite'?(dir==='desc'?'▾':'▴'):'▾');
+
+  document.getElementById('scannerLog').innerHTML=sorted.map(r=>`
+    <tr class="${r.hit?'hit':''}">
+      <td class="symbol">${esc(r.symbol)}</td>
+      <td>${esc(r.regime)}</td>
+      <td>${esc(r.direction)}</td>
+      <td class="composite">${r.error?'—':esc(r.composite)}</td>
+      <td class="${r.error?'error-cell':''}">${esc(r.error?'ERROR: '+r.error:r.decision)}</td>
+      <td>${esc(r.time)}</td>
+    </tr>`).join('');
+}
+</script>
+</body>
+</html>
