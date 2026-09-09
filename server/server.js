@@ -6,6 +6,10 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const BRIDGE_KEY = process.env.BRIDGE_KEY || '';
 const PORT = process.env.PORT || 8787;
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
+// Bind to all interfaces by default so this reaches the outside world on a
+// host like Render/Railway (they route to the container's PORT, not just
+// localhost). Set HOST=127.0.0.1 to restrict to local-machine-only use.
+const HOST = process.env.HOST || '0.0.0.0';
 
 if (!ANTHROPIC_API_KEY) {
   console.warn('WARNING: ANTHROPIC_API_KEY is not set. /analyze will return an error until it is.');
@@ -105,8 +109,8 @@ app.post('/analyze', requireBridgeKey, async (req, res) => {
   }
 });
 
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`AUTOPSY X bridge listening on http://127.0.0.1:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`AUTOPSY X bridge listening on http://${HOST}:${PORT}`);
   console.log(`Anthropic key configured: ${Boolean(ANTHROPIC_API_KEY)}`);
   console.log(`Bridge key configured: ${Boolean(BRIDGE_KEY)}`);
 });

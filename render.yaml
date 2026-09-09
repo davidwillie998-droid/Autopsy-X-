@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: autopsy-x-bridge
+    runtime: node
+    rootDir: server
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: BRIDGE_KEY
+        generateValue: true
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-5
