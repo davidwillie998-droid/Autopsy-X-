@@ -1,0 +1,19 @@
+{
+  "name": "autopsy-x-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local bridge server for AUTOPSY X: holds the Anthropic API key server-side and proxies /analyze, plus /state for MT5 tick/account data.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0"
+  }
+}
