@@ -10,7 +10,7 @@
 #include "TradeAutopsy.mqh"
 
 #define AX_ACC_HORIZON_COUNT   5
-#define AX_ACC_BUFFER_SIZE     300
+#define AX_ACC_BUFFER_SIZE     512
 static const int AxAccHorizonsSec[AX_ACC_HORIZON_COUNT] = {1,3,5,10,30};
 
 //+------------------------------------------------------------------+
@@ -99,9 +99,13 @@ struct SAxStatsSnapshot
    int    wins;
    int    losses;
    double winRate;
-   double grossProfitSum;
-   double grossLossSum;
-   double profitFactor;
+   double netWinSum;           // sum of net (post-cost) profit on winning trades
+   double netLossSum;          // sum of net (post-cost) profit on losing trades (<=0)
+   double profitFactor;        // net win sum / |net loss sum| - the honest, after-cost figure
+   double grossWinSum;         // sum of gross (pre-cost) profit on trades that were net winners
+   double grossLossSum;        // sum of gross (pre-cost) profit on trades that were net losers
+   double grossProfitFactor;   // gross win sum / |gross loss sum| - before-cost figure only,
+                                // used to distinguish the profitability gate's WEAK case
    double netExpectancy;       // avg net profit per trade (after ALL costs)
    double grossExpectancy;     // avg gross profit per trade (before commission/swap)
    double avgWin;
@@ -125,7 +129,8 @@ public:
      {
       SAxStatsSnapshot s;
       s.totalTrades=0; s.wins=0; s.losses=0; s.winRate=0;
-      s.grossProfitSum=0; s.grossLossSum=0; s.profitFactor=0;
+      s.netWinSum=0; s.netLossSum=0; s.profitFactor=0;
+      s.grossWinSum=0; s.grossLossSum=0; s.grossProfitFactor=0;
       s.netExpectancy=0; s.grossExpectancy=0; s.avgWin=0; s.avgLoss=0;
       s.maxDrawdownCurrency=0; s.maxDrawdownPercent=0; s.avgHoldSeconds=0;
       s.entryAccuracyPct=0; s.exitEfficiencyPct=0; s.dailyPnL=0; s.netProfitTotal=0;
@@ -136,22 +141,47 @@ public:
       double equity = startingEquity;
       double peak = startingEquity;
       double maxDd = 0;
-      double sumHold=0, sumNet=0, sumGross=0;
-      double winSum=0, lossSum=0;
+      double sumHold=0, sumNetFull=0, sumGrossFull=0;
       int entryOk=0;
       double exitEffSum=0; int exitEffCount=0;
+      double netProfitAll=0;
 
       for(int i=0;i<n;i++)
         {
          SAxTradeRecord r;
          if(!autopsy.GetRecord(i,r)) continue;
-         s.totalTrades++;
-         sumNet   += r.netProfit;
-         sumGross += r.grossProfit;
-         sumHold  += r.holdSeconds;
 
-         if(r.netProfit>0) { s.wins++; winSum += r.netProfit; s.grossProfitSum += r.netProfit; }
-         else if(r.netProfit<0) { s.losses++; lossSum += r.netProfit; s.grossLossSum += r.netProfit; }
+         // every record moves real money - reflected in net P&L and the drawdown curve
+         // regardless of whether it's a full close or a scale-out slice
+         netProfitAll += r.netProfit;
+         equity += r.netProfit;
+         if(equity>peak) peak = equity;
+         double dd = peak-equity;
+         if(dd>maxDd) maxDd = dd;
+
+         // a partial is a banked slice of an still-open position, not a standalone trade
+         // outcome - it never counts toward win/loss, expectancy, or accuracy statistics
+         if(r.isPartial) continue;
+
+         s.totalTrades++;
+         sumNetFull   += r.netProfit;
+         sumGrossFull += r.grossProfit;
+         sumHold      += r.holdSeconds;
+
+         // win/loss classification is always by net (post-cost) outcome; the gross sums
+         // track the same trades' pre-cost P&L so a true before/after-cost comparison is possible
+         if(r.netProfit>0)
+           {
+            s.wins++;
+            s.netWinSum   += r.netProfit;
+            s.grossWinSum += r.grossProfit;
+           }
+         else if(r.netProfit<0)
+           {
+            s.losses++;
+            s.netLossSum   += r.netProfit;
+            s.grossLossSum += r.grossProfit;
+           }
 
          if(r.mfe > MathAbs(r.mae)) entryOk++;
 
@@ -160,26 +190,22 @@ public:
             exitEffSum += AxClampD(r.netProfit/r.mfe,0.0,1.0);
             exitEffCount++;
            }
-
-         equity += r.netProfit;
-         if(equity>peak) peak = equity;
-         double dd = peak-equity;
-         if(dd>maxDd) maxDd = dd;
         }
 
-      s.netProfitTotal   = sumNet;
+      s.netProfitTotal   = netProfitAll;
       s.winRate           = (s.totalTrades>0)? 100.0*s.wins/s.totalTrades : 0;
-      s.profitFactor       = (MathAbs(s.grossLossSum)>1e-8)? s.grossProfitSum/MathAbs(s.grossLossSum) : ((s.grossProfitSum>0)?999.0:0.0);
-      s.netExpectancy       = sumNet/s.totalTrades;
-      s.grossExpectancy      = sumGross/s.totalTrades;
-      s.avgWin               = (s.wins>0)? winSum/s.wins : 0;
-      s.avgLoss               = (s.losses>0)? lossSum/s.losses : 0;
+      s.profitFactor       = (MathAbs(s.netLossSum)>1e-8)? s.netWinSum/MathAbs(s.netLossSum) : ((s.netWinSum>0)?999.0:0.0);
+      s.grossProfitFactor   = (MathAbs(s.grossLossSum)>1e-8)? s.grossWinSum/MathAbs(s.grossLossSum) : ((s.grossWinSum>0)?999.0:0.0);
+      s.netExpectancy       = (s.totalTrades>0)? sumNetFull/s.totalTrades : 0;
+      s.grossExpectancy      = (s.totalTrades>0)? sumGrossFull/s.totalTrades : 0;
+      s.avgWin               = (s.wins>0)? s.netWinSum/s.wins : 0;
+      s.avgLoss               = (s.losses>0)? s.netLossSum/s.losses : 0;
       s.maxDrawdownCurrency     = maxDd;
       s.maxDrawdownPercent      = (peak>0)? 100.0*maxDd/peak : 0;
-      s.avgHoldSeconds           = sumHold/s.totalTrades;
-      s.entryAccuracyPct          = 100.0*entryOk/s.totalTrades;
+      s.avgHoldSeconds           = (s.totalTrades>0)? sumHold/s.totalTrades : 0;
+      s.entryAccuracyPct          = (s.totalTrades>0)? 100.0*entryOk/s.totalTrades : 0;
       s.exitEfficiencyPct          = (exitEffCount>0)? 100.0*exitEffSum/exitEffCount : 0;
-      s.dailyPnL = sumNet;
+      s.dailyPnL = netProfitAll;
       return(s);
      }
 

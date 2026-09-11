@@ -13,6 +13,20 @@
 
 #define AX_DASH_PREFIX "AX_FDX_"
 
+//--- next-gen metrics bundled separately so Render() doesn't grow an unwieldy flat parameter list ---
+struct SAxDashboardExtras
+  {
+   ENUM_AX_REGIME htfRegime;
+   double         htfSlope;
+   double         accuracy5s;
+   double         accuracy30s;
+   double         flipAccuracy;
+   double         grossProfitFactor;
+   double         adaptiveMultiplier;
+   bool           partialTaken;
+   bool           htfConfluenceEnabled;
+  };
+
 class CDashboard
   {
 private:
@@ -87,7 +101,7 @@ public:
          ObjectCreate(m_chartId,full,OBJ_BUTTON,0,0,0);
          ObjectSetInteger(m_chartId,full,OBJPROP_CORNER,CORNER_LEFT_UPPER);
          ObjectSetInteger(m_chartId,full,OBJPROP_XDISTANCE,m_x);
-         ObjectSetInteger(m_chartId,full,OBJPROP_YDISTANCE,m_y+520);
+         ObjectSetInteger(m_chartId,full,OBJPROP_YDISTANCE,m_y+615);
          ObjectSetInteger(m_chartId,full,OBJPROP_XSIZE,m_width);
          ObjectSetInteger(m_chartId,full,OBJPROP_YSIZE,26);
          ObjectSetString(m_chartId,full,OBJPROP_TEXT,"KILL ENGINE");
@@ -116,9 +130,10 @@ public:
                              const double currentPrice,const double floatingPnl,const int holdSeconds,
                              const int flipsToday,const int tradesToday,const SAxStatsSnapshot &stats,
                              const double dailyPnl,const double drawdownPct,const double riskPercent,
-                             const ENUM_AX_ENGINE_STATE engineState,const ENUM_AX_GATE gate)
+                             const ENUM_AX_ENGINE_STATE engineState,const ENUM_AX_GATE gate,
+                             const SAxDashboardExtras &extras)
      {
-      MakeRect("BG",m_x-6,m_y-6,m_width,590,C'12,12,14');
+      MakeRect("BG",m_x-6,m_y-6,m_width,680,C'12,12,14');
 
       int y=m_y; int x=m_x+4;
       MakeLabel("T1",x,y,"AUTOPSY X",clrGold,12); y+=18;
@@ -170,13 +185,22 @@ public:
       MakeLabel("FLIPS",x,y,StringFormat("FLIPS TODAY: %d",flipsToday),clrWhite); y+=m_lineH;
       MakeLabel("TRADES",x,y,StringFormat("TRADES TODAY: %d",tradesToday),clrWhite); y+=m_lineH;
       MakeLabel("WINRATE",x,y,StringFormat("WIN RATE: %.0f%%",stats.winRate),clrWhite); y+=m_lineH;
-      MakeLabel("PF",x,y,StringFormat("PROFIT FACTOR: %.2f",stats.profitFactor),clrWhite); y+=m_lineH+4;
+      MakeLabel("PF",x,y,StringFormat("PROFIT FACTOR: %.2f (gross %.2f)",stats.profitFactor,extras.grossProfitFactor),clrWhite); y+=m_lineH+4;
 
       color dailyClr = (dailyPnl>=0)?clrLime:clrTomato;
       MakeLabel("DPL",x,y,StringFormat("DAILY P/L: %s$%.2f",(dailyPnl>=0?"+":"-"),MathAbs(dailyPnl)),dailyClr); y+=m_lineH;
       MakeLabel("DD",x,y,StringFormat("DRAWDOWN: %.1f%%",drawdownPct),clrWhite); y+=m_lineH;
       MakeLabel("RISK",x,y,StringFormat("RISK: %.1f%%",riskPercent),clrWhite); y+=m_lineH;
-      MakeLabel("GATE",x,y,"GATE: "+AxGateToString(gate),clrGold); y+=m_lineH;
+      MakeLabel("GATE",x,y,"GATE: "+AxGateToString(gate),clrGold); y+=m_lineH+4;
+
+      //--- next-generation metrics: HTF confluence, adaptive tuning, directional accuracy, scale-out ---
+      string htfStr = extras.htfConfluenceEnabled ? (AxRegimeToString(extras.htfRegime)+StringFormat(" (slope %s)",extras.htfSlope>=0?"UP":"DOWN")) : "OFF";
+      MakeLabel("HTF",x,y,"HTF BIAS: "+htfStr,clrAqua); y+=m_lineH;
+      MakeLabel("ACC",x,y,StringFormat("ACCURACY 5S/30S: %.0f%% / %.0f%%",extras.accuracy5s,extras.accuracy30s),clrWhite); y+=m_lineH;
+      MakeLabel("FLIPACC",x,y,StringFormat("FLIP ACCURACY: %.0f%%",extras.flipAccuracy),clrWhite); y+=m_lineH;
+      MakeLabel("ADAPT",x,y,StringFormat("ADAPTIVE CONF x%.2f",extras.adaptiveMultiplier),clrWhite); y+=m_lineH;
+      string partialStr = extras.partialTaken ? "TAKEN" : (positionDir!=AX_DIR_NONE ? "PENDING" : "-");
+      MakeLabel("PARTIAL",x,y,"PARTIAL TP: "+partialStr,extras.partialTaken?clrLime:clrSilver); y+=m_lineH;
 
       color engClr = (engineState==AX_ENGINE_ATTACKING)?clrLime:(engineState==AX_ENGINE_KILLED)?clrRed:clrSilver;
       MakeLabel("ENGINE",x,y,"ENGINE: "+stateStr,engClr); y+=m_lineH;

@@ -143,6 +143,38 @@ public:
       return(!PositionSelect(symbol));
      }
 
+   //--- close part of an open position (scale-out); confirms the remaining volume shrank ---
+   bool              ClosePartial(const string symbol,const double volumeToClose,string &errorReason)
+     {
+      if(!PositionSelect(symbol)) { errorReason="No position to partially close"; return(false); }
+      double before = PositionGetDouble(POSITION_VOLUME);
+      if(volumeToClose<=0 || volumeToClose>=before) { errorReason="Invalid partial close volume"; return(false); }
+
+      bool ok=false;
+      for(int attempt=0; attempt<=m_maxRetries; attempt++)
+        {
+         if(attempt>0) Sleep(m_retryDelayMs);
+         if(!PositionSelect(symbol)) { errorReason="Position closed before partial could execute"; return(false); }
+         ok = m_trade.PositionClosePartial(symbol,volumeToClose);
+         if(ok)
+           {
+            if(!PositionSelect(symbol))
+              {
+               errorReason="Partial close left the position fully closed unexpectedly";
+               return(false);
+              }
+            double after = PositionGetDouble(POSITION_VOLUME);
+            if(after < before-0.0000001) { errorReason=""; return(true); }
+            errorReason="Partial close reported success but volume did not shrink";
+            return(false);
+           }
+         uint retcode = m_trade.ResultRetcode();
+         errorReason = StringFormat("Partial close failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         if(!RetryableRetcode(retcode)) return(false);
+        }
+      return(false);
+     }
+
    //--- flip = close, confirm flat, then open opposite direction ---
    bool              Flip(const string symbol,const ENUM_AX_DIR newDir,const double lots,
                            const double slPrice,const double tpPrice,const string comment,

@@ -26,7 +26,7 @@ private:
                 "Ticket","EntryTime","ExitTime","Direction","EntryPrice","ExitPrice","Lots",
                 "SpreadAtEntry","SlippagePts","HoldSeconds","BuyScore","SellScore","Confidence",
                 "Regime","EntryReason","ExitReason","MFE","MAE","GrossProfit","Commission","Swap",
-                "NetProfit","Classification","FlipSeq");
+                "NetProfit","Classification","FlipSeq","IsPartial");
      }
 
 public:
@@ -117,7 +117,7 @@ public:
                    AxExitReasonToString(rec.exitReason),DoubleToString(rec.mfe,2),DoubleToString(rec.mae,2),
                    DoubleToString(rec.grossProfit,2),DoubleToString(rec.commission,2),
                    DoubleToString(rec.swap,2),DoubleToString(rec.netProfit,2),
-                   AxTradeClassToString(rec.tradeClass),rec.flipSeq);
+                   AxTradeClassToString(rec.tradeClass),rec.flipSeq,rec.isPartial);
          FileFlush(m_fileHandle);
         }
 

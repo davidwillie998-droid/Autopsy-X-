@@ -60,6 +60,41 @@ public:
       return(true);
      }
 
+   //--- broker-time trading-hours window + rollover-spread-spike avoidance (section 8) ---
+   //--- pass startHour==endHour to mean "no session restriction, only rollover avoidance" ---
+   bool              SessionAllowed(const int startHour,const int endHour,
+                                     const int avoidRolloverMinutes,string &reason) const
+     {
+      MqlDateTime dt;
+      TimeToStruct(TimeCurrent(),dt);
+
+      if(startHour!=endHour)
+        {
+         bool inSession;
+         if(startHour<endHour) inSession = (dt.hour>=startHour && dt.hour<endHour);
+         else                  inSession = (dt.hour>=startHour || dt.hour<endHour); // wraps midnight
+         if(!inSession)
+           {
+            reason = StringFormat("Outside configured trading session (%02d:00-%02d:00 broker time)",startHour,endHour);
+            return(false);
+           }
+        }
+
+      if(avoidRolloverMinutes>0)
+        {
+         int minutesFromMidnight = dt.hour*60+dt.min;
+         int minutesToMidnight   = 1440-minutesFromMidnight;
+         if(minutesFromMidnight<avoidRolloverMinutes || minutesToMidnight<avoidRolloverMinutes)
+           {
+            reason = "Within broker daily rollover window - spreads are typically abnormal here";
+            return(false);
+           }
+        }
+
+      reason="";
+      return(true);
+     }
+
    //--- signal quality gate, dampened by anti-chop aggression multiplier ---
    bool              SignalQualityOk(const SAxScore &score,const CAntiChopEngine &antiChop,string &reason) const
      {
@@ -81,9 +116,12 @@ public:
    bool              PreFlightCheck(const string symbol,const CMarketData &md,const SAxScore &score,
                                      CRiskEngine &riskEngine,const CAntiChopEngine &antiChop,
                                      const double stopDistancePts,const int openPositions,
-                                     const double exposureLots,string &reason)
+                                     const double exposureLots,const int sessionStartHour,
+                                     const int sessionEndHour,const int avoidRolloverMinutes,
+                                     string &reason)
      {
       if(!TradingPermitted(symbol,reason)) return(false);
+      if(!SessionAllowed(sessionStartHour,sessionEndHour,avoidRolloverMinutes,reason)) return(false);
       if(!SignalQualityOk(score,antiChop,reason)) return(false);
       if(!StopDistanceValid(md,stopDistancePts,reason)) return(false);
       double spreadPts = md.CurrentSpreadPts();

@@ -176,3 +176,62 @@ false breakout, liquidity trap, late entry, premature exit, momentum
 failure, correct/false flip, spread/slippage failure, stop loss, take
 profit, or risk shutdown). Use this file — not the dashboard's live
 numbers alone — for any serious post-session analysis.
+
+## 10. Advanced additions (v1.1)
+
+A second review pass added the following on top of the original build. All
+are additive — every one has a hard off switch, and none of them relax any
+risk cap from section 4.
+
+- **Higher-timeframe confluence** (`InpRequireHtfConfluence`,
+  `InpHtfTimeframe`, `InpHtfMinR2ToBlock`). A second regime engine runs on
+  a slower timeframe (H1 by default) purely as a filter: it blocks an
+  entry only when the HTF has a *clear* trend (R² above the threshold)
+  running opposite to the trade direction. An HTF with no clear opinion
+  never blocks anything.
+- **ATR-adaptive stops** (`InpUseAtrStops`, `InpAtrStopMultiplier`). The
+  emergency stop distance widens to the larger of the fixed-point floor or
+  an ATR multiple, so a volatile symbol/regime doesn't get stopped out by
+  ordinary noise. Position size is calculated from the *actual* resulting
+  stop distance, so a wider stop always means a smaller position — the
+  dollar risk stays pinned to the configured risk percent regardless.
+- **Session / rollover filter** (`InpSessionStartHour`,
+  `InpSessionEndHour`, `InpAvoidRolloverMinutes`). An optional broker-time
+  trading-hours window, plus an always-available filter that avoids the
+  minutes around broker midnight where spreads typically spike.
+- **Adaptive confidence tuning** (`InpAdaptiveTuning`,
+  `InpAdaptiveLookbackTrades`, `InpAdaptiveMin/MaxMultiplier`). Recomputed
+  once per bar (never per tick) from the trailing live trade sample: the
+  entry confidence bar tightens after a poor stretch and relaxes slightly
+  after a strong one, bounded within the configured multiplier range. It
+  touches only the confidence gate — never position size, never any risk
+  limit.
+- **Partial profit-taking / scale-out** (`InpEnablePartialTP`,
+  `InpPartialTriggerRR`, `InpPartialClosePercent`) — **off by default**.
+  Banks a configurable percentage of the position once it reaches a
+  configurable multiple of the initial stop distance; the remainder keeps
+  trading under the same exit/trailing logic. The banked partial is logged
+  as its own trade-autopsy row, and P&L accounting tracks exactly which
+  broker deals (by deal ticket, not timestamp — MT5 deal time only has
+  1-second resolution) have already been attributed so the eventual final
+  close does not double-count the partial's profit. Known residual edge
+  case: if the broker's deal-history cache lags more than ~80ms right
+  after the partial fires (rare, under terminal/broker load), the partial
+  row is logged with zeroed P&L and its real profit is instead swept into
+  the final close's row — the total P&L stays correct, only its attribution
+  across the two CSV rows can be off. If you rely on the per-partial P&L
+  breakdown for analysis, sanity-check rows against your broker's own
+  trade history.
+- **Gross vs. net profit factor** — the dashboard and `SAxStatsSnapshot`
+  now expose both `profitFactor` (after all costs — the honest number) and
+  `grossProfitFactor` (before commission/swap), so a WEAK-gate verdict
+  ("profitable only before costs") is visible at a glance rather than only
+  inferred from expectancy.
+
+A prior review pass also found and fixed a real correctness bug worth
+naming explicitly: the FlipDemon reversal engine's re-entry originally
+bypassed every risk gate and the anti-chop cooldown (only the closing leg
+of a flip was gated). Every entry — fresh or flip re-entry — now funnels
+through the same risk/chop/HTF checks; a confirmed reversal is always
+allowed to close the losing side, but re-opening into the new direction is
+just another entry subject to every hard limit.

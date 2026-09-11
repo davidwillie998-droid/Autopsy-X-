@@ -75,6 +75,29 @@ input double         InpTrailDistancePoints     = 120;     // Trailing distance,
 input int            InpMaxHoldSeconds          = 900;     // Max holding time, seconds
 input double         InpSpreadAbnormalMultiplier= 2.2;     // Spread-abnormal exit multiplier vs average
 input double         InpOpposingExitConfidence  = 55.0;    // Confidence required for a defensive opposite-signal exit
+input bool           InpUseAtrStops             = true;    // Widen the emergency SL by ATR when volatility warrants it
+input double          InpAtrStopMultiplier      = 1.8;     // ATR multiple compared against the fixed SL floor
+
+input group "=== PARTIAL PROFIT (SCALE-OUT) ===";
+input bool            InpEnablePartialTP        = false;   // Bank part of the position at a defined R-multiple
+input double          InpPartialTriggerRR       = 1.0;     // Favorable move required, as a multiple of the SL distance
+input double          InpPartialClosePercent    = 50.0;    // % of current position volume to close on trigger
+
+input group "=== HIGHER-TIMEFRAME CONFLUENCE ===";
+input ENUM_TIMEFRAMES InpHtfTimeframe           = PERIOD_H1; // Higher timeframe used for the confluence filter
+input bool            InpRequireHtfConfluence   = true;      // Block entries that fight a clear HTF trend
+input double          InpHtfMinR2ToBlock        = 0.35;      // HTF R^2 below this = no clear HTF opinion, don't block
+
+input group "=== SESSION / ROLLOVER FILTER ===";
+input int             InpSessionStartHour       = 0;   // Broker-time session start hour (0-23); equal to end = no restriction
+input int             InpSessionEndHour         = 0;   // Broker-time session end hour (0-23)
+input int             InpAvoidRolloverMinutes   = 5;   // Minutes around broker midnight to avoid (spread spikes)
+
+input group "=== ADAPTIVE TUNING ===";
+input bool            InpAdaptiveTuning         = true;   // Nudge the confidence bar from trailing live performance
+input int             InpAdaptiveLookbackTrades = 20;     // Trades considered for the adaptive read
+input double          InpAdaptiveMinMultiplier  = 0.85;   // Floor on the adaptive confidence multiplier
+input double          InpAdaptiveMaxMultiplier  = 1.25;   // Ceiling on the adaptive confidence multiplier
 
 input group "=== EXECUTION ===";
 input ulong          InpMagicNumber             = 24091500; // Magic number
@@ -101,6 +124,7 @@ CMomentumEngine       g_mom;
 CMicrostructureEngine g_micro;
 CLiquidityEngine      g_liq;
 CRegimeEngine         g_regime;
+CRegimeEngine         g_regimeHtf;
 CSignalScorer         g_scorer;
 CFlipEngine           g_flip;
 CAntiChopEngine       g_chop;
@@ -117,13 +141,21 @@ SAxPositionState      g_posState;
 bool                  g_haveOpenPosition = false;
 ENUM_AX_ENGINE_STATE  g_engineState = AX_ENGINE_ACTIVE;
 datetime              g_lastBarTime = 0;
+datetime              g_lastHtfBarTime = 0;
 int                   g_consecutiveExecFailures = 0;
+double                g_adaptiveConfMultiplier = 1.0;
 
 //--- pending entry intent: decision made on tick N, re-verified and executed on a later tick ---
 bool                  g_pendingActive = false;
 SAxScore              g_pendingScore;
 datetime              g_pendingTime = 0;
 #define AX_PENDING_MAX_AGE_SEC 2
+
+//--- accuracy-engine registration throttle: sample at most once per direction-state or once ---
+//--- per second, rather than every tick a decisive signal persists (avoids saturating the    ---
+//--- accuracy ring buffer on fast-ticking symbols before longer horizons can resolve)         ---
+ENUM_AX_DIR           g_lastAccSignalDir = AX_DIR_NONE;
+datetime              g_lastAccSignalTime = 0;
 
 //====================================================================
 // HELPERS
@@ -135,17 +167,23 @@ double AxRiskPercentForMode(void)
    return(AxClampD(InpExtremeRiskPercent,0.05,2.0));
   }
 
-bool AxFetchCloseFinancials(const ulong posTicket,double &closePrice,double &grossProfit,
-                             double &commission,double &swap,datetime &closeTime)
+//--- sums only OUT deals with a ticket strictly greater than sinceTicketExclusive - lets partial ---
+//--- closes and the eventual final close each claim their own slice of a position's deal history ---
+//--- with no double count. Filtering by ticket (not DEAL_TIME) matters: MT5 deal time only has    ---
+//--- 1-second resolution, so a fast scalper's entry-to-exit could land in the same wall-clock      ---
+//--- second - deal tickets are strictly increasing in chronological order regardless.              ---
+bool AxFetchCloseFinancials(const ulong posTicket,const ulong sinceTicketExclusive,double &closePrice,
+                             double &grossProfit,double &commission,double &swap,datetime &closeTime,
+                             ulong &lastDealTicketOut)
   {
-   closePrice=0; grossProfit=0; commission=0; swap=0; closeTime=0;
+   closePrice=0; grossProfit=0; commission=0; swap=0; closeTime=0; lastDealTicketOut=sinceTicketExclusive;
    if(!HistorySelectByPosition((long)posTicket)) return(false);
    int total = HistoryDealsTotal();
    bool found=false;
    for(int i=0;i<total;i++)
      {
       ulong dealTicket = HistoryDealGetTicket(i);
-      if(dealTicket==0) continue;
+      if(dealTicket==0 || dealTicket<=sinceTicketExclusive) continue;
       long entryType = HistoryDealGetInteger(dealTicket,DEAL_ENTRY);
       if(entryType!=DEAL_ENTRY_OUT && entryType!=DEAL_ENTRY_OUT_BY) continue;
       grossProfit += HistoryDealGetDouble(dealTicket,DEAL_PROFIT);
@@ -153,6 +191,7 @@ bool AxFetchCloseFinancials(const ulong posTicket,double &closePrice,double &gro
       swap        += HistoryDealGetDouble(dealTicket,DEAL_SWAP);
       closePrice   = HistoryDealGetDouble(dealTicket,DEAL_PRICE);
       closeTime    = (datetime)HistoryDealGetInteger(dealTicket,DEAL_TIME);
+      if(dealTicket>lastDealTicketOut) lastDealTicketOut=dealTicket;
       found=true;
      }
    return(found);
@@ -170,11 +209,11 @@ string AxBuildEntryReason(const SAxScore &score,const ENUM_AX_DIR dir)
           AxRegimeToString(score.regime),tags,score.buyScore,score.sellScore,score.confidence));
   }
 
-void AxFinalizeTrade(const double closePrice,const double grossProfit,const double commission,
-                      const double swap,const datetime closeTime,const ENUM_AX_EXIT_REASON reason)
+//--- builds a trade record from the current position state; does NOT touch g_posState or file it ---
+SAxTradeRecord AxBuildTradeRecord(const double closePrice,const double grossProfit,const double commission,
+                                   const double swap,const datetime closeTime,const ENUM_AX_EXIT_REASON reason,
+                                   const double lotsForRecord,const bool isPartial)
   {
-   double netProfit = grossProfit+commission+swap;
-
    SAxTradeRecord rec;
    rec.ticket        = g_posState.ticket;
    rec.entryTime     = g_posState.entryTime;
@@ -182,7 +221,7 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
    rec.direction     = g_posState.dir;
    rec.entryPrice    = g_posState.entryPrice;
    rec.exitPrice     = closePrice;
-   rec.lots          = g_posState.lots;
+   rec.lots          = lotsForRecord;
    rec.spreadAtEntry = g_posState.entrySpreadPts;
    rec.slippagePts   = g_posState.entrySlippagePts;
    rec.holdSeconds   = (int)(rec.exitTime-g_posState.entryTime);
@@ -197,18 +236,29 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
    rec.grossProfit   = grossProfit;
    rec.commission    = commission;
    rec.swap          = swap;
-   rec.netProfit     = netProfit;
-   rec.flipSeq       = g_posState.flipSeq;
+   rec.netProfit     = grossProfit+commission+swap;
+   // a partial is never itself the flip's outcome - only the leg's eventual full close is,
+   // so tag it flipSeq=0 to keep it out of CORRECT_FLIP/FALSE_FLIP classification entirely
+   rec.flipSeq       = isPartial ? 0 : g_posState.flipSeq;
+   rec.isPartial     = isPartial;
+   return(rec);
+  }
+
+void AxFinalizeTrade(const double closePrice,const double grossProfit,const double commission,
+                      const double swap,const datetime closeTime,const ENUM_AX_EXIT_REASON reason)
+  {
+   SAxTradeRecord rec = AxBuildTradeRecord(closePrice,grossProfit,commission,swap,closeTime,reason,g_posState.lots,false);
 
    g_autopsy.RecordTrade(rec);
-   if(rec.flipSeq>0) g_accuracy.RegisterFlipOutcome(netProfit>0);
-   g_risk.RegisterTradeClosed(netProfit);
+   if(rec.flipSeq>0) g_accuracy.RegisterFlipOutcome(rec.netProfit>0);
+   g_risk.RegisterTradeClosed(rec.netProfit);
    if(reason==AX_EXIT_SL || reason==AX_EXIT_MOMENTUM_COLLAPSE || reason==AX_EXIT_MICROSTRUCTURE_REVERSAL)
       g_chop.RegisterStopOut();
 
    g_haveOpenPosition = false;
    g_posState.active  = false;
    g_posState.ticket  = 0;
+   g_posState.dir     = AX_DIR_NONE;
    g_posState.entryReason = "";
   }
 
@@ -224,8 +274,8 @@ bool AxCloseAndRecord(const ENUM_AX_EXIT_REASON reason)
      }
    g_consecutiveExecFailures = 0;
 
-   double closePrice=0,grossProfit=0,commission=0,swap=0; datetime closeTime=0;
-   if(!AxFetchCloseFinancials(ticket,closePrice,grossProfit,commission,swap,closeTime))
+   double closePrice=0,grossProfit=0,commission=0,swap=0; datetime closeTime=0; ulong lastTicket=0;
+   if(!AxFetchCloseFinancials(ticket,g_posState.lastAccountedDealTicket,closePrice,grossProfit,commission,swap,closeTime,lastTicket))
      {
       closePrice = (g_posState.dir==AX_DIR_BUY)? g_md.CurrentBid() : g_md.CurrentAsk();
       closeTime  = TimeCurrent();
@@ -236,9 +286,9 @@ bool AxCloseAndRecord(const ENUM_AX_EXIT_REASON reason)
 
 void AxRecordExternalClose(void)
   {
-   double closePrice=0,grossProfit=0,commission=0,swap=0; datetime closeTime=0;
+   double closePrice=0,grossProfit=0,commission=0,swap=0; datetime closeTime=0; ulong lastTicket=0;
    ENUM_AX_EXIT_REASON reason = AX_EXIT_SL;
-   if(AxFetchCloseFinancials(g_posState.ticket,closePrice,grossProfit,commission,swap,closeTime))
+   if(AxFetchCloseFinancials(g_posState.ticket,g_posState.lastAccountedDealTicket,closePrice,grossProfit,commission,swap,closeTime,lastTicket))
      {
       double distToSl = MathAbs(closePrice-g_posState.initialSlPrice);
       double distToTp = MathAbs(closePrice-g_posState.initialTpPrice);
@@ -252,6 +302,57 @@ void AxRecordExternalClose(void)
    AxFinalizeTrade(closePrice,grossProfit,commission,swap,closeTime,reason);
   }
 
+//--- records the banked slice of a scale-out partial close without touching g_haveOpenPosition; ---
+//--- the remainder keeps trading under the same ticket with g_posState.lots reduced accordingly ---
+void AxRecordPartialClose(const double volumeClosed,const double closePrice,const double grossProfit,
+                           const double commission,const double swap,const datetime closeTime,
+                           const ulong lastDealTicket)
+  {
+   SAxTradeRecord rec = AxBuildTradeRecord(closePrice,grossProfit,commission,swap,closeTime,AX_EXIT_TP,volumeClosed,true);
+   g_autopsy.RecordTrade(rec);
+   // deliberately NOT calling g_risk.RegisterTradeClosed / g_chop.RegisterStopOut here - a partial
+   // is a banked partial win, not the thesis's final outcome; consecutive-loss and chop tracking
+   // are driven by the remainder's eventual close, which reflects how the full trade actually ended
+   g_posState.lots -= volumeClosed;
+   g_posState.partialTaken = true;
+   g_posState.lastAccountedDealTicket = lastDealTicket;
+   // MFE/MAE currency tracking is lot-size-dependent (UpdateExcursion multiplies by st.lots) -
+   // a pre-partial peak measured at the old, larger lot size is no longer comparable to the
+   // remainder's excursion. Reset so exitEfficiencyPct/classification reflect only how the
+   // remaining, reduced position performed from here.
+   g_posState.mfeCurrency = 0;
+   g_posState.maeCurrency = 0;
+   g_posState.bestFavorablePrice = 0; // 0 signals UpdateExcursion to reinitialize on the next tick
+  }
+
+void AxExecutePartialClose(const double volumeToClose)
+  {
+   string partErr;
+   if(!g_exec.ClosePartial(_Symbol,volumeToClose,partErr))
+     {
+      if(InpVerboseLogging) PrintFormat("AUTOPSY X: partial close failed (%s)",partErr);
+      return;
+     }
+   // the closing deal can occasionally be a beat behind ClosePartial()'s return in MT5's history
+   // cache - retry briefly rather than leaving lastAccountedDealTicket stale, which would let the
+   // eventual final close re-include (double count) this same partial's profit
+   double pClosePrice=0,pGross=0,pComm=0,pSwap=0; datetime pTime=0; ulong pLastTicket=g_posState.lastAccountedDealTicket;
+   bool gotDeal=false;
+   for(int attempt=0; attempt<2 && !gotDeal; attempt++)
+     {
+      if(attempt>0) Sleep(40); // brief - this already runs on top of ClosePartial()'s own retry
+                                // delays, and OnTick must not stall long during a volatile move
+      gotDeal = AxFetchCloseFinancials(g_posState.ticket,g_posState.lastAccountedDealTicket,pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket);
+     }
+   if(!gotDeal)
+     {
+      pClosePrice = (g_posState.dir==AX_DIR_BUY)? g_md.CurrentBid() : g_md.CurrentAsk();
+      pTime = TimeCurrent();
+      if(InpVerboseLogging) Print("AUTOPSY X: partial-close financials unavailable after retries - logged with zeroed P&L, deal boundary held");
+     }
+   AxRecordPartialClose(volumeToClose,pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket);
+  }
+
 void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double lots,const double fillPrice,
                           const double slPrice,const double tpPrice,const SAxScore &score,
                           const string entryReason,const int flipSeq,const double intendedPrice)
@@ -263,6 +364,7 @@ void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double l
    g_posState.lots               = lots;
    g_posState.initialSlPrice     = slPrice;
    g_posState.initialTpPrice     = tpPrice;
+   g_posState.originalSlPrice    = slPrice;
    g_posState.breakEvenDone      = false;
    g_posState.bestFavorablePrice = fillPrice;
    g_posState.mfeCurrency        = 0;
@@ -277,21 +379,68 @@ void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double l
    g_posState.entrySlippagePts = (point>0) ? MathAbs(fillPrice-intendedPrice)/point : 0.0;
    g_posState.flipSeq = flipSeq;
    g_posState.active  = true;
+   g_posState.partialTaken = false;
+   g_posState.lastAccountedDealTicket = 0; // a freshly opened position has no OUT deals yet
    g_haveOpenPosition  = true;
   }
 
+//--- higher-timeframe confluence: block entries that fight a clear HTF trend. A HTF with no ---
+//--- clear direction (low R^2) never blocks - this is a filter against fighting HTF trend,  ---
+//--- not a requirement that HTF agree outright. ---
+bool AxHtfConfluenceOk(const ENUM_AX_DIR dir)
+  {
+   if(!InpRequireHtfConfluence) return(true);
+   if(g_regimeHtf.R2() < InpHtfMinR2ToBlock) return(true);
+   double slope = g_regimeHtf.Slope();
+   if(dir==AX_DIR_BUY)  return(slope>=0);
+   if(dir==AX_DIR_SELL) return(slope<=0);
+   return(true);
+  }
+
+//--- every entry (fresh or flip re-entry) funnels through here, so risk/chop/HTF gates apply ---
+//--- unconditionally - a confirmed flip is always allowed to CLOSE the losing side, but the   ---
+//--- re-open into the new direction is still just another entry subject to every hard limit.  ---
 bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSeq,const string tag)
   {
-   double lots = g_risk.CalculateLotSize(g_md,InpEmergencySlPoints);
-   if(lots<=0)
+   string gateReason;
+   if(!g_risk.PreTradeAllowed(0,0.0,g_md.CurrentSpreadPts(),gateReason))
      {
-      if(InpVerboseLogging) Print("AUTOPSY X: computed lot size is zero - entry skipped");
+      if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
+      return(false);
+     }
+   if(!g_entryEngine.SessionAllowed(InpSessionStartHour,InpSessionEndHour,InpAvoidRolloverMinutes,gateReason))
+     {
+      if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
+      return(false);
+     }
+   if(g_chop.IsInCooldown())
+     {
+      if(InpVerboseLogging) Print("AUTOPSY X: entry blocked (anti-chop cooldown)");
+      return(false);
+     }
+   if(!AxHtfConfluenceOk(dir))
+     {
+      if(InpVerboseLogging) Print("AUTOPSY X: entry blocked (HTF confluence)");
       return(false);
      }
 
    double intendedPrice = (dir==AX_DIR_BUY) ? g_md.CurrentAsk() : g_md.CurrentBid();
    double slPrice,tpPrice;
-   g_exit.ComputeInitialStops(g_md,dir,intendedPrice,slPrice,tpPrice);
+   double atrForStops = InpUseAtrStops ? g_regime.CurrentAtr() : 0.0;
+   g_exit.ComputeInitialStops(g_md,dir,intendedPrice,atrForStops,slPrice,tpPrice);
+
+   // size off the ACTUAL resulting stop distance (which ComputeInitialStops may have widened
+   // for the broker's stops/freeze level or for ATR) so the dollar risk stays pinned to the
+   // configured risk percent regardless of how far away the stop ends up sitting
+   double point = g_md.Point();
+   double actualSlDistPts = (point>0) ? MathAbs(intendedPrice-slPrice)/point : InpEmergencySlPoints;
+
+   double lots = g_risk.CalculateLotSize(g_md,actualSlDistPts);
+   if(lots<=0)
+     {
+      if(InpVerboseLogging) Print("AUTOPSY X: computed lot size is zero - entry skipped");
+      return(false);
+     }
 
    string entryReason = AxBuildEntryReason(score,dir)+" "+tag;
    ulong newTicket; double fillPrice; string execErr;
@@ -311,6 +460,38 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    return(true);
   }
 
+//--- self-tuning: nudges the entry confidence bar from trailing live performance, bounded so ---
+//--- it can never widen or narrow the gate beyond the configured min/max multiplier. This is  ---
+//--- the only thing adaptive tuning touches - never position size, never risk limits. ---
+double AxAdaptiveConfidenceMultiplier(void)
+  {
+   if(!InpAdaptiveTuning) return(1.0);
+   int n = g_autopsy.Count();
+   if(n<=0) return(1.0);
+
+   // walk backward from the most recent record, skipping scale-out partials - a partial is a
+   // banked slice of a still-open thesis, not a standalone outcome, and would otherwise pad
+   // the win rate with guaranteed wins (it only ever fires in profit) and mislead this reading
+   int wins=0,counted=0; double netSum=0;
+   for(int i=n-1;i>=0 && counted<InpAdaptiveLookbackTrades;i--)
+     {
+      SAxTradeRecord r;
+      if(!g_autopsy.GetRecord(i,r)) continue;
+      if(r.isPartial) continue;
+      if(r.netProfit>0) wins++;
+      netSum += r.netProfit;
+      counted++;
+     }
+   if(counted<10) return(1.0);
+   double winRate = 100.0*wins/counted;
+
+   double mult = 1.0;
+   if(winRate>=55.0 && netSum>0)      mult = 0.90; // performing well - allow slightly more entries
+   else if(winRate<40.0 || netSum<0)  mult = 1.15; // performing poorly - be pickier until it improves
+
+   return(AxClampD(mult,InpAdaptiveMinMultiplier,InpAdaptiveMaxMultiplier));
+  }
+
 void AxReconcileExistingPosition(void)
   {
    if(!PositionSelect(_Symbol)) return;
@@ -324,6 +505,9 @@ void AxReconcileExistingPosition(void)
    g_posState.lots                  = PositionGetDouble(POSITION_VOLUME);
    g_posState.initialSlPrice         = PositionGetDouble(POSITION_SL);
    g_posState.initialTpPrice          = PositionGetDouble(POSITION_TP);
+   // true original (pre-break-even) SL isn't recoverable from position state alone after a
+   // restart - approximate with the current SL; only affects the partial-TP R-multiple trigger
+   g_posState.originalSlPrice          = g_posState.initialSlPrice;
    g_posState.breakEvenDone            = false;
    g_posState.bestFavorablePrice        = g_posState.entryPrice;
    g_posState.mfeCurrency                = 0;
@@ -337,6 +521,16 @@ void AxReconcileExistingPosition(void)
    g_posState.entrySlippagePts                   = 0;
    g_posState.flipSeq = 0;
    g_posState.active  = true;
+
+   // baseline to any OUT deals that already happened on this position before this EA session
+   // started (e.g. a partial close from before a restart), so they are never re-reported -
+   // and if any such deal exists, a partial must already have fired (the position is still
+   // open, so a full close would have left PositionSelect() false above) - never re-arm it
+   double rClosePrice=0,rGross=0,rComm=0,rSwap=0; datetime rTime=0; ulong rLastTicket=0;
+   bool priorDealFound = AxFetchCloseFinancials(g_posState.ticket,0,rClosePrice,rGross,rComm,rSwap,rTime,rLastTicket);
+   g_posState.lastAccountedDealTicket = rLastTicket;
+   g_posState.partialTaken = priorDealFound;
+
    g_haveOpenPosition  = true;
   }
 
@@ -355,9 +549,15 @@ int OnInit(void)
       Print("AUTOPSY X: failed to initialize regime engine (ATR handle)");
       return(INIT_FAILED);
      }
+   if(!g_regimeHtf.Init(_Symbol,InpHtfTimeframe))
+     {
+      Print("AUTOPSY X: failed to initialize HTF regime engine (ATR handle)");
+      return(INIT_FAILED);
+     }
    g_liq.Init(_Symbol,InpRegimeTimeframe);
    g_liq.RefreshLevels();
    g_regime.Update();
+   g_regimeHtf.Update();
 
    g_scorer.Configure(InpMinScoreToAct,InpMinGapToAct);
    g_flip.Configure(InpFlipRequiredConfirmations,InpFlipMinConfidence);
@@ -370,7 +570,8 @@ int OnInit(void)
    g_exec.Init(_Symbol,InpMagicNumber,InpDeviationPoints,InpMaxExecRetries);
    g_exit.Configure(InpEmergencySlPoints,InpDynamicTpRR,InpBreakEvenTriggerPoints,InpBreakEvenLockPoints,
                      InpTrailStartPoints,InpTrailDistancePoints,InpMaxHoldSeconds,
-                     InpSpreadAbnormalMultiplier,InpOpposingExitConfidence);
+                     InpSpreadAbnormalMultiplier,InpOpposingExitConfidence,InpUseAtrStops,
+                     InpAtrStopMultiplier);
 
    if(!g_autopsy.Init("AutopsyX_FlipDemon_Extreme",_Symbol))
       Print("AUTOPSY X: warning - could not open trade autopsy CSV log");
@@ -399,6 +600,7 @@ void OnDeinit(const int reason)
      }
    g_autopsy.Deinit();
    g_regime.Deinit();
+   g_regimeHtf.Deinit();
   }
 
 //====================================================================
@@ -424,13 +626,37 @@ void OnTick(void)
       g_lastBarTime = barTime;
       g_regime.Update();
       g_liq.RefreshLevels();
+      g_adaptiveConfMultiplier = AxAdaptiveConfidenceMultiplier();
+      g_entryEngine.Configure(InpMinConfidenceToEnter*g_adaptiveConfMultiplier);
+     }
+   //--- HTF confluence structure refreshes on its own, slower bar clock ---
+   datetime htfBarTime = iTime(_Symbol,InpHtfTimeframe,0);
+   if(htfBarTime!=g_lastHtfBarTime && htfBarTime>0)
+     {
+      g_lastHtfBarTime = htfBarTime;
+      g_regimeHtf.Update();
      }
    g_liq.UpdateTick(g_md.CurrentBid(),g_md.CurrentAsk(),g_mom.DisplacementPts(),g_md.Point());
 
    //--- SCORE ---
    SAxScore score = g_scorer.Evaluate(g_md,g_mom,g_micro,g_liq,g_regime);
    g_accuracy.OnTickUpdate(g_md.CurrentMid());
-   if(score.action!=AX_DIR_NONE) g_accuracy.RegisterSignal(TimeCurrent(),g_md.CurrentMid(),score.action);
+   //--- sample into the accuracy engine on signal-direction change or at most once/second -   ---
+   //--- registering every tick of a sustained signal would saturate the ring buffer on fast-  ---
+   //--- ticking symbols before the longer horizons (10s/30s) get a chance to resolve          ---
+   if(score.action!=AX_DIR_NONE)
+     {
+      bool changed = (score.action!=g_lastAccSignalDir);
+      bool throttleElapsed = (TimeCurrent()-g_lastAccSignalTime)>=1;
+      if(changed || throttleElapsed)
+        {
+         g_accuracy.RegisterSignal(TimeCurrent(),g_md.CurrentMid(),score.action);
+         g_lastAccSignalDir  = score.action;
+         g_lastAccSignalTime = TimeCurrent();
+        }
+     }
+   else
+      g_lastAccSignalDir = AX_DIR_NONE;
 
    //--- KILL SWITCH / catastrophic execution guard ---
    if(g_consecutiveExecFailures>=InpMaxConsecutiveExecFailures && !g_risk.IsKilled())
@@ -467,8 +693,14 @@ void OnTick(void)
          if(AxCloseAndRecord(AX_EXIT_FLIP))
            {
             g_risk.RegisterFlip();
-            g_chop.RegisterFlip();
+            // attempt the reversal BEFORE arming this flip's own anti-chop cooldown - RegisterFlip()
+            // always pushes m_cooldownUntil forward, so registering first would make AxAttemptEntry's
+            // IsInCooldown() check block the very re-entry this flip is trying to make, 100% of the
+            // time under default settings. The reentry is still gated by whatever cooldown PRIOR
+            // events already armed; only after attempting it do we arm/extend the cooldown for the
+            // NEXT flip, which is what actually throttles rapid repeated flipping.
             AxAttemptEntry(newDir,score,newFlipSeq,"FLIP");
+            g_chop.RegisterFlip();
            }
         }
       else
@@ -482,6 +714,15 @@ void OnTick(void)
          else
            {
             double curPrice = (g_posState.dir==AX_DIR_BUY) ? g_md.CurrentBid() : g_md.CurrentAsk();
+
+            if(InpEnablePartialTP && !g_posState.partialTaken)
+              {
+               double volToClose;
+               if(g_exit.CheckPartialTakeProfit(g_posState,g_md,curPrice,InpPartialTriggerRR,
+                                                 InpPartialClosePercent,volToClose))
+                  AxExecutePartialClose(volToClose);
+              }
+
             double newSl;
             bool wantModify=false;
             bool isBreakEvenMove=false;
@@ -517,7 +758,8 @@ void OnTick(void)
       if(g_pendingActive)
         {
          string finalReason;
-         if(g_entryEngine.FinalConfirm(g_md,g_pendingScore,score,InpMaxSpreadPoints,finalReason))
+         if(g_entryEngine.FinalConfirm(g_md,g_pendingScore,score,InpMaxSpreadPoints,finalReason) &&
+            AxHtfConfluenceOk(score.action))
            {
             g_engineState = AX_ENGINE_ATTACKING;
             AxAttemptEntry(score.action,score,0,"ENTRY");
@@ -529,7 +771,10 @@ void OnTick(void)
         {
          string reason;
          double stopDistPts = InpEmergencySlPoints;
-         bool ok = g_entryEngine.PreFlightCheck(_Symbol,g_md,score,g_risk,g_chop,stopDistPts,0,0.0,reason);
+         bool ok = g_entryEngine.PreFlightCheck(_Symbol,g_md,score,g_risk,g_chop,stopDistPts,0,0.0,
+                                                 InpSessionStartHour,InpSessionEndHour,
+                                                 InpAvoidRolloverMinutes,reason)
+                   && AxHtfConfluenceOk(score.action);
          if(ok)
            {
             g_pendingActive = true;
@@ -570,11 +815,22 @@ void OnTimer(void)
    else if(g_risk.DailyLockout()) displayState = AX_ENGINE_PAUSED;
    else if(g_chop.IsInCooldown()) displayState = AX_ENGINE_COOLDOWN;
 
+   SAxDashboardExtras extras;
+   extras.htfRegime             = g_regimeHtf.Regime();
+   extras.htfSlope              = g_regimeHtf.Slope();
+   extras.accuracy5s            = g_accuracy.Accuracy(2); // AxAccHorizonsSec index 2 == 5 seconds
+   extras.accuracy30s           = g_accuracy.Accuracy(4); // index 4 == 30 seconds
+   extras.flipAccuracy          = g_accuracy.FlipAccuracy();
+   extras.grossProfitFactor     = snap.grossProfitFactor;
+   extras.adaptiveMultiplier    = g_adaptiveConfMultiplier;
+   extras.partialTaken          = g_posState.partialTaken;
+   extras.htfConfluenceEnabled  = InpRequireHtfConfluence;
+
    g_dash.Render(InpMode,g_regime.Regime(),g_scorer.Last(),g_mom.VelocityLabel(),
                  (g_mom.PersistentBull()?"BULLISH":g_mom.PersistentBear()?"BEARISH":"NEUTRAL"),
                  g_md.CurrentSpreadPts(),g_posState.dir,g_posState.entryPrice,curPrice,floatingPnl,
                  holdSeconds,g_risk.FlipsToday(),g_autopsy.Count(),snap,g_risk.DailyPnL(),
-                 snap.maxDrawdownPercent,g_risk.RiskPercent(),displayState,gate);
+                 snap.maxDrawdownPercent,g_risk.RiskPercent(),displayState,gate,extras);
   }
 
 //====================================================================

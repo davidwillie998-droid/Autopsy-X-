@@ -153,6 +153,8 @@ struct SAxTradeRecord
    double              netProfit;
    ENUM_AX_TRADE_CLASS tradeClass;
    int                 flipSeq;          // 0 = not a flip result, >0 = flip generation number
+   bool                isPartial;        // true = a scale-out slice, not a full trade outcome -
+                                          // excluded from win/loss and adaptive-tuning statistics
   };
 
 //--- helpers -----------------------------------------------------------------
@@ -245,6 +247,9 @@ struct SAxPositionState
    double         lots;
    double         initialSlPrice;
    double         initialTpPrice;
+   double         originalSlPrice;      // initialSlPrice as placed at entry - NEVER mutated by
+                                         // break-even/trailing, so R-multiple triggers (partial
+                                         // take-profit) always measure against the true original risk
    bool           breakEvenDone;
    double         bestFavorablePrice;   // best price reached in favor of the position
    double         mfeCurrency;
@@ -258,6 +263,12 @@ struct SAxPositionState
    double         entrySlippagePts;
    int            flipSeq;
    bool           active;
+   bool           partialTaken;         // true once the scale-out partial close has fired
+   ulong          lastAccountedDealTicket; // highest deal ticket already reflected in a recorded
+                                            // trade (full or partial). Filtering by ticket rather
+                                            // than time avoids same-second collisions - MT5 deal
+                                            // time has only 1-second resolution, but deal tickets
+                                            // are strictly increasing in chronological order.
   };
 
 //--- exit decision returned by CExitEngine::Evaluate --------------------------

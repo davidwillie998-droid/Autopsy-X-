@@ -23,6 +23,8 @@ private:
    int               m_maxHoldSeconds;
    double            m_spreadAbnormalMult;
    double            m_opposingExitConfidence;
+   bool              m_useAtrStops;
+   double            m_atrMultiplier;
 
 public:
                      CExitEngine(void)
@@ -32,27 +34,38 @@ public:
       m_trailStartPts=220; m_trailDistancePts=120;
       m_maxHoldSeconds=900; m_spreadAbnormalMult=2.2;
       m_opposingExitConfidence=55.0;
+      m_useAtrStops=true; m_atrMultiplier=1.8;
      }
 
    void              Configure(const double emergencySlPts,const double dynamicTpRR,
                                 const double breakEvenTriggerPts,const double breakEvenLockPts,
                                 const double trailStartPts,const double trailDistancePts,
                                 const int maxHoldSeconds,const double spreadAbnormalMult,
-                                const double opposingExitConfidence)
+                                const double opposingExitConfidence,const bool useAtrStops,
+                                const double atrMultiplier)
      {
       m_emergencySlPts=emergencySlPts; m_dynamicTpRR=dynamicTpRR;
       m_breakEvenTriggerPts=breakEvenTriggerPts; m_breakEvenLockPts=breakEvenLockPts;
       m_trailStartPts=trailStartPts; m_trailDistancePts=trailDistancePts;
       m_maxHoldSeconds=maxHoldSeconds; m_spreadAbnormalMult=spreadAbnormalMult;
       m_opposingExitConfidence=opposingExitConfidence;
+      m_useAtrStops=useAtrStops; m_atrMultiplier=atrMultiplier;
      }
 
-   //--- initial protective stops placed at entry - always present, never "unlimited risk" ---
+   //--- initial protective stops placed at entry - always present, never "unlimited risk". ---
+   //--- ATR (when enabled) only ever WIDENS the stop beyond the fixed floor, never tightens ---
+   //--- it - RiskEngine sizes the position off the resulting distance, so dollar risk stays  ---
+   //--- pinned to the configured risk percent regardless of how wide the stop ends up.        ---
    void              ComputeInitialStops(const CMarketData &md,const ENUM_AX_DIR dir,const double entryPrice,
-                                          double &slPriceOut,double &tpPriceOut) const
+                                          const double currentAtr,double &slPriceOut,double &tpPriceOut) const
      {
       double point = md.Point();
       double slDist = m_emergencySlPts*point;
+      if(m_useAtrStops && currentAtr>0)
+        {
+         double atrDist = currentAtr*m_atrMultiplier;
+         if(atrDist>slDist) slDist = atrDist;
+        }
       double tpDist = slDist*m_dynamicTpRR;
       int minStop = MathMax(md.StopsLevelPts(),md.FreezeLevelPts())+2;
       if(slDist < minStop*point) slDist = minStop*point;
@@ -126,6 +139,36 @@ public:
       if(distFromPrice < minStop) return(false);
 
       newSlOut = md.NormalizePrice(candidate);
+      return(true);
+     }
+
+   //--- optional scale-out: bank part of the position once it reaches triggerRR times the      ---
+   //--- ORIGINAL stop distance, letting the remainder ride under normal exit/trailing logic.    ---
+   //--- Fires once per position (caller tracks that via st.partialTaken / lastAccountedDealTicket). ---
+   bool              CheckPartialTakeProfit(const SAxPositionState &st,const CMarketData &md,
+                                             const double currentPrice,const double triggerRR,
+                                             const double closePercent,double &volumeToCloseOut) const
+     {
+      if(st.partialTaken) return(false);
+      double slDist = MathAbs(st.entryPrice-st.originalSlPrice);
+      if(slDist<=0) return(false);
+
+      double favorable = (st.dir==AX_DIR_BUY) ? (currentPrice-st.entryPrice) : (st.entryPrice-currentPrice);
+      if(favorable < slDist*triggerRR) return(false);
+
+      // floor to a valid volume step WITHOUT letting NormalizeVolume's own clamp-up-to-minimum
+      // silently inflate a too-small request into closing a disproportionate share of the
+      // position (e.g. 20% of a 0.03-lot position floors to 0 lots, not "round up to 0.01")
+      double step = md.VolumeStep();
+      if(step<=0) step=0.01;
+      double minVol = md.VolumeMin();
+      double rawVol = st.lots*(closePercent/100.0);
+      double vol = MathFloor(rawVol/step)*step;
+      if(vol<minVol) return(false); // requested percentage is too small to express as a valid partial
+      // never close so much that the remainder drops below the broker's minimum lot
+      if((st.lots-vol)<minVol) return(false);
+
+      volumeToCloseOut = md.NormalizeVolume(vol); // vol already >= minVol, this only rounds digits
       return(true);
      }
 
