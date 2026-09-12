@@ -235,3 +235,63 @@ of a flip was gated). Every entry — fresh or flip re-entry — now funnels
 through the same risk/chop/HTF checks; a confirmed reversal is always
 allowed to close the losing side, but re-opening into the new direction is
 just another entry subject to every hard limit.
+
+## 11. Policy and regulatory notes
+
+This is not legal advice. It's a factual account of how the code behaves
+against three things worth checking separately: MetaQuotes' own MQL5
+Market rules, broker/platform trading mechanics, and financial-regulatory
+frameworks that govern retail forex/CFD accounts.
+
+**MQL5 Market publishing rules.** If this is ever submitted to the Market,
+MetaQuotes requires (among other things): no DLL/system-library calls, no
+`WebRequest`-based third-party licensing/update/accounting systems, no
+external links used as documentation, and no collection of users' personal
+data. This codebase has none of those — no `#import`, no `WebRequest`, no
+network calls of any kind, no data collection. It should clear that bar as
+written. (Submission itself has separate steps — compiling to `.ex5`,
+writing a product page, running the Market's own pre-publication checks —
+that are outside what code alone can satisfy.)
+
+**Broker/platform mechanics — FIFO and netting.** US-regulated accounts
+(NFA Compliance Rule 2-43b) prohibit hedging and require first-in-first-out
+closure of same-symbol positions. This EA's execution model already fits
+that by construction: it tracks and manages exactly one net position per
+symbol, closes fully (or partially, via scale-out) before ever opening the
+opposite direction, and never holds simultaneous long and short tickets on
+the same symbol. As of this review, `OnInit` also checks
+`ACCOUNT_MARGIN_MODE` directly and refuses to start on a hedging-mode
+account (`ACCOUNT_MARGIN_MODE_RETAIL_HEDGING`) — the EA's whole position-
+tracking model assumes netting (one net position per symbol, managed via
+`PositionSelect`), which a hedging account can violate the moment any other
+order or EA opens a second ticket on the same symbol. Use a netting
+account. Separately: available leverage and margin are set by the broker
+and regulator, not by this EA — `RiskEngine` reads live account margin and
+adapts to whatever the account actually has, but it does not and cannot
+change what leverage you're offered.
+
+**Financial-regulatory compliance (CFTC/NFA, FCA, ESMA, etc.).** These
+regimes regulate brokers and dealers, not the EA itself, but a few things
+carry over to how you use it:
+
+- *No profitability promises.* Regulators across these regimes require
+  retail forex/CFD marketing to avoid misleading performance claims. This
+  EA and its documentation are built the same way for a different reason
+  (intellectual honesty about an untested strategy) — the profitability
+  gate is explicitly a live-session heuristic, never a claim.
+- *Leverage caps and negative-balance protection* (ESMA: 30:1 major FX,
+  20:1 minors/gold/major indices, down to 2:1 on crypto CFDs; CFTC/NFA:
+  50:1 majors, 20:1 minors) are enforced by the broker on the account, not
+  by the EA. They constrain available margin, which `RiskEngine`'s
+  pre-trade margin-level check already respects dynamically — no EA-side
+  leverage configuration exists or is needed.
+- *Running this on your own account* as a retail trader operating through
+  a licensed broker is not itself a regulated activity in any of these
+  regimes. The line moves if you go further: distributing it for
+  compensation as trading advice for others' accounts can trigger CTA
+  registration considerations under the CEA in the US, and firms (not
+  individual retail users) conducting algorithmic trading have their own
+  notification/record-keeping obligations under MiFID II Article 17 in
+  the EU. Neither applies to running the EA on your own account through
+  your own broker; both are worth a real compliance conversation before
+  offering it to anyone else.
