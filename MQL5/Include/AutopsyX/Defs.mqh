@@ -263,6 +263,9 @@ struct SAxPositionState
    double         entrySlippagePts;
    int            flipSeq;
    bool           active;
+   int            modifyFailCount;      // consecutive failed SL/TP modify attempts on this position -
+                                         // forces an execution-quality exit past a threshold, since a
+                                         // position whose stops can't be reliably managed is unsafe to hold
    bool           partialTaken;         // true once the scale-out partial close has fired
    ulong          lastAccountedDealTicket; // highest deal ticket already reflected in a recorded
                                             // trade (full or partial). Filtering by ticket rather

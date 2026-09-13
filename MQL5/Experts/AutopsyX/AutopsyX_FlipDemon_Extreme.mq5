@@ -101,8 +101,14 @@ input double          InpAdaptiveMaxMultiplier  = 1.25;   // Ceiling on the adap
 
 input group "=== EXECUTION ===";
 input ulong          InpMagicNumber             = 24091500; // Magic number
-input int            InpDeviationPoints         = 20;       // Allowed price deviation, points
+input int            InpDeviationPoints         = 20;       // Min allowed price deviation, points (floor)
+input double          InpDeviationSpreadMultiplier = 1.5;   // Deviation also scales to spread*this, whichever is larger
 input int            InpMaxExecRetries          = 2;        // Max retries on transient broker errors
+
+input group "=== LIVE EXECUTION QUALITY ===";
+input int             InpMaxFillLatencyMs        = 800;     // Fill considered "slow" past this, ms
+input int             InpMaxConsecutivePoorFills = 4;       // Kill switch after this many consecutive slow/high-slippage fills
+input int             InpMaxModifyFailures       = 3;       // Force-exit a position after this many failed SL/TP modifies
 
 input group "=== STATISTICS / GATE ===";
 input int            InpMinTradesForGateSignal  = 20;      // Min trades before the gate reports anything but INSUFFICIENT_DATA
@@ -144,6 +150,18 @@ datetime              g_lastBarTime = 0;
 datetime              g_lastHtfBarTime = 0;
 int                   g_consecutiveExecFailures = 0;
 double                g_adaptiveConfMultiplier = 1.0;
+
+//--- live execution-quality tracking: a demo feed rarely shows meaningful slippage or fill    ---
+//--- latency, so these only really start to matter once running on a live account. Tracked    ---
+//--- separately from g_consecutiveExecFailures (hard broker errors) because a "successful" but ---
+//--- badly-slipped or slow fill is its own live-only warning sign that a fresh entry gets past. ---
+int                   g_consecutivePoorFills = 0;
+bool                  g_isLiveAccount = false;
+double                g_sumSlippagePts = 0;
+double                g_sumLatencyMs = 0;
+int                   g_fillCount = 0;
+int                   g_poorFillsToday = 0;
+datetime              g_lastStatsDay = 0;
 
 //--- pending entry intent: decision made on tick N, re-verified and executed on a later tick ---
 bool                  g_pendingActive = false;
@@ -379,6 +397,7 @@ void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double l
    g_posState.entrySlippagePts = (point>0) ? MathAbs(fillPrice-intendedPrice)/point : 0.0;
    g_posState.flipSeq = flipSeq;
    g_posState.active  = true;
+   g_posState.modifyFailCount = 0;
    g_posState.partialTaken = false;
    g_posState.lastAccountedDealTicket = 0; // a freshly opened position has no OUT deals yet
    g_haveOpenPosition  = true;
@@ -395,6 +414,31 @@ bool AxHtfConfluenceOk(const ENUM_AX_DIR dir)
    if(dir==AX_DIR_BUY)  return(slope>=0);
    if(dir==AX_DIR_SELL) return(slope<=0);
    return(true);
+  }
+
+//--- tracks live execution quality (slippage + fill latency) across fills. A demo feed rarely
+//--- exercises this path meaningfully; on a live account, repeated poor fills are a real signal
+//--- that current broker/network conditions aren't fit for this strategy right now, and the EA
+//--- protects capital by killing itself rather than continuing to trade through it.
+void AxRegisterFillQuality(const double slippagePts,const int latencyMs)
+  {
+   g_sumSlippagePts += slippagePts;
+   g_sumLatencyMs   += latencyMs;
+   g_fillCount++;
+
+   bool poor = !g_risk.SlippageAcceptable(slippagePts) || (latencyMs>InpMaxFillLatencyMs);
+   if(poor)
+     {
+      g_consecutivePoorFills++;
+      g_poorFillsToday++;
+      if(InpVerboseLogging)
+         PrintFormat("AUTOPSY X: poor fill quality (slippage=%.1fpts latency=%dms) - streak=%d",
+                     slippagePts,latencyMs,g_consecutivePoorFills);
+      if(g_consecutivePoorFills>=InpMaxConsecutivePoorFills && !g_risk.IsKilled())
+         g_risk.ActivateKillSwitch("Repeated poor live execution quality (slippage/latency)");
+     }
+   else
+      g_consecutivePoorFills = 0;
   }
 
 //--- every entry (fresh or flip re-entry) funnels through here, so risk/chop/HTF gates apply ---
@@ -442,9 +486,15 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       return(false);
      }
 
+   // live spread can widen well past anything a demo feed shows - scale the allowed deviation to
+   // it (floored at the configured minimum) so normal spread widening doesn't spuriously reject
+   // an otherwise-fine fill, while still capping how far price can move against us
+   int deviationPts = (int)MathMax(InpDeviationPoints,MathRound(g_md.CurrentSpreadPts()*InpDeviationSpreadMultiplier));
+   g_exec.SetDeviationPoints(deviationPts);
+
    string entryReason = AxBuildEntryReason(score,dir)+" "+tag;
-   ulong newTicket; double fillPrice; string execErr;
-   if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr))
+   ulong newTicket; double fillPrice; string execErr; int fillLatencyMs;
+   if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr,fillLatencyMs))
      {
       g_consecutiveExecFailures++;
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry failed (%s)",execErr);
@@ -453,6 +503,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    g_consecutiveExecFailures = 0;
 
    AxInitPositionState(newTicket,dir,lots,fillPrice,slPrice,tpPrice,score,entryReason,flipSeq,intendedPrice);
+   AxRegisterFillQuality(g_posState.entrySlippagePts,fillLatencyMs);
 
    if(dir==AX_DIR_BUY && g_liq.BullishAttackReady(g_mom.DisplacementPts())) g_liq.ConsumeBullishAttack();
    if(dir==AX_DIR_SELL && g_liq.BearishAttackReady(g_mom.DisplacementPts())) g_liq.ConsumeBearishAttack();
@@ -521,6 +572,7 @@ void AxReconcileExistingPosition(void)
    g_posState.entrySlippagePts                   = 0;
    g_posState.flipSeq = 0;
    g_posState.active  = true;
+   g_posState.modifyFailCount = 0;
 
    // baseline to any OUT deals that already happened on this position before this EA session
    // started (e.g. a partial close from before a restart), so they are never re-reported -
@@ -553,6 +605,15 @@ int OnInit(void)
             "Use a netting account, or a broker/account type that supports it.");
       return(INIT_FAILED);
      }
+
+   // demo execution is typically near-instant with near-zero slippage - it will not surface the
+   // live-only problems this EA specifically defends against (spread spikes, slow fills, real
+   // slippage). Detected once here purely to label the dashboard/log honestly; behavior itself
+   // doesn't branch on it - the execution-quality circuit breaker runs unconditionally and simply
+   // won't have much to react to on a demo feed.
+   long tradeMode = AccountInfoInteger(ACCOUNT_TRADE_MODE);
+   g_isLiveAccount = (tradeMode==ACCOUNT_TRADE_MODE_REAL);
+   PrintFormat("AUTOPSY X: account mode = %s",g_isLiveAccount?"LIVE":(tradeMode==ACCOUNT_TRADE_MODE_CONTEST?"CONTEST":"DEMO"));
 
    if(!g_md.Init(_Symbol))
      {
@@ -625,6 +686,11 @@ void OnTick(void)
   {
    if(!g_md.OnTickUpdate()) return;
    g_risk.OnTickHousekeeping();
+
+   //--- roll the "poor fills today" counter at broker midnight, same day boundary RiskEngine uses ---
+   MqlDateTime dtNow; TimeToStruct(TimeCurrent(),dtNow);
+   datetime today = TimeCurrent()-(dtNow.hour*3600+dtNow.min*60+dtNow.sec);
+   if(today!=g_lastStatsDay) { g_lastStatsDay=today; g_poorFillsToday=0; }
 
    //--- position may have closed externally (SL/TP hit, manual intervention) ---
    if(g_haveOpenPosition && !g_exec.HasOpenPosition(_Symbol))
@@ -757,8 +823,16 @@ void OnTick(void)
                  {
                   g_posState.initialSlPrice = newSl;
                   if(isBreakEvenMove) g_posState.breakEvenDone = true;
+                  g_posState.modifyFailCount = 0;
                  }
-               else if(InpVerboseLogging) PrintFormat("AUTOPSY X: stop modify failed (%s)",modErr);
+               else
+                 {
+                  g_posState.modifyFailCount++;
+                  if(InpVerboseLogging) PrintFormat("AUTOPSY X: stop modify failed (%s) - streak=%d",modErr,g_posState.modifyFailCount);
+                  // stops that can't be reliably managed are unsafe to hold - cut rather than run naked
+                  if(g_posState.modifyFailCount>=InpMaxModifyFailures)
+                     AxCloseAndRecord(AX_EXIT_EXECUTION_QUALITY);
+                 }
               }
            }
         }
@@ -840,6 +914,11 @@ void OnTimer(void)
    extras.adaptiveMultiplier    = g_adaptiveConfMultiplier;
    extras.partialTaken          = g_posState.partialTaken;
    extras.htfConfluenceEnabled  = InpRequireHtfConfluence;
+   extras.isLiveAccount         = g_isLiveAccount;
+   extras.avgSlippagePts        = (g_fillCount>0)? g_sumSlippagePts/g_fillCount : 0.0;
+   extras.avgLatencyMs          = (g_fillCount>0)? g_sumLatencyMs/g_fillCount : 0.0;
+   extras.poorFillsToday        = g_poorFillsToday;
+   extras.consecutivePoorFills  = g_consecutivePoorFills;
 
    g_dash.Render(InpMode,g_regime.Regime(),g_scorer.Last(),g_mom.VelocityLabel(),
                  (g_mom.PersistentBull()?"BULLISH":g_mom.PersistentBear()?"BEARISH":"NEUTRAL"),

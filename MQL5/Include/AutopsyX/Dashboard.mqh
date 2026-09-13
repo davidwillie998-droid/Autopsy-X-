@@ -25,6 +25,11 @@ struct SAxDashboardExtras
    double         adaptiveMultiplier;
    bool           partialTaken;
    bool           htfConfluenceEnabled;
+   bool           isLiveAccount;
+   double         avgSlippagePts;
+   double         avgLatencyMs;
+   int            poorFillsToday;
+   int            consecutivePoorFills;
   };
 
 class CDashboard
@@ -101,7 +106,7 @@ public:
          ObjectCreate(m_chartId,full,OBJ_BUTTON,0,0,0);
          ObjectSetInteger(m_chartId,full,OBJPROP_CORNER,CORNER_LEFT_UPPER);
          ObjectSetInteger(m_chartId,full,OBJPROP_XDISTANCE,m_x);
-         ObjectSetInteger(m_chartId,full,OBJPROP_YDISTANCE,m_y+615);
+         ObjectSetInteger(m_chartId,full,OBJPROP_YDISTANCE,m_y+660);
          ObjectSetInteger(m_chartId,full,OBJPROP_XSIZE,m_width);
          ObjectSetInteger(m_chartId,full,OBJPROP_YSIZE,26);
          ObjectSetString(m_chartId,full,OBJPROP_TEXT,"KILL ENGINE");
@@ -133,11 +138,13 @@ public:
                              const ENUM_AX_ENGINE_STATE engineState,const ENUM_AX_GATE gate,
                              const SAxDashboardExtras &extras)
      {
-      MakeRect("BG",m_x-6,m_y-6,m_width,680,C'12,12,14');
+      MakeRect("BG",m_x-6,m_y-6,m_width,730,C'12,12,14');
 
       int y=m_y; int x=m_x+4;
       MakeLabel("T1",x,y,"AUTOPSY X",clrGold,12); y+=18;
       MakeLabel("T2",x,y,"FLIPDEMON EXTREME",clrSilver,10); y+=20;
+      MakeLabel("ACCT",x,y,extras.isLiveAccount?"● LIVE ACCOUNT":"○ DEMO ACCOUNT",
+                extras.isLiveAccount?clrTomato:clrSilver,10); y+=m_lineH+4;
 
       string modeStr = (mode==AX_MODE_NORMAL)?"NORMAL":(mode==AX_MODE_AGGRESSIVE)?"AGGRESSIVE":"EXTREME";
       string stateStr = EngineStateLabel(engineState);
@@ -200,7 +207,12 @@ public:
       MakeLabel("FLIPACC",x,y,StringFormat("FLIP ACCURACY: %.0f%%",extras.flipAccuracy),clrWhite); y+=m_lineH;
       MakeLabel("ADAPT",x,y,StringFormat("ADAPTIVE CONF x%.2f",extras.adaptiveMultiplier),clrWhite); y+=m_lineH;
       string partialStr = extras.partialTaken ? "TAKEN" : (positionDir!=AX_DIR_NONE ? "PENDING" : "-");
-      MakeLabel("PARTIAL",x,y,"PARTIAL TP: "+partialStr,extras.partialTaken?clrLime:clrSilver); y+=m_lineH;
+      MakeLabel("PARTIAL",x,y,"PARTIAL TP: "+partialStr,extras.partialTaken?clrLime:clrSilver); y+=m_lineH+4;
+
+      //--- live execution quality: what the account is actually experiencing, not a demo feed's ---
+      color execClr = (extras.consecutivePoorFills>0)?clrTomato:clrWhite;
+      MakeLabel("EXECQ",x,y,StringFormat("AVG SLIP/LAT: %.1fpts / %.0fms",extras.avgSlippagePts,extras.avgLatencyMs),execClr); y+=m_lineH;
+      MakeLabel("POORFILL",x,y,StringFormat("POOR FILLS: %d today (streak %d)",extras.poorFillsToday,extras.consecutivePoorFills),execClr); y+=m_lineH+4;
 
       color engClr = (engineState==AX_ENGINE_ATTACKING)?clrLime:(engineState==AX_ENGINE_KILLED)?clrRed:clrSilver;
       MakeLabel("ENGINE",x,y,"ENGINE: "+stateStr,engClr); y+=m_lineH;

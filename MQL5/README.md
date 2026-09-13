@@ -295,3 +295,50 @@ carry over to how you use it:
   the EU. Neither applies to running the EA on your own account through
   your own broker; both are worth a real compliance conversation before
   offering it to anyone else.
+
+## 12. Live-account execution realism
+
+Demo execution is close to a fiction: fills are near-instant, slippage is
+usually near zero, and spread rarely does anything a chart doesn't already
+show you. None of that holds on a live account, so this EA no longer
+treats "the order was accepted" as the end of the story.
+
+**What changed to handle it:**
+
+- **Fill latency is measured, not assumed.** Every market order times its
+  own round trip (`ExecutionEngine::OpenMarket`'s `latencyMsOut`). A slow
+  broker/network shows up as a number, not a guess.
+- **Deviation scales to live spread**, not a single fixed value.
+  `InpDeviationPoints` is now a floor; the actual allowed deviation sent
+  with each order is `max(InpDeviationPoints, spread × InpDeviationSpreadMultiplier)`.
+  A fixed deviation either rejects perfectly good fills the moment spread
+  widens normally, or lets slippage run unchecked during a real spike —
+  scaling it to current spread avoids both failure modes.
+- **A live execution-quality circuit breaker now actually runs.**
+  `RiskEngine::SlippageAcceptable` and the `AX_EXIT_EXECUTION_QUALITY` exit
+  reason existed before this pass but were never wired to anything. Now:
+  every fill's slippage and latency are checked against
+  `InpMaxSlippagePoints` / `InpMaxFillLatencyMs`; `InpMaxConsecutivePoorFills`
+  consecutive bad fills trips the kill switch outright, because repeated
+  poor fills are a sign that current broker/network conditions aren't fit
+  for this strategy right now — not something to keep trading through.
+- **A position whose stops can't be managed gets cut, not left naked.**
+  If `ModifyStops` (break-even/trailing) fails `InpMaxModifyFailures` times
+  in a row on the same position — a live-only failure mode, since a demo
+  server essentially never rejects a modify — the EA closes it with
+  `AX_EXIT_EXECUTION_QUALITY` rather than continuing to hold a position it
+  can no longer protect.
+- **The account type is checked and shown, not assumed.** `OnInit` reads
+  `ACCOUNT_TRADE_MODE` once and the dashboard shows a permanent LIVE/DEMO
+  badge, plus running averages for slippage and fill latency and a
+  poor-fills-today/streak counter — so you can see, on the chart, whether
+  current conditions are actually clean or degraded, instead of inferring
+  it from the equity curve after the fact.
+
+**What this doesn't and can't do:** none of the above makes a broker
+faster or a spread narrower. It measures what's actually happening and
+protects capital when conditions are bad, rather than pretending demo-like
+conditions apply. Tune `InpMaxSlippagePoints`, `InpMaxFillLatencyMs`, and
+`InpMaxConsecutivePoorFills` to your specific broker and symbol — a
+250ms round trip is unremarkable on some ECN feeds and alarming on
+others, and default values are a starting point, not a promise.

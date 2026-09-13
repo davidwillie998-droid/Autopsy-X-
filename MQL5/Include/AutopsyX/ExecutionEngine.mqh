@@ -50,6 +50,14 @@ public:
       m_maxRetries = maxRetries;
      }
 
+   //--- live spread can widen well beyond what a demo feed ever shows; a fixed deviation either
+   //--- rejects good fills during normal spread widening or lets slippage run unchecked during
+   //--- a real spike. Called with a spread-scaled value right before sending an order. ---
+   void              SetDeviationPoints(const int deviationPts)
+     {
+      m_trade.SetDeviationInPoints(deviationPts);
+     }
+
    //--- confirm actual open position matches expectation; never trust the send() return alone ---
    bool              ConfirmPosition(const string symbol,ENUM_AX_DIR expectedDir,const double expectedLots,
                                       ulong &ticketOut,double &fillPriceOut) const
@@ -77,11 +85,17 @@ public:
       return((type==POSITION_TYPE_BUY) ? AX_DIR_BUY : AX_DIR_SELL);
      }
 
-   //--- market entry with confirmation + limited retry on transient broker errors ---
+   //--- market entry with confirmation + limited retry on transient broker errors. latencyMsOut  ---
+   //--- measures total wall time in this call - on a live account under load (slow server round ---
+   //--- trip, repeated requotes) this rises well above what a demo feed ever shows, and the      ---
+   //--- caller uses it as a live-execution-quality signal alongside slippage. ---
    bool              OpenMarket(const string symbol,const ENUM_AX_DIR dir,const double lots,
                                  const double slPrice,const double tpPrice,const string comment,
-                                 ulong &ticketOut,double &fillPriceOut,string &errorReason)
+                                 ulong &ticketOut,double &fillPriceOut,string &errorReason,
+                                 int &latencyMsOut)
      {
+      uint startTick = GetTickCount();
+      latencyMsOut = 0;
       if(dir==AX_DIR_NONE || lots<=0) { errorReason="Invalid direction/lots"; return(false); }
 
       bool ok=false;
@@ -100,6 +114,7 @@ public:
 
          if(ok)
            {
+            latencyMsOut = (int)(GetTickCount()-startTick);
             if(ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut))
               {
                errorReason="";
@@ -111,8 +126,9 @@ public:
 
          uint retcode = m_trade.ResultRetcode();
          errorReason = StringFormat("OrderSend failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
-         if(!RetryableRetcode(retcode)) return(false);
+         if(!RetryableRetcode(retcode)) { latencyMsOut=(int)(GetTickCount()-startTick); return(false); }
         }
+      latencyMsOut = (int)(GetTickCount()-startTick);
       return(false);
      }
 
@@ -181,7 +197,8 @@ public:
                            ulong &ticketOut,double &fillPriceOut,string &errorReason)
      {
       if(!ClosePosition(symbol,errorReason)) return(false);
-      return(OpenMarket(symbol,newDir,lots,slPrice,tpPrice,comment,ticketOut,fillPriceOut,errorReason));
+      int latencyMs;
+      return(OpenMarket(symbol,newDir,lots,slPrice,tpPrice,comment,ticketOut,fillPriceOut,errorReason,latencyMs));
      }
 
    bool              ModifyStops(const string symbol,const double slPrice,const double tpPrice,string &errorReason)
