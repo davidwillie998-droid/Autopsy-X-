@@ -15,6 +15,19 @@ This was built and reviewed line-by-line for MQL5 correctness in an environment 
 - **Probability/expectancy numbers start neutral.** `ProbabilityEngine` and `SeasonalityEngine` are empirical, built from *this EA's own* closed-trade journal — with zero history they shrink hard to a neutral 50% prior rather than pretending to know anything. They get more meaningful the longer the EA (or a backtest of it) runs.
 - **Anti-overfitting / walk-forward / Monte Carlo (section 32) is a testing methodology, not code the EA runs on itself.** Use the MT5 Strategy Tester's own walk-forward and Monte Carlo/optimization tooling against this EA; the EA's `DriftEngine` and `DiagnosticEngine` handle *live* drift detection, which is a different (complementary) thing.
 
+## Sniper entries
+
+The entry model is now the headline feature, not an afterthought. Setups A, B and E no longer fire a market order the instant their structural conditions are met — that's chasing. Instead they compute a precise price and, if the market isn't sitting there right now, place a **resting limit order** and wait:
+
+- **Setup A (sweep + MSS)** computes the real impulse leg behind the structural break (`StructureEngine::GetImpulseLeg` — the origin swing that was swept, and the furthest price reached since) and retraces it to the **OTE zone** (62–79% by default, `InpOTEFibNear`/`InpOTEFibFar`). The limit sits at the shallow (62%) bound unless a real order block or fair value gap overlaps the zone, in which case the price snaps to that structure's edge instead — Fibonacci math and real structure agreeing is the whole point of a sniper entry, not a coincidence to ignore. If price is already sitting inside the OTE band right now, it enters at market (there's nothing to wait for); if price already blew *past* the zone toward invalidation, the setup is skipped outright rather than chasing.
+- **Setup B (HTF continuation)** and **Setup E (HTF imbalance)** enter at the *far edge* of the order block / fair value gap — the best price the zone can realistically offer — rather than wherever price happened to be when the lower-timeframe confirmation candle printed.
+- **Invalidation, not just a stop-loss.** Every sniper order carries an `invalidationPrice` distinct from (and tighter than) its eventual stop-loss: if price closes back through the setup's own origin *before the order ever fills*, the order is pulled immediately (`PendingOrderManager`) — no chasing a thesis that's already dead. An unfilled order also expires after `InpLimitOrderExpiryMinutes` (default 3 hours): no fill in that window means the shot is gone.
+- **One order at a time.** `InpMaxConcurrentSniperOrders` (default 1) means the EA aims and waits rather than spraying several resting orders across setups. A new candidate is skipped entirely while one is already working.
+- **Precision is scored, not just tolerated.** A confluent entry (Fibonacci zone *and* a real order block/FVG agreeing) scores materially higher in `SignalFusion` than a bare Fib level, and pushes the setup toward A/A+ rather than B.
+- Setups C, D and F stay confirmation/retest-based (they already require price to prove itself before entering) rather than being forced into the limit-order model.
+
+On the dashboard, a resting sniper order shows its setup, exact price, distance in points, and time to expiry — distinct from an open position, since "waiting for the shot" and "in the trade" are different states worth seeing separately.
+
 ## Live vs. demo execution
 
 Demo servers are usually forgiving: tight constant spread, instant fills, permissive filling modes, no real margin pressure. Live servers aren't, and this EA treats that as the normal case rather than an edge case:
@@ -36,7 +49,7 @@ AUTOPSY_X_SWINGDEMON_X15.mq5   - main orchestrator: inputs, OnInit/OnTick/OnTime
 core/        MarketState, StructureEngine, LiquidityEngine, IPDAEngine, RegimeEngine, BiasEngine, Types
 signals/     SetupEngine (setups A-F), ProbabilityEngine, ExpectedValue, SignalFusion
 risk/        RiskEngine, ExposureEngine, DrawdownEngine
-execution/   BrokerAdapter, ExecutionEngine, PositionManager
+execution/   BrokerAdapter, ExecutionEngine, PositionManager, PendingOrderManager
 intelligence/CorrelationEngine, NewsEngine, SeasonalityEngine, VolatilityEngine
 autopsy/     TradeJournal, DiagnosticEngine, DriftEngine
 ui/          Dashboard
@@ -69,6 +82,7 @@ This is the workflow from the spec's section 44 — it hasn't been executed here
 - **CORE** — magic number, live-trading master switch, dashboard toggle.
 - **RISK** — per-trade %, hard caps on per-trade/total-open/correlated risk, max positions, daily/weekly/monthly drawdown kill-switches, max consecutive losses.
 - **ENTRY** — minimum confidence, minimum R:R, minimum expected value (in R), whether Grade B setups may trade live (A/A+ only by default).
+- **SNIPER ENTRY** — OTE Fibonacci bounds (`InpOTEFibNear`/`InpOTEFibFar`), how long a resting limit order waits before expiring, and how many may rest at once (default 1).
 - **MANAGEMENT** — partial-close percentages at TP1/TP2.
 - **NEWS** — calendar filter on/off, pre-event blackout and post-event confirmation windows (minutes).
 - **EXECUTION** — max spread (absolute), spread-spike multiple (relative to this account's own rolling average), deviation floor, retry count.

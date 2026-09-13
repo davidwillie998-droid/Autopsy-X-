@@ -59,6 +59,7 @@ public:
 
    double Bid() const { return SymbolInfoDouble(m_symbol, SYMBOL_BID); }
    double Ask() const { return SymbolInfoDouble(m_symbol, SYMBOL_ASK); }
+   double Mid() const { return (Bid()+Ask())/2.0; }
    double SpreadPoints() const
      {
       double bid = Bid(), ask = Ask();

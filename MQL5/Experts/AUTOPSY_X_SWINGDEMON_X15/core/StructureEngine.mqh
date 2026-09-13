@@ -193,6 +193,34 @@ public:
       return ArraySize(out);
      }
 
+   //--- the impulse leg behind a structural break: origin = the most recent opposite-type swing that
+   //--- was broken (a low for a bullish break, a high for a bearish one), extreme = the furthest price
+   //--- reached in the break direction since that origin. This is what a sniper entry retraces into -
+   //--- without it there is no real Fibonacci/OTE zone, just a guess.
+   bool GetImpulseLeg(ENUM_TIMEFRAMES tf, bool bullishBreak, double &legOrigin, double &legExtreme, datetime &originTime) const
+     {
+      AXSwingPoint swings[];
+      GetSwings(tf, swings, 12);
+      bool wantHigh = !bullishBreak; // bullish break's origin is a swept LOW; bearish break's origin is a swept HIGH
+      int originShift = -1;
+      legOrigin = 0.0; originTime = 0;
+      for(int i=0;i<ArraySize(swings);i++)
+        {
+         if(swings[i].isHigh==wantHigh)
+           { legOrigin=swings[i].price; originShift=swings[i].barShift; originTime=swings[i].time; break; }
+        }
+      if(originShift<0) return false;
+
+      double extreme = bullishBreak ? -DBL_MAX : DBL_MAX;
+      for(int s=originShift; s>=0; s--)
+        {
+         if(bullishBreak) extreme = MathMax(extreme, m_market.High(tf,s));
+         else             extreme = MathMin(extreme, m_market.Low(tf,s));
+        }
+      legExtreme = extreme;
+      return (legExtreme!=-DBL_MAX && legExtreme!=DBL_MAX);
+     }
+
 private:
    void EvaluateMitigation(ENUM_TIMEFRAMES tf, int fromShift, AXFairValueGap &gap) const
      {

@@ -169,6 +169,82 @@ public:
       return res;
      }
 
+   //--- sniper entry: a resting limit order at a precise price, not a market chase. Same margin/volume-limit/
+   //--- stop-distance discipline as OpenMarket, evaluated against the LIMIT price since that's where it fills.
+   AXExecutionResult OpenLimit(int direction, double volume, double limitPrice, double sl, double tp, string comment, ulong &orderTicket)
+     {
+      AXExecutionResult res;
+      res.success=false; res.ticket=0; res.executedPrice=0.0; res.slippagePoints=0.0; res.retcode=0;
+      res.retriesUsed=0; res.filledVolume=0.0; res.partialFill=false; res.latencyMs=0;
+      orderTicket = 0;
+
+      volume = m_broker.NormalizeVolume(volume);
+      res.requestedVolume = volume;
+      if(volume < m_broker.volumeMin) { res.comment="Volume below broker minimum after normalization"; return res; }
+      if(!m_broker.tradeAllowed)      { res.comment="Symbol trading not fully enabled by broker"; return res; }
+
+      double priceN = m_broker.NormalizePrice(limitPrice);
+      double slN = m_broker.NormalizePrice(sl);
+      double tpN = m_broker.NormalizePrice(tp);
+      res.requestedPrice = priceN;
+
+      // a buy limit must sit below current ask, a sell limit above current bid - reject a limit price that
+      // would fill immediately (that's not a resting sniper order, that's a market order in disguise)
+      if(direction>0 && priceN >= m_broker.Ask()) { res.comment="Buy limit at/above market - not a resting order"; return res; }
+      if(direction<0 && priceN <= m_broker.Bid()) { res.comment="Sell limit at/below market - not a resting order"; return res; }
+
+      if(!ValidateStopDistance(direction, priceN, slN)) { res.comment="Stop violates broker minimum distance"; return res; }
+
+      string marginReason;
+      if(!HasSufficientMargin(direction, volume, priceN, marginReason))
+        { res.comment=marginReason; return res; }
+
+      if(m_broker.volumeLimit>0.0 && (TotalSymbolVolume()+volume) > m_broker.volumeLimit)
+        { res.comment=StringFormat("Would exceed broker's aggregate volume limit (%.2f) on this symbol", m_broker.volumeLimit); return res; }
+
+      int fillingIdx = 0;
+      m_trade.SetTypeFilling((ENUM_ORDER_TYPE_FILLING)m_broker.FillingModeAt(fillingIdx));
+
+      for(int attempt=0; attempt<=m_maxRetries; attempt++)
+        {
+         res.retriesUsed = attempt;
+         bool sent = (direction>0) ? m_trade.BuyLimit(volume, priceN, m_symbol, slN, tpN, ORDER_TIME_GTC, 0, comment)
+                                    : m_trade.SellLimit(volume, priceN, m_symbol, slN, tpN, ORDER_TIME_GTC, 0, comment);
+         uint retcode = m_trade.ResultRetcode();
+         res.retcode = (int)retcode;
+
+         if(sent && retcode==TRADE_RETCODE_DONE)
+           {
+            orderTicket = m_trade.ResultOrder();
+            res.ticket = orderTicket;
+            res.success = (orderTicket!=0);
+            res.comment = res.success ? "Sniper limit order placed" : "Broker accepted but returned no order ticket";
+            return res;
+           }
+
+         if(retcode==TRADE_RETCODE_INVALID_FILL && fillingIdx+1 < m_broker.FillingModeCount())
+           {
+            fillingIdx++;
+            m_fillingFallbackCount++;
+            m_trade.SetTypeFilling((ENUM_ORDER_TYPE_FILLING)m_broker.FillingModeAt(fillingIdx));
+            attempt--;
+            continue;
+           }
+
+         m_rejectionCount++;
+         res.comment = StringFormat("Limit order rejected, retcode=%d", retcode);
+         break;
+        }
+      return res;
+     }
+
+   //--- pull a resting sniper order - either it's stale (expired) or the setup's own invalidation fired
+   bool CancelOrder(ulong orderTicket)
+     {
+      if(!OrderSelect(orderTicket)) return true; // already gone (filled or removed) - nothing to cancel
+      return m_trade.OrderDelete(orderTicket);
+     }
+
    bool ModifyStops(ulong ticket, double newSL, double newTP)
      {
       if(!PositionSelectByTicket(ticket)) return false;

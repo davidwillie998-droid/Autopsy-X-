@@ -19,6 +19,8 @@ struct AXDashboardData
    string nearestLiquidity; string majorLiquidity; string currentDraw;
    //--- setup
    string setupType; double confidence; double score; double entry, sl, tp1, tp2, tpFinal, expectedR;
+   //--- sniper order (a resting limit order waiting for its precise price, distinct from an open position)
+   bool   sniperWaiting; string sniperSetup; double sniperEntry; double sniperDistancePoints; string sniperExpiresIn;
    //--- risk
    double equity; double currentRiskPct; double openExposurePct; double drawdownPct; string dailyStatus;
    //--- execution
@@ -87,7 +89,7 @@ public:
 
    void Render(const AXDashboardData &d)
      {
-      Background(360, 500);
+      Background(360, 540);
       int y = m_y; int lh = 15;
       color hdr = clrKhaki, val = clrWhiteSmoke, warn = clrTomato, good = clrLightGreen;
 
@@ -112,6 +114,15 @@ public:
       Label("SET2", StringFormat("E:%.5f SL:%.5f", d.entry, d.sl), m_x, y, val); y+=lh;
       Label("SET3", StringFormat("TP1:%.5f TP2:%.5f Final:%.5f", d.tp1, d.tp2, d.tpFinal), m_x, y, val); y+=lh;
       Label("SET4", StringFormat("Expected R: %.2f", d.expectedR), m_x, y, d.expectedR>0?good:warn); y+=lh+4;
+
+      Label("H_SNIPE", "-- SNIPER ORDER --", m_x, y, hdr); y+=lh;
+      if(d.sniperWaiting)
+        {
+         Label("SNIPE1", StringFormat("WAITING: %s at %.5f", d.sniperSetup, d.sniperEntry), m_x, y, clrGold); y+=lh;
+         Label("SNIPE2", StringFormat("%.0f pts away, expires in %s", d.sniperDistancePoints, d.sniperExpiresIn), m_x, y, val); y+=lh+4;
+        }
+      else
+        { Label("SNIPE1", "No order resting - waiting for a precise setup.", m_x, y, val); y+=lh; Label("SNIPE2","",m_x,y,val); y+=lh+4; }
 
       Label("H_RISK", "-- RISK --", m_x, y, hdr); y+=lh;
       Label("RISK1", StringFormat("Equity: %.2f  Risk/trade: %.2f%%", d.equity, d.currentRiskPct), m_x, y, val); y+=lh;

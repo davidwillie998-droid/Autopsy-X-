@@ -29,6 +29,7 @@
 #include "execution/BrokerAdapter.mqh"
 #include "execution/ExecutionEngine.mqh"
 #include "execution/PositionManager.mqh"
+#include "execution/PendingOrderManager.mqh"
 #include "intelligence/CorrelationEngine.mqh"
 #include "intelligence/NewsEngine.mqh"
 #include "intelligence/SeasonalityEngine.mqh"
@@ -60,6 +61,12 @@ input double InpMinConfidence   = 65.0;   // 0..100 fused confidence floor
 input double InpMinRiskReward   = 1.30;   // TP1 distance / stop distance
 input double InpMinExpectedR    = 0.15;   // EV floor, in R multiples
 input bool   InpAllowGradeB     = false;  // A+/A only by default, per spec section 23
+
+//==================== SNIPER ENTRY ====================
+input double InpOTEFibNear             = 0.62;  // shallow retracement bound - the default sniper limit price
+input double InpOTEFibFar              = 0.79;  // deep bound - past this the setup is too extended, skipped entirely
+input int    InpLimitOrderExpiryMinutes = 180;  // pull an unfilled sniper order after this long - no fill means the shot is gone
+input int    InpMaxConcurrentSniperOrders = 1;  // one resting order at a time by design - aim, don't spray
 
 //==================== MANAGEMENT ====================
 input double InpPartialClosePercent1 = 33.0;
@@ -111,6 +118,7 @@ CExposureEngine    g_exposure;
 CDrawdownEngine    g_drawdown;
 CExecutionEngine   g_exec;
 CPositionManager   g_posMgr;
+CPendingOrderManager g_pending;
 CSetupEngine       g_setupEngine;
 CProbabilityEngine g_prob;
 CExpectedValue     g_ev;
@@ -162,7 +170,9 @@ int OnInit()
    g_exec.Init(&g_broker, _Symbol, InpMagicNumber, InpDeviationPoints, InpMaxRetries);
    g_posMgr.Init(&g_market, &g_structure, &g_exec, &g_broker, _Symbol, InpMagicNumber,
                  InpPartialClosePercent1, InpPartialClosePercent2);
-   g_setupEngine.Init(&g_market, &g_structure, &g_liquidity, &g_ipda, &g_biasEngine, &g_vol, &g_news);
+   g_pending.Init(&g_exec, &g_broker, _Symbol, InpMagicNumber, InpMaxConcurrentSniperOrders);
+   g_setupEngine.Init(&g_market, &g_structure, &g_liquidity, &g_ipda, &g_biasEngine, &g_vol, &g_news,
+                       InpOTEFibNear, InpOTEFibFar);
    g_prob.Init(&g_journal);
    g_ev.Init();
    g_fusion.Init(InpMinConfidence, InpMinRiskReward, InpMinExpectedR, InpAllowGradeB);
@@ -365,6 +375,7 @@ void GetMacroContext(ENUM_AX_BIAS &macroBias, double &macroReliability, string &
 void TryEnterTrade()
   {
    if(g_risk.WouldExceedMaxPositions(InpMagicNumber)) return;
+   if(!g_pending.HasRoom()) return; // one sniper order working at a time - aim, don't spray
 
    AXBiasStack biasStack = g_biasEngine.GetBiasStack();
    ENUM_AX_REGIME regime = g_regimeEngine.Classify(PERIOD_H1);
@@ -396,6 +407,7 @@ void TryEnterTrade()
       double structQuality = 55.0;
       for(int k=0;k<ArraySize(obs);k++)
          if(obs[k].bullish==(sig.direction>0)) { structQuality=MathMax(structQuality,obs[k].qualityScore); }
+      structQuality = MathMax(structQuality, sig.precisionScore); // reward a tight, confluent sniper entry explicitly
 
       ENUM_AX_VOL_REGIME volRegime = g_vol.Classify(PERIOD_H1);
 
@@ -449,38 +461,93 @@ void TryEnterTrade()
    double volume = g_risk.ComputeVolume(g_broker, riskPct, riskDist);
    if(volume < g_broker.volumeMin) return;
 
+   string macroContext = StringFormat("bias=%s conf=%.0f", AXBiasToString(biasStack.composite), biasStack.alignmentScore);
+
+   if(best.signal.entryModel==ENTRY_LIMIT)
+     {
+      // sniper order: don't chase, place it and wait. It either taps in at the precise price or it doesn't fire at all.
+      string failReason;
+      bool placed = g_pending.Place(best.signal, best.confidence, best.quality, regime, best.expectedValueR,
+                                     macroContext, volume, InpLimitOrderExpiryMinutes*60,
+                                     StringFormat("AXSD15-%s", AXSetupToString(best.signal.setup)), failReason);
+      if(placed)
+         PrintFormat("AXSD15 SNIPER ORDER PLACED %s dir=%d setup=%s quality=%s conf=%.1f entry=%.5f invalidation=%.5f expiresIn=%dmin",
+                     _Symbol, best.signal.direction, AXSetupToString(best.signal.setup), AXQualityToString(best.quality),
+                     best.confidence, best.signal.entryPrice, best.signal.invalidationPrice, InpLimitOrderExpiryMinutes);
+      return;
+     }
+
    AXExecutionResult res = g_exec.OpenMarket(best.signal.direction, volume, best.signal.stopLoss, best.signal.tpFinal,
                                               StringFormat("AXSD15-%s", AXSetupToString(best.signal.setup)));
    if(!res.success) return;
 
-   // a live fill can come back smaller than requested - the thesis's risk/volume must reflect what actually
-   // filled, not what was asked for, or every downstream R/partial/exposure calc is wrong from entry onward
    double actualVolume = res.filledVolume>0.0 ? res.filledVolume : volume;
-
-   AXTradeThesis thesis;
-   thesis.ticket=res.ticket; thesis.direction=best.signal.direction;
-   thesis.whyNow=best.signal.rationaleWhyNow; thesis.whyHere=best.signal.rationaleWhyHere;
-   thesis.liquidityTarget=best.signal.liquidityTarget; thesis.structuralInvalidation=best.signal.stopLoss;
-   thesis.expectedHoldingBars=24; thesis.expectedR=best.expectedValueR;
-   thesis.macroContext = StringFormat("bias=%s conf=%.0f", AXBiasToString(biasStack.composite), biasStack.alignmentScore);
-   thesis.regime=regime; thesis.confidence=best.confidence; thesis.setup=best.signal.setup; thesis.quality=best.quality;
-   thesis.openTime=TimeCurrent(); thesis.entryPrice=res.executedPrice; thesis.stopLoss=best.signal.stopLoss;
-   thesis.tp1=best.signal.tp1; thesis.tp2=best.signal.tp2; thesis.tpFinal=best.signal.tpFinal;
-   thesis.initialStopDistance=MathAbs(res.executedPrice-best.signal.stopLoss);
-   thesis.initialRiskMoney = g_broker.RiskMoneyForStop(thesis.initialStopDistance, actualVolume);
-   thesis.equityAtEntry = AccountInfoDouble(ACCOUNT_EQUITY);
-   thesis.volumeOriginal=actualVolume; thesis.volumeRemaining=actualVolume;
-   thesis.phase=PHASE_1_INITIAL; thesis.partial1Done=false; thesis.partial2Done=false; thesis.movedToBreakeven=false;
-   thesis.mfe=0.0; thesis.mae=0.0; thesis.highestPrice=res.executedPrice; thesis.lowestPrice=res.executedPrice;
-   g_posMgr.AddThesis(thesis);
-
-   int kt=ArraySize(g_knownTickets); ArrayResize(g_knownTickets,kt+1); g_knownTickets[kt]=res.ticket;
-   g_tradesToday++; g_tradesThisWeek++;
-
+   BuildAndAddThesis(res.ticket, best.signal, res.executedPrice, best.quality, best.confidence, regime,
+                      macroContext, best.expectedValueR, actualVolume);
    PrintFormat("AXSD15 ENTER #%I64u %s dir=%d setup=%s quality=%s conf=%.1f R=%.2f vol=%.2f%s latency=%dms",
                res.ticket, _Symbol, best.signal.direction, AXSetupToString(best.signal.setup),
                AXQualityToString(best.quality), best.confidence, best.expectedValueR, actualVolume,
                res.partialFill ? " (PARTIAL FILL)" : "", res.latencyMs);
+  }
+
+//+------------------------------------------------------------------+
+//| Shared by an immediate market fill and a sniper limit order that  |
+//| just triggered - same thesis, same bookkeeping, different origin. |
+//+------------------------------------------------------------------+
+void BuildAndAddThesis(ulong ticket, const AXSignal &sig, double executedPrice, ENUM_AX_QUALITY quality,
+                        double confidence, ENUM_AX_REGIME regime, const string macroContext,
+                        double expectedR, double volume)
+  {
+   if(g_posMgr.HasThesis(ticket)) return; // never double-track the same position
+
+   AXTradeThesis thesis;
+   thesis.ticket=ticket; thesis.direction=sig.direction;
+   thesis.whyNow=sig.rationaleWhyNow; thesis.whyHere=sig.rationaleWhyHere;
+   thesis.liquidityTarget=sig.liquidityTarget; thesis.structuralInvalidation=sig.stopLoss;
+   thesis.expectedHoldingBars=24; thesis.expectedR=expectedR;
+   thesis.macroContext = macroContext;
+   thesis.regime=regime; thesis.confidence=confidence; thesis.setup=sig.setup; thesis.quality=quality;
+   thesis.openTime=TimeCurrent(); thesis.entryPrice=executedPrice; thesis.stopLoss=sig.stopLoss;
+   thesis.tp1=sig.tp1; thesis.tp2=sig.tp2; thesis.tpFinal=sig.tpFinal;
+   thesis.initialStopDistance=MathAbs(executedPrice-sig.stopLoss);
+   thesis.initialRiskMoney = g_broker.RiskMoneyForStop(thesis.initialStopDistance, volume);
+   thesis.equityAtEntry = AccountInfoDouble(ACCOUNT_EQUITY);
+   thesis.volumeOriginal=volume; thesis.volumeRemaining=volume;
+   thesis.phase=PHASE_1_INITIAL; thesis.partial1Done=false; thesis.partial2Done=false; thesis.movedToBreakeven=false;
+   thesis.mfe=0.0; thesis.mae=0.0; thesis.highestPrice=executedPrice; thesis.lowestPrice=executedPrice;
+   g_posMgr.AddThesis(thesis);
+
+   int kt=ArraySize(g_knownTickets); ArrayResize(g_knownTickets,kt+1); g_knownTickets[kt]=ticket;
+   g_tradesToday++; g_tradesThisWeek++;
+  }
+
+//+------------------------------------------------------------------+
+//| Every tick: pull dead/stale sniper orders, and turn any that just |
+//| filled into a normal managed position with its full thesis.       |
+//+------------------------------------------------------------------+
+void ProcessPendingOrders()
+  {
+   AXPendingOrder filled[];
+   ulong filledTickets[];
+   int n = g_pending.UpdateAndCollectFilled(filled, filledTickets);
+   for(int i=0;i<n;i++)
+     {
+      AXSignal sig;
+      sig.setup=filled[i].setup; sig.direction=filled[i].direction;
+      sig.entryPrice=filled[i].entryPrice; sig.stopLoss=filled[i].stopLoss;
+      sig.tp1=filled[i].tp1; sig.tp2=filled[i].tp2; sig.tpFinal=filled[i].tpFinal;
+      sig.liquidityTarget=filled[i].liquidityTarget; sig.rationaleWhyNow=filled[i].whyNow; sig.rationaleWhyHere=filled[i].whyHere;
+
+      double executedPrice = PositionSelectByTicket(filledTickets[i]) ? PositionGetDouble(POSITION_PRICE_OPEN) : filled[i].entryPrice;
+      double actualVolume = PositionSelectByTicket(filledTickets[i]) ? PositionGetDouble(POSITION_VOLUME) : filled[i].volume;
+
+      BuildAndAddThesis(filledTickets[i], sig, executedPrice, filled[i].quality, filled[i].confidence,
+                         filled[i].regime, filled[i].macroContext, filled[i].expectedR, actualVolume);
+
+      PrintFormat("AXSD15 SNIPER FILLED #%I64u %s dir=%d setup=%s entry=%.5f (target was %.5f)",
+                  filledTickets[i], _Symbol, filled[i].direction, AXSetupToString(filled[i].setup),
+                  executedPrice, filled[i].entryPrice);
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -512,6 +579,18 @@ void RenderDashboard()
       d.entry=t.entryPrice; d.sl=t.stopLoss; d.tp1=t.tp1; d.tp2=t.tp2; d.tpFinal=t.tpFinal; d.expectedR=t.expectedR;
      }
    else { d.entry=0;d.sl=0;d.tp1=0;d.tp2=0;d.tpFinal=0;d.expectedR=0; }
+
+   d.sniperWaiting = g_pending.Count()>0;
+   if(d.sniperWaiting)
+     {
+      AXPendingOrder p = g_pending.GetOrder(0);
+      d.sniperSetup = AXSetupToString(p.setup);
+      d.sniperEntry = p.entryPrice;
+      d.sniperDistancePoints = MathAbs(g_market.Mid()-p.entryPrice)/g_broker.point;
+      long secsLeft = (long)(p.expiryTime-TimeCurrent());
+      d.sniperExpiresIn = secsLeft>0 ? StringFormat("%dm", (int)(secsLeft/60)) : "expiring";
+     }
+   else { d.sniperSetup=""; d.sniperEntry=0.0; d.sniperDistancePoints=0.0; d.sniperExpiresIn=""; }
 
    d.equity=AccountInfoDouble(ACCOUNT_EQUITY);
    d.currentRiskPct=InpRiskPercentDefault;
@@ -549,6 +628,12 @@ void OnTick()
 
    g_tradingSuspended = (!healthy) || hardStop || (!InpEnableLiveTrading);
    g_suspendReason = !healthy ? failReason : (hardStop ? ddText : (!InpEnableLiveTrading ? "Live trading disabled by input" : ""));
+
+   // a hard stop (drawdown breach / emergency stop) pulls resting sniper orders outright rather than letting
+   // one fill while the EA is supposed to be halted; anything short of that still processes normally so a
+   // legitimate fill (or an expiry/invalidation cancel) during a transient condition like a spread spike isn't missed
+   if(InpEmergencyStop || hardStop) g_pending.CancelAll();
+   else ProcessPendingOrders();
 
    ReconcilePositions();
 

@@ -194,7 +194,7 @@ struct AXSignal
   {
    ENUM_AX_SETUP setup;
    int           direction;       // +1 buy, -1 sell
-   double        entryPrice;
+   double        entryPrice;      // for ENTRY_LIMIT this is the sniper limit price, not current market
    double        stopLoss;
    double        tp1, tp2, tpFinal;
    ENUM_AX_ENTRY_MODEL entryModel;
@@ -202,6 +202,28 @@ struct AXSignal
    string        rationaleWhyNow;
    string        rationaleWhyHere;
    double        liquidityTarget;
+   //--- sniper-entry precision fields (only meaningful when entryModel==ENTRY_LIMIT)
+   double        invalidationPrice; // if price closes beyond this before the limit fills, the setup is dead - cancel, don't chase
+   bool          poiConfluence;     // true if the limit price sits inside a real order block/FVG, not just a raw Fib level
+   double        precisionScore;    // 0..100 - how tight/confluent the entry zone is, feeds into fusion confidence
+  };
+
+//--- a live pending limit order waiting for its precise sniper price to be tapped
+struct AXPendingOrder
+  {
+   ulong           orderTicket;
+   ENUM_AX_SETUP   setup;
+   int             direction;
+   double          entryPrice, stopLoss, tp1, tp2, tpFinal, liquidityTarget;
+   double          invalidationPrice;
+   double          volume;
+   double          confidence;
+   ENUM_AX_QUALITY quality;
+   ENUM_AX_REGIME  regime;
+   double          expectedR;
+   string          macroContext, whyNow, whyHere;
+   datetime        placedTime;
+   datetime        expiryTime;
   };
 
 //--- fully fused, scored trade candidate
