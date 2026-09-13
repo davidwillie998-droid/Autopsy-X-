@@ -59,6 +59,11 @@ public:
       m_retryDelayMs = MathMax(0, retryDelayMs);
    }
 
+   void SetDeviationPoints(const int deviationPoints)
+   {
+      m_deviationPoints = MathMax(1, deviationPoints);
+   }
+
    AXExecResult OpenMarketOrder(const CAXSymbolProfile &profile, const ENUM_AX_DIRECTION direction,
                                  double lots, const double sl, const double tp, const string comment)
    {

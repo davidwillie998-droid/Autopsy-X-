@@ -24,6 +24,7 @@
 #include <AutopsyX/ExitEngine.mqh>
 #include <AutopsyX/AutopsyEngine.mqh>
 #include <AutopsyX/AdaptiveEngine.mqh>
+#include <AutopsyX/LiveCalibrationEngine.mqh>
 #include <AutopsyX/Dashboard.mqh>
 
 //======================= INPUTS =====================================
@@ -94,6 +95,15 @@ input group "=== Autopsy / Journal ==="
 input double InpSlippageFailurePts      = 8.0;     // Slippage (points) tagged as a failure
 input double InpSpreadFailurePts        = 35.0;    // Entry spread (points) tagged as a failure
 
+input group "=== Live Calibration (demo != live: measure, don't guess) ==="
+input bool   InpLiveCalibrationEnabled    = true;   // Measure real spread before trading anything
+input int    InpCalibrationMinutes        = 20;     // Warm-up window (minutes), no trades placed
+input int    InpMinCalibrationSamples     = 300;    // Minimum ticks required before trusting the measurement
+input double InpSpreadToleranceMultiplier = 2.0;    // Spread gate = measured P90 spread * this
+input double InpDisplacementCostMultiplier = 1.5;   // Min displacement = measured median spread * this
+input double InpAtrCostMultiplier          = 3.0;   // Min ATR = measured median spread * this
+input double InpDeviationToleranceMultiplier = 1.5; // Execution deviation = measured P90 spread * this
+
 //======================= GLOBAL ENGINE INSTANCES =====================
 CAXSymbolProfile   g_profile;
 CAXMarketData      g_market;
@@ -108,6 +118,7 @@ CAXExecution       g_execution;
 CAXExit            g_exit;
 CAXAutopsy         g_autopsy;
 CAXAdaptive        g_adaptive;
+CAXCalibration     g_calibration;
 CAXDashboard       g_dashboard;
 
 AXPositionState    g_position;
@@ -116,6 +127,12 @@ ENUM_AX_DIRECTION  g_lastTradeDirection = AX_DIR_NONE;
 
 datetime g_lastDecisionTime = 0;
 double   g_lastDecisionPrice = 0.0;
+
+// live-measured (or static-fallback) operating thresholds - see LiveCalibrationEngine.mqh
+bool     g_calibrationDone = false;
+double   g_effMaxSpreadPoints = 30.0;
+double   g_effMinDisplacementPoints = 4.0;
+double   g_effMinAtrPoints = 5.0;
 
 bool g_recentResults[30];
 int  g_recentResultsCount = 0;
@@ -146,9 +163,13 @@ int OnInit()
       return INIT_FAILED;
    }
 
+   g_effMaxSpreadPoints        = InpMaxSpreadPoints;
+   g_effMinDisplacementPoints  = InpMinDisplacementPoints;
+   g_effMinAtrPoints           = InpMinAtrPoints;
+
    g_confidence.BindEngines(g_profile, g_micro, g_liquidity, g_momentum, g_regime);
-   g_confidence.SetThresholds(InpEntryThreshold, InpMinScoreGap, InpMaxSpreadPoints,
-                               InpMaxSpreadExpansion, InpMinAtrPoints);
+   g_confidence.SetThresholds(InpEntryThreshold, InpMinScoreGap, g_effMaxSpreadPoints,
+                               InpMaxSpreadExpansion, g_effMinAtrPoints);
 
    g_risk.Init(InpRiskPerTradePct, InpMaxDailyLossPct, InpMaxConsecutiveLosses, InpMaxOpenPositions,
                InpMaxTradesPerMinute, InpMaxTradesPerSession, InpMaxFlipsPerMinute,
@@ -174,7 +195,21 @@ int OnInit()
 
    AXPositionState emptyPos;
    g_position = emptyPos;
-   g_status = InpEnableTrading ? AX_STATUS_ACTIVE : AX_STATUS_PAUSED;
+
+   if(InpLiveCalibrationEnabled)
+   {
+      g_calibration.Init(InpCalibrationMinutes * 60, InpMinCalibrationSamples);
+      g_calibration.Start(TimeTradeServer());
+      g_calibrationDone = false;
+      g_status = AX_STATUS_CALIBRATING;
+      PrintFormat("AutopsyX: live calibration started - measuring real spread for %d minutes before any trade is considered",
+                  InpCalibrationMinutes);
+   }
+   else
+   {
+      g_calibrationDone = true;
+      g_status = InpEnableTrading ? AX_STATUS_ACTIVE : AX_STATUS_PAUSED;
+   }
 
    PrintFormat("AutopsyX HFT Flip Engine initialized on %s (%s)", _Symbol, EnumToString(InpStructureTimeframe));
    return INIT_SUCCEEDED;
@@ -207,6 +242,13 @@ void OnTick()
    g_risk.Heartbeat();
    g_micro.Update(g_market.ticks);
 
+   if(!g_calibrationDone)
+   {
+      g_calibration.Feed(g_micro.SpreadCurrentPts());
+      if(g_calibration.CheckComplete(TimeTradeServer()))
+         FinishCalibration();
+   }
+
    if(g_market.IsNewBar())
    {
       MqlRates rates[];
@@ -225,6 +267,8 @@ void OnTick()
 
    if(g_risk.KillSwitchActive())
       g_status = AX_STATUS_LOCKED;
+   else if(!g_calibrationDone)
+      g_status = AX_STATUS_CALIBRATING;
    else if(!InpEnableTrading)
       g_status = AX_STATUS_PAUSED;
    else
@@ -255,7 +299,14 @@ void OnTimer()
    d.drawdownPct     = g_risk.EquityDrawdownPct();
    d.currentPosition = g_position.active ? g_position.direction : AX_DIR_NONE;
    d.holdTimeSec     = g_position.active ? (int)(TimeTradeServer() - g_position.open_time) : 0;
-   d.exitMode        = g_position.active ? CurrentExitModeLabel() : "--";
+   if(g_position.active)
+      d.exitMode = CurrentExitModeLabel();
+   else if(!g_calibrationDone)
+      d.exitMode = StringFormat("CALIBRATING (%d sec left, %d samples)",
+                                 g_calibration.RemainingSeconds(TimeTradeServer()), g_calibration.SampleCount());
+   else
+      d.exitMode = "--";
+
    d.statusNote      = g_risk.KillSwitchActive() ? g_risk.KillReason() : "";
 
    g_dashboard.Update(d);
@@ -286,7 +337,7 @@ void ManageOpenPosition(void)
    if(g_risk.KillSwitchActive())
       reason = AX_EXIT_RISK_SHUTDOWN;
    else
-      reason = g_exit.Evaluate(g_position, g_micro.SpreadCurrentPts(), InpMaxSpreadPoints,
+      reason = g_exit.Evaluate(g_position, g_micro.SpreadCurrentPts(), g_effMaxSpreadPoints,
                                 g_confidence.BuyScore(), g_confidence.SellScore(),
                                 g_momentum.MomentumBias(), g_micro.MomentumExhausted());
 
@@ -387,10 +438,44 @@ void FinalizeClosedPosition(const ENUM_AX_EXIT_REASON fallbackReason)
    g_position = emptyPos;
 }
 
+//====================== LIVE CALIBRATION ===============================
+// Demo and live execution are not the same thing - most brokers simulate
+// friendlier fills on a demo server. Rather than trade on guessed static
+// thresholds, the EA measures this account's real spread for a warm-up
+// window (no trades placed) and derives its gates from that measurement.
+void FinishCalibration(void)
+{
+   g_effMaxSpreadPoints       = g_calibration.EffectiveMaxSpreadPts(InpSpreadToleranceMultiplier, InpMaxSpreadPoints);
+   g_effMinDisplacementPoints = g_calibration.EffectiveMinDisplacementPts(InpDisplacementCostMultiplier, InpMinDisplacementPoints);
+   g_effMinAtrPoints          = g_calibration.EffectiveMinAtrPts(InpAtrCostMultiplier, InpMinAtrPoints);
+   int effDeviation           = g_calibration.EffectiveDeviationPoints(InpDeviationToleranceMultiplier, InpDeviationPoints);
+
+   g_confidence.SetThresholds(InpEntryThreshold, InpMinScoreGap, g_effMaxSpreadPoints,
+                               InpMaxSpreadExpansion, g_effMinAtrPoints);
+   g_execution.SetDeviationPoints(effDeviation);
+
+   g_calibrationDone = true;
+
+   if(g_calibration.HasEnoughData())
+   {
+      PrintFormat("AutopsyX: live calibration complete on %s - median spread %.1f pts, P90 %.1f pts (%d samples). "
+                  "Gates set to: max spread %.1f pts, min displacement %.1f pts, min ATR %.1f pts, deviation %d pts.",
+                  _Symbol, g_calibration.MedianSpreadPts(), g_calibration.P90SpreadPts(), g_calibration.SampleCount(),
+                  g_effMaxSpreadPoints, g_effMinDisplacementPoints, g_effMinAtrPoints, effDeviation);
+   }
+   else
+   {
+      PrintFormat("AutopsyX: calibration window elapsed with too few samples (%d) on %s - falling back to static inputs. "
+                  "This symbol may be too illiquid for this engine, or the chart isn't receiving ticks.",
+                  g_calibration.SampleCount(), _Symbol);
+   }
+}
+
 //====================== ENTRY EVALUATION ==============================
 void EvaluateEntry(void)
 {
    if(g_position.active) return;
+   if(!g_calibrationDone) return; // never trade on unmeasured live conditions
 
    ENUM_AX_DIRECTION dir = g_confidence.Direction();
    if(dir == AX_DIR_NONE) return;
@@ -407,7 +492,7 @@ void EvaluateEntry(void)
       int elapsed = (int)(now - g_lastDecisionTime);
       if(elapsed < InpMinDecisionIntervalSec) return;
       double movedPts = g_profile.PriceToPoints(MathAbs(mid - g_lastDecisionPrice));
-      if(movedPts < InpMinDisplacementPoints) return;
+      if(movedPts < g_effMinDisplacementPoints) return;
    }
 
    double slPoints = InpStopLossPoints;
@@ -422,7 +507,7 @@ void EvaluateEntry(void)
 
    string entryReason;
    if(!g_entry.Validate(g_profile, dir, lots, g_micro.SpreadCurrentPts(), g_micro.SpreadExpansionRatio(),
-                         InpMaxSpreadPoints, InpMaxSpreadExpansion, g_confidence.Direction(), entryReason))
+                         g_effMaxSpreadPoints, InpMaxSpreadExpansion, g_confidence.Direction(), entryReason))
       return; // conditions deteriorated between signal and execution - never chase
 
    AXSignalSnapshot snap = g_confidence.Snapshot();
@@ -491,7 +576,7 @@ int CountOwnPositions(void)
 
 string CurrentExitModeLabel(void)
 {
-   ENUM_AX_EXIT_REASON r = g_exit.Evaluate(g_position, g_micro.SpreadCurrentPts(), InpMaxSpreadPoints,
+   ENUM_AX_EXIT_REASON r = g_exit.Evaluate(g_position, g_micro.SpreadCurrentPts(), g_effMaxSpreadPoints,
                                             g_confidence.BuyScore(), g_confidence.SellScore(),
                                             g_momentum.MomentumBias(), g_micro.MomentumExhausted());
    if(r != AX_EXIT_NONE) return AXExitReasonToString(r);

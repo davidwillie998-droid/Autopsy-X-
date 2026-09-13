@@ -139,9 +139,10 @@ private:
    {
       switch(s)
       {
-         case AX_STATUS_ACTIVE: return "ACTIVE";
-         case AX_STATUS_PAUSED: return "PAUSED";
-         case AX_STATUS_LOCKED: return "LOCKED";
+         case AX_STATUS_ACTIVE:      return "ACTIVE";
+         case AX_STATUS_PAUSED:      return "PAUSED";
+         case AX_STATUS_LOCKED:      return "LOCKED";
+         case AX_STATUS_CALIBRATING: return "CALIBRATING";
       }
       return "?";
    }
@@ -150,9 +151,10 @@ private:
    {
       switch(s)
       {
-         case AX_STATUS_ACTIVE: return clrLime;
-         case AX_STATUS_PAUSED: return clrOrange;
-         case AX_STATUS_LOCKED: return clrTomato;
+         case AX_STATUS_ACTIVE:      return clrLime;
+         case AX_STATUS_PAUSED:      return clrOrange;
+         case AX_STATUS_LOCKED:      return clrTomato;
+         case AX_STATUS_CALIBRATING: return clrDeepSkyBlue;
       }
       return clrSilver;
    }

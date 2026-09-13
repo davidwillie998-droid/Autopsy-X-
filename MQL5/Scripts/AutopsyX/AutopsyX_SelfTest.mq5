@@ -19,6 +19,7 @@
 #include <AutopsyX/ExitEngine.mqh>
 #include <AutopsyX/AdaptiveEngine.mqh>
 #include <AutopsyX/AutopsyEngine.mqh>
+#include <AutopsyX/LiveCalibrationEngine.mqh>
 
 int g_pass = 0, g_fail = 0;
 
@@ -251,6 +252,37 @@ void TestExitEngineStops(void)
    Check(tp < entryPrice, "Sell take-profit is placed below entry");
 }
 
+void TestCalibrationEngine(void)
+{
+   CAXCalibration calib;
+   calib.Init(60, 20); // 60s window, 20 samples minimum
+
+   Check(!calib.CheckComplete(TimeCurrent()), "Calibration is not complete before it has started");
+   calib.Start(TimeCurrent());
+   Check(!calib.HasEnoughData(), "Calibration has no data immediately after starting");
+
+   for(int i = 0; i < 100; i++)
+   {
+      double spread = 10.0 + (i % 5); // synthetic spread samples clustered 10-14 pts
+      calib.Feed(spread);
+   }
+   Check(calib.HasEnoughData(), "Calibration accumulates enough samples from fed spreads");
+   Check(calib.MedianSpreadPts() >= 10.0 && calib.MedianSpreadPts() <= 14.0, "Median spread falls within the fed sample range");
+   Check(calib.P90SpreadPts() >= calib.MedianSpreadPts(), "P90 spread is never below the median");
+
+   double eff = calib.EffectiveMaxSpreadPts(2.0, 999.0);
+   Check(eff < 999.0 && eff > 0.0, "Effective max spread is derived from measurement, not the fallback");
+
+   double fallback = calib.EffectiveMaxSpreadPts(2.0, 999.0);
+   Check(fallback != 999.0, "Fallback value is only used when data is insufficient");
+
+   CAXCalibration emptyCalib;
+   emptyCalib.Init(60, 500); // demand more samples than we will feed
+   emptyCalib.Start(TimeCurrent());
+   emptyCalib.Feed(15.0);
+   Check(emptyCalib.EffectiveMaxSpreadPts(2.0, 42.0) == 42.0, "Falls back to the static value when data is insufficient");
+}
+
 void OnStart()
 {
    Print("===== AUTOPSY X SELF-TEST =====");
@@ -262,6 +294,7 @@ void OnStart()
    TestRiskEngine();
    TestAdaptiveEngine();
    TestAutopsyEngine();
+   TestCalibrationEngine();
    TestEntryEngineRejectsNoDirection();
    TestExitEngineStops();
 

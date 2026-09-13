@@ -65,6 +65,42 @@ MarketDataEngine -> MicrostructureEngine -> LiquidityEngine -> MomentumEngine
   has a hard, non-negotiable min/max (see `AX_ADAPT_*` constants in
   `Include/AutopsyX/Defines.mqh`).
 
+## Live calibration (why demo settings don't carry over)
+
+Demo and live servers do not fill orders the same way — most brokers simulate
+friendlier spread and slippage on demo, so nothing you learn there tells you
+the real spread/slippage regime on the account you actually intend to trade.
+There is no way around this at the platform level; being connected to the
+live server is the only source of truth about that account's real execution
+quality.
+
+So rather than trade on a guessed static spread/deviation number, the EA
+opens in a `CALIBRATING` state (see `Include/AutopsyX/LiveCalibrationEngine.mqh`)
+whenever `InpLiveCalibrationEnabled` is on (default): for `InpCalibrationMinutes`
+it watches real ticks on whichever account it is attached to — live included —
+places **no trades**, and measures the account's actual median and 90th-percentile
+spread. Once it has enough samples it derives:
+
+- the spread gate (`P90 spread * InpSpreadToleranceMultiplier`)
+- the minimum-displacement filter (`median spread * InpDisplacementCostMultiplier`)
+- the minimum-ATR filter (`median spread * InpAtrCostMultiplier`)
+- the execution deviation tolerance (`P90 spread * InpDeviationToleranceMultiplier`)
+
+from what it actually measured on that broker/symbol/session, and prints the
+measured numbers to the log. Only after that does it leave `CALIBRATING` and
+start evaluating entries. If a symbol is too illiquid to gather enough samples
+before the window (times out at 3x `InpCalibrationMinutes`) it falls back to
+the static `Inp*` inputs and says so in the log.
+
+**What this does not do:** it does not make live trading risk-free, and it is
+not a substitute for validating the strategy itself. Recommended path for a
+live-only rollout: attach on live with the smallest lot size your broker
+allows and `InpRiskPerTradePct` set very low, let calibration complete, and
+watch the dashboard + `MQL5/Files/AutopsyX/<symbol>_journal.csv` for a real
+probation period before raising size. That first live stretch, at minimum
+risk, is the only genuine test of this account's execution quality — there
+is no shortcut that avoids putting real money on the line for it.
+
 ## Dashboard
 
 A lightweight on-chart panel (status, regime, direction, buy/sell score,
