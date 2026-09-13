@@ -22,7 +22,8 @@ struct AXDashboardData
    //--- risk
    double equity; double currentRiskPct; double openExposurePct; double drawdownPct; string dailyStatus;
    //--- execution
-   double execSpread; double execSlippage; string brokerStatus;
+   double execSpread; double execAvgSpread; double execSlippage; double execLatencyMs;
+   int execPartialFills; int execFillingFallbacks; string brokerStatus;
    //--- autopsy
    int recentTrades; double expectancy; string aPlusPerformance; string regimePerformance;
    //--- state
@@ -86,7 +87,7 @@ public:
 
    void Render(const AXDashboardData &d)
      {
-      Background(360, 480);
+      Background(360, 500);
       int y = m_y; int lh = 15;
       color hdr = clrKhaki, val = clrWhiteSmoke, warn = clrTomato, good = clrLightGreen;
 
@@ -118,8 +119,11 @@ public:
       Label("RISK3", StringFormat("Daily status: %s", d.dailyStatus), m_x, y, val); y+=lh+4;
 
       Label("H_EXEC", "-- EXECUTION --", m_x, y, hdr); y+=lh;
-      Label("EXEC1", StringFormat("Spread:%.1f Slippage avg:%.1f", d.execSpread, d.execSlippage), m_x, y, val); y+=lh;
-      Label("EXEC2", StringFormat("Broker: %s", d.brokerStatus), m_x, y, val); y+=lh+4;
+      Label("EXEC1", StringFormat("Spread now:%.1f avg:%.1f", d.execSpread, d.execAvgSpread), m_x, y,
+            d.execSpread>d.execAvgSpread*2.0 && d.execAvgSpread>0.0 ? warn : val); y+=lh;
+      Label("EXEC2", StringFormat("Slippage avg:%.1f  Latency avg:%.0fms", d.execSlippage, d.execLatencyMs), m_x, y, val); y+=lh;
+      Label("EXEC3", StringFormat("Partial fills:%d  Fill-mode fallbacks:%d", d.execPartialFills, d.execFillingFallbacks), m_x, y, val); y+=lh;
+      Label("EXEC4", StringFormat("Broker: %s", d.brokerStatus), m_x, y, val); y+=lh+4;
 
       Label("H_AUT", "-- AUTOPSY --", m_x, y, hdr); y+=lh;
       Label("AUT1", StringFormat("Trades: %d  Expectancy: %.2fR", d.recentTrades, d.expectancy), m_x, y, val); y+=lh;

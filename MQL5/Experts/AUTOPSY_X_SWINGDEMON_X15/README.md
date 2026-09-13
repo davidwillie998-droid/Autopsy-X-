@@ -15,6 +15,20 @@ This was built and reviewed line-by-line for MQL5 correctness in an environment 
 - **Probability/expectancy numbers start neutral.** `ProbabilityEngine` and `SeasonalityEngine` are empirical, built from *this EA's own* closed-trade journal — with zero history they shrink hard to a neutral 50% prior rather than pretending to know anything. They get more meaningful the longer the EA (or a backtest of it) runs.
 - **Anti-overfitting / walk-forward / Monte Carlo (section 32) is a testing methodology, not code the EA runs on itself.** Use the MT5 Strategy Tester's own walk-forward and Monte Carlo/optimization tooling against this EA; the EA's `DriftEngine` and `DiagnosticEngine` handle *live* drift detection, which is a different (complementary) thing.
 
+## Live vs. demo execution
+
+Demo servers are usually forgiving: tight constant spread, instant fills, permissive filling modes, no real margin pressure. Live servers aren't, and this EA treats that as the normal case rather than an edge case:
+
+- **Filling-mode fallback.** `BrokerAdapter` builds a try-order of every filling mode the symbol advertises (FOK/IOC/RETURN). If a live send comes back `TRADE_RETCODE_INVALID_FILL` — a rejection that's rare on demo but real on many ECN/STP live venues, including for symbols whose advertised support flags turn out to be wrong — `ExecutionEngine` swaps to the next mode and resends the *same* price rather than treating it as a generic rejection. This doesn't cost a requote-retry slot.
+- **Partial fills are handled correctly, not misreported as failures.** The old version of this verified the opened position against the *requested* volume; a genuine partial fill (far more common live than on demo) would then fail verification and the EA would report the trade as failed — while a real, unmanaged position sat open on the account. `ExecutionEngine.OpenMarket` now reads the actual filled volume back from the trade result and verifies against *that*, and the resulting `AXTradeThesis` sizes its risk/partial-close math off the real fill, not the ask.
+- **Adaptive deviation.** `InpDeviationPoints` is a floor, not a fixed value — the actual deviation passed to the broker scales up with the currently-quoted spread (capped at 5x the input) so a live account's normally-wider spread doesn't manufacture rejections that a demo account, quoting near-zero spread, would never hit.
+- **Relative spread-spike filter**, on top of the absolute `InpMaxSpreadPoints` cap: `BrokerAdapter` keeps a rolling average of the spread this account has actually seen, and `InpSpreadSpikeMultiple` blocks new entries when the current spread blows out past that average (news, rollover, thin liquidity) — a single static cap can't tell a genuine spike apart from a broker that just always quotes wide.
+- **Pre-trade margin check.** `OrderCalcMargin` is called before every send; an order that would eat into free margin (95% threshold, so it never trades right up to a margin call) is refused before it ever reaches the broker, rather than discovered as a live-only rejection.
+- **Aggregate volume-limit check.** Some brokers enforce `SYMBOL_VOLUME_LIMIT` (a per-symbol cap across all your positions) that demo servers often don't bother with; the EA checks it before sending.
+- **Execution-quality feedback loop, fed by real fills.** Slippage and order-round-trip latency are logged from this account's own actual trades (not simulated), and once there are 10+ real fills the expected-value calculation uses *that* observed slippage instead of a static guess — so live costs get baked into the EV gate as they're discovered, live latency and slippage degradation both suspend new entries (`DiagnosticEngine`, `InpSlippageWarnPoints` / `InpLatencyWarnMs`), and current spread/average spread, slippage, latency, partial-fill count, and filling-mode-fallback count are all visible on the live dashboard.
+
+None of this is simulated in a way that would show up identically in a backtest — the Strategy Tester's default execution model doesn't reproduce filling-mode rejections, real partial fills, or live spread-spike behavior particularly faithfully. Treat a green backtest as necessary, not sufficient, and watch the dashboard's execution section (and the account's own trade history) during the demo-account phase of the validation workflow below — that's where these numbers become real.
+
 ## Layout
 
 ```
@@ -57,8 +71,8 @@ This is the workflow from the spec's section 44 — it hasn't been executed here
 - **ENTRY** — minimum confidence, minimum R:R, minimum expected value (in R), whether Grade B setups may trade live (A/A+ only by default).
 - **MANAGEMENT** — partial-close percentages at TP1/TP2.
 - **NEWS** — calendar filter on/off, pre-event blackout and post-event confirmation windows (minutes).
-- **EXECUTION** — max spread, deviation, retry count.
-- **SAFETY** — emergency stop, max trades per day/week, slippage warning threshold.
+- **EXECUTION** — max spread (absolute), spread-spike multiple (relative to this account's own rolling average), deviation floor, retry count.
+- **SAFETY** — emergency stop, max trades per day/week, slippage and latency warning thresholds.
 - **CORRELATION/MACRO** — comma-separated watch-symbol list (only symbols your broker actually offers are used; the rest are silently skipped).
 - **WEEKEND** — hold/reduce/close and the Friday server-time hour to apply it.
 

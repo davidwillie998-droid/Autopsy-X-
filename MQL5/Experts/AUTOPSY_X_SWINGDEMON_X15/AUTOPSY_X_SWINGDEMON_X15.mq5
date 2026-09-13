@@ -71,15 +71,17 @@ input int  InpPreEventBlackoutMinutes  = 30;
 input int  InpPostEventConfirmMinutes  = 30;
 
 //==================== EXECUTION ====================
-input int InpMaxSpreadPoints  = 400;  // reject new entries above this spread; widen for exotic/metal quoting
-input int InpDeviationPoints  = 30;
-input int InpMaxRetries       = 3;
+input int    InpMaxSpreadPoints    = 400;  // absolute reject-above-this cap; widen for exotic/metal quoting
+input double InpSpreadSpikeMultiple = 2.5; // reject if current spread > this x this account's own rolling average
+input int    InpDeviationPoints    = 30;   // floor; actual deviation scales up with live spread, see ExecutionEngine
+input int    InpMaxRetries         = 3;
 
 //==================== SAFETY ====================
 input bool   InpEmergencyStop        = false;
 input int    InpMaxTradesPerDay      = 6;
 input int    InpMaxTradesPerWeek     = 20;
 input double InpSlippageWarnPoints   = 15.0;
+input double InpLatencyWarnMs        = 1500.0; // suspend new entries if round-trip order latency degrades past this
 
 //==================== CORRELATION / MACRO ====================
 input string InpCorrelationWatchList = "USDJPY,XAGUSD,USOIL,US500,BTCUSD";
@@ -153,7 +155,7 @@ int OnInit()
       g_season.Record(r.openTime, r.rMultiple);
      }
 
-   g_diag.Init(InpMaxTradesPerDay, InpMaxTradesPerWeek, InpSlippageWarnPoints);
+   g_diag.Init(InpMaxTradesPerDay, InpMaxTradesPerWeek, InpSlippageWarnPoints, InpLatencyWarnMs);
    g_risk.Init(InpRiskPercentDefault, InpMaxRiskPercentPerTrade, InpMaxTotalOpenRiskPercent, InpMaxOpenPositions);
    g_exposure.Init(&g_corr, InpMaxCorrelatedRiskPercent, InpCorrelationThreshold);
    g_drawdown.Init(_Symbol, InpMagicNumber);
@@ -283,6 +285,9 @@ bool CheckFailsafes(string &reason)
    if(!AccountInfoInteger(ACCOUNT_TRADE_ALLOWED)) { reason="Account trading disabled"; return false; }
    if(!SymbolInfoInteger(_Symbol, SYMBOL_SELECT)) { reason="Symbol not selected/available"; return false; }
    if(g_broker.SpreadPoints() > InpMaxSpreadPoints) { reason=StringFormat("Spread %.0f pts exceeds max %d", g_broker.SpreadPoints(), InpMaxSpreadPoints); return false; }
+   if(g_broker.IsSpreadSpiking(InpSpreadSpikeMultiple))
+      { reason=StringFormat("Spread %.0f pts is %.1fx this account's recent average %.0f - likely a live liquidity spike",
+                             g_broker.SpreadPoints(), InpSpreadSpikeMultiple, g_broker.AverageSpreadPoints()); return false; }
    double marginLevel = AccountInfoDouble(ACCOUNT_MARGIN_LEVEL);
    if(AccountInfoDouble(ACCOUNT_MARGIN)>0.0 && marginLevel>0.0 && marginLevel<150.0)
       { reason=StringFormat("Margin level %.0f%% unsafe", marginLevel); return false; }
@@ -410,7 +415,10 @@ void TryEnterTrade()
       double pF = g_prob.ProbFinal(sig.setup, rF);
 
       double provisionalVolume = g_risk.ComputeVolume(g_broker, InpRiskPercentDefault, riskDist);
-      double costR = g_ev.CostInR(g_broker, g_broker.SpreadPoints(), 0.0, InpDeviationPoints*0.3, MathMax(provisionalVolume,g_broker.volumeMin), riskDist);
+      // once this account has real fills, use ITS observed slippage rather than a guess - live and demo differ here
+      AXExecutionQualityStats execStats = g_exec.QualityStats();
+      double slippageEstimate = execStats.sampleSize>=10 ? execStats.avgSlippagePoints : InpDeviationPoints*0.3;
+      double costR = g_ev.CostInR(g_broker, g_broker.SpreadPoints(), 0.0, slippageEstimate, MathMax(provisionalVolume,g_broker.volumeMin), riskDist);
       double expectedR = g_ev.ComputeExpectedR(r1, r2, rF, p1, p2, pF, costR);
 
       AXFusedSignal fused = g_fusion.Fuse(sig, biasStack, wellLocated, structQuality, volRegime,
@@ -445,6 +453,10 @@ void TryEnterTrade()
                                               StringFormat("AXSD15-%s", AXSetupToString(best.signal.setup)));
    if(!res.success) return;
 
+   // a live fill can come back smaller than requested - the thesis's risk/volume must reflect what actually
+   // filled, not what was asked for, or every downstream R/partial/exposure calc is wrong from entry onward
+   double actualVolume = res.filledVolume>0.0 ? res.filledVolume : volume;
+
    AXTradeThesis thesis;
    thesis.ticket=res.ticket; thesis.direction=best.signal.direction;
    thesis.whyNow=best.signal.rationaleWhyNow; thesis.whyHere=best.signal.rationaleWhyHere;
@@ -455,9 +467,9 @@ void TryEnterTrade()
    thesis.openTime=TimeCurrent(); thesis.entryPrice=res.executedPrice; thesis.stopLoss=best.signal.stopLoss;
    thesis.tp1=best.signal.tp1; thesis.tp2=best.signal.tp2; thesis.tpFinal=best.signal.tpFinal;
    thesis.initialStopDistance=MathAbs(res.executedPrice-best.signal.stopLoss);
-   thesis.initialRiskMoney = g_broker.RiskMoneyForStop(thesis.initialStopDistance, volume);
+   thesis.initialRiskMoney = g_broker.RiskMoneyForStop(thesis.initialStopDistance, actualVolume);
    thesis.equityAtEntry = AccountInfoDouble(ACCOUNT_EQUITY);
-   thesis.volumeOriginal=volume; thesis.volumeRemaining=volume;
+   thesis.volumeOriginal=actualVolume; thesis.volumeRemaining=actualVolume;
    thesis.phase=PHASE_1_INITIAL; thesis.partial1Done=false; thesis.partial2Done=false; thesis.movedToBreakeven=false;
    thesis.mfe=0.0; thesis.mae=0.0; thesis.highestPrice=res.executedPrice; thesis.lowestPrice=res.executedPrice;
    g_posMgr.AddThesis(thesis);
@@ -465,9 +477,10 @@ void TryEnterTrade()
    int kt=ArraySize(g_knownTickets); ArrayResize(g_knownTickets,kt+1); g_knownTickets[kt]=res.ticket;
    g_tradesToday++; g_tradesThisWeek++;
 
-   PrintFormat("AXSD15 ENTER #%I64u %s dir=%d setup=%s quality=%s conf=%.1f R=%.2f vol=%.2f",
+   PrintFormat("AXSD15 ENTER #%I64u %s dir=%d setup=%s quality=%s conf=%.1f R=%.2f vol=%.2f%s latency=%dms",
                res.ticket, _Symbol, best.signal.direction, AXSetupToString(best.signal.setup),
-               AXQualityToString(best.quality), best.confidence, best.expectedValueR, volume);
+               AXQualityToString(best.quality), best.confidence, best.expectedValueR, actualVolume,
+               res.partialFill ? " (PARTIAL FILL)" : "", res.latencyMs);
   }
 
 //+------------------------------------------------------------------+
@@ -507,7 +520,9 @@ void RenderDashboard()
    d.dailyStatus = g_tradingSuspended ? ("SUSPENDED: "+g_suspendReason) : "Normal";
 
    AXExecutionQualityStats q = g_exec.QualityStats();
-   d.execSpread=g_broker.SpreadPoints(); d.execSlippage=q.avgSlippagePoints;
+   d.execSpread=g_broker.SpreadPoints(); d.execAvgSpread=g_broker.AverageSpreadPoints();
+   d.execSlippage=q.avgSlippagePoints; d.execLatencyMs=q.avgLatencyMs;
+   d.execPartialFills=q.partialFills; d.execFillingFallbacks=q.fillingModeFallbacks;
    d.brokerStatus = g_broker.tradeAllowed ? "OK" : "RESTRICTED";
 
    d.recentTrades=g_journal.Count(); d.expectancy=g_journal.Expectancy(20);
@@ -551,7 +566,7 @@ void OnTick()
      {
       string diagReason;
       AXExecutionQualityStats q = g_exec.QualityStats();
-      bool suspendForDiag = g_diag.ShouldSuspend(g_journal, g_tradesToday, g_tradesThisWeek, q.avgSlippagePoints, diagReason);
+      bool suspendForDiag = g_diag.ShouldSuspend(g_journal, g_tradesToday, g_tradesThisWeek, q.avgSlippagePoints, q.avgLatencyMs, diagReason);
       if(!suspendForDiag)
          TryEnterTrade();
      }

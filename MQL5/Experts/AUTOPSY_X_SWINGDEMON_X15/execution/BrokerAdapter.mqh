@@ -12,6 +12,9 @@ class CBrokerAdapter
   {
 private:
    string   m_symbol;
+   double   m_spreadHistory[]; // rolling window - live spread varies tick to tick, demo often doesn't
+   int      m_fillingModes[3]; // broker-supported filling modes, in try-order
+   int      m_fillingModeCount;
 
 public:
    int      digits;
@@ -22,14 +25,16 @@ public:
    double   volumeMin;
    double   volumeMax;
    double   volumeStep;
+   double   volumeLimit;   // 0 = no aggregate cap; otherwise max combined open+pending volume on this symbol
    long     stopLevelPoints;
    long     freezeLevelPoints;
-   int      filling; // ENUM_SYMBOL_TRADE_EXECUTION-derived filling mode to use
+   int      filling; // preferred ENUM_ORDER_TYPE_FILLING to try first
    bool     tradeAllowed;
 
    void Init(const string symbol)
      {
       m_symbol = symbol;
+      ArrayResize(m_spreadHistory, 0);
       Refresh();
      }
 
@@ -43,10 +48,13 @@ public:
       volumeMin         = SymbolInfoDouble(m_symbol, SYMBOL_VOLUME_MIN);
       volumeMax         = SymbolInfoDouble(m_symbol, SYMBOL_VOLUME_MAX);
       volumeStep        = SymbolInfoDouble(m_symbol, SYMBOL_VOLUME_STEP);
+      volumeLimit       = SymbolInfoDouble(m_symbol, SYMBOL_VOLUME_LIMIT);
       stopLevelPoints   = SymbolInfoInteger(m_symbol, SYMBOL_TRADE_STOPS_LEVEL);
       freezeLevelPoints = SymbolInfoInteger(m_symbol, SYMBOL_TRADE_FREEZE_LEVEL);
       tradeAllowed      = (SymbolInfoInteger(m_symbol, SYMBOL_TRADE_MODE) == SYMBOL_TRADE_MODE_FULL);
-      filling           = ResolveFillingMode();
+      ResolveFillingModes();
+      filling           = m_fillingModeCount>0 ? m_fillingModes[0] : ORDER_FILLING_FOK;
+      LogSpread(SpreadPoints());
      }
 
    double Bid() const { return SymbolInfoDouble(m_symbol, SYMBOL_BID); }
@@ -57,6 +65,31 @@ public:
       if(point <= 0.0) return 0.0;
       return (ask - bid) / point;
      }
+
+   //--- rolling average spread this account has actually seen recently (not a broker-quoted "typical" figure)
+   double AverageSpreadPoints() const
+     {
+      int n = ArraySize(m_spreadHistory);
+      if(n==0) return SpreadPoints();
+      double sum=0.0;
+      for(int i=0;i<n;i++) sum+=m_spreadHistory[i];
+      return sum/n;
+     }
+
+   //--- true when the CURRENT spread is blowing out relative to this account's own recent norm -
+   //--- catches news/rollover/thin-liquidity spikes that a single static point cap can't tell apart
+   //--- from a broker that just always quotes wide (e.g. some brokers run 300+ pt on gold routinely)
+   bool IsSpreadSpiking(double multiple=2.5) const
+     {
+      int n = ArraySize(m_spreadHistory);
+      if(n < 20) return false; // not enough live history yet to know what "normal" is for this account
+      double avg = AverageSpreadPoints();
+      if(avg<=0.0) return false;
+      return SpreadPoints() > avg*multiple;
+     }
+
+   int FillingModeCount() const { return m_fillingModeCount; }
+   int FillingModeAt(int i) const { return (i>=0 && i<m_fillingModeCount) ? m_fillingModes[i] : ORDER_FILLING_FOK; }
 
    //--- round price to the symbol's tick size
    double NormalizePrice(double price) const
@@ -119,12 +152,25 @@ public:
      }
 
 private:
-   int ResolveFillingMode() const
+   //--- broker-advertised filling modes are sometimes wrong or incomplete on live servers, so this
+   //--- builds a try-order rather than committing to one mode; ExecutionEngine falls back through it
+   //--- on TRADE_RETCODE_INVALID_FILL instead of just retrying the same rejected request
+   void ResolveFillingModes()
      {
+      m_fillingModeCount = 0;
       long modeFlags = SymbolInfoInteger(m_symbol, SYMBOL_FILLING_MODE);
-      if((modeFlags & SYMBOL_FILLING_FOK) != 0)  return ORDER_FILLING_FOK;
-      if((modeFlags & SYMBOL_FILLING_IOC) != 0)  return ORDER_FILLING_IOC;
-      return ORDER_FILLING_RETURN;
+      if((modeFlags & SYMBOL_FILLING_FOK) != 0)  m_fillingModes[m_fillingModeCount++] = ORDER_FILLING_FOK;
+      if((modeFlags & SYMBOL_FILLING_IOC) != 0)  m_fillingModes[m_fillingModeCount++] = ORDER_FILLING_IOC;
+      m_fillingModes[m_fillingModeCount++] = ORDER_FILLING_RETURN; // always a valid last resort to try
+     }
+
+   void LogSpread(double points)
+     {
+      int n = ArraySize(m_spreadHistory);
+      if(n>=100) ArrayRemove(m_spreadHistory,0,1);
+      n = ArraySize(m_spreadHistory);
+      ArrayResize(m_spreadHistory,n+1);
+      m_spreadHistory[n]=points;
      }
   };
 #endif // AX_EXECUTION_BROKERADAPTER_MQH
