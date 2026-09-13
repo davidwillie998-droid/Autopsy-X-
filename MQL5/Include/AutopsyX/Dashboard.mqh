@@ -30,6 +30,10 @@ struct SAxDashboardExtras
    double         avgLatencyMs;
    int            poorFillsToday;
    int            consecutivePoorFills;
+   bool           sniperEnabled;
+   bool           sniperArmed;
+   bool           sniperPullbackSeen;
+   int            sniperSecondsWaiting;
   };
 
 class CDashboard
@@ -106,7 +110,7 @@ public:
          ObjectCreate(m_chartId,full,OBJ_BUTTON,0,0,0);
          ObjectSetInteger(m_chartId,full,OBJPROP_CORNER,CORNER_LEFT_UPPER);
          ObjectSetInteger(m_chartId,full,OBJPROP_XDISTANCE,m_x);
-         ObjectSetInteger(m_chartId,full,OBJPROP_YDISTANCE,m_y+660);
+         ObjectSetInteger(m_chartId,full,OBJPROP_YDISTANCE,m_y+679);
          ObjectSetInteger(m_chartId,full,OBJPROP_XSIZE,m_width);
          ObjectSetInteger(m_chartId,full,OBJPROP_YSIZE,26);
          ObjectSetString(m_chartId,full,OBJPROP_TEXT,"KILL ENGINE");
@@ -138,7 +142,7 @@ public:
                              const ENUM_AX_ENGINE_STATE engineState,const ENUM_AX_GATE gate,
                              const SAxDashboardExtras &extras)
      {
-      MakeRect("BG",m_x-6,m_y-6,m_width,730,C'12,12,14');
+      MakeRect("BG",m_x-6,m_y-6,m_width,749,C'12,12,14');
 
       int y=m_y; int x=m_x+4;
       MakeLabel("T1",x,y,"AUTOPSY X",clrGold,12); y+=18;
@@ -213,6 +217,15 @@ public:
       color execClr = (extras.consecutivePoorFills>0)?clrTomato:clrWhite;
       MakeLabel("EXECQ",x,y,StringFormat("AVG SLIP/LAT: %.1fpts / %.0fms",extras.avgSlippagePts,extras.avgLatencyMs),execClr); y+=m_lineH;
       MakeLabel("POORFILL",x,y,StringFormat("POOR FILLS: %d today (streak %d)",extras.poorFillsToday,extras.consecutivePoorFills),execClr); y+=m_lineH+4;
+
+      //--- sniper entry timing: OFF when disabled, otherwise ARMED/waiting-for-pullback/-resume ---
+      string sniperStr;
+      color sniperClr;
+      if(!extras.sniperEnabled) { sniperStr="OFF"; sniperClr=clrSilver; }
+      else if(!extras.sniperArmed) { sniperStr="IDLE"; sniperClr=clrSilver; }
+      else if(extras.sniperPullbackSeen) { sniperStr=StringFormat("ARMED - awaiting resume (%ds)",extras.sniperSecondsWaiting); sniperClr=clrGold; }
+      else { sniperStr=StringFormat("ARMED - awaiting pullback (%ds)",extras.sniperSecondsWaiting); sniperClr=clrAqua; }
+      MakeLabel("SNIPER",x,y,"SNIPER: "+sniperStr,sniperClr); y+=m_lineH+4;
 
       color engClr = (engineState==AX_ENGINE_ATTACKING)?clrLime:(engineState==AX_ENGINE_KILLED)?clrRed:clrSilver;
       MakeLabel("ENGINE",x,y,"ENGINE: "+stateStr,engClr); y+=m_lineH;

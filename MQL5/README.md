@@ -342,3 +342,68 @@ conditions apply. Tune `InpMaxSlippagePoints`, `InpMaxFillLatencyMs`, and
 `InpMaxConsecutivePoorFills` to your specific broker and symbol — a
 250ms round trip is unremarkable on some ECN feeds and alarming on
 others, and default values are a starting point, not a promise.
+
+## 13. Sniper entries — precision over frequency
+
+A confirmed signal used to be the whole trigger: score clears the bar, the
+next tick fires a market order. That's fine on paper and expensive in
+practice, because a signal firing *right now* usually means the move
+already thrust, and market orders chasing a thrust pay the worst price of
+the whole move. `CSniperEngine` (`Include/AutopsyX/SniperEngine.mqh`)
+changes what happens between "signal confirmed" and "capital committed."
+
+**How it works.** Once every other gate (risk, chop, session, HTF
+confluence) has passed for a fresh signal, the EA no longer fires — it
+arms. From that point every tick is watched for a genuine two-phase
+structure event in the signal's own direction:
+
+1. **A pullback** of at least `InpSniperPullbackPoints` away from the best
+   price seen since arming. This is proof the initial thrust paused instead
+   of running away untouched.
+2. **A resumption** of at least `InpSniperResumePoints` back in the
+   original direction, measured from the pullback's own extreme. This is
+   the actual retest-and-go that the entry fires on.
+
+Only the resumption commits capital, at whatever price the market is
+offering at that moment — typically a meaningfully better price than the
+one available the instant the signal first confirmed. Two safeguards keep
+this from turning into missed trades or a chase in disguise:
+
+- **Never chase.** If price runs more than `InpSniperMaxChasePoints` in the
+  signal's favor *before ever pulling back*, the arm is abandoned outright.
+  A move that never offers a retest is not a sniper entry, it's a breakout
+  this EA deliberately sits out.
+- **Never wait forever.** `InpSniperMaxWaitSeconds` bounds how long an
+  armed signal is allowed to wait for its retest. Conditions that produced
+  the original signal can go stale; an unbounded wait would eventually
+  fire on a signal the market has already invalidated.
+
+`FinalConfirm` still runs at the moment of the actual trigger (same as the
+legacy one-tick-delay path), so a retest that fires into a spread spike or
+a since-flipped score gets cancelled rather than forced through.
+
+**Structure-based stops.** Sniper precision extends to risk placement.
+When `InpSniperUseStructureStop` is enabled, the entry's stop-loss prefers
+the nearest tracked liquidity/swing level (`CLiquidityEngine::GetNearestLevel`)
+plus `InpSniperStructureBufferPts`, instead of the generic ATR/fixed
+distance — but *only* when that structural stop is actually tighter than
+what `ComputeInitialStops` already produced, and only when it still clears
+the broker's minimum stop/freeze distance. This never widens risk, it only
+sharpens it: since position sizing is computed from the actual resulting
+stop distance, a tighter, structure-anchored stop yields a larger position
+for the same fixed dollar risk, not a smaller one.
+
+**Scope.** Sniper timing applies only to fresh entries taken while flat.
+Flip re-entries — closing one side and immediately opening the other on a
+confirmed reversal — remain immediate and unaffected. A flip is a
+defensive, time-critical reaction to a reversal already in progress;
+waiting for a pullback-and-resume there would defeat the purpose of
+flipping at all.
+
+**Turning it off.** `InpUseSniperEntry=false` restores the exact prior
+one-tick confirmation-delay behavior with no other change in behavior —
+useful as an A/B baseline, or on symbols/timeframes where pullbacks are
+too rare or too fast to be usable. The dashboard's SNIPER line shows OFF,
+IDLE, or ARMED with a live pullback/resume phase and wait-timer so you can
+see the state machine working in real time rather than inferring it from
+trade timestamps after the fact.

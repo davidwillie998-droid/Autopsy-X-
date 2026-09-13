@@ -27,6 +27,7 @@
 #include <AutopsyX/EntryEngine.mqh>
 #include <AutopsyX/ExecutionEngine.mqh>
 #include <AutopsyX/ExitEngine.mqh>
+#include <AutopsyX/SniperEngine.mqh>
 #include <AutopsyX/TradeAutopsy.mqh>
 #include <AutopsyX/Statistics.mqh>
 #include <AutopsyX/Dashboard.mqh>
@@ -37,6 +38,15 @@
 input group "=== MODE ===";
 input ENUM_AX_MODE   InpMode                    = AX_MODE_AGGRESSIVE; // Aggression mode
 input double         InpExtremeRiskPercent      = 2.0;                // EXTREME mode risk % per trade (hard-capped at 2.0)
+
+input group "=== SNIPER ENTRY (PRECISION TIMING) ===";
+input bool            InpUseSniperEntry           = true; // Wait for a precise pullback-then-resume before entering, instead of firing immediately
+input double          InpSniperPullbackPoints     = 15;   // Pullback required from the local extreme to arm the resume-watch, points
+input double          InpSniperResumePoints       = 8;    // Resumption required from the pullback point to actually trigger entry, points
+input int             InpSniperMaxWaitSeconds     = 8;     // Give up waiting for the retest after this long, seconds
+input double          InpSniperMaxChasePoints     = 40;    // Abandon if price runs this far in our favor without ever pulling back
+input bool            InpSniperUseStructureStop   = true;  // Prefer a stop just beyond the nearest liquidity level when it's tighter than ATR/fixed
+input double          InpSniperStructureBufferPts = 10;    // Buffer placed beyond the structural level, points
 
 input group "=== RISK ENGINE ===";
 input double         InpDailyLossLimitPercent   = 8.0;    // Daily loss limit (%) - stops session when hit
@@ -138,6 +148,7 @@ CRiskEngine           g_risk;
 CEntryEngine          g_entryEngine;
 CExecutionEngine      g_exec;
 CExitEngine           g_exit;
+CSniperEngine         g_sniper;
 CTradeAutopsy         g_autopsy;
 CStatistics           g_stats;
 CAccuracyEngine       g_accuracy;
@@ -469,14 +480,43 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
      }
 
    double intendedPrice = (dir==AX_DIR_BUY) ? g_md.CurrentAsk() : g_md.CurrentBid();
+   double point = g_md.Point();
    double slPrice,tpPrice;
    double atrForStops = InpUseAtrStops ? g_regime.CurrentAtr() : 0.0;
    g_exit.ComputeInitialStops(g_md,dir,intendedPrice,atrForStops,slPrice,tpPrice);
 
-   // size off the ACTUAL resulting stop distance (which ComputeInitialStops may have widened
-   // for the broker's stops/freeze level or for ATR) so the dollar risk stays pinned to the
-   // configured risk percent regardless of how far away the stop ends up sitting
-   double point = g_md.Point();
+   // sniper precision extends to risk placement: prefer a stop just beyond the nearest tracked
+   // liquidity level over the generic ATR/fixed one, but only when it's actually TIGHTER and
+   // still respects the broker's minimum stop distance - never widen risk, only sharpen it.
+   // Gated on InpUseSniperEntry too so turning sniper entries off is a true A/B baseline, per README.
+   // Flip re-entries ("FLIP" tag) are excluded on purpose: they're a defensive, time-critical
+   // reaction to a reversal already in progress and must stay on the plain ATR/fixed stop untouched
+   // by sniper precision, exactly as README section 13's "Scope" documents.
+   if(InpUseSniperEntry && InpSniperUseStructureStop && point>0 && tag!="FLIP")
+     {
+      bool wantHighLevel = (dir==AX_DIR_SELL); // SELL stops sit above a recent high, BUY below a recent low
+      double levelPrice = g_liq.GetNearestLevel(wantHighLevel,intendedPrice);
+      // NearestLevel only picks the geometrically closest level of the requested side - it does NOT
+      // guarantee that level is on the correct side of price, e.g. a stale/lagging "low" fractal that
+      // now sits above the current ask after a fast reversal. A stop must sit strictly on the loss
+      // side of entry (below for BUY, above for SELL); reject anything else outright rather than let
+      // an absolute-distance "tighter" comparison mask a stop on the wrong side of the market.
+      bool correctSide = (dir==AX_DIR_BUY) ? (levelPrice<intendedPrice) : (levelPrice>intendedPrice);
+      if(levelPrice>0 && correctSide)
+        {
+         double buffer = InpSniperStructureBufferPts*point;
+         double structureSl = (dir==AX_DIR_BUY) ? levelPrice-buffer : levelPrice+buffer;
+         bool tighter = (dir==AX_DIR_BUY) ? (structureSl>slPrice) : (structureSl<slPrice);
+         int minStopPts = g_md.MinStopDistancePts();
+         double distFromEntryPts = MathAbs(intendedPrice-structureSl)/point;
+         if(tighter && distFromEntryPts>=minStopPts)
+            slPrice = g_md.NormalizePrice(structureSl);
+        }
+     }
+
+   // size off the ACTUAL resulting stop distance (which the above may have widened for the
+   // broker's stops/freeze level, widened for ATR, or tightened to structure) so the dollar
+   // risk stays pinned to the configured risk percent regardless of how far away the stop sits
    double actualSlDistPts = (point>0) ? MathAbs(intendedPrice-slPrice)/point : InpEmergencySlPoints;
 
    double lots = g_risk.CalculateLotSize(g_md,actualSlDistPts);
@@ -648,6 +688,9 @@ int OnInit(void)
                      InpTrailStartPoints,InpTrailDistancePoints,InpMaxHoldSeconds,
                      InpSpreadAbnormalMultiplier,InpOpposingExitConfidence,InpUseAtrStops,
                      InpAtrStopMultiplier);
+   // sniper thresholds are configured in points but tracked internally in raw price units
+   g_sniper.Configure(InpSniperPullbackPoints*g_md.Point(),InpSniperResumePoints*g_md.Point(),
+                       InpSniperMaxWaitSeconds,InpSniperMaxChasePoints*g_md.Point());
 
    if(!g_autopsy.Init("AutopsyX_FlipDemon_Extreme",_Symbol))
       Print("AUTOPSY X: warning - could not open trade autopsy CSV log");
@@ -839,41 +882,93 @@ void OnTick(void)
      }
    else
      {
-      //--- ATTACK: evaluate a fresh entry, using a one-tick confirmation delay so ---
-      //--- conditions are re-verified immediately before committing capital ---
-      if(g_pendingActive && (TimeCurrent()-g_pendingTime)>AX_PENDING_MAX_AGE_SEC)
-         g_pendingActive = false; // missed move - never chase
-
-      if(g_pendingActive)
+      //--- ATTACK: evaluate a fresh entry. Two modes:
+      //--- sniper mode arms on a confirmed signal and waits for a genuine pullback-then-resume
+      //--- before committing capital (better price, no chasing); legacy mode uses a plain
+      //--- one-tick confirmation delay. Either way, conditions are re-verified immediately
+      //--- before committing capital.
+      if(InpUseSniperEntry)
         {
-         string finalReason;
-         if(g_entryEngine.FinalConfirm(g_md,g_pendingScore,score,InpMaxSpreadPoints,finalReason) &&
-            AxHtfConfluenceOk(score.action))
+         if(g_sniper.IsArmed())
            {
-            g_engineState = AX_ENGINE_ATTACKING;
-            AxAttemptEntry(score.action,score,0,"ENTRY");
-           }
-         else if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry cancelled (%s)",finalReason);
-         g_pendingActive = false;
-        }
-      else
-        {
-         string reason;
-         double stopDistPts = InpEmergencySlPoints;
-         bool ok = g_entryEngine.PreFlightCheck(_Symbol,g_md,score,g_risk,g_chop,stopDistPts,0,0.0,
-                                                 InpSessionStartHour,InpSessionEndHour,
-                                                 InpAvoidRolloverMinutes,reason)
-                   && AxHtfConfluenceOk(score.action);
-         if(ok)
-           {
-            g_pendingActive = true;
-            g_pendingScore  = score;
-            g_pendingTime   = TimeCurrent();
-            g_engineState   = AX_ENGINE_ACTIVE;
+            bool expired;
+            bool triggered = g_sniper.OnTick(g_md.CurrentMid(),expired);
+            if(triggered)
+              {
+               string finalReason;
+               if(g_entryEngine.FinalConfirm(g_md,g_pendingScore,score,InpMaxSpreadPoints,finalReason) &&
+                  AxHtfConfluenceOk(g_pendingScore.action))
+                 {
+                  g_engineState = AX_ENGINE_ATTACKING;
+                  AxAttemptEntry(g_pendingScore.action,score,0,"SNIPER");
+                 }
+               else if(InpVerboseLogging) PrintFormat("AUTOPSY X: sniper trigger cancelled (%s)",finalReason);
+              }
+            else if(expired)
+              {
+               if(InpVerboseLogging) Print("AUTOPSY X: sniper entry expired - no valid retest, standing down");
+              }
+            else
+              {
+               g_engineState = AX_ENGINE_ACTIVE; // waiting for the precise retest
+              }
            }
          else
            {
-            g_engineState = g_chop.IsInCooldown() ? AX_ENGINE_COOLDOWN : AX_ENGINE_ACTIVE;
+            string reason;
+            double stopDistPts = InpEmergencySlPoints;
+            bool ok = g_entryEngine.PreFlightCheck(_Symbol,g_md,score,g_risk,g_chop,stopDistPts,0,0.0,
+                                                    InpSessionStartHour,InpSessionEndHour,
+                                                    InpAvoidRolloverMinutes,reason)
+                      && AxHtfConfluenceOk(score.action);
+            if(ok)
+              {
+               g_sniper.Arm(score.action,g_md.CurrentMid());
+               g_pendingScore = score; // remember direction/score for FinalConfirm's "original" baseline
+               g_engineState  = AX_ENGINE_ACTIVE;
+              }
+            else
+              {
+               g_engineState = g_chop.IsInCooldown() ? AX_ENGINE_COOLDOWN : AX_ENGINE_ACTIVE;
+              }
+           }
+        }
+      else
+        {
+         if(g_pendingActive && (TimeCurrent()-g_pendingTime)>AX_PENDING_MAX_AGE_SEC)
+            g_pendingActive = false; // missed move - never chase
+
+         if(g_pendingActive)
+           {
+            string finalReason;
+            if(g_entryEngine.FinalConfirm(g_md,g_pendingScore,score,InpMaxSpreadPoints,finalReason) &&
+               AxHtfConfluenceOk(score.action))
+              {
+               g_engineState = AX_ENGINE_ATTACKING;
+               AxAttemptEntry(score.action,score,0,"ENTRY");
+              }
+            else if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry cancelled (%s)",finalReason);
+            g_pendingActive = false;
+           }
+         else
+           {
+            string reason;
+            double stopDistPts = InpEmergencySlPoints;
+            bool ok = g_entryEngine.PreFlightCheck(_Symbol,g_md,score,g_risk,g_chop,stopDistPts,0,0.0,
+                                                    InpSessionStartHour,InpSessionEndHour,
+                                                    InpAvoidRolloverMinutes,reason)
+                      && AxHtfConfluenceOk(score.action);
+            if(ok)
+              {
+               g_pendingActive = true;
+               g_pendingScore  = score;
+               g_pendingTime   = TimeCurrent();
+               g_engineState   = AX_ENGINE_ACTIVE;
+              }
+            else
+              {
+               g_engineState = g_chop.IsInCooldown() ? AX_ENGINE_COOLDOWN : AX_ENGINE_ACTIVE;
+              }
            }
         }
      }
@@ -919,6 +1014,10 @@ void OnTimer(void)
    extras.avgLatencyMs          = (g_fillCount>0)? g_sumLatencyMs/g_fillCount : 0.0;
    extras.poorFillsToday        = g_poorFillsToday;
    extras.consecutivePoorFills  = g_consecutivePoorFills;
+   extras.sniperEnabled         = InpUseSniperEntry;
+   extras.sniperArmed           = g_sniper.IsArmed();
+   extras.sniperPullbackSeen    = g_sniper.PullbackSeen();
+   extras.sniperSecondsWaiting  = g_sniper.SecondsWaiting();
 
    g_dash.Render(InpMode,g_regime.Regime(),g_scorer.Last(),g_mom.VelocityLabel(),
                  (g_mom.PersistentBull()?"BULLISH":g_mom.PersistentBear()?"BEARISH":"NEUTRAL"),

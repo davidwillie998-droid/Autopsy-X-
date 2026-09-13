@@ -169,6 +169,13 @@ public:
    double            SessionLow(void)  const { return(m_sessionLow); }
    int               LevelCount(void)  const { return(m_levelCount); }
 
+   //--- public access to the nearest tracked structural level, for structure-based stop placement ---
+   //--- (0 if no level of that side has been tracked yet, e.g. right after EA startup) ---
+   double            GetNearestLevel(const bool wantHigh,const double refPrice) const
+     {
+      return(NearestLevel(wantHigh,refPrice));
+     }
+
    //--- 0..100 liquidity bullish/bearish bias components used by SignalScore ---
    double            BullishScoreComponent(const double bid,const double ask) const
      {

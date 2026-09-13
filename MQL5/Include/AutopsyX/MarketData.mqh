@@ -118,6 +118,10 @@ public:
    double            VolumeStep(void)      const { return(m_volStep); }
    int               StopsLevelPts(void)   const { return(m_stopsLevelPts); }
    int               FreezeLevelPts(void)  const { return(m_freezeLevelPts); }
+   //--- single source of truth for "how close a stop may legally sit to price" - broker stops level
+   //--- and freeze level plus a small safety margin, so every stop-placement site agrees on the same
+   //--- minimum instead of each re-deriving (and potentially drifting from) the same formula ---
+   int               MinStopDistancePts(void) const { return((int)MathMax(m_stopsLevelPts,m_freezeLevelPts)+2); }
    int               ExecMode(void)        const { return(m_execMode); }
    int               Count(void)           const { return(m_count); }
 

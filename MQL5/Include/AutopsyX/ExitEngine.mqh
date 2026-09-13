@@ -67,7 +67,7 @@ public:
          if(atrDist>slDist) slDist = atrDist;
         }
       double tpDist = slDist*m_dynamicTpRR;
-      int minStop = MathMax(md.StopsLevelPts(),md.FreezeLevelPts())+2;
+      int minStop = md.MinStopDistancePts();
       if(slDist < minStop*point) slDist = minStop*point;
 
       if(dir==AX_DIR_BUY)
@@ -134,7 +134,7 @@ public:
       bool improvesOnCurrent = (st.dir==AX_DIR_BUY) ? (candidate>currentSl) : (candidate<currentSl);
       if(!improvesOnCurrent) return(false);
 
-      int minStop = MathMax(md.StopsLevelPts(),md.FreezeLevelPts())+2;
+      int minStop = md.MinStopDistancePts();
       double distFromPrice = MathAbs(currentPrice-candidate)/point;
       if(distFromPrice < minStop) return(false);
 
