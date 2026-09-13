@@ -168,6 +168,8 @@ public:
       //--- premium/discount relative to the current dealing range (last HH..HL)
       double range_high = MathMax(hh, s.last_swing_high);
       double range_low  = MathMin(hl, s.last_swing_low);
+      s.range_high = range_high;
+      s.range_low  = range_low;
       double mid = (range_high+range_low)/2.0;
       s.in_premium  = close_now > mid;
       s.in_discount = close_now < mid;

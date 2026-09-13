@@ -103,6 +103,24 @@ struct SOpenMeta
   };
 SOpenMeta               g_openMeta[];
 
+//--- a pending SNIPER limit order awaiting its retracement fill. Tracked
+//--- separately from live positions so its precise, pre-planned metadata
+//--- (risk%, flip score, mode, targets) survives from placement through to
+//--- the fill, rather than being re-derived after the fact.
+struct SPendingMeta
+  {
+   ulong             order_ticket;
+   string            symbol;
+   ENUM_AXF_DIRECTION direction;
+   ENUM_AXF_REGIME  regime;
+   datetime          placed_time, expire_time;
+   double            entry, stop, target1, target2, target_final, risk_pct;
+   ENUM_AXF_GROWTH_MODE mode;
+   double            flip_score;
+   string            entry_reason;
+  };
+SPendingMeta            g_pendingMeta[];
+
 bool                     g_bridgeUsable = true;
 datetime                 g_lastBridgePost = 0;
 
@@ -127,6 +145,26 @@ int SymbolIndex(const string symbol)
   {
    for(int i=0;i<ArraySize(g_symbols);i++) if(g_symbols[i]==symbol) return i;
    return -1;
+  }
+
+int FindPendingByOrderTicket(const ulong order_ticket)
+  {
+   for(int i=0;i<ArraySize(g_pendingMeta);i++) if(g_pendingMeta[i].order_ticket==order_ticket) return i;
+   return -1;
+  }
+
+int FindPendingBySymbol(const string symbol)
+  {
+   for(int i=0;i<ArraySize(g_pendingMeta);i++) if(g_pendingMeta[i].symbol==symbol) return i;
+   return -1;
+  }
+
+void RemovePendingMeta(const int idx)
+  {
+   int n = ArraySize(g_pendingMeta);
+   if(idx<0 || idx>=n) return;
+   for(int i=idx;i<n-1;i++) g_pendingMeta[i]=g_pendingMeta[i+1];
+   ArrayResize(g_pendingMeta,n-1);
   }
 
 double AccountHealthScore(void)
@@ -228,6 +266,7 @@ bool InitSymbols(void)
       g_symbols[valid]=s;
 
       if(!g_market[valid].Init(s)) { Print("AXF: MarketEngine init failed for ",s); }
+      g_market[valid].InitSpreadHistory(Inp_SpreadHistorySamples);
       if(!g_volatility[valid].Init(s,Inp_ATR_Timeframe,Inp_ATR_Period,Inp_VolLookback))
          Print("AXF: VolatilityEngine init failed for ",s);
       if(!g_regime[valid].Init(s,Inp_HTF,Inp_ADX_Period,Inp_ADX_StrongTrend))
@@ -257,7 +296,8 @@ int OnInit()
    g_structure.Init(Inp_SwingLookback,Inp_StructureBars,Inp_FVG_MinAtrFraction);
    g_bias.Init(Inp_DXY_Symbol);
    g_probability.Init(50);
-   g_opportunity.Init(Inp_MinRR_Required);
+   g_opportunity.Init(Inp_MinRR_Required,Inp_SniperEntryMode,Inp_SniperZoneFraction,
+                       Inp_SniperMaxDistanceATR,Inp_SniperMinDistancePoints);
    g_riskEngine.Init(Inp_BaseRiskPct,Inp_MaxRiskPct,Inp_FlipModeEnabled,Inp_FlipRiskMultiplier);
    g_compounding.Init(Inp_MagicNumber,equity);
    g_ruinEngine.Init(Inp_MonteCarloPaths,Inp_MonteCarloTrades,
@@ -266,7 +306,8 @@ int OnInit()
                    Inp_LossStreak_Reduce1,Inp_LossStreak_Reduce2,Inp_LossStreak_Halt,Inp_LossStreak_CutFactor,
                    Inp_WinStreak_ReviewAt,Inp_WinStreak_CapFactor,equity);
    g_exposure.Init(Inp_MagicNumber,Inp_MaxPortfolioRiskPct);
-   g_execution.Init(Inp_MagicNumber,Inp_MaxSlippagePoints,Inp_MaxOrderRetries);
+   g_execution.Init(Inp_MagicNumber,Inp_MaxSlippagePoints,Inp_MaxOrderRetries,
+                     Inp_SlippageHistorySamples,Inp_MinSlippageSamplesToUse);
    g_posManager.Init(Inp_MagicNumber,Inp_PyramidingEnabled,Inp_MaxAddsPerPosition);
    g_journal.Init(Inp_MagicNumber);
    g_diagnostic.Init(Inp_FlipScore_Elite,Inp_FlipScore_APlus,Inp_FlipScore_A,Inp_FlipScore_B);
@@ -278,6 +319,7 @@ int OnInit()
    //--- positions already open (survives a restart). Risk is reconstructed
    //--- from the live SL distance rather than assumed.
    ReconstructOpenMetaFromPositions();
+   ReconstructPendingMetaFromOrders();
 
    EventSetTimer(MathMax(1,Inp_TimerSeconds));
    g_state = STATE_COOLDOWN;
@@ -323,6 +365,53 @@ void ReconstructOpenMetaFromPositions(void)
      }
    if(ArraySize(g_openMeta)>0)
       Print("AXF: recovered ",ArraySize(g_openMeta)," open EA position(s) after (re)start.");
+  }
+
+//--- Section 41 TERMINAL RECOVERY, sniper orders: any pending BuyLimit/
+//--- SellLimit this EA placed before a restart is rebuilt from the order
+//--- itself. The precise flip-score/mode context from placement time is
+//--- gone (as with position recovery above) — this only needs to be safe,
+//--- not to remember why the trade was taken.
+void ReconstructPendingMetaFromOrders(void)
+  {
+   ArrayResize(g_pendingMeta,0);
+   for(int i=0;i<OrdersTotal();i++)
+     {
+      ulong ticket = OrderGetTicket(i);
+      if(ticket==0 || !OrderSelect(ticket)) continue;
+      if((ulong)OrderGetInteger(ORDER_MAGIC)!=Inp_MagicNumber) continue;
+
+      long type = OrderGetInteger(ORDER_TYPE);
+      if(type!=ORDER_TYPE_BUY_LIMIT && type!=ORDER_TYPE_SELL_LIMIT) continue;
+
+      SPendingMeta pm;
+      pm.order_ticket = ticket;
+      pm.symbol = OrderGetString(ORDER_SYMBOL);
+      pm.direction = (type==ORDER_TYPE_BUY_LIMIT) ? DIR_LONG : DIR_SHORT;
+      pm.regime = REGIME_UNKNOWN;
+      pm.placed_time = (datetime)OrderGetInteger(ORDER_TIME_SETUP);
+      pm.expire_time = (datetime)OrderGetInteger(ORDER_TIME_EXPIRATION);
+      pm.entry = OrderGetDouble(ORDER_PRICE_OPEN);
+      pm.stop  = OrderGetDouble(ORDER_SL);
+      pm.target1 = OrderGetDouble(ORDER_TP);
+      pm.target2 = pm.target1; pm.target_final = pm.target1;
+
+      double dist = MathAbs(pm.entry-pm.stop);
+      double tick_value = SymbolInfoDouble(pm.symbol,SYMBOL_TRADE_TICK_VALUE);
+      double tick_size  = SymbolInfoDouble(pm.symbol,SYMBOL_TRADE_TICK_SIZE);
+      double vol = OrderGetDouble(ORDER_VOLUME_CURRENT);
+      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      pm.risk_pct = (dist>0 && tick_size>0 && equity>0) ? (dist/tick_size)*tick_value*vol/equity*100.0 : 0.0;
+      pm.mode = MODE_NORMAL;
+      pm.flip_score = 0;
+      pm.entry_reason = "RECOVERED_ON_RESTART";
+
+      int n=ArraySize(g_pendingMeta);
+      ArrayResize(g_pendingMeta,n+1);
+      g_pendingMeta[n]=pm;
+     }
+   if(ArraySize(g_pendingMeta)>0)
+      Print("AXF: recovered ",ArraySize(g_pendingMeta)," pending sniper order(s) after (re)start.");
   }
 
 void OnDeinit(const int reason)
@@ -394,8 +483,16 @@ bool EvaluateSymbol(const int idx,SAxfOpportunity &opp_out,double &lots_out,
      { g_audit.Reject(DECISION_REJECT_ACCOUNT_SURVIVAL,"consecutive loss halt — awaiting manual review"); return false; }
 
    //--- rung 2: BROKER / EXECUTION SAFETY (spread/stops checked properly once
-   //--- we know the stop distance, further down; a coarse check here first)
-   string broker_reason = g_broker.PreTradeCheck(symbol,Inp_MaxSpreadPoints,0);
+   //--- we know the stop distance, further down; a coarse check here first).
+   //--- Spread is judged both against an absolute ceiling AND against this
+   //--- symbol's own rolling median — a live account's "normal" spread on a
+   //--- volatile pair is not the same number a demo account would show.
+   if(Inp_RolloverBlackoutEnabled && g_broker.IsRolloverWindow(Inp_RolloverHourServer,Inp_RolloverBlackoutMins))
+     { g_audit.Reject(DECISION_REJECT_BROKER_SAFETY,"rollover blackout window — live spread/slippage unreliable here"); return false; }
+
+   string broker_reason = g_broker.PreTradeCheck(symbol,Inp_MaxSpreadPoints,0,
+                              g_market[idx].MedianSpreadPoints(),g_market[idx].SpreadSampleCount(),
+                              Inp_MinSpreadSamplesToJudge,Inp_SpreadAnomalyMultiple);
    if(broker_reason!="")
      { g_audit.Reject(DECISION_REJECT_BROKER_SAFETY,broker_reason); return false; }
 
@@ -450,14 +547,17 @@ bool EvaluateSymbol(const int idx,SAxfOpportunity &opp_out,double &lots_out,
    g_journal.GetRecords(history,200,true,regime.regime,opp.direction);
    SAxfProbability prob = g_probability.Compute(history);
 
-   //--- rung 11: EXPECTED VALUE
+   //--- rung 11: EXPECTED VALUE. Slippage cost uses THIS account's own realized
+   //--- average once enough live fills exist (never a value smaller than the
+   //--- conservative input floor) — see ExecutionEngine::AvgSlippagePoints.
    double reward_r_tp2 = (opp.reward_price_distance>0) ? MathAbs(opp.target2-opp.entry)/opp.risk_price_distance : opp.r_multiple_potential;
+   double slippage_estimate = g_execution.AvgSlippagePoints(symbol,Inp_AssumedSlippagePoints);
    SAxfExpectedValue ev = g_ev.Compute(prob,opp.r_multiple_potential,reward_r_tp2,
                                         opp.risk_price_distance,
                                         g_market[idx].SpreadPoints()*g_market[idx].Point(),
                                         Inp_CommissionPerLot,1.0,
                                         g_market[idx].ContractSize(),g_market[idx].TickValue(),g_market[idx].TickSize(),
-                                        Inp_AssumedSlippagePoints,g_market[idx].Point());
+                                        slippage_estimate,g_market[idx].Point());
    if(!ev.valid || !ev.positive)
      { g_audit.Reject(DECISION_REJECT_EXPECTED_VALUE,"expected value non-positive or unproven (sample confidence too low)"); return false; }
 
@@ -509,7 +609,9 @@ bool EvaluateSymbol(const int idx,SAxfOpportunity &opp_out,double &lots_out,
      { g_audit.Reject(DECISION_REJECT_POSITION_SIZE,"sized lot below broker minimum for this risk%"); return false; }
 
    //--- rung 15: EXECUTION SAFETY, now that we know the real stop distance
-   string broker_reason2 = g_broker.PreTradeCheck(symbol,Inp_MaxSpreadPoints,opp.risk_price_distance);
+   string broker_reason2 = g_broker.PreTradeCheck(symbol,Inp_MaxSpreadPoints,opp.risk_price_distance,
+                              g_market[idx].MedianSpreadPoints(),g_market[idx].SpreadSampleCount(),
+                              Inp_MinSpreadSamplesToJudge,Inp_SpreadAnomalyMultiple);
    if(broker_reason2!="")
      { g_audit.Reject(DECISION_REJECT_EXECUTION,broker_reason2); return false; }
    if(g_execution.CurrentScore() < Inp_ExecutionScoreFloor)
@@ -545,29 +647,69 @@ void RefreshRuinEstimates(void)
   }
 
 //+------------------------------------------------------------------+
-//| open a new position from an approved opportunity                   |
+//| open a new position (or place a sniper pending order) from an       |
+//| approved opportunity                                                 |
 //+------------------------------------------------------------------+
 void ExecuteApprovedTrade(const string symbol,const SAxfOpportunity &opp,const double lots,
                           const ENUM_AXF_GROWTH_MODE mode,const double flip_score,const double risk_pct,
                           const ENUM_AXF_REGIME regime)
   {
+   string entry_reason = StringFormat("regime=%s structQ=%.0f RR=%.2f",AxfRegimeToString(regime),opp.quality_score,opp.r_multiple_potential);
+
    if(!Inp_LiveTradingEnabled)
      {
       if(Inp_VerboseLogging)
-         Print("AXF [ANALYSIS-ONLY] would open ",symbol," ",(opp.direction==DIR_LONG?"LONG":"SHORT"),
+         Print("AXF [ANALYSIS-ONLY] would ",(opp.entry_is_limit?"PLACE SNIPER LIMIT":"open market")," ",
+               symbol," ",(opp.direction==DIR_LONG?"LONG":"SHORT")," entry=",opp.entry,
                " lots=",lots," risk%=",risk_pct," mode=",AxfModeToString(mode)," flip=",flip_score);
       return;
      }
 
-   double sl = g_market[SymbolIndex(symbol)].NormalizePrice(opp.stop);
-   double tp = g_market[SymbolIndex(symbol)].NormalizePrice(opp.target_final);
+   int sidx = SymbolIndex(symbol);
+   double sl = g_market[sidx].NormalizePrice(opp.stop);
+   double tp = g_market[sidx].NormalizePrice(opp.target_final);
 
-   string reason;
+   if(opp.entry_is_limit)
+     {
+      //--- SNIPER ENTRY: place a pending limit order at the precise
+      //--- retracement price rather than chasing the current market price.
+      double zone_price = g_market[sidx].NormalizePrice(opp.entry);
+      datetime expiry = TimeCurrent()+Inp_SniperExpiryMinutes*60;
+
+      string reason;
+      ulong order_ticket = g_execution.PlacePendingLimit(symbol,opp.direction,lots,zone_price,sl,tp,
+                                                          expiry,"AXF15|SNIPER|"+AxfModeToString(mode),reason);
+      if(order_ticket==0)
+        {
+         Print("AXF: sniper limit order failed for ",symbol,": ",reason);
+         return;
+        }
+
+      SPendingMeta pm;
+      pm.order_ticket=order_ticket; pm.symbol=symbol; pm.direction=opp.direction; pm.regime=regime;
+      pm.placed_time=TimeCurrent(); pm.expire_time=expiry;
+      pm.entry=opp.entry; pm.stop=opp.stop; pm.target1=opp.target1; pm.target2=opp.target2; pm.target_final=opp.target_final;
+      pm.risk_pct=risk_pct; pm.mode=mode; pm.flip_score=flip_score; pm.entry_reason=entry_reason;
+
+      int n=ArraySize(g_pendingMeta);
+      ArrayResize(g_pendingMeta,n+1);
+      g_pendingMeta[n]=pm;
+
+      Print("AXF SNIPER: placed ",symbol," ",(opp.direction==DIR_LONG?"BuyLimit":"SellLimit")," @ ",
+            DoubleToString(zone_price,g_market[sidx].Digits())," (",DoubleToString(opp.zone_distance_atr,2),
+            " ATR from market) lots=",lots," risk%=",DoubleToString(risk_pct,2)," expires in ",
+            Inp_SniperExpiryMinutes," min");
+      return;
+     }
+
+   //--- fallback market path (only reachable when Inp_SniperEntryMode is off
+   //--- and no honest retracement zone existed for this setup)
+   string reason2;
    ulong ticket = g_execution.OpenMarket(symbol,opp.direction,lots,sl,tp,
-                                          "AXF15|"+AxfModeToString(mode),reason);
+                                          "AXF15|"+AxfModeToString(mode),reason2);
    if(ticket==0)
      {
-      Print("AXF: order failed for ",symbol,": ",reason);
+      Print("AXF: order failed for ",symbol,": ",reason2);
       return;
      }
 
@@ -576,15 +718,64 @@ void ExecuteApprovedTrade(const string symbol,const SAxfOpportunity &opp,const d
    m.open_time=TimeCurrent(); m.entry=opp.entry; m.stop=opp.stop;
    m.target1=opp.target1; m.target2=opp.target2; m.risk_pct=risk_pct;
    m.mfe_r=0; m.mae_r=0; m.mode=mode; m.flip_score=flip_score;
-   m.entry_reason = StringFormat("regime=%s structQ=%.0f RR=%.2f",AxfRegimeToString(regime),opp.quality_score,opp.r_multiple_potential);
+   m.entry_reason = entry_reason;
    m.adds=0;
 
-   int n=ArraySize(g_openMeta);
-   ArrayResize(g_openMeta,n+1);
-   g_openMeta[n]=m;
+   int n2=ArraySize(g_openMeta);
+   ArrayResize(g_openMeta,n2+1);
+   g_openMeta[n2]=m;
 
    Print("AXF: opened ",symbol," ",(opp.direction==DIR_LONG?"LONG":"SHORT")," lots=",lots,
          " risk%=",DoubleToString(risk_pct,2)," mode=",AxfModeToString(mode)," flip=",DoubleToString(flip_score,1));
+  }
+
+//+------------------------------------------------------------------+
+//| SNIPER ENTRY lifecycle — cancel a pending order if it goes stale     |
+//| (never filled within its window) or if fresh structure invalidates   |
+//| the thesis before it ever fills. A fill itself is handled by          |
+//| OnTradeTransaction, not here.                                        |
+//+------------------------------------------------------------------+
+void ManagePendingSniperOrders(void)
+  {
+   for(int i=ArraySize(g_pendingMeta)-1;i>=0;i--)
+     {
+      ulong ticket = g_pendingMeta[i].order_ticket;
+      if(!OrderSelect(ticket))
+        {
+         // gone: either just filled (OnTradeTransaction will/has migrated it
+         // to g_openMeta) or cancelled/expired broker-side — either way this
+         // bookkeeping entry is stale now.
+         RemovePendingMeta(i);
+         continue;
+        }
+
+      if(TimeCurrent() >= g_pendingMeta[i].expire_time)
+        {
+         string reason;
+         if(g_execution.CancelPendingOrder(ticket,reason))
+            Print("AXF SNIPER: cancelled stale (unfilled) order on ",g_pendingMeta[i].symbol);
+         RemovePendingMeta(i);
+         continue;
+        }
+
+      if(Inp_SniperCancelOnInvalidation)
+        {
+         string symbol = g_pendingMeta[i].symbol;
+         int sidx = SymbolIndex(symbol);
+         if(sidx>=0)
+           {
+            SAxfVolatility vol = g_volatility[sidx].Compute(symbol);
+            SAxfStructure fresh = g_structure.Compute(symbol,Inp_LTF,vol.valid?vol.atr:0);
+            if(fresh.valid && g_posManager.ThesisInvalidated(g_pendingMeta[i].direction,fresh))
+              {
+               string reason;
+               if(g_execution.CancelPendingOrder(ticket,reason))
+                  Print("AXF SNIPER: cancelled ",symbol," — CHOCH invalidated the zone before it filled.");
+               RemovePendingMeta(i);
+              }
+           }
+        }
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -636,12 +827,16 @@ void ManageOpenPositions(void)
       SAxfOpportunity fresh = g_opportunity.Build(symbol,ltf,liq,regime,vol,g_market[sidx].Point(),g_market[sidx].StopsLevelPoints());
       if(g_posManager.CanPyramid(ticket,g_openMeta[i].adds,fresh))
         {
-         double add_risk_pct;
+         // pyramiding always executes immediately at market (it is continuation
+         // on strength, not a retracement wait) — so its risk distance must be
+         // measured from the live market price, never from fresh.entry, which
+         // may be a sniper retracement zone the add is not actually waiting for.
+         double add_risk_dist = MathAbs(fresh.market_price-fresh.stop);
          double effective;
-         if(g_exposure.CanAcceptNewRisk(symbol,Inp_BaseRiskPct,fresh.direction,effective))
+         if(add_risk_dist>0 && g_exposure.CanAcceptNewRisk(symbol,Inp_BaseRiskPct,fresh.direction,effective))
            {
             double add_lots;
-            if(g_riskEngine.ComputeLots(AccountInfoDouble(ACCOUNT_EQUITY),Inp_BaseRiskPct,fresh.risk_price_distance,
+            if(g_riskEngine.ComputeLots(AccountInfoDouble(ACCOUNT_EQUITY),Inp_BaseRiskPct,add_risk_dist,
                                         g_market[sidx].TickValue(),g_market[sidx].TickSize(),
                                         g_market[sidx].VolumeMin(),g_market[sidx].VolumeMax(),g_market[sidx].VolumeStep(),add_lots))
               {
@@ -670,7 +865,41 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
    ulong deal_ticket = trans.deal;
    if(!HistoryDealSelect(deal_ticket)) return;
    if((ulong)HistoryDealGetInteger(deal_ticket,DEAL_MAGIC) != Inp_MagicNumber) return;
-   if(HistoryDealGetInteger(deal_ticket,DEAL_ENTRY) != DEAL_ENTRY_OUT) return;
+
+   long deal_entry = HistoryDealGetInteger(deal_ticket,DEAL_ENTRY);
+
+   //--- SNIPER FILL: this deal opened a position from one of our pending
+   //--- limit orders. Migrate the precise pre-planned metadata (risk%, flip
+   //--- score, mode, targets) straight into g_openMeta rather than
+   //--- re-deriving anything from the fill itself.
+   if(deal_entry == DEAL_ENTRY_IN)
+     {
+      ulong originating_order = (ulong)HistoryDealGetInteger(deal_ticket,DEAL_ORDER);
+      int pidx = FindPendingByOrderTicket(originating_order);
+      if(pidx<0) return; // a market-opened position's own entry deal — already tracked at open time
+
+      ulong position_id = (ulong)HistoryDealGetInteger(deal_ticket,DEAL_POSITION_ID);
+      double fill_price = HistoryDealGetDouble(deal_ticket,DEAL_PRICE);
+
+      SOpenMeta m;
+      m.ticket=position_id; m.symbol=g_pendingMeta[pidx].symbol; m.direction=g_pendingMeta[pidx].direction;
+      m.regime=g_pendingMeta[pidx].regime; m.open_time=TimeCurrent();
+      m.entry=fill_price; m.stop=g_pendingMeta[pidx].stop;
+      m.target1=g_pendingMeta[pidx].target1; m.target2=g_pendingMeta[pidx].target2;
+      m.risk_pct=g_pendingMeta[pidx].risk_pct; m.mfe_r=0; m.mae_r=0;
+      m.mode=g_pendingMeta[pidx].mode; m.flip_score=g_pendingMeta[pidx].flip_score;
+      m.entry_reason=g_pendingMeta[pidx].entry_reason+" [SNIPER FILL]"; m.adds=0;
+
+      int n=ArraySize(g_openMeta);
+      ArrayResize(g_openMeta,n+1);
+      g_openMeta[n]=m;
+
+      Print("AXF SNIPER: filled ",m.symbol," @ ",DoubleToString(fill_price,_Digits)," — now managing as a live position.");
+      RemovePendingMeta(pidx);
+      return;
+     }
+
+   if(deal_entry != DEAL_ENTRY_OUT) return;
 
    ulong position_id = (ulong)HistoryDealGetInteger(deal_ticket,DEAL_POSITION_ID);
    int idx = FindMeta(position_id);
@@ -725,6 +954,12 @@ void OnTimer()
    g_drawdown.RollDailyWeeklyAnchors(equity);
    g_compounding.UpdateEquityWatermark(equity);
 
+   //--- feed this account's own live spread reality into each symbol's
+   //--- rolling history, independent of whether we trade this cycle.
+   for(int s=0;s<ArraySize(g_symbols);s++) g_market[s].RecordSpreadSample();
+
+   ManagePendingSniperOrders();
+
    //--- drift check (Section 36): recommend-only, logged, does not itself alter risk
    SAxfTradeRecord all_recent[];
    g_journal.GetRecords(all_recent,300);
@@ -744,10 +979,12 @@ void OnTimer()
       g_state = STATE_OPPORTUNITY_SCAN;
       for(int i=0;i<ArraySize(g_symbols);i++)
         {
-         // one EA position per symbol at a time from fresh entries (pyramiding
-         // handles adds separately); skip scanning a symbol we're already in.
+         // one EA position (or one pending sniper order) per symbol at a time
+         // from fresh entries (pyramiding handles adds separately); skip
+         // scanning a symbol we're already in or already have a zone staked out on.
          bool already_in=false;
          for(int j=0;j<ArraySize(g_openMeta);j++) if(g_openMeta[j].symbol==g_symbols[i]) { already_in=true; break; }
+         if(!already_in && FindPendingBySymbol(g_symbols[i])>=0) already_in=true;
          if(already_in) continue;
 
          SAxfOpportunity opp; double lots; ENUM_AXF_GROWTH_MODE mode; double flip_score; double risk_pct; ENUM_AXF_REGIME regime_out;
@@ -820,6 +1057,16 @@ void UpdateDashboard(const ENUM_AXF_GROWTH_MODE mode,const double flip_score,con
       d.pos_r = (risk_dist>0)?((g_openMeta[mi].direction==DIR_LONG)?(price-d.pos_entry)/risk_dist:(d.pos_entry-price)/risk_dist):0;
       d.pos_mfe_r=g_openMeta[mi].mfe_r; d.pos_mae_r=g_openMeta[mi].mae_r;
       d.pos_holding_seconds = TimeCurrent()-g_openMeta[mi].open_time;
+     }
+
+   int pi = FindPendingBySymbol(symbol);
+   d.has_pending_sniper = (pi>=0);
+   if(pi>=0)
+     {
+      d.pending_entry = g_pendingMeta[pi].entry;
+      d.pending_expires_seconds = g_pendingMeta[pi].expire_time-TimeCurrent();
+      double cur_price = SymbolInfoDouble(symbol,SYMBOL_BID);
+      d.pending_distance_atr = (vol.valid && vol.atr>0) ? MathAbs(cur_price-d.pending_entry)/vol.atr : 0;
      }
 
    d.journal_count = g_compounding.ClosedTrades();

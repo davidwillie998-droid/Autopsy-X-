@@ -186,6 +186,8 @@ struct SAxfStructure
    double            fvg_low;
    bool              in_premium;
    bool              in_discount;
+   double            range_high;       // current dealing range bounds (for premium/discount checks
+   double            range_low;        // against a PRICE other than the live close, e.g. a sniper zone)
    double            quality;          // 0..100, freshness/context weighted
    bool              valid;
   };
@@ -193,7 +195,12 @@ struct SAxfStructure
 struct SAxfOpportunity
   {
    ENUM_AXF_DIRECTION direction;
-   double            entry;
+   double            market_price;     // live ask/bid at the moment this was built (reference only)
+   double            entry;            // the ACTUAL planned fill price all sizing/EV math is based on —
+                                        // equals market_price when entry_is_limit is false
+   bool              entry_is_limit;   // true = a sniper retracement zone; caller must place a pending
+                                        // limit order rather than execute at market
+   double            zone_distance_atr;// how far the entry sits from market_price, in ATRs (diagnostics)
    double            stop;
    double            target1;
    double            target2;

@@ -60,9 +60,36 @@ input double  Inp_FVG_MinAtrFraction     = 0.15;       // minimum gap size as fr
 
 input group "=== EXPECTED VALUE / EXECUTION COST ==="
 input double  Inp_CommissionPerLot       = 0.0;        // account currency per 1.0 lot round turn
-input double  Inp_AssumedSlippagePoints  = 3.0;        // points, used in EV cost model
-input double  Inp_MaxSpreadPoints        = 35.0;       // reject setups when spread exceeds this
+input double  Inp_AssumedSlippagePoints  = 3.0;        // points, floor used until enough LIVE fills exist to measure real slippage
+input double  Inp_MaxSpreadPoints        = 35.0;       // absolute reject ceiling regardless of the symbol's own normal spread
 input double  Inp_MinRR_Required         = 1.5;        // minimum reward:risk to accept a setup
+
+input group "=== LIVE EXECUTION REALISM ==="
+// Demo fills are not representative of a live account: live spreads widen at
+// rollover/news/thin liquidity in ways demo servers usually don't reproduce,
+// and live slippage/rejections are broker- and time-of-day-dependent. These
+// inputs make the EA react to what THIS account's own live executions show
+// it, rather than trusting a fixed assumption.
+input double  Inp_SpreadAnomalyMultiple  = 1.8;        // reject if current spread > this x the symbol's own rolling median spread
+input int     Inp_SpreadHistorySamples   = 300;        // rolling spread samples kept per symbol (fed by the timer, ~1/cycle)
+input int     Inp_MinSpreadSamplesToJudge= 30;          // below this many samples, fall back to the absolute ceiling only
+input bool    Inp_RolloverBlackoutEnabled= true;        // block new entries around the broker's daily rollover
+input int     Inp_RolloverHourServer     = 23;          // server-time hour rollover typically starts
+input int     Inp_RolloverBlackoutMins   = 20;          // minutes blocked before AND after that hour boundary
+input int     Inp_MinSlippageSamplesToUse= 15;          // below this many live fills, use Inp_AssumedSlippagePoints instead
+input int     Inp_SlippageHistorySamples = 50;          // rolling realised-slippage samples kept per symbol
+
+input group "=== SNIPER ENTRY ENGINE ==="
+// Priority feature: do not chase the breakout candle with a market order.
+// Wait for price to retrace into the order block / FVG that produced the
+// break of structure and fill there with a pending limit order — a precise,
+// pre-planned price instead of whatever the market hands you on the way out.
+input bool    Inp_SniperEntryMode        = true;        // true = ONLY take setups with a real retracement zone (no market chase)
+input double  Inp_SniperZoneFraction     = 0.55;        // 0=zone's near edge (fills easily, worse price) .. 1=far edge (best price, may never fill)
+input double  Inp_SniperMaxDistanceATR   = 2.0;         // reject the zone if it is farther than this many ATRs from current price
+input double  Inp_SniperMinDistancePoints= 20;          // reject the zone if it is basically at the current price already (not a real retracement)
+input int     Inp_SniperExpiryMinutes    = 180;         // cancel an unfilled sniper order after this long
+input bool    Inp_SniperCancelOnInvalidation = true;    // cancel a pending sniper order the moment a CHOCH forms against it
 
 input group "=== EXECUTION SAFETY ==="
 input int     Inp_MaxSlippagePoints      = 20;         // OrderSend deviation

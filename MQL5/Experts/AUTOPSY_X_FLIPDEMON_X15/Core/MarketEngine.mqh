@@ -25,6 +25,15 @@ private:
    datetime          m_last_tick_time;
    bool              m_data_ok;
 
+   //--- Live execution realism: this account's OWN rolling spread history for
+   //--- this symbol, so "wide spread" is judged relative to what is actually
+   //--- normal here (demo servers routinely show tighter/steadier spreads than
+   //--- the live server this EA is actually trading on).
+   double            m_spread_history[];
+   int               m_spread_head;
+   int               m_spread_count;
+   int               m_spread_capacity;
+
 public:
                      CAxfMarketEngine(void) { Reset(); }
 
@@ -33,7 +42,44 @@ public:
       m_symbol=_Symbol; m_point=0; m_digits=0; m_tick_size=0; m_tick_value=0;
       m_contract_size=0; m_volume_min=0; m_volume_max=0; m_volume_step=0;
       m_stops_level=0; m_freeze_level=0; m_last_tick_time=0; m_data_ok=false;
+      m_spread_head=0; m_spread_count=0; m_spread_capacity=0;
+      ArrayResize(m_spread_history,0);
      }
+
+   void              InitSpreadHistory(const int capacity)
+     {
+      m_spread_capacity = MathMax(10,capacity);
+      ArrayResize(m_spread_history,m_spread_capacity);
+      ArrayInitialize(m_spread_history,0.0);
+      m_spread_head=0; m_spread_count=0;
+     }
+
+   //--- call once per timer cycle (not per tick — this is a slow, structural
+   //--- read of "what is normal here", not a high-frequency signal).
+   void              RecordSpreadSample(void)
+     {
+      if(m_spread_capacity<=0) return;
+      double sp = SpreadPoints();
+      if(sp<0) return;
+      m_spread_history[m_spread_head] = sp;
+      m_spread_head = (m_spread_head+1) % m_spread_capacity;
+      if(m_spread_count<m_spread_capacity) m_spread_count++;
+     }
+
+   //--- median is deliberately used over mean — a handful of spike samples
+   //--- (news, rollover) must not drag the "normal" baseline up with them.
+   double            MedianSpreadPoints(void) const
+     {
+      if(m_spread_count<=0) return -1;
+      double tmp[]; ArrayResize(tmp,m_spread_count);
+      for(int i=0;i<m_spread_count;i++) tmp[i]=m_spread_history[i];
+      ArraySort(tmp);
+      int mid = m_spread_count/2;
+      if(m_spread_count%2==1) return tmp[mid];
+      return (tmp[mid-1]+tmp[mid])/2.0;
+     }
+
+   int               SpreadSampleCount(void) const { return m_spread_count; }
 
    bool              Init(const string symbol)
      {

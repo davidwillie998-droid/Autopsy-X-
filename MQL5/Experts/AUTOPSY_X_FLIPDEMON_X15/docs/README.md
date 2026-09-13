@@ -72,6 +72,62 @@ UI/       Dashboard
   (a configured DXY symbol, the terminal's economic calendar) isn't
   available.
 
+## Sniper entries (the priority feature)
+
+`Inp_SniperEntryMode` defaults to `true`. With it on, the EA never chases a
+breakout with a market order. Instead, `OpportunityEngine::Build` locates
+the order block (or, failing that, the Fair Value Gap) that produced the
+break of structure, prices a precise retracement point inside it
+(`Inp_SniperZoneFraction` controls how deep — 0 is the near edge that fills
+easily at a worse price, 1 is the far edge that fills rarely at the best
+price), and validates that the zone is a genuine, reachable retracement:
+on the correct side of both the current price and the stop, not farther
+than `Inp_SniperMaxDistanceATR` away, and not so close it isn't really a
+retracement (`Inp_SniperMinDistancePoints`).
+
+When a valid zone exists, the EA places a pending `BuyLimit`/`SellLimit`
+there (`ExecutionEngine::PlacePendingLimit`) and waits — up to
+`Inp_SniperExpiryMinutes`, or until a fresh CHOCH invalidates the setup
+before it ever fills (`Inp_SniperCancelOnInvalidation`), whichever comes
+first (`ManagePendingSniperOrders` in the main file). **When no honest zone
+exists, sniper mode rejects the setup outright rather than falling back to
+a market chase** — that's the entire point of prioritizing this over trade
+frequency. Set `Inp_SniperEntryMode=false` to restore the old
+immediate-market-entry behavior as a fallback for setups with no zone,
+instead of skipping them.
+
+A filled sniper order is picked up in `OnTradeTransaction` (matched by the
+originating order ticket) and migrated into the same live-position
+management path as a market entry — trailing, partials, and thesis-
+invalidation exits all work identically regardless of how the position was
+opened. Pyramiding adds, by contrast, always execute at market (continuation
+on strength isn't a retracement wait) and size themselves off the live
+market price, not off any zone `Build()` may have computed for a fresh entry.
+
+## Live execution realism (demo ≠ live)
+
+A demo account's spread and slippage are not a reliable stand-in for a real
+one, so several mechanisms judge live conditions against what THIS account
+actually shows, not a fixed assumption from a backtest or a demo session:
+
+- **Spread**: `BrokerAdapter::PreTradeCheck` rejects on an absolute ceiling
+  (`Inp_MaxSpreadPoints`) *and* on a relative blowout — current spread more
+  than `Inp_SpreadAnomalyMultiple`× this symbol's own rolling median
+  (`MarketEngine::MedianSpreadPoints`, fed once per timer cycle, needs
+  `Inp_MinSpreadSamplesToJudge` samples before it's trusted).
+- **Rollover**: `Inp_RolloverBlackoutEnabled` blocks new entries within
+  `Inp_RolloverBlackoutMins` minutes of `Inp_RolloverHourServer` — check
+  your broker's actual rollover time, it varies.
+- **Slippage**: `ExecutionEngine` tracks realized per-symbol slippage from
+  every real fill; once `Inp_MinSlippageSamplesToUse` fills exist, the
+  Expected Value engine uses that realized average instead of the static
+  `Inp_AssumedSlippagePoints` guess — and `AvgSlippagePoints` never lets a
+  live-observed number undercut the conservative floor, only widen it.
+
+None of this substitutes for actually running the EA on the live account
+it will trade — broker-specific execution quality, requote behavior, and
+fill policy vary too much to fully anticipate from code alone.
+
 ## What this build is honest about
 
 See `docs/FINAL_AUDIT.md` for the full Section 51 audit, including the

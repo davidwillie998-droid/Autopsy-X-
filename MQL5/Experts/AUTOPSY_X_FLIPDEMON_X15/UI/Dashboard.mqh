@@ -38,6 +38,11 @@ struct SAxfDashboardData
    long              pos_holding_seconds;
    bool              has_position;
 
+   bool              has_pending_sniper;
+   double            pending_entry;
+   long              pending_expires_seconds;
+   double            pending_distance_atr;
+
    int               journal_count;
    double            expectancy_r, win_rate, avg_r;
    int               consec_streak; // positive = wins, negative = losses
@@ -138,6 +143,9 @@ public:
          Label("pos", StringFormat("Entry:%.5f SL:%.5f TP1:%.5f TP2:%.5f Final:%.5f R:%.2f MFE:%.2fR MAE:%.2fR Held:%dm",
                d.pos_entry,d.pos_sl,d.pos_tp1,d.pos_tp2,d.pos_final,d.pos_r,d.pos_mfe_r,d.pos_mae_r,
                (int)(d.pos_holding_seconds/60)), m_x,y,normal);
+      else if(d.has_pending_sniper)
+         Label("pos", StringFormat("SNIPER PENDING: zone %.5f (%.2f ATR away) expires in %dm",
+               d.pending_entry,d.pending_distance_atr,(int)(d.pending_expires_seconds/60)), m_x,y,clrCyan);
       else
          Label("pos","(no open position)",m_x,y,clrGray);
       y+=m_line_h+4;

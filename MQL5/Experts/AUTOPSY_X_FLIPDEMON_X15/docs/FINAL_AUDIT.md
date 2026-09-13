@@ -19,6 +19,18 @@ still small. Until dozens of real closed trades accumulate per setup
 class, the EV gate is intentionally conservative rather than assuming the
 structural logic is profitable.
 
+With `Inp_SniperEntryMode` on (the default), the edge claim narrows
+further: a trade is only taken if price actually retraces into the zone
+that caused the break of structure, at a pre-planned limit price, within
+`Inp_SniperExpiryMinutes`. This trades frequency for entry precision — it
+does not, by itself, turn the underlying structural read into a proven
+edge, and can just as easily miss winning continuation moves that never
+retrace. It has not been backtested against the market-entry alternative;
+whether the entry-quality improvement outweighs the missed-trade cost is
+an empirical question this build is instrumented to answer over time
+(compare `ProbabilityEngine`/`CompoundingEngine` stats with sniper mode on
+vs. off), not one it answers by construction.
+
 ## RISK — what happens during 10 consecutive losses?
 
 At loss #2 (`Inp_LossStreak_Reduce1`) risk is cut by
@@ -65,12 +77,24 @@ that symbol that cycle (rung 4 of `EvaluateSymbol`).
 ## EXECUTION — what happens when spreads explode?
 
 `BrokerAdapter::PreTradeCheck` rejects the symbol before *and* after stop
-distance is known if the spread exceeds `Inp_MaxSpreadPoints`. Separately,
-`ExecutionEngine`'s rolling execution score falls with realized slippage
-and rejected orders; once it drops below `Inp_ExecutionScoreFloor`, new
-entries are throttled (rung 15) regardless of spread at that instant —
-i.e. a broker that is *generally* misbehaving gets throttled even between
-individual spread spikes.
+distance is known if the spread exceeds `Inp_MaxSpreadPoints`, or if it
+blows out past `Inp_SpreadAnomalyMultiple`× this specific symbol's own
+rolling median spread (`MarketEngine::MedianSpreadPoints`) once enough
+samples exist to trust that median — a fixed ceiling alone would either be
+too loose for a normally-tight pair having a bad moment, or permanently too
+tight for a naturally wide one. Separately, `ExecutionEngine`'s rolling
+execution score falls with realized slippage and rejected orders; once it
+drops below `Inp_ExecutionScoreFloor`, new entries are throttled (rung 15)
+regardless of spread at that instant — i.e. a broker that is *generally*
+misbehaving gets throttled even between individual spread spikes. A
+rollover blackout (`Inp_RolloverBlackoutEnabled`/`Inp_RolloverHourServer`)
+blocks new entries around the broker's own daily rollover window, since
+that is a well-known live-spread/slippage spike that demo servers often
+under-represent. **None of this has been validated against a real broker's
+actual live behavior** — the anomaly multiple, rollover window, and cost
+assumptions are reasonable defaults, not measurements, and should be tuned
+against what this specific account's own logs and `AvgSlippagePoints`
+readings show after real use.
 
 ## VOLATILITY — what happens during abnormal movement?
 
