@@ -25,7 +25,7 @@ public:
                               const SAxfLiquidityMap &liquidity,const SAxfVolatility &vol,
                               const SAxfOpportunity &opportunity,const SAxfExpectedValue &ev,
                               const double execution_score_0_100,const double account_health_0_100,
-                              const SAxfRuinEstimate &ruin)
+                              const SAxfRuinEstimate &ruin,const SAxfOrderFlow &orderflow)
      {
       SAxfFlipScore f; ZeroMemory(f);
 
@@ -42,11 +42,26 @@ public:
       f.structure_c  = structure.valid ? (structure.quality/100.0)*12.0 : 0;
       f.liquidity_c  = (liquidity.valid && (liquidity.nearest_liquidity_above>0 || liquidity.nearest_liquidity_below>0)) ? 10.0 : 0;
       f.volatility_c = (vol.valid && vol.classification>=VOL_NORMAL && vol.character!=VOLCHAR_CHAOTIC) ? 10.0 : (vol.valid?4.0:0.0);
-      f.momentum_c   = structure.displacement ? 10.0 : 0.0;
-      f.ev_c         = (ev.valid && ev.positive) ? AxfClamp(ev.net_expected_r*8.0,0,14) : 0.0;
-      f.asymmetry_c  = opportunity.valid ? AxfClamp((opportunity.r_multiple_potential-1.0)*4.0,0,12) : 0.0;
+      f.momentum_c   = structure.displacement ? 8.0 : 0.0;
+      f.ev_c         = (ev.valid && ev.positive) ? AxfClamp(ev.net_expected_r*8.0,0,12) : 0.0;
+      f.asymmetry_c  = opportunity.valid ? AxfClamp((opportunity.r_multiple_potential-1.0)*4.0,0,10) : 0.0;
       f.execution_c  = (execution_score_0_100/100.0)*10.0;
       f.account_health_c = (account_health_0_100/100.0)*10.0;
+
+      // order-flow component (max 6): unavailable/unmeasured data is worth
+      // zero, never a guessed credit — this only ever ADDS confirmation, it
+      // never substitutes for structure/liquidity/EV.
+      f.order_flow_c = 0.0;
+      if(orderflow.valid && opportunity.valid && opportunity.direction!=DIR_NONE)
+        {
+         if(orderflow.flow_valid)
+           {
+            double aligned_pulse = (opportunity.direction==DIR_LONG) ? orderflow.pulse : -orderflow.pulse;
+            f.order_flow_c += AxfClamp(aligned_pulse/100.0*3.0,0.0,3.0);
+           }
+         if(orderflow.footprint_valid && orderflow.footprint_imbalance_dir==opportunity.direction)
+            f.order_flow_c += AxfClamp(orderflow.footprint_stacked_bars*1.0,0.0,3.0);
+        }
 
       double ruin_pen = 0;
       switch(ruin.state)
@@ -60,7 +75,7 @@ public:
       f.ruin_penalty = ruin_pen;
 
       double total = f.regime_c+f.structure_c+f.liquidity_c+f.volatility_c+f.momentum_c+
-                     f.ev_c+f.asymmetry_c+f.execution_c+f.account_health_c - f.ruin_penalty;
+                     f.ev_c+f.asymmetry_c+f.execution_c+f.account_health_c+f.order_flow_c - f.ruin_penalty;
       f.total = AxfClamp(total,0,100);
 
       if(f.total>=m_thr_elite) f.grade="ELITE";

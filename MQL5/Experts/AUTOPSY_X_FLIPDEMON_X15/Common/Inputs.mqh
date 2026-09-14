@@ -91,6 +91,29 @@ input double  Inp_SniperMinDistancePoints= 20;          // reject the zone if it
 input int     Inp_SniperExpiryMinutes    = 180;         // cancel an unfilled sniper order after this long
 input bool    Inp_SniperCancelOnInvalidation = true;    // cancel a pending sniper order the moment a CHOCH forms against it
 
+input group "=== ORDER FLOW / MICROSTRUCTURE ==="
+// Volume profile is always real (built from tick/bar volume). Cumulative
+// delta, pulse and footprint use the TICK RULE (uptick=buy-side,
+// downtick=sell-side) unless the broker's ticks are flagged as real trades
+// (SYMBOL_TICKS_MODE_TRADE) — most retail FX/CFD feeds are quote-based, not
+// an aggressor-tagged tape, so treat these as a useful approximation, not
+// exchange-grade order flow. DOM/heatmap needs the broker to actually expose
+// Level 2 depth (MarketBookAdd) — most FX symbols do not; it reads UNKNOWN
+// rather than fabricating a heatmap when unsupported.
+input bool    Inp_OrderFlowEnabled       = true;        // master switch for this module
+input int     Inp_OrderFlowRecalcSeconds = 10;          // recompute cadence per symbol (tick fetch is not free)
+input int     Inp_OrderFlowTickLookbackMinutes = 30;    // ticks fetched go back at most this far
+input int     Inp_OrderFlowMaxTicks      = 20000;       // hard cap on ticks fetched per recompute
+input int     Inp_VolumeProfileBins      = 40;          // price buckets across the lookback range
+input double  Inp_ValueAreaPct           = 70.0;        // % of volume that defines VAH/VAL around the POC
+input int     Inp_PulseWindowSeconds     = 60;          // short window used for the Pulse oscillator
+input int     Inp_FootprintBarsLookback  = 5;           // closed bars scanned for stacked-imbalance
+input double  Inp_FootprintImbalanceRatio= 2.0;         // one side must beat the other by this multiple to count
+input bool    Inp_DOMHeatmapEnabled      = true;        // try MarketBookAdd; degrades to unavailable if unsupported
+input int     Inp_DOMWallDistancePoints  = 100;         // "nearby" range (points) used for the DOM imbalance ratio
+input bool    Inp_OrderFlowConfirmationRequired = false; // HARD gate: require flow support before a sniper fill is even placed
+input double  Inp_OrderFlowConfirmPulseMin = -20.0;      // for a LONG, pulse must be >= this (mirrored for SHORT)
+
 input group "=== EXECUTION SAFETY ==="
 input int     Inp_MaxSlippagePoints      = 20;         // OrderSend deviation
 input int     Inp_MaxOrderRetries        = 3;

@@ -43,6 +43,8 @@ struct SAxfDashboardData
    long              pending_expires_seconds;
    double            pending_distance_atr;
 
+   SAxfOrderFlow     orderflow;
+
    int               journal_count;
    double            expectancy_r, win_rate, avg_r;
    int               consec_streak; // positive = wins, negative = losses
@@ -148,6 +150,44 @@ public:
                d.pending_entry,d.pending_distance_atr,(int)(d.pending_expires_seconds/60)), m_x,y,clrCyan);
       else
          Label("pos","(no open position)",m_x,y,clrGray);
+      y+=m_line_h+4;
+
+      Label("flow_hdr","-- ORDER FLOW / MICROSTRUCTURE --",m_x,y,hdr); y+=m_line_h;
+      if(d.orderflow.valid && d.orderflow.flow_valid)
+        {
+         color pulse_clr = (d.orderflow.pulse>15)?ok:((d.orderflow.pulse<-15)?danger:normal);
+         Label("flow1", StringFormat("Pulse:%+.0f  CumDelta:%+.0f  %s",
+               d.orderflow.pulse,d.orderflow.cumulative_delta,
+               d.orderflow.ticks_are_real_trades?"[real trade ticks]":"[tick-rule approx]"),
+               m_x,y,pulse_clr); y+=m_line_h;
+        }
+      else
+         { Label("flow1","Pulse/Delta: no tick data yet",m_x,y,clrGray); y+=m_line_h; }
+
+      if(d.orderflow.valid && d.orderflow.profile_valid)
+         Label("flow2", StringFormat("VolProfile  POC:%.5f  VA:[%.5f - %.5f]",
+               d.orderflow.poc_price,d.orderflow.val_price,d.orderflow.vah_price),
+               m_x,y,normal);
+      else
+         Label("flow2","VolProfile: n/a",m_x,y,clrGray);
+      y+=m_line_h;
+
+      if(d.orderflow.valid && d.orderflow.footprint_valid)
+         Label("flow3", StringFormat("Footprint: %s imbalance x%.1f, %d bar(s) stacked",
+               d.orderflow.footprint_imbalance_dir==DIR_LONG?"BUY":"SELL",
+               d.orderflow.footprint_imbalance_ratio,d.orderflow.footprint_stacked_bars),
+               m_x,y,(d.orderflow.footprint_stacked_bars>=2)?ok:normal);
+      else
+         Label("flow3","Footprint: no stacked imbalance",m_x,y,clrGray);
+      y+=m_line_h;
+
+      if(d.orderflow.valid && d.orderflow.dom_available)
+         Label("flow4", StringFormat("DOM  bidWall:%.5f(%.0f) askWall:%.5f(%.0f) imbalance:%.2fx",
+               d.orderflow.dom_nearest_bid_wall_price,d.orderflow.dom_nearest_bid_wall_volume,
+               d.orderflow.dom_nearest_ask_wall_price,d.orderflow.dom_nearest_ask_wall_volume,
+               d.orderflow.dom_imbalance_ratio), m_x,y,normal);
+      else
+         Label("flow4","DOM: unavailable on this symbol/broker",m_x,y,clrGray);
       y+=m_line_h+4;
 
       Label("autopsy_hdr","-- AUTOPSY --",m_x,y,hdr); y+=m_line_h;

@@ -26,6 +26,7 @@
 #include "Core/RegimeEngine.mqh"
 #include "Core/StructureEngine.mqh"
 #include "Core/LiquidityEngine.mqh"
+#include "Core/OrderFlowEngine.mqh"
 
 #include "Intelligence/BiasEngine.mqh"
 #include "Intelligence/ProbabilityEngine.mqh"
@@ -48,6 +49,7 @@
 #include "Autopsy/DriftEngine.mqh"
 
 #include "UI/Dashboard.mqh"
+#include "UI/OrderFlowPanel.mqh"
 
 //+------------------------------------------------------------------+
 //| per-symbol engine bundles (own indicator handles)                  |
@@ -56,6 +58,7 @@ string                  g_symbols[];
 CAxfMarketEngine        g_market[];
 CAxfVolatilityEngine    g_volatility[];
 CAxfRegimeEngine        g_regime[];
+CAxfOrderFlowEngine     g_orderflow[];
 
 //--- account-wide / stateless-shared engines (single instances)
 CAxfStructureEngine     g_structure;
@@ -77,6 +80,7 @@ CAxfDiagnosticEngine    g_diagnostic;
 CAxfDecisionAudit       g_audit;
 CAxfDriftEngine         g_drift;
 CAxfDashboard           g_dashboard;
+CAxfOrderFlowPanel      g_flowPanel;
 
 SAxfRuinEstimate        g_lastRuinAnalytical;
 SAxfRuinEstimate        g_lastRuinMonteCarlo;
@@ -250,6 +254,7 @@ bool InitSymbols(void)
    if(n<=0) return false;
 
    ArrayResize(g_symbols,0); ArrayResize(g_market,n); ArrayResize(g_volatility,n); ArrayResize(g_regime,n);
+   ArrayResize(g_orderflow,n);
    int valid=0;
    for(int i=0;i<n;i++)
      {
@@ -272,9 +277,20 @@ bool InitSymbols(void)
       if(!g_regime[valid].Init(s,Inp_HTF,Inp_ADX_Period,Inp_ADX_StrongTrend))
          Print("AXF: RegimeEngine init failed for ",s);
 
+      if(Inp_OrderFlowEnabled)
+        {
+         g_orderflow[valid].Init(s,Inp_OrderFlowRecalcSeconds,Inp_OrderFlowTickLookbackMinutes,
+                                  Inp_OrderFlowMaxTicks,Inp_VolumeProfileBins,Inp_ValueAreaPct,
+                                  Inp_PulseWindowSeconds,Inp_FootprintBarsLookback,Inp_FootprintImbalanceRatio,
+                                  Inp_DOMHeatmapEnabled,Inp_DOMWallDistancePoints);
+         if(Inp_DOMHeatmapEnabled && !g_orderflow[valid].DomSubscribed())
+            Print("AXF: DOM/Level2 not available for ",s," on this broker — heatmap will read unavailable.");
+        }
+
       valid++;
      }
    ArrayResize(g_market,valid); ArrayResize(g_volatility,valid); ArrayResize(g_regime,valid);
+   ArrayResize(g_orderflow,valid);
    return valid>0;
   }
 
@@ -313,6 +329,7 @@ int OnInit()
    g_diagnostic.Init(Inp_FlipScore_Elite,Inp_FlipScore_APlus,Inp_FlipScore_A,Inp_FlipScore_B);
    g_drift.Init(20,60);
    g_dashboard.Init("AXF15_"+IntegerToString((long)Inp_MagicNumber));
+   g_flowPanel.Init("AXF15_"+IntegerToString((long)Inp_MagicNumber));
    CreateResetHaltButton();
 
    //--- Section 41 TERMINAL RECOVERY: reconstruct metadata for any EA
@@ -418,6 +435,8 @@ void OnDeinit(const int reason)
   {
    EventKillTimer();
    g_dashboard.Remove();
+   g_flowPanel.Remove();
+   for(int i=0;i<ArraySize(g_orderflow);i++) g_orderflow[i].Deinit(); // release any MarketBookAdd subscriptions
    ObjectDelete(0,ResetHaltButtonName());
   }
 
@@ -434,7 +453,7 @@ void CreateResetHaltButton(void)
    ObjectCreate(0,name,OBJ_BUTTON,0,0,0);
    ObjectSetInteger(0,name,OBJPROP_CORNER,CORNER_LEFT_UPPER);
    ObjectSetInteger(0,name,OBJPROP_XDISTANCE,10);
-   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,320);
+   ObjectSetInteger(0,name,OBJPROP_YDISTANCE,430); // below the text dashboard, which now includes the Order Flow section
    ObjectSetInteger(0,name,OBJPROP_XSIZE,220);
    ObjectSetInteger(0,name,OBJPROP_YSIZE,22);
    ObjectSetString(0,name,OBJPROP_TEXT,"RESET ACCOUNT HALT (manual)");
@@ -567,6 +586,22 @@ bool EvaluateSymbol(const int idx,SAxfOpportunity &opp_out,double &lots_out,
    if(ruin_state==RUIN_HALT)
      { g_audit.Reject(DECISION_REJECT_RISK_OF_RUIN,"probability of ruin at HALT threshold"); return false; }
 
+   //--- ORDER FLOW / MICROSTRUCTURE read (edition feature). Informational and
+   //--- a Flip Score contributor by default; only a hard gate on approval
+   //--- when Inp_OrderFlowConfirmationRequired is explicitly turned on, since
+   //--- data quality varies a lot by broker (see OrderFlowEngine.mqh header).
+   SAxfOrderFlow orderflow;
+   ZeroMemory(orderflow);
+   if(Inp_OrderFlowEnabled)
+      orderflow = g_orderflow[idx].Compute(Inp_LTF);
+
+   if(Inp_OrderFlowEnabled && Inp_OrderFlowConfirmationRequired && orderflow.valid && orderflow.flow_valid)
+     {
+      double aligned_pulse = (opp.direction==DIR_LONG) ? orderflow.pulse : -orderflow.pulse;
+      if(aligned_pulse < Inp_OrderFlowConfirmPulseMin)
+        { g_audit.Reject(DECISION_REJECT_PROBABILITY,StringFormat("order flow does not confirm: pulse %.0f opposes %s",orderflow.pulse,opp.direction==DIR_LONG?"LONG":"SHORT")); return false; }
+     }
+
    //--- FLIP SCORE (Section 32) — computed here so the mode/risk decision below
    //--- can use it, and so it is displayed even for rejected setups upstream.
    //--- take the more conservative (higher P(50%DD)) of the two ruin readings.
@@ -575,7 +610,7 @@ bool EvaluateSymbol(const int idx,SAxfOpportunity &opp_out,double &lots_out,
    else worse_ruin = g_lastRuinMonteCarlo;
    SAxfFlipScore flip = g_diagnostic.Compute(regime,ltf_structure,liq,vol,opp,ev,
                                               g_execution.CurrentScore(),AccountHealthScore(),
-                                              worse_ruin);
+                                              worse_ruin,orderflow);
    flip_score_out = flip.total;
    if(flip.grade=="NO TRADE")
      { g_audit.Reject(DECISION_REJECT_PROBABILITY,"flip score below trading floor ("+DoubleToString(flip.total,1)+")"); return false; }
@@ -1021,6 +1056,11 @@ void UpdateDashboard(const ENUM_AXF_GROWTH_MODE mode,const double flip_score,con
    SAxfStructure structure = g_structure.Compute(symbol,Inp_LTF,vol.valid?vol.atr:0);
    SAxfLiquidityMap liq = g_liquidity.Compute(symbol,Inp_LTF,vol.valid?vol.atr:0);
 
+   SAxfOrderFlow orderflow; ZeroMemory(orderflow);
+   if(Inp_OrderFlowEnabled) orderflow = g_orderflow[idx].Compute(Inp_LTF);
+   g_flowPanel.DrawVolumeProfile(orderflow);
+   g_flowPanel.DrawFlowGauge(orderflow,10,470);
+
    double equity = AccountInfoDouble(ACCOUNT_EQUITY);
 
    SAxfDashboardData d; ZeroMemory(d);
@@ -1036,6 +1076,7 @@ void UpdateDashboard(const ENUM_AXF_GROWTH_MODE mode,const double flip_score,con
 
    d.flip_score = flip_score; d.flip_grade = (flip_score>=Inp_FlipScore_Elite)?"ELITE":(flip_score>=Inp_FlipScore_APlus)?"A+":(flip_score>=Inp_FlipScore_A)?"A":(flip_score>=Inp_FlipScore_B)?"B":"NO TRADE";
    d.opportunity_magnitude_r = 0; d.expected_r=0; d.expected_net_value_r=0;
+   d.orderflow = orderflow;
 
    d.equity=equity; d.drawdown_pct=g_compounding.DrawdownFromHighPct(equity);
    d.base_risk_pct=Inp_BaseRiskPct; d.current_risk_pct=current_risk_pct;

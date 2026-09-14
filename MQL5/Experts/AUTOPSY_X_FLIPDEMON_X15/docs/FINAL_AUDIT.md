@@ -137,6 +137,16 @@ support (bias). No COT, yields, or other unavailable-in-MT5 data source is
 referenced anywhere in this codebase; the spec's prohibition on fabricated
 intelligence is enforced by simply never claiming those sources exist.
 
+The same rule governs `OrderFlowEngine`: DOM/heatmap fields read
+`dom_available=false` rather than a fabricated ladder when `MarketBookAdd`
+fails (the common case for retail FX symbols), and `ticks_are_real_trades`
+is reported honestly rather than silently assumed — most retail feeds will
+show `false`, meaning delta/pulse/footprint are a tick-rule approximation,
+not real aggressor-tagged order flow. This is the one area of the codebase
+where "the data is real but weaker than the name suggests" rather than
+"the data is unavailable" — worth remembering before weighting
+`Inp_OrderFlowConfirmationRequired` heavily.
+
 ## LOGIC — can any component create an infinite trading loop?
 
 New entries are gated one-per-symbol-per-cycle by the `already_in` check

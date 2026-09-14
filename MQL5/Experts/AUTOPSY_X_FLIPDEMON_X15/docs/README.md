@@ -17,14 +17,14 @@ AUTOPSY_X_FLIPDEMON_X15.mq5   orchestration + state machine + decision hierarchy
 Common/   Defines.mqh          shared enums/structs/hard safety constants
           Inputs.mqh           every configurable threshold
 Core/     MarketEngine, VolatilityEngine, RegimeEngine,
-          StructureEngine, LiquidityEngine
+          StructureEngine, LiquidityEngine, OrderFlowEngine
 Intelligence/ BiasEngine, ProbabilityEngine, OpportunityEngine,
               ExpectedValue, CorrelationEngine
 Risk/     RiskEngine, CompoundingEngine, RuinEngine,
           DrawdownEngine, ExposureEngine
 Execution/ BrokerAdapter, ExecutionEngine, PositionManager
 Autopsy/  TradeJournal, DiagnosticEngine, DriftEngine
-UI/       Dashboard
+UI/       Dashboard, OrderFlowPanel
 ```
 
 ## Installing
@@ -127,6 +127,47 @@ actually shows, not a fixed assumption from a backtest or a demo session:
 None of this substitutes for actually running the EA on the live account
 it will trade — broker-specific execution quality, requote behavior, and
 fill policy vary too much to fully anticipate from code alone.
+
+## Order flow / microstructure edition
+
+`Core/OrderFlowEngine.mqh` adds Volume Profile (POC/VAH/VAL), Cumulative
+Delta, a fast "Pulse" pressure oscillator, footprint-lite stacked-imbalance
+detection, and a DOM/heatmap read. **Read this before trusting any of it —
+it is not exchange-grade order flow:**
+
+- **Volume Profile is real** regardless of broker: it bins tick/quote
+  activity by price over `Inp_OrderFlowTickLookbackMinutes` and finds the
+  POC and the `Inp_ValueAreaPct`% value area around it.
+- **Cumulative Delta, Pulse, and Footprint use the tick rule** (price up =
+  buy-side, price down = sell-side, unchanged = inherit the prior side)
+  *unless* an individual tick carries a real `TICK_FLAG_BUY`/`TICK_FLAG_SELL`
+  flag, in which case that real flag is used directly.
+  `SAxfOrderFlow.ticks_are_real_trades` tells you which one you actually
+  got for a given read — most retail FX/CFD feeds will show `false`
+  (tick-rule approximation) because the broker hands the terminal quote
+  ticks, not an aggressor-tagged trade tape.
+- **Footprint here means a per-bar buy/sell delta with stacked-imbalance
+  detection** (`Inp_FootprintBarsLookback` bars, `Inp_FootprintImbalanceRatio`
+  threshold) — not a rendered price-ladder footprint chart. That's a
+  charting feature; this is the summary signal that actually feeds the
+  Flip Score.
+- **DOM/heatmap needs the broker to expose Level 2 depth**
+  (`MarketBookAdd` returning `true` for the symbol). Most FX symbols on
+  most retail brokers do not support this. When unsupported, every DOM
+  field reads as unavailable — it never fabricates a heatmap.
+
+By default this is informational: it contributes up to 6 of the Flip
+Score's 100 points (`DiagnosticEngine`) and nothing else. Set
+`Inp_OrderFlowConfirmationRequired=true` to make it a hard gate — a sniper
+entry is refused if the Pulse opposes the trade direction beyond
+`Inp_OrderFlowConfirmPulseMin` — but only turn this on once you've checked
+`ticks_are_real_trades` and the DOM availability line on the dashboard for
+your actual broker/symbol; gating real money on a tick-rule approximation
+with thin history is worse than not gating at all.
+
+Tick fetching is throttled per symbol (`Inp_OrderFlowRecalcSeconds`,
+default 10s) and capped (`Inp_OrderFlowMaxTicks`) — it is not free, and is
+not run on every timer tick.
 
 ## What this build is honest about
 

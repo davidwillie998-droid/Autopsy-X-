@@ -235,9 +235,47 @@ struct SAxfFlipScore
   {
    double            regime_c, structure_c, liquidity_c, volatility_c,
                      momentum_c, ev_c, asymmetry_c, execution_c,
-                     account_health_c, ruin_penalty;
+                     account_health_c, order_flow_c, ruin_penalty;
    double            total; // 0..100
    string            grade; // ELITE / A+ / A / B / NO TRADE
+  };
+
+//+------------------------------------------------------------------+
+//| Microstructure / order-flow read (Core/OrderFlowEngine.mqh).       |
+//| Everything here is either directly measured from ticks/DOM or is   |
+//| explicitly flagged as an approximation — see 'ticks_are_real_trades'|
+//| and 'dom_available'. Nothing here is fabricated when unsupported:  |
+//| unavailable pieces read as their neutral/zero default with their   |
+//| own validity flag false, never a guessed number.                   |
+//+------------------------------------------------------------------+
+struct SAxfOrderFlow
+  {
+   //--- volume profile over the lookback window
+   double            poc_price;          // point of control (price with most volume)
+   double            vah_price;          // value area high (~70% of volume, upper bound)
+   double            val_price;          // value area low
+   bool              profile_valid;
+
+   //--- order flow (tick-rule based unless ticks_are_real_trades)
+   double            cumulative_delta;   // signed running buy-vol minus sell-vol over the lookback
+   double            pulse;              // -100..+100, short-window normalised aggressive buy/sell pressure
+   bool              ticks_are_real_trades; // true only if the broker's ticks are flagged as actual trades
+   bool              flow_valid;
+
+   //--- footprint-lite: stacked-imbalance read over the last few closed bars
+   ENUM_AXF_DIRECTION footprint_imbalance_dir;
+   double            footprint_imbalance_ratio; // e.g. 2.5 means the dominant side had 2.5x the other
+   int               footprint_stacked_bars;    // consecutive bars agreeing on direction
+   bool              footprint_valid;
+
+   //--- DOM heatmap (Level 2) — only where the broker/symbol actually expose it
+   bool              dom_available;
+   double            dom_nearest_bid_wall_price, dom_nearest_bid_wall_volume;
+   double            dom_nearest_ask_wall_price, dom_nearest_ask_wall_volume;
+   double            dom_imbalance_ratio; // >1 = more resting bid depth than ask depth nearby, <1 = reverse
+
+   datetime          computed_time;
+   bool              valid; // overall: at least one sub-component computed successfully
   };
 
 struct SAxfRuinEstimate
