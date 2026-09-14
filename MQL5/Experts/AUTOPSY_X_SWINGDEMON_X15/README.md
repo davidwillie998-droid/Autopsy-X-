@@ -28,6 +28,25 @@ The entry model is now the headline feature, not an afterthought. Setups A, B an
 
 On the dashboard, a resting sniper order shows its setup, exact price, distance in points, and time to expiry — distinct from an open position, since "waiting for the shot" and "in the trade" are different states worth seeing separately.
 
+## Order flow, volume profile, footprint, and DOM heatmap
+
+This is real tick-and-book data from MT5's actual APIs (`CopyTicksRange`, `MarketBookAdd`/`OnBookEvent`), not a simulation — but it comes with the single biggest honesty caveat in this codebase, and it's worth reading before trusting any of these numbers:
+
+**Most retail FX/CFD brokers report quote ticks (bid/ask), not real trade prints with a buy/sell side.** A genuine "footprint" needs to know which side of the tape was the aggressor on every print — real exchanges and some ECN/futures-style CFD feeds tag this (`TICK_FLAG_BUY`/`TICK_FLAG_SELL` in `MqlTick.flags`), but plain spot FX usually doesn't. `OrderFlowEngine` checks for these flags on every refresh and uses them when present; when they're absent it falls back to the **tick rule** (an uptick counts as buy pressure, a downtick as sell pressure) — directionally useful, but an approximation, not a real trade-and-sales feed. `HasRealTradeFlags()` and `HasRealVolume()` report which mode built the current numbers, and the dashboard marks approximated pulse readings `[approx]` rather than presenting them as certain.
+
+What's built, all from `intelligence/OrderFlowEngine.mqh`:
+
+- **Volume profile** — a real tick-price histogram (or, if tick history is too sparse/unavailable, an honest bar-distributed approximation) over a rolling lookback window (`InpVolumeProfileLookbackHours`, default 6h). **POC** (point of control) and a 70%-**value area** (VAH/VAL) are computed with the standard expand-from-POC algorithm.
+- **Cumulative delta** — running buy volume minus sell volume over the window.
+- **Delta divergence** — price trended one way over the last N completed H1 bars while net delta over that same window disagreed (a real order-flow tell, not a lagging price-pattern guess).
+- **Absorption** — a completed bar with unusually large volume that still failed to move price much versus its recent range; the delta's sign says which side got absorbed.
+- **Pulse** — a 0-100 tape-tempo score blending real tick-arrival acceleration (when tick data is available) with ATR-relative price velocity; classified Quiet/Normal/Elevated/Surging.
+- **DOM heatmap** — Level-2 book via `MarketBookAdd`/`OnBookEvent`, when the broker actually offers it. `MarketBookAdd` succeeding is *not* proof of real data — plenty of brokers accept the subscription for a spot symbol and then never deliver a populated book — so `CHeatmapEngine::Available()` also checks that book updates have actually arrived recently (30s staleness window) before reporting DOM as usable. When it isn't, the dashboard says so plainly rather than showing stale or empty numbers as if they meant something.
+
+**Wired into decisions, not just displayed:** `SignalFusion` now carries an order-flow evidence component (10% weight, rebalanced from volatility and correlation to make room) — delta agreeing with the candidate's direction, a confirming divergence, absorption on the right side, trading inside the value area, and a genuine resting DOM wall backing the entry all raise it; none of it can override a structurally-derived signal, and it contributes a neutral 50 (no effect) whenever the underlying data isn't available. This is computed per-candidate in `ComputeOrderFlowScore()` in the main `.mq5` file.
+
+**Operational notes:** `CopyTicksRange` is real work, not a free call — it's throttled to run at most once per `InpOrderFlowRefreshSeconds` (default 90s), keep `InpVolumeProfileLookbackHours` modest, and `InpMaxTicksAnalyzed` caps how much of a very busy session gets processed (falling back to the most recent slice rather than blocking). The very first call on a symbol you haven't had charted before may be slow while the terminal fetches tick history from the broker — this is a real MT5 characteristic, not a bug in this code. Toggle the whole subsystem off with `InpOrderFlowEnabled`/`InpHeatmapEnabled` if you'd rather not pay this cost, or on a symbol where the data quality is too poor to be useful (both degrade to neutral automatically either way).
+
 ## Live vs. demo execution
 
 Demo servers are usually forgiving: tight constant spread, instant fills, permissive filling modes, no real margin pressure. Live servers aren't, and this EA treats that as the normal case rather than an edge case:
@@ -46,11 +65,11 @@ None of this is simulated in a way that would show up identically in a backtest 
 
 ```
 AUTOPSY_X_SWINGDEMON_X15.mq5   - main orchestrator: inputs, OnInit/OnTick/OnTimer/OnTrade/OnDeinit
-core/        MarketState, StructureEngine, LiquidityEngine, IPDAEngine, RegimeEngine, BiasEngine, Types
+core/        MarketState, StructureEngine, LiquidityEngine, IPDAEngine, RegimeEngine, BiasEngine, HeatmapEngine, Types
 signals/     SetupEngine (setups A-F), ProbabilityEngine, ExpectedValue, SignalFusion
 risk/        RiskEngine, ExposureEngine, DrawdownEngine
 execution/   BrokerAdapter, ExecutionEngine, PositionManager, PendingOrderManager
-intelligence/CorrelationEngine, NewsEngine, SeasonalityEngine, VolatilityEngine
+intelligence/CorrelationEngine, NewsEngine, SeasonalityEngine, VolatilityEngine, OrderFlowEngine
 autopsy/     TradeJournal, DiagnosticEngine, DriftEngine
 ui/          Dashboard
 ```
@@ -88,6 +107,7 @@ This is the workflow from the spec's section 44 — it hasn't been executed here
 - **EXECUTION** — max spread (absolute), spread-spike multiple (relative to this account's own rolling average), deviation floor, retry count.
 - **SAFETY** — emergency stop, max trades per day/week, slippage and latency warning thresholds.
 - **CORRELATION/MACRO** — comma-separated watch-symbol list (only symbols your broker actually offers are used; the rest are silently skipped).
+- **ORDER FLOW / VOLUME PROFILE / HEATMAP** — on/off for the tick-based order-flow engine and the DOM heatmap, volume-profile lookback window/bucket count, refresh throttle, and the tick-count safety cap.
 - **WEEKEND** — hold/reduce/close and the Friday server-time hour to apply it.
 
 ## Data persistence

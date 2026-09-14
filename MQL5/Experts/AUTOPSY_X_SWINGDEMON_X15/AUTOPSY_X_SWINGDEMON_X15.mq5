@@ -34,6 +34,8 @@
 #include "intelligence/NewsEngine.mqh"
 #include "intelligence/SeasonalityEngine.mqh"
 #include "intelligence/VolatilityEngine.mqh"
+#include "intelligence/OrderFlowEngine.mqh"
+#include "core/HeatmapEngine.mqh"
 #include "autopsy/TradeJournal.mqh"
 #include "autopsy/DiagnosticEngine.mqh"
 #include "autopsy/DriftEngine.mqh"
@@ -93,6 +95,14 @@ input double InpLatencyWarnMs        = 1500.0; // suspend new entries if round-t
 //==================== CORRELATION / MACRO ====================
 input string InpCorrelationWatchList = "USDJPY,XAGUSD,USOIL,US500,BTCUSD";
 
+//==================== ORDER FLOW / VOLUME PROFILE / HEATMAP ====================
+input bool InpOrderFlowEnabled            = true;
+input int  InpVolumeProfileLookbackHours  = 6;    // real tick history pulled per refresh - keep modest, it isn't free
+input int  InpVolumeProfileBuckets        = 48;
+input int  InpOrderFlowRefreshSeconds     = 90;   // throttle: CopyTicksRange is real work, not a per-tick call
+input int  InpMaxTicksAnalyzed            = 150000;
+input bool InpHeatmapEnabled              = true; // Depth of Market - most retail FX/CFD symbols won't offer it
+
 //==================== WEEKEND ====================
 enum ENUM_AX_WEEKEND_MODE { WEEKEND_HOLD, WEEKEND_REDUCE, WEEKEND_CLOSE };
 input ENUM_AX_WEEKEND_MODE InpWeekendMode  = WEEKEND_HOLD;
@@ -108,6 +118,8 @@ CRegimeEngine      g_regimeEngine;
 CBiasEngine        g_biasEngine;
 CVolatilityEngine  g_vol;
 CNewsEngine        g_news;
+COrderFlowEngine   g_orderFlow;
+CHeatmapEngine     g_heatmap;
 CCorrelationEngine g_corr;
 CSeasonalityEngine g_season;
 CTradeJournal      g_journal;
@@ -144,6 +156,10 @@ int OnInit()
    g_biasEngine.Init(&g_market, &g_structure);
    g_vol.Init(&g_market);
    g_news.Init(_Symbol);
+   if(InpOrderFlowEnabled)
+      g_orderFlow.Init(_Symbol, InpVolumeProfileLookbackHours, InpVolumeProfileBuckets, InpMaxTicksAnalyzed, InpOrderFlowRefreshSeconds);
+   if(InpHeatmapEnabled)
+      g_heatmap.Init(_Symbol); // success/failure only means the subscription was accepted - see CHeatmapEngine::Available()
 
    g_corr.Init();
    string parts[];
@@ -191,7 +207,18 @@ void OnDeinit(const int reason)
    g_market.Deinit();
    g_regimeEngine.Deinit();
    g_biasEngine.Deinit();
+   if(InpHeatmapEnabled) g_heatmap.Deinit();
    if(InpShowDashboard) g_dash.Deinit();
+  }
+
+//+------------------------------------------------------------------+
+//| Real MT5 Depth-of-Market callback - fires only if MarketBookAdd   |
+//| actually subscribed and the broker's feed delivers book updates.  |
+//+------------------------------------------------------------------+
+void OnBookEvent(const string &symbol)
+  {
+   if(symbol!=_Symbol) return;
+   g_heatmap.OnBook();
   }
 
 //+------------------------------------------------------------------+
@@ -372,6 +399,52 @@ void GetMacroContext(ENUM_AX_BIAS &macroBias, double &macroReliability, string &
   }
 
 //+------------------------------------------------------------------+
+//| Real tape/footprint/DOM evidence for one candidate direction.     |
+//| Every component degrades to a neutral contribution (no change to |
+//| the 50-baseline) when its underlying data isn't available - this |
+//| never invents order-flow confirmation the feed didn't provide.   |
+//+------------------------------------------------------------------+
+double ComputeOrderFlowScore(int direction, double entryPrice)
+  {
+   double score = 50.0;
+   if(!InpOrderFlowEnabled) return score;
+
+   if(g_orderFlow.DataAvailable())
+     {
+      double cumDelta = g_orderFlow.CumulativeDelta();
+      if(cumDelta!=0.0)
+        {
+         bool deltaAgrees = (direction>0 && cumDelta>0.0) || (direction<0 && cumDelta<0.0);
+         score += deltaAgrees ? 15.0 : -15.0;
+        }
+
+      bool bullDiv = g_orderFlow.HasBullishDivergence(5);
+      bool bearDiv = g_orderFlow.HasBearishDivergence(5);
+      if(direction>0 && bullDiv) score += 15.0;
+      if(direction<0 && bearDiv) score += 15.0;
+      if(direction>0 && bearDiv) score -= 10.0;
+      if(direction<0 && bullDiv) score -= 10.0;
+
+      // absorb==+1: buyers were absorbed at the recent high-volume bar (bearish); -1: sellers absorbed (bullish)
+      int absorb = g_orderFlow.AbsorptionDirection();
+      if(direction<0 && absorb==1)  score += 15.0;
+      if(direction>0 && absorb==-1) score += 15.0;
+
+      if(g_orderFlow.InValueArea(entryPrice)) score += 5.0;
+     }
+
+   if(InpHeatmapEnabled && g_heatmap.Available())
+     {
+      double wallPrice, wallVol;
+      double tolerance = g_broker.point*50.0;
+      if(g_heatmap.FindWall(direction, entryPrice, tolerance, wallPrice, wallVol))
+         score += 10.0; // a genuine resting wall backing this direction right at the entry zone
+     }
+
+   return MathMax(0.0, MathMin(100.0, score));
+  }
+
+//+------------------------------------------------------------------+
 void TryEnterTrade()
   {
    if(g_risk.WouldExceedMaxPositions(InpMagicNumber)) return;
@@ -432,9 +505,11 @@ void TryEnterTrade()
       double slippageEstimate = execStats.sampleSize>=10 ? execStats.avgSlippagePoints : InpDeviationPoints*0.3;
       double costR = g_ev.CostInR(g_broker, g_broker.SpreadPoints(), 0.0, slippageEstimate, MathMax(provisionalVolume,g_broker.volumeMin), riskDist);
       double expectedR = g_ev.ComputeExpectedR(r1, r2, rF, p1, p2, pF, costR);
+      double orderFlowScore = ComputeOrderFlowScore(sig.direction, sig.entryPrice);
 
       AXFusedSignal fused = g_fusion.Fuse(sig, biasStack, wellLocated, structQuality, volRegime,
-                                          corrConfirm, macroReliability, probCont, p1, p2, pF, expectedR);
+                                          corrConfirm, macroReliability, probCont, p1, p2, pF, expectedR,
+                                          orderFlowScore);
       // macro context can only ever adjust confidence, never invert the structurally-derived direction
       fused.confidence = g_biasEngine.ApplyMacroModifier(fused.confidence, structuralBias, macroBias, macroReliability);
       fused.confidence += g_season.ConfidenceModifierNow();
@@ -592,6 +667,26 @@ void RenderDashboard()
      }
    else { d.sniperSetup=""; d.sniperEntry=0.0; d.sniperDistancePoints=0.0; d.sniperExpiresIn=""; }
 
+   d.ofAvailable = InpOrderFlowEnabled && g_orderFlow.DataAvailable();
+   if(d.ofAvailable)
+     {
+      d.ofRealFlags = g_orderFlow.HasRealTradeFlags();
+      d.ofPoc = g_orderFlow.POC(); d.ofVah = g_orderFlow.VAH(); d.ofVal = g_orderFlow.VAL();
+      d.ofCumulativeDelta = g_orderFlow.CumulativeDelta();
+      string divs = "";
+      if(g_orderFlow.HasBullishDivergence(5)) divs = "Bull divergence";
+      if(g_orderFlow.HasBearishDivergence(5)) divs = "Bear divergence";
+      d.ofDivergence = divs;
+      int absorb = g_orderFlow.AbsorptionDirection();
+      d.ofAbsorption = absorb>0 ? "Buy absorption" : (absorb<0 ? "Sell absorption" : "");
+      d.ofPulseScore = g_orderFlow.PulseScore(); d.ofPulseState = g_orderFlow.PulseState();
+     }
+   else { d.ofRealFlags=false; d.ofPoc=0;d.ofVah=0;d.ofVal=0;d.ofCumulativeDelta=0;d.ofDivergence="";d.ofAbsorption=""; d.ofPulseScore=0; d.ofPulseState=""; }
+
+   double bidP,bidV,askP,askV;
+   d.domAvailable = InpHeatmapEnabled && g_heatmap.GetBestBidAsk(bidP,bidV,askP,askV);
+   d.domBidVol = d.domAvailable ? bidV : 0.0; d.domAskVol = d.domAvailable ? askV : 0.0;
+
    d.equity=AccountInfoDouble(ACCOUNT_EQUITY);
    d.currentRiskPct=InpRiskPercentDefault;
    d.openExposurePct=g_risk.CurrentOpenRiskPercent(InpMagicNumber);
@@ -618,6 +713,7 @@ void OnTick()
    g_broker.Refresh();
    g_market.Update();
    RefreshTradeCounters();
+   if(InpOrderFlowEnabled) g_orderFlow.Refresh(); // internally throttled - not a per-tick tick-history pull
 
    string failReason;
    bool healthy = CheckFailsafes(failReason);

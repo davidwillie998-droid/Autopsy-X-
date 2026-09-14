@@ -46,7 +46,8 @@ public:
                        double correlationConfirmation, // -1..1, 0 if unavailable/neutral
                        double macroReliability,         // 0..1, 0 if macro data unavailable
                        double probContinuation, double probTp1, double probTp2, double probFinal,
-                       double expectedR) const
+                       double expectedR,
+                       double orderFlowScore=50.0) const // 0..100, 50=neutral when order-flow data unavailable
      {
       AXFusedSignal fs;
       fs.signal = signal;
@@ -61,9 +62,10 @@ public:
       double volScore = VolScoreFor(volRegime);
       double evScore = MathMax(0.0, MathMin(100.0, 50.0 + expectedR*25.0));
       double corrScore = 50.0 + correlationConfirmation*50.0*macroReliability; // neutral 50 when no macro data
+      double ofScore = MathMax(0.0, MathMin(100.0, orderFlowScore));
 
       double confidence = biasScore*0.25 + locationScore*0.15 + structureScore*0.20 +
-                          volScore*0.10 + evScore*0.20 + corrScore*0.10;
+                          volScore*0.05 + evScore*0.20 + corrScore*0.05 + ofScore*0.10;
 
       fs.confidence = MathMax(0.0, MathMin(100.0, confidence));
       fs.quality = QualityFromConfidence(fs.confidence);

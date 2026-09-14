@@ -21,6 +21,10 @@ struct AXDashboardData
    string setupType; double confidence; double score; double entry, sl, tp1, tp2, tpFinal, expectedR;
    //--- sniper order (a resting limit order waiting for its precise price, distinct from an open position)
    bool   sniperWaiting; string sniperSetup; double sniperEntry; double sniperDistancePoints; string sniperExpiresIn;
+   //--- order flow / volume profile / footprint / DOM
+   bool   ofAvailable; bool ofRealFlags; double ofPoc; double ofVah; double ofVal;
+   double ofCumulativeDelta; string ofDivergence; string ofAbsorption; double ofPulseScore; string ofPulseState;
+   bool   domAvailable; double domBidVol; double domAskVol;
    //--- risk
    double equity; double currentRiskPct; double openExposurePct; double drawdownPct; string dailyStatus;
    //--- execution
@@ -89,7 +93,7 @@ public:
 
    void Render(const AXDashboardData &d)
      {
-      Background(360, 540);
+      Background(380, 610);
       int y = m_y; int lh = 15;
       color hdr = clrKhaki, val = clrWhiteSmoke, warn = clrTomato, good = clrLightGreen;
 
@@ -123,6 +127,18 @@ public:
         }
       else
         { Label("SNIPE1", "No order resting - waiting for a precise setup.", m_x, y, val); y+=lh; Label("SNIPE2","",m_x,y,val); y+=lh+4; }
+
+      Label("H_FLOW", "-- ORDER FLOW / VOLUME PROFILE --", m_x, y, hdr); y+=lh;
+      if(d.ofAvailable)
+        {
+         Label("FLOW1", StringFormat("POC:%.5f  VA:[%.5f - %.5f]", d.ofPoc, d.ofVal, d.ofVah), m_x, y, val); y+=lh;
+         Label("FLOW2", StringFormat("Delta:%.0f  %s  %s", d.ofCumulativeDelta, d.ofDivergence, d.ofAbsorption), m_x, y,
+               d.ofCumulativeDelta>0?good:(d.ofCumulativeDelta<0?warn:val)); y+=lh;
+         Label("FLOW3", StringFormat("Pulse: %s (%.0f)%s", d.ofPulseState, d.ofPulseScore, d.ofRealFlags?"":" [approx]"), m_x, y, val); y+=lh;
+        }
+      else
+        { Label("FLOW1", "No tick/volume data available yet.", m_x, y, val); y+=lh; Label("FLOW2","",m_x,y,val); y+=lh; Label("FLOW3","",m_x,y,val); y+=lh; }
+      Label("FLOW4", d.domAvailable ? StringFormat("DOM: bid %.1f / ask %.1f", d.domBidVol, d.domAskVol) : "DOM: not offered by this broker/symbol", m_x, y, val); y+=lh+4;
 
       Label("H_RISK", "-- RISK --", m_x, y, hdr); y+=lh;
       Label("RISK1", StringFormat("Equity: %.2f  Risk/trade: %.2f%%", d.equity, d.currentRiskPct), m_x, y, val); y+=lh;
