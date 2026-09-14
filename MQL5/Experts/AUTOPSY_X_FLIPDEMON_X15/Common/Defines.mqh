@@ -286,6 +286,32 @@ struct SAxfRuinEstimate
    bool              valid;
   };
 
+//+------------------------------------------------------------------+
+//| Result of Risk/AdaptiveFlipEngine.mqh's Evaluate() — the single,   |
+//| consolidated read of probability + expected value + risk-of-ruin +  |
+//| flip score + adaptive mode + dynamic risk + position size. The       |
+//| caller (main .mq5) owns turning 'decision'/'reason' into an audit    |
+//| log entry; this struct only ever reports, never mutates global      |
+//| state itself — keeping the engine a pure, account-agnostic function |
+//| of its inputs.                                                       |
+//+------------------------------------------------------------------+
+struct SAxfFlipDecision
+  {
+   bool              approved;
+   ENUM_AXF_DECISION decision;
+   string            reason;
+
+   SAxfProbability   probability;
+   SAxfExpectedValue ev;
+   ENUM_AXF_RUIN_STATE ruin_state;
+   SAxfFlipScore     flip;
+
+   ENUM_AXF_GROWTH_MODE mode;
+   double            risk_pct;
+   double            lots;
+   double            effective_portfolio_risk_pct;
+  };
+
 struct SAxfAccountState
   {
    double            balance, equity, equity_high, equity_low;

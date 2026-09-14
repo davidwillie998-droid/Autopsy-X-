@@ -10,6 +10,13 @@ to clear a fifteen-rung decision hierarchy (`EvaluateSymbol()` in the main
 mechanisms exist purely to cut exposure or stop trading outright when the
 evidence turns against it.
 
+Rungs 10-14 of that hierarchy — probability, expected value, risk-of-ruin,
+flip score, adaptive capital state, dynamic risk, portfolio exposure,
+position sizing — are consolidated behind one modular, account-agnostic
+unit, `Risk/AdaptiveFlipEngine.mqh`. See **The Adaptive Flip Engine**
+section below for what that means and the one behavior fix that came with
+consolidating it.
+
 ## Layout
 
 ```
@@ -20,12 +27,59 @@ Core/     MarketEngine, VolatilityEngine, RegimeEngine,
           StructureEngine, LiquidityEngine, OrderFlowEngine
 Intelligence/ BiasEngine, ProbabilityEngine, OpportunityEngine,
               ExpectedValue, CorrelationEngine
-Risk/     RiskEngine, CompoundingEngine, RuinEngine,
-          DrawdownEngine, ExposureEngine
+Risk/     AdaptiveFlipEngine (consolidates Probability/ExpectedValue/
+          Diagnostic/Risk/Exposure), RiskEngine, CompoundingEngine,
+          RuinEngine, DrawdownEngine, ExposureEngine
 Execution/ BrokerAdapter, ExecutionEngine, PositionManager
 Autopsy/  TradeJournal, DiagnosticEngine, DriftEngine
 UI/       Dashboard, OrderFlowPanel
 ```
+
+## The Adaptive Flip Engine
+
+`Risk/AdaptiveFlipEngine.mqh` (`CAxfAdaptiveFlipEngine`) is the single,
+modular entry point for the "flip" decision: it owns `ProbabilityEngine`,
+`ExpectedValue`, `DiagnosticEngine` (the Flip Score), `RiskEngine`, and
+`ExposureEngine` internally and sequences them — probability → expected
+value → risk-of-ruin → order-flow confirmation → flip score → adaptive
+capital state → dynamic risk → portfolio exposure → position size — behind
+one `Evaluate()` call that returns an `SAxfFlipDecision`. `main.mq5`'s
+`EvaluateSymbol()` now calls this once instead of manipulating five
+separate global engines inline.
+
+**This was a consolidation, not a rewrite.** Every formula, threshold, and
+rejection order inside it is identical to what previously lived inline in
+`EvaluateSymbol` — an architectural audit confirmed the underlying math was
+already sound and just needed to be one addressable, testable unit instead
+of ~80 lines of procedural code. Pyramiding adds and the dashboard's
+portfolio-risk readout now go through the same engine's `ComputeLots()`/
+`CanAcceptNewRisk()`/`CurrentEffectiveRisk()` pass-throughs, instead of a
+second, independent call path to the same math.
+
+**Account-agnostic by construction**: every value this engine touches is a
+percentage, an R-multiple, or a broker-reported per-unit value (tick
+value/size) passed in by the caller. It never reads `AccountInfo*` or any
+other single-account assumption directly, so the identical engine instance
+is correct whether the account behind it holds $500 or $5,000,000, in any
+currency.
+
+**Hard safety limits are not re-implemented here.** `AXF_HARD_MAX_RISK_PCT`
+and friends (`Common/Defines.mqh`) remain the final clamp inside
+`RiskEngine::ComputeFinalRiskPct` — this engine calls that same function
+and has no separate risk-calculation path that could bypass it.
+
+**The one real behavior fix that came out of the audit**: `DriftEngine`
+(edge-decay detection) previously computed a recommendation every cycle
+and only ever printed it — `DRIFT_REDUCE_RISK` didn't reduce risk,
+`DRIFT_HALT_RECOMMENDED` didn't halt anything. "Loss and edge-decay
+protection" isn't real if the decay signal is just a log line, so
+`AdaptiveFlipEngine::Evaluate()` now actually applies it:
+`DRIFT_HALT_RECOMMENDED` rejects the trade outright (toggle with
+`Inp_Drift_HaltOnRecommendation`), and `DRIFT_REDUCE_RISK` multiplies the
+final risk% by `Inp_Drift_ReduceFactor` (default 0.5) — on top of, never
+bypassing, the hard risk ceiling. `Inp_Drift_RecentTrades`/
+`Inp_Drift_BaselineTrades` (previously hardcoded 20/60) are now
+configurable inputs too.
 
 ## Installing
 

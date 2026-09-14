@@ -34,6 +34,15 @@ input double  Inp_LossStreak_CutFactor   = 0.50;       // Multiplier applied at 
 input int     Inp_WinStreak_ReviewAt     = 4;          // Consecutive wins -> force exposure review (cap growth)
 input double  Inp_WinStreak_CapFactor    = 1.50;       // Max multiplier growth allowed from a win streak alone
 
+input group "=== EDGE-DECAY PROTECTION (Drift) ==="
+// DriftEngine compares a recent window of closed trades against an older
+// baseline from this EA's own journal. Previously this was recommend-only
+// (logged, never enforced) — AdaptiveFlipEngine now actually applies it.
+input int     Inp_Drift_RecentTrades     = 20;          // recent window size (closed trades)
+input int     Inp_Drift_BaselineTrades   = 60;           // older baseline window size
+input double  Inp_Drift_ReduceFactor     = 0.50;         // risk multiplier applied on DRIFT_REDUCE_RISK
+input bool    Inp_Drift_HaltOnRecommendation = true;      // DRIFT_HALT_RECOMMENDED -> reject new trades (never auto-resumes; log and review)
+
 input group "=== FLIP MODE ==="
 input bool    Inp_FlipModeEnabled        = true;       // Allow FLIP mode to ever activate
 input double  Inp_FlipScore_Elite        = 90.0;

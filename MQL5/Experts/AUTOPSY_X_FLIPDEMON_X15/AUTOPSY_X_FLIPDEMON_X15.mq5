@@ -39,6 +39,7 @@
 #include "Risk/RuinEngine.mqh"
 #include "Risk/DrawdownEngine.mqh"
 #include "Risk/ExposureEngine.mqh"
+#include "Risk/AdaptiveFlipEngine.mqh"
 
 #include "Execution/BrokerAdapter.mqh"
 #include "Execution/ExecutionEngine.mqh"
@@ -64,19 +65,15 @@ CAxfOrderFlowEngine     g_orderflow[];
 CAxfStructureEngine     g_structure;
 CAxfLiquidityEngine     g_liquidity;
 CAxfBiasEngine          g_bias;
-CAxfProbabilityEngine   g_probability;
 CAxfOpportunityEngine   g_opportunity;
-CAxfExpectedValue       g_ev;
-CAxfRiskEngine          g_riskEngine;
+CAxfAdaptiveFlipEngine  g_adaptiveFlip; // owns Probability/ExpectedValue/Diagnostic/Risk/Exposure — see Risk/AdaptiveFlipEngine.mqh
 CAxfCompoundingEngine   g_compounding;
 CAxfRuinEngine          g_ruinEngine;
 CAxfDrawdownEngine      g_drawdown;
-CAxfExposureEngine      g_exposure;
 CAxfBrokerAdapter       g_broker;
 CAxfExecutionEngine     g_execution;
 CAxfPositionManager     g_posManager;
 CAxfTradeJournal        g_journal;
-CAxfDiagnosticEngine    g_diagnostic;
 CAxfDecisionAudit       g_audit;
 CAxfDriftEngine         g_drift;
 CAxfDashboard           g_dashboard;
@@ -311,23 +308,28 @@ int OnInit()
 
    g_structure.Init(Inp_SwingLookback,Inp_StructureBars,Inp_FVG_MinAtrFraction);
    g_bias.Init(Inp_DXY_Symbol);
-   g_probability.Init(50);
    g_opportunity.Init(Inp_MinRR_Required,Inp_SniperEntryMode,Inp_SniperZoneFraction,
                        Inp_SniperMaxDistanceATR,Inp_SniperMinDistancePoints);
-   g_riskEngine.Init(Inp_BaseRiskPct,Inp_MaxRiskPct,Inp_FlipModeEnabled,Inp_FlipRiskMultiplier);
    g_compounding.Init(Inp_MagicNumber,equity);
    g_ruinEngine.Init(Inp_MonteCarloPaths,Inp_MonteCarloTrades,
                       Inp_RuinThreshold_Elevated,Inp_RuinThreshold_Defensive,Inp_RuinThreshold_Halt);
    g_drawdown.Init(Inp_MagicNumber,Inp_DailyMaxDrawdownPct,Inp_WeeklyMaxDrawdownPct,Inp_MaxAccountDrawdownPct,
                    Inp_LossStreak_Reduce1,Inp_LossStreak_Reduce2,Inp_LossStreak_Halt,Inp_LossStreak_CutFactor,
                    Inp_WinStreak_ReviewAt,Inp_WinStreak_CapFactor,equity);
-   g_exposure.Init(Inp_MagicNumber,Inp_MaxPortfolioRiskPct);
    g_execution.Init(Inp_MagicNumber,Inp_MaxSlippagePoints,Inp_MaxOrderRetries,
                      Inp_SlippageHistorySamples,Inp_MinSlippageSamplesToUse);
    g_posManager.Init(Inp_MagicNumber,Inp_PyramidingEnabled,Inp_MaxAddsPerPosition);
    g_journal.Init(Inp_MagicNumber);
-   g_diagnostic.Init(Inp_FlipScore_Elite,Inp_FlipScore_APlus,Inp_FlipScore_A,Inp_FlipScore_B);
-   g_drift.Init(20,60);
+
+   //--- the consolidated Adaptive Flip Engine: probability + expected value +
+   //--- flip score + adaptive capital state + dynamic risk + portfolio
+   //--- exposure + position sizing, all in one modular, account-agnostic unit.
+   g_adaptiveFlip.Init(Inp_MagicNumber,50,
+                        Inp_BaseRiskPct,Inp_MaxRiskPct,Inp_FlipModeEnabled,Inp_FlipRiskMultiplier,
+                        Inp_MaxPortfolioRiskPct,
+                        Inp_FlipScore_Elite,Inp_FlipScore_APlus,Inp_FlipScore_A,Inp_FlipScore_B,
+                        Inp_Drift_ReduceFactor,Inp_Drift_HaltOnRecommendation);
+   g_drift.Init(Inp_Drift_RecentTrades,Inp_Drift_BaselineTrades);
    g_dashboard.Init("AXF15_"+IntegerToString((long)Inp_MagicNumber));
    g_flowPanel.Init("AXF15_"+IntegerToString((long)Inp_MagicNumber));
    CreateResetHaltButton();
@@ -480,7 +482,7 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
 //+------------------------------------------------------------------+
 bool EvaluateSymbol(const int idx,SAxfOpportunity &opp_out,double &lots_out,
                     ENUM_AXF_GROWTH_MODE &mode_out,double &flip_score_out,double &risk_pct_out,
-                    ENUM_AXF_REGIME &regime_out)
+                    ENUM_AXF_REGIME &regime_out,const ENUM_AXF_DRIFT_SIGNAL drift_signal)
   {
    string symbol = g_symbols[idx];
 
@@ -561,87 +563,47 @@ bool EvaluateSymbol(const int idx,SAxfOpportunity &opp_out,double &lots_out,
    if(!opp.valid)
      { g_audit.Reject(DECISION_REJECT_MAGNITUDE,"opportunity magnitude/asymmetry insufficient"); return false; }
 
-   //--- rung 10: PROBABILITY (from this EA's own journal, sample-size aware)
+   //--- rungs 10-14: PROBABILITY / EXPECTED VALUE / RISK OF RUIN / ORDER FLOW
+   //--- CONFIRMATION / FLIP SCORE / ADAPTIVE CAPITAL STATE / DYNAMIC RISK /
+   //--- PORTFOLIO EXPOSURE / POSITION SIZE — consolidated into the single,
+   //--- modular, account-agnostic Adaptive Flip Engine (Risk/AdaptiveFlipEngine.mqh).
+   //--- Same formulas, same thresholds, same rejection order as before this
+   //--- consolidation; the one added behavior is that edge-decay drift is now
+   //--- actually enforced rather than only logged (see that file's header).
    SAxfTradeRecord history[];
    g_journal.GetRecords(history,200,true,regime.regime,opp.direction);
-   SAxfProbability prob = g_probability.Compute(history);
 
-   //--- rung 11: EXPECTED VALUE. Slippage cost uses THIS account's own realized
-   //--- average once enough live fills exist (never a value smaller than the
-   //--- conservative input floor) — see ExecutionEngine::AvgSlippagePoints.
-   double reward_r_tp2 = (opp.reward_price_distance>0) ? MathAbs(opp.target2-opp.entry)/opp.risk_price_distance : opp.r_multiple_potential;
-   double slippage_estimate = g_execution.AvgSlippagePoints(symbol,Inp_AssumedSlippagePoints);
-   SAxfExpectedValue ev = g_ev.Compute(prob,opp.r_multiple_potential,reward_r_tp2,
-                                        opp.risk_price_distance,
-                                        g_market[idx].SpreadPoints()*g_market[idx].Point(),
-                                        Inp_CommissionPerLot,1.0,
-                                        g_market[idx].ContractSize(),g_market[idx].TickValue(),g_market[idx].TickSize(),
-                                        slippage_estimate,g_market[idx].Point());
-   if(!ev.valid || !ev.positive)
-     { g_audit.Reject(DECISION_REJECT_EXPECTED_VALUE,"expected value non-positive or unproven (sample confidence too low)"); return false; }
-
-   //--- rung 12: RISK OF RUIN
-   RefreshRuinEstimates();
-   ENUM_AXF_RUIN_STATE ruin_state = g_ruinEngine.ClassifyState(g_lastRuinAnalytical,g_lastRuinMonteCarlo);
-   if(ruin_state==RUIN_HALT)
-     { g_audit.Reject(DECISION_REJECT_RISK_OF_RUIN,"probability of ruin at HALT threshold"); return false; }
-
-   //--- ORDER FLOW / MICROSTRUCTURE read (edition feature). Informational and
-   //--- a Flip Score contributor by default; only a hard gate on approval
-   //--- when Inp_OrderFlowConfirmationRequired is explicitly turned on, since
-   //--- data quality varies a lot by broker (see OrderFlowEngine.mqh header).
    SAxfOrderFlow orderflow;
    ZeroMemory(orderflow);
    if(Inp_OrderFlowEnabled)
       orderflow = g_orderflow[idx].Compute(Inp_LTF);
 
-   if(Inp_OrderFlowEnabled && Inp_OrderFlowConfirmationRequired && orderflow.valid && orderflow.flow_valid)
-     {
-      double aligned_pulse = (opp.direction==DIR_LONG) ? orderflow.pulse : -orderflow.pulse;
-      if(aligned_pulse < Inp_OrderFlowConfirmPulseMin)
-        { g_audit.Reject(DECISION_REJECT_PROBABILITY,StringFormat("order flow does not confirm: pulse %.0f opposes %s",orderflow.pulse,opp.direction==DIR_LONG?"LONG":"SHORT")); return false; }
-     }
-
-   //--- FLIP SCORE (Section 32) — computed here so the mode/risk decision below
-   //--- can use it, and so it is displayed even for rejected setups upstream.
-   //--- take the more conservative (higher P(50%DD)) of the two ruin readings.
-   SAxfRuinEstimate worse_ruin;
-   if(g_lastRuinAnalytical.p_dd50 > g_lastRuinMonteCarlo.p_dd50) worse_ruin = g_lastRuinAnalytical;
-   else worse_ruin = g_lastRuinMonteCarlo;
-   SAxfFlipScore flip = g_diagnostic.Compute(regime,ltf_structure,liq,vol,opp,ev,
-                                              g_execution.CurrentScore(),AccountHealthScore(),
-                                              worse_ruin,orderflow);
-   flip_score_out = flip.total;
-   if(flip.grade=="NO TRADE")
-     { g_audit.Reject(DECISION_REJECT_PROBABILITY,"flip score below trading floor ("+DoubleToString(flip.total,1)+")"); return false; }
-
-   //--- rung 14: PORTFOLIO / CORRELATED EXPOSURE + POSITION SIZE
-   ENUM_AXF_GROWTH_MODE mode = g_riskEngine.DetermineMode(flip.total,ruin_state,regime.regime,
-                                                           g_compounding.DrawdownFromHighPct(equity),
-                                                           Inp_FlipScore_APlus);
-   mode_out = mode;
-   if(mode==MODE_SURVIVAL)
-     { g_audit.Reject(DECISION_REJECT_ACCOUNT_SURVIVAL,"mode forced to SURVIVAL — no new risk"); return false; }
+   RefreshRuinEstimates();
+   ENUM_AXF_RUIN_STATE ruin_state = g_ruinEngine.ClassifyState(g_lastRuinAnalytical,g_lastRuinMonteCarlo);
 
    double loss_factor = g_drawdown.LossStreakFactor(g_compounding.ConsecLosses());
    double win_ceiling  = g_drawdown.WinStreakCeiling(g_compounding.ConsecWins());
+   double slippage_estimate = g_execution.AvgSlippagePoints(symbol,Inp_AssumedSlippagePoints);
 
-   double risk_pct = g_riskEngine.ComputeFinalRiskPct(mode,opp.quality_score,regime.regime,ev,
-                                                       g_execution.CurrentScore(),ruin_state,
-                                                       g_compounding.DrawdownFromHighPct(equity),
-                                                       loss_factor,win_ceiling);
-   if(risk_pct<=0)
-     { g_audit.Reject(DECISION_REJECT_POSITION_SIZE,"computed risk collapsed to zero (a hard gate tripped)"); return false; }
+   SAxfFlipDecision fd = g_adaptiveFlip.Evaluate(symbol,equity,regime,ltf_structure,liq,vol,opp,orderflow,
+                                                  history,g_execution.CurrentScore(),AccountHealthScore(),
+                                                  ruin_state,g_lastRuinAnalytical,g_lastRuinMonteCarlo,
+                                                  g_compounding.DrawdownFromHighPct(equity),
+                                                  loss_factor,win_ceiling,drift_signal,
+                                                  g_market[idx].TickValue(),g_market[idx].TickSize(),
+                                                  g_market[idx].VolumeMin(),g_market[idx].VolumeMax(),g_market[idx].VolumeStep(),
+                                                  Inp_OrderFlowEnabled && Inp_OrderFlowConfirmationRequired,
+                                                  Inp_OrderFlowConfirmPulseMin,
+                                                  g_market[idx].SpreadPoints()*g_market[idx].Point(),Inp_CommissionPerLot,
+                                                  g_market[idx].ContractSize(),slippage_estimate,g_market[idx].Point());
 
-   double effective_portfolio_risk;
-   if(!g_exposure.CanAcceptNewRisk(symbol,risk_pct,opp.direction,effective_portfolio_risk))
-     { g_audit.Reject(DECISION_REJECT_RISK_OF_RUIN,StringFormat("effective portfolio risk would reach %.2f%% (correlated exposure)",effective_portfolio_risk)); return false; }
+   flip_score_out = fd.flip.total;
+   mode_out = fd.mode;
+   if(!fd.approved)
+     { g_audit.Reject(fd.decision,fd.reason); return false; }
 
-   double lots;
-   if(!g_riskEngine.ComputeLots(equity,risk_pct,opp.risk_price_distance,
-                                 g_market[idx].TickValue(),g_market[idx].TickSize(),
-                                 g_market[idx].VolumeMin(),g_market[idx].VolumeMax(),g_market[idx].VolumeStep(),lots))
-     { g_audit.Reject(DECISION_REJECT_POSITION_SIZE,"sized lot below broker minimum for this risk%"); return false; }
+   double risk_pct = fd.risk_pct;
+   double lots = fd.lots;
 
    //--- rung 15: EXECUTION SAFETY, now that we know the real stop distance
    string broker_reason2 = g_broker.PreTradeCheck(symbol,Inp_MaxSpreadPoints,opp.risk_price_distance,
@@ -868,10 +830,10 @@ void ManageOpenPositions(void)
          // may be a sniper retracement zone the add is not actually waiting for.
          double add_risk_dist = MathAbs(fresh.market_price-fresh.stop);
          double effective;
-         if(add_risk_dist>0 && g_exposure.CanAcceptNewRisk(symbol,Inp_BaseRiskPct,fresh.direction,effective))
+         if(add_risk_dist>0 && g_adaptiveFlip.CanAcceptNewRisk(symbol,Inp_BaseRiskPct,fresh.direction,effective))
            {
             double add_lots;
-            if(g_riskEngine.ComputeLots(AccountInfoDouble(ACCOUNT_EQUITY),Inp_BaseRiskPct,add_risk_dist,
+            if(g_adaptiveFlip.ComputeLots(AccountInfoDouble(ACCOUNT_EQUITY),Inp_BaseRiskPct,add_risk_dist,
                                         g_market[sidx].TickValue(),g_market[sidx].TickSize(),
                                         g_market[sidx].VolumeMin(),g_market[sidx].VolumeMax(),g_market[sidx].VolumeStep(),add_lots))
               {
@@ -995,14 +957,18 @@ void OnTimer()
 
    ManagePendingSniperOrders();
 
-   //--- drift check (Section 36): recommend-only, logged, does not itself alter risk
+   //--- edge-decay drift check (Section 36): computed once per cycle, account-
+   //--- wide, then actually ENFORCED per-symbol inside AdaptiveFlipEngine
+   //--- (risk cut on DRIFT_REDUCE_RISK, reject on DRIFT_HALT_RECOMMENDED) —
+   //--- this used to be recommend-only/logged; that was the audit finding
+   //--- fixed by this consolidation.
    SAxfTradeRecord all_recent[];
    g_journal.GetRecords(all_recent,300);
    double recent_exp, baseline_exp;
    ENUM_AXF_DRIFT_SIGNAL drift = g_drift.Evaluate(all_recent,recent_exp,baseline_exp);
-   if(drift==DRIFT_HALT_RECOMMENDED && Inp_VerboseLogging)
-      Print("AXF DRIFT: recent expectancy ",DoubleToString(recent_exp,2)," vs baseline ",
-            DoubleToString(baseline_exp,2)," — recommend manual review / halt.");
+   if(drift!=DRIFT_NONE)
+      Print("AXF DRIFT: ",EnumToString(drift)," — recent expectancy ",DoubleToString(recent_exp,2),
+            " vs baseline ",DoubleToString(baseline_exp,2));
 
    ManageOpenPositions();
 
@@ -1024,7 +990,7 @@ void OnTimer()
 
          SAxfOpportunity opp; double lots; ENUM_AXF_GROWTH_MODE mode; double flip_score; double risk_pct; ENUM_AXF_REGIME regime_out;
          g_state = STATE_RISK_APPROVAL;
-         if(EvaluateSymbol(i,opp,lots,mode,flip_score,risk_pct,regime_out))
+         if(EvaluateSymbol(i,opp,lots,mode,flip_score,risk_pct,regime_out,drift))
            {
             g_state = STATE_ORDER_PREPARATION;
             g_state = STATE_EXECUTION;
@@ -1080,7 +1046,7 @@ void UpdateDashboard(const ENUM_AXF_GROWTH_MODE mode,const double flip_score,con
 
    d.equity=equity; d.drawdown_pct=g_compounding.DrawdownFromHighPct(equity);
    d.base_risk_pct=Inp_BaseRiskPct; d.current_risk_pct=current_risk_pct;
-   d.portfolio_risk_pct=g_exposure.CurrentEffectiveRisk();
+   d.portfolio_risk_pct=g_adaptiveFlip.CurrentEffectiveRisk();
    if(g_lastRuinMonteCarlo.valid) d.ruin = g_lastRuinMonteCarlo;
    else d.ruin = g_lastRuinAnalytical;
    d.mode = mode;

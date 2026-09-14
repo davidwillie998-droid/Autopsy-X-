@@ -5,6 +5,41 @@ that is stated directly rather than papered over — per the spec's own
 Section 47, success here is defined as controlled risk and a measurable
 process, not a claim of guaranteed profit.
 
+## Architectural audit: the Adaptive Flip Engine consolidation
+
+A later audit pass checked this codebase against the full list of criteria
+an "Adaptive Flip Engine" is supposed to evaluate — regime, score,
+probability, expected value, execution quality, account health, drawdown,
+risk-of-ruin, dynamic risk, position-sizing — plus hard safety limits,
+adaptive capital states, loss/edge-decay protection, trade autopsies,
+configurable inputs, live broker data, and production-safe execution.
+
+**Finding 1**: every one of those criteria already existed as a separate
+engine class, but the logic that combined them (probability → EV →
+risk-of-ruin → flip score → mode → dynamic risk → exposure → sizing) was
+~80 lines of inline procedural code in `EvaluateSymbol`, directly
+manipulating five separate global singletons. Not a correctness bug, but
+not "a modular... Adaptive Flip Engine" either. Fixed by consolidating
+that sequence into `Risk/AdaptiveFlipEngine.mqh` — same math, same
+thresholds, same order; see the README's "The Adaptive Flip Engine"
+section.
+
+**Finding 2 (an actual bug)**: `DriftEngine`, the edge-decay detector,
+computed a real signal every cycle from the EA's own trade journal but
+that signal was only ever printed to the log. `DRIFT_REDUCE_RISK` did not
+reduce risk. `DRIFT_HALT_RECOMMENDED` did not halt anything. "Edge-decay
+protection" did not exist as enforced behavior, only as a diagnostic
+message — this is now fixed inside `AdaptiveFlipEngine::Evaluate()` (see
+README). This was a real gap between what the system was supposed to do
+and what it actually did, found by re-reading the code against the
+checklist rather than assuming prior work was complete.
+
+No other gaps were found: hard risk ceilings, drawdown governors, loss/win
+streak defense, trade journaling/autopsy classification, and the
+account-agnostic (percentage/R-multiple-based, never account-size-specific)
+nature of the risk math were all already correctly wired and did not need
+to change.
+
 ## EDGE — where exactly does the edge come from?
 
 There is no proprietary indicator claimed to produce edge. The entry logic
