@@ -27,9 +27,19 @@ struct AXDashboardData
    int                holdTimeSec;
    string             exitMode;
    string             statusNote;
+
+   // institutional overlays - volume profile / order-flow proxy / DOM / pulse
+   double             pulseScore;
+   string             pulseLabel;
+   double             pocDistancePts;
+   int                valueAreaPosition;   // -1 below, 0 inside, +1 above
+   double             orderFlowDelta;
+   int                orderFlowDivergence; // -1 bearish, 0 none, +1 bullish
+   double             domImbalance;
+   bool               domAvailable;
 };
 
-#define AX_DASH_ROWS 17
+#define AX_DASH_ROWS 22
 
 class CAXDashboard
 {
@@ -70,7 +80,8 @@ public:
       {
          "", "STATUS", "REGIME", "DIRECTION", "BUY SCORE", "SELL SCORE", "CONFIDENCE",
          "SPREAD", "TICK VELOCITY", "MOMENTUM", "TRADES TODAY", "WIN RATE", "DAILY P/L",
-         "DRAWDOWN", "CURRENT POSITION", "HOLD TIME", "EXIT MODE"
+         "DRAWDOWN", "CURRENT POSITION", "HOLD TIME", "EXIT MODE",
+         "PULSE", "VOLUME POC", "VALUE AREA", "ORDER FLOW DELTA (proxy)", "DOM IMBALANCE"
       };
 
       string bgName = m_prefix + "BG";
@@ -79,7 +90,7 @@ public:
       ObjectSetInteger(0, bgName, OBJPROP_CORNER, CORNER_LEFT_UPPER);
       ObjectSetInteger(0, bgName, OBJPROP_XDISTANCE, m_x - 10);
       ObjectSetInteger(0, bgName, OBJPROP_YDISTANCE, m_y - 8);
-      ObjectSetInteger(0, bgName, OBJPROP_XSIZE, 230);
+      ObjectSetInteger(0, bgName, OBJPROP_XSIZE, 290);
       ObjectSetInteger(0, bgName, OBJPROP_YSIZE, AX_DASH_ROWS * m_lineHeight + 12);
       ObjectSetInteger(0, bgName, OBJPROP_BGCOLOR, C'12,14,20');
       ObjectSetInteger(0, bgName, OBJPROP_BORDER_TYPE, BORDER_FLAT);
@@ -97,7 +108,7 @@ public:
          CreateLabel(m_labelNames[i], m_x, y, titleRow ? "AUTOPSY X HFT" : (labels[i] + ":"),
                      titleRow ? clrGold : clrSilver, titleRow ? 11 : 9, titleRow);
          if(!titleRow)
-            CreateLabel(m_valueNames[i], m_x + 130, y, "--", clrWhite, 9, false);
+            CreateLabel(m_valueNames[i], m_x + 170, y, "--", clrWhite, 9, false);
       }
    }
 
@@ -124,6 +135,13 @@ public:
       SetValue(14, AXDirToString(d.currentPosition), DirColor(d.currentPosition));
       SetValue(15, d.holdTimeSec > 0 ? StringFormat("%d sec", d.holdTimeSec) : "--", clrSilver);
       SetValue(16, d.exitMode, clrSilver);
+
+      SetValue(17, StringFormat("%.0f (%s)", d.pulseScore, d.pulseLabel), PulseColor(d.pulseScore));
+      SetValue(18, StringFormat("%.1f pts away", d.pocDistancePts), clrSilver);
+      SetValue(19, ValueAreaLabel(d.valueAreaPosition), DirColor((ENUM_AX_DIRECTION)d.valueAreaPosition));
+      SetValue(20, StringFormat("%.1f%s", d.orderFlowDelta, DivergenceSuffix(d.orderFlowDivergence)),
+               DirColor((ENUM_AX_DIRECTION)(d.orderFlowDelta > 0 ? 1 : (d.orderFlowDelta < 0 ? -1 : 0))));
+      SetValue(21, d.domAvailable ? StringFormat("%.2f", d.domImbalance) : "N/A (no DOM)", clrSilver);
 
       ChartRedraw(0);
    }
@@ -195,5 +213,27 @@ private:
       if(bias > 0) return "BULLISH";
       if(bias < 0) return "BEARISH";
       return "NEUTRAL";
+   }
+
+   color PulseColor(const double score) const
+   {
+      if(score >= 75.0) return clrLime;
+      if(score >= 45.0) return clrSilver;
+      if(score >= 20.0) return clrOrange;
+      return clrTomato;
+   }
+
+   string ValueAreaLabel(const int position) const
+   {
+      if(position > 0) return "ABOVE VALUE";
+      if(position < 0) return "BELOW VALUE";
+      return "INSIDE VALUE";
+   }
+
+   string DivergenceSuffix(const int divergence) const
+   {
+      if(divergence > 0) return " (BULL DIV)";
+      if(divergence < 0) return " (BEAR DIV)";
+      return "";
    }
 };

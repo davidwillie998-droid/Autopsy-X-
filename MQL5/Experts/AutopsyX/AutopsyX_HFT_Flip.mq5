@@ -25,6 +25,10 @@
 #include <AutopsyX/AutopsyEngine.mqh>
 #include <AutopsyX/AdaptiveEngine.mqh>
 #include <AutopsyX/LiveCalibrationEngine.mqh>
+#include <AutopsyX/VolumeProfileEngine.mqh>
+#include <AutopsyX/OrderFlowEngine.mqh>
+#include <AutopsyX/HeatmapEngine.mqh>
+#include <AutopsyX/PulseEngine.mqh>
 #include <AutopsyX/Dashboard.mqh>
 
 //======================= INPUTS =====================================
@@ -104,6 +108,13 @@ input double InpDisplacementCostMultiplier = 1.5;   // Min displacement = measur
 input double InpAtrCostMultiplier          = 3.0;   // Min ATR = measured median spread * this
 input double InpDeviationToleranceMultiplier = 1.5; // Execution deviation = measured P90 spread * this
 
+input group "=== Volume Profile / Order Flow / Heatmap / Pulse ==="
+input int    InpVolumeProfileLookbackBars = 60;    // Bars used to build the volume profile
+input int    InpOrderFlowDivergenceWindow = 10;    // Bars compared for price/flow divergence
+input bool   InpEnableHeatmap             = true;  // Attempt to subscribe to broker DOM (MarketBookGet)
+input int    InpPulseVelocityEmaBars      = 120;   // Tick-velocity EMA period (in ticks) for the pulse baseline
+input int    InpPulseVolumeEmaBars        = 20;    // Bar-volume EMA period (in bars) for the pulse baseline
+
 //======================= GLOBAL ENGINE INSTANCES =====================
 CAXSymbolProfile   g_profile;
 CAXMarketData      g_market;
@@ -119,6 +130,10 @@ CAXExit            g_exit;
 CAXAutopsy         g_autopsy;
 CAXAdaptive        g_adaptive;
 CAXCalibration     g_calibration;
+CAXVolumeProfile   g_volumeProfile;
+CAXOrderFlow       g_orderFlow;
+CAXHeatmap         g_heatmap;
+CAXPulse           g_pulse;
 CAXDashboard       g_dashboard;
 
 AXPositionState    g_position;
@@ -167,7 +182,13 @@ int OnInit()
    g_effMinDisplacementPoints  = InpMinDisplacementPoints;
    g_effMinAtrPoints           = InpMinAtrPoints;
 
+   g_volumeProfile.Init(g_profile, InpVolumeProfileLookbackBars);
+   g_orderFlow.Init(g_profile, InpOrderFlowDivergenceWindow);
+   if(InpEnableHeatmap) g_heatmap.Init(_Symbol);
+   g_pulse.Init(InpPulseVelocityEmaBars, InpPulseVolumeEmaBars);
+
    g_confidence.BindEngines(g_profile, g_micro, g_liquidity, g_momentum, g_regime);
+   g_confidence.BindFlowEngines(g_volumeProfile, g_orderFlow, g_heatmap, g_pulse);
    g_confidence.SetThresholds(InpEntryThreshold, InpMinScoreGap, g_effMaxSpreadPoints,
                                InpMaxSpreadExpansion, g_effMinAtrPoints);
 
@@ -220,6 +241,7 @@ void OnDeinit(const int reason)
 {
    EventKillTimer();
    g_regime.Deinit();
+   g_heatmap.Deinit();
    if(InpShowDashboard) g_dashboard.Deinit();
 
    string report = g_autopsy.GenerateReport();
@@ -242,6 +264,11 @@ void OnTick()
    g_risk.Heartbeat();
    g_micro.Update(g_market.ticks);
 
+   double tickWeight = g_market.LastTick().volume_real > 0 ? g_market.LastTick().volume_real : 1.0;
+   g_orderFlow.OnTick(g_market.Mid(), tickWeight);
+   g_pulse.OnTick(g_micro.TickVelocity());
+   g_heatmap.Update();
+
    if(!g_calibrationDone)
    {
       g_calibration.Feed(g_micro.SpreadCurrentPts());
@@ -258,10 +285,15 @@ void OnTick()
          g_liquidity.OnNewBar(rates, n);
          g_momentum.OnNewBar(rates, n);
          g_regime.OnNewBar(rates, n);
+         g_volumeProfile.OnNewBar(rates, n);
+         g_orderFlow.OnNewBar();
+         long lastBarVolume = (rates[1].real_volume > 0) ? rates[1].real_volume : rates[1].tick_volume;
+         g_pulse.OnNewBar(lastBarVolume);
       }
    }
 
-   g_confidence.Update();
+   g_pulse.Update(g_regime.VolatilityRatio());
+   g_confidence.Update(g_market.Mid());
 
    ManageOpenPosition();
 
@@ -308,6 +340,15 @@ void OnTimer()
       d.exitMode = "--";
 
    d.statusNote      = g_risk.KillSwitchActive() ? g_risk.KillReason() : "";
+
+   d.pulseScore          = g_pulse.Score();
+   d.pulseLabel           = g_pulse.Label();
+   d.pocDistancePts       = g_volumeProfile.DistanceToPocPts(g_market.Mid());
+   d.valueAreaPosition    = g_volumeProfile.PositionSignal(g_market.Mid());
+   d.orderFlowDelta       = g_orderFlow.CumulativeDelta();
+   d.orderFlowDivergence  = g_orderFlow.DivergenceSignal();
+   d.domImbalance          = g_heatmap.Imbalance();
+   d.domAvailable          = g_heatmap.DomAvailable();
 
    g_dashboard.Update(d);
 }

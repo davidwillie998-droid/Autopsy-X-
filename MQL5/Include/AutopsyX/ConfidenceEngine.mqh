@@ -13,6 +13,10 @@
 #include <AutopsyX/LiquidityEngine.mqh>
 #include <AutopsyX/MomentumEngine.mqh>
 #include <AutopsyX/RegimeEngine.mqh>
+#include <AutopsyX/VolumeProfileEngine.mqh>
+#include <AutopsyX/OrderFlowEngine.mqh>
+#include <AutopsyX/HeatmapEngine.mqh>
+#include <AutopsyX/PulseEngine.mqh>
 
 class CAXConfidence
 {
@@ -22,6 +26,10 @@ private:
    const CAXLiquidity      *m_liq;
    const CAXMomentum       *m_mom;
    const CAXRegime         *m_regime;
+   const CAXVolumeProfile  *m_volProfile;
+   const CAXOrderFlow      *m_orderFlow;
+   const CAXHeatmap        *m_heatmap;
+   const CAXPulse          *m_pulse;
 
    double m_entryThreshold;   // winning score must be >= this to trade
    double m_minGap;           // winning score must beat the other side by this much
@@ -29,7 +37,7 @@ private:
    double m_maxSpreadExpansion;
    double m_minAtrPoints;
 
-   // factor weights, sum should be ~100
+   // factor weights, sum ~100
    double m_wTickImbalance;
    double m_wConsecutive;
    double m_wVelocity;
@@ -37,6 +45,9 @@ private:
    double m_wMicroBreak;
    double m_wLiquidityFlip;
    double m_wDisplacement;
+   double m_wVolumeProfile;
+   double m_wOrderFlow;
+   double m_wHeatmap;
 
    double m_buyScore, m_sellScore;
    ENUM_AX_CONFIDENCE m_confidence;
@@ -45,9 +56,11 @@ private:
 
 public:
    CAXConfidence(void) : m_profile(NULL), m_micro(NULL), m_liq(NULL), m_mom(NULL), m_regime(NULL),
+      m_volProfile(NULL), m_orderFlow(NULL), m_heatmap(NULL), m_pulse(NULL),
       m_entryThreshold(65.0), m_minGap(15.0), m_maxSpreadPoints(30.0), m_maxSpreadExpansion(2.0),
-      m_minAtrPoints(5.0), m_wTickImbalance(10.0), m_wConsecutive(8.0), m_wVelocity(7.0),
-      m_wStructure(15.0), m_wMicroBreak(15.0), m_wLiquidityFlip(25.0), m_wDisplacement(20.0),
+      m_minAtrPoints(5.0), m_wTickImbalance(8.0), m_wConsecutive(6.0), m_wVelocity(6.0),
+      m_wStructure(12.0), m_wMicroBreak(12.0), m_wLiquidityFlip(18.0), m_wDisplacement(15.0),
+      m_wVolumeProfile(8.0), m_wOrderFlow(10.0), m_wHeatmap(5.0),
       m_buyScore(0), m_sellScore(0), m_confidence(AX_CONF_NONE), m_direction(AX_DIR_NONE) {}
 
    void BindEngines(const CAXSymbolProfile &profile, const CAXMicrostructure &micro,
@@ -58,6 +71,18 @@ public:
       m_liq     = GetPointer(liq);
       m_mom     = GetPointer(mom);
       m_regime  = GetPointer(regime);
+   }
+
+   // volume profile / order flow (tick-rule proxy) / DOM heatmap / pulse are
+   // optional evidence sources - each degrades to a neutral (0) contribution
+   // on its own if never bound or not yet valid, so omitting this call is safe
+   void BindFlowEngines(const CAXVolumeProfile &volProfile, const CAXOrderFlow &orderFlow,
+                         const CAXHeatmap &heatmap, const CAXPulse &pulse)
+   {
+      m_volProfile = GetPointer(volProfile);
+      m_orderFlow  = GetPointer(orderFlow);
+      m_heatmap    = GetPointer(heatmap);
+      m_pulse      = GetPointer(pulse);
    }
 
    void SetThresholds(const double entryThreshold, const double minGap,
@@ -75,7 +100,8 @@ public:
    void   SetEntryThreshold(const double v) { m_entryThreshold = AXClamp(v, AX_ADAPT_ENTRY_THRESH_MIN, AX_ADAPT_ENTRY_THRESH_MAX); }
 
    // recompute buy/sell/confidence/direction; call once per tick (cheap - O(1))
-   void Update(void)
+   // currentPrice is only needed for the volume-profile value-area factor
+   void Update(const double currentPrice)
    {
       m_buyScore = 0.0;
       m_sellScore = 0.0;
@@ -156,6 +182,35 @@ public:
       double dirSign = (m_micro.PriceDisplacementPts() > 0) ? 1.0 : (m_micro.PriceDisplacementPts() < 0 ? -1.0 : 0.0);
       double dispVal = dirSign * AXClamp(m_mom.DisplacementStrength(), 0.0, 1.5) / 1.5;
       Accumulate(dispVal, m_wDisplacement * mulDisplacement);
+
+      //--- factor 8: volume profile - acceptance/rejection at the value area edges
+      if(m_volProfile != NULL && m_volProfile.IsValid())
+      {
+         double vpVal = (double)m_volProfile.PositionSignal(currentPrice);
+         Accumulate(vpVal, m_wVolumeProfile);
+      }
+
+      //--- factor 9: order flow (tick-rule proxy) - cumulative delta trend,
+      //    overridden by a detected price/flow divergence when present
+      if(m_orderFlow != NULL)
+      {
+         double ofVal = (m_orderFlow.DivergenceSignal() != 0) ? (double)m_orderFlow.DivergenceSignal()
+                                                                : m_orderFlow.DeltaBias();
+         Accumulate(ofVal, m_wOrderFlow);
+      }
+
+      //--- factor 10: DOM liquidity imbalance (0 when the broker exposes no book)
+      if(m_heatmap != NULL)
+         Accumulate(m_heatmap.Imbalance(), m_wHeatmap);
+
+      //--- absorption (large volume, little progress) - dampens conviction rather
+      //    than asserting a direction, since it signals uncertainty/exhaustion
+      if(m_orderFlow != NULL && m_orderFlow.AbsorptionDetected())
+         mulOverall *= 0.7;
+
+      //--- pulse: extra caution in a dead tape, mild credit for a genuinely active one
+      if(m_pulse != NULL)
+         mulOverall *= m_pulse.AsConfidenceMultiplier();
 
       m_buyScore  = AXClamp(m_buyScore  * mulOverall, 0.0, 100.0);
       m_sellScore = AXClamp(m_sellScore * mulOverall, 0.0, 100.0);

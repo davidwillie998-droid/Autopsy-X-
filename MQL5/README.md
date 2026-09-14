@@ -101,6 +101,47 @@ probation period before raising size. That first live stretch, at minimum
 risk, is the only genuine test of this account's execution quality — there
 is no shortcut that avoids putting real money on the line for it.
 
+## Volume profile, order flow, heatmap, pulse — what's real and what's a proxy
+
+MT5 does not give retail EAs a real executed-trade tape (aggressor-side
+buy/sell prints) for most OTC forex/CFD symbols — that's what genuine order
+flow / footprint tools (an exchange feed into Bookmap, Sierra Chart, etc.)
+are built on, and brokers don't expose it over the standard price feed. Be
+clear-eyed about what each new module actually is:
+
+- **`VolumeProfileEngine.mqh` — real.** Built from actual bar
+  volume (`real_volume` where the broker reports it, `tick_volume`
+  otherwise) bucketed by price over a rolling lookback. Produces a genuine
+  Point of Control and 70% Value Area High/Low; trading above/below the
+  value area is a real, standard volume-profile signal.
+- **`OrderFlowEngine.mqh` — a proxy, not real order flow.** Since there's no
+  trade-side data to read, buy/sell pressure is estimated with the classic
+  *tick rule* (an uptick is treated as buy pressure, a downtick as sell
+  pressure — a standard academic/industry approximation used whenever true
+  aggressor data isn't available). It produces per-bar delta, cumulative
+  delta, price/flow divergence, and absorption detection, and every label
+  in the code and on the dashboard calls it "(proxy)" so it's never
+  mistaken for a real footprint chart. It is not a substitute for an actual
+  exchange-fed footprint tool.
+- **`HeatmapEngine.mqh` — real when your broker supports it, honestly
+  absent when it doesn't.** Tries `MarketBookAdd`/`MarketBookGet` (DOM) for
+  the attached symbol. Where supported, it computes genuine bid/ask depth
+  imbalance near the top of book. Where not — most OTC forex brokers don't
+  expose a DOM — it reports `DOM unavailable` and contributes nothing
+  (never fabricated) to the score.
+- **`PulseEngine.mqh` — a derived composite, real inputs.** Blends tick
+  velocity, bar volume and volatility against their own rolling EMA
+  baselines into one 0–100 "how alive is this market right now" gauge. Used
+  to further damp trading in a dead tape and give a small credit to
+  genuinely active conditions — reinforcing the anti-overtrading engine,
+  not overriding it.
+
+All four feed into the confidence engine as additional weighted evidence
+(`InpVolumeProfileLookbackBars`, `InpOrderFlowDivergenceWindow`,
+`InpEnableHeatmap`, `InpPulseVelocityEmaBars`, `InpPulseVolumeEmaBars`) and
+show up on the dashboard as `PULSE`, `VOLUME POC`, `VALUE AREA`, `ORDER FLOW
+DELTA (proxy)`, and `DOM IMBALANCE`.
+
 ## Dashboard
 
 A lightweight on-chart panel (status, regime, direction, buy/sell score,

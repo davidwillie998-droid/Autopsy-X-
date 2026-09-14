@@ -20,6 +20,10 @@
 #include <AutopsyX/AdaptiveEngine.mqh>
 #include <AutopsyX/AutopsyEngine.mqh>
 #include <AutopsyX/LiveCalibrationEngine.mqh>
+#include <AutopsyX/VolumeProfileEngine.mqh>
+#include <AutopsyX/OrderFlowEngine.mqh>
+#include <AutopsyX/HeatmapEngine.mqh>
+#include <AutopsyX/PulseEngine.mqh>
 
 int g_pass = 0, g_fail = 0;
 
@@ -283,6 +287,74 @@ void TestCalibrationEngine(void)
    Check(emptyCalib.EffectiveMaxSpreadPts(2.0, 42.0) == 42.0, "Falls back to the static value when data is insufficient");
 }
 
+void TestVolumeProfileEngine(void)
+{
+   CAXSymbolProfile p;
+   p.Init(_Symbol);
+   MqlRates rates[];
+   BuildBullishStructureSeries(rates, 1.1000, p.point);
+
+   CAXVolumeProfile vp;
+   vp.Init(p, 30);
+   vp.OnNewBar(rates, ArraySize(rates));
+
+   Check(vp.IsValid(), "Volume profile builds successfully from synthetic bars");
+   Check(vp.VAH() >= vp.VAL(), "Value area high is never below value area low");
+   Check(vp.POC() >= vp.VAL() && vp.POC() <= vp.VAH(), "Point of control falls inside the value area");
+}
+
+void TestOrderFlowEngine(void)
+{
+   CAXSymbolProfile p;
+   p.Init(_Symbol);
+   CAXOrderFlow of;
+   of.Init(p, 10);
+
+   double mid = 1.1000;
+   for(int i = 0; i < 30; i++)
+   {
+      mid += p.point * 2; // monotonic uptick stream -> should read as buy pressure
+      of.OnTick(mid, 1.0);
+   }
+   of.OnNewBar();
+
+   Check(of.LastBarDelta() > 0.0, "Order-flow proxy reads a monotonic uptick stream as net buy pressure");
+   Check(of.CumulativeDelta() > 0.0, "Cumulative delta is positive after a bullish bar");
+
+   for(int i = 0; i < 30; i++)
+   {
+      mid -= p.point * 2; // now reverse it
+      of.OnTick(mid, 1.0);
+   }
+   of.OnNewBar();
+   Check(of.LastBarDelta() < 0.0, "Order-flow proxy reads a monotonic downtick stream as net sell pressure");
+}
+
+void TestHeatmapEngine(void)
+{
+   CAXHeatmap hm;
+   // do not call Init() - simulates a broker/symbol with no DOM support
+   hm.Update();
+   Check(!hm.DomAvailable(), "Heatmap reports DOM unavailable when never subscribed");
+   Check(hm.Imbalance() == 0.0, "Heatmap imbalance stays neutral (not fabricated) with no DOM");
+}
+
+void TestPulseEngine(void)
+{
+   CAXPulse pulse;
+   pulse.Init(20, 10);
+
+   for(int i = 0; i < 25; i++) pulse.OnTick(5.0); // steady baseline velocity
+   pulse.OnNewBar(1000);
+   pulse.Update(1.0);
+   double baselineScore = pulse.Score();
+   Check(baselineScore > 30.0 && baselineScore < 70.0, "Pulse reads near-neutral under steady baseline conditions");
+
+   pulse.OnTick(20.0); // sudden velocity spike well above baseline
+   pulse.Update(2.0);
+   Check(pulse.Score() > baselineScore, "Pulse rises when tick velocity and volatility spike above baseline");
+}
+
 void OnStart()
 {
    Print("===== AUTOPSY X SELF-TEST =====");
@@ -295,6 +367,10 @@ void OnStart()
    TestAdaptiveEngine();
    TestAutopsyEngine();
    TestCalibrationEngine();
+   TestVolumeProfileEngine();
+   TestOrderFlowEngine();
+   TestHeatmapEngine();
+   TestPulseEngine();
    TestEntryEngineRejectsNoDirection();
    TestExitEngineStops();
 
