@@ -476,3 +476,97 @@ this," not as ground truth about actual buyer/seller identity.
 absorption direction, volume-profile position relative to the value area,
 the last completed bar's footprint stacking, the pulse gauge, and the
 heatmap wall-pressure split (or its honest "N/A").
+
+## 15. Adaptive Flip Engine — capital protection
+
+`Include/AutopsyX/AdaptiveFlipEngine.mqh` is a capital-protection layer
+that sits on top of `CRiskEngine`, not in place of it. It never touches
+`CRiskEngine`'s own limits or its position-sizing formula — it only ever
+scales the resulting lot size **down** (never up) and adds its own hard
+gates, evaluated on every entry attempt: fresh signals, sniper triggers,
+and flip re-entries alike. A flip closing a losing side and re-opening the
+other way is still new risk, so it gets no exemption from capital
+protection — that's the point of "account-agnostic": every reading here
+is a percentage, a ratio, or an R-multiple, never a currency amount, so
+none of it needs retuning when account size changes.
+
+**Why this exists alongside what was already there.** `CRiskEngine`
+enforces a daily loss limit anchored to the trading day, and a
+consecutive-loss counter that resets with it. Neither catches a slow
+bleed spread across many days that never breaches either limit on any
+single day. `AxAdaptiveConfidenceMultiplier` (pre-existing) nudges the
+entry confidence bar from trailing win rate — a coarse edge-decay
+response, but it only ever changes the threshold for taking a trade, never
+how big that trade is or whether it should be blocked outright regardless
+of confidence. The Adaptive Flip Engine (AFE) closes both gaps: continuous
+peak-equity drawdown tracking instead of a day-anchored one, and hard
+gates plus a graduated size-down instead of a threshold nudge alone.
+
+**Capital state ladder**, driven by drawdown from the highest equity ever
+seen (not the day's opening equity). That peak is persisted to a GlobalVariable
+keyed by symbol and magic number, so an EA/terminal restart mid-drawdown
+doesn't silently re-seed the peak to the already-drawn-down current
+equity and reset straight back to NORMAL — the one event (a crash during
+a bad drawdown) this continuous tracking most needs to survive. MT5
+global variables live on disk for roughly 4 weeks of inactivity or until
+a manual reset; they do not follow the account to a different terminal
+installation or machine.
+- **NORMAL** — full configured risk.
+- **CAUTION** (`InpAfeCautionDdPct`, default 8%) — risk scaled by
+  `InpAfeCautionMultiplier` (default 0.65x).
+- **DEFENSIVE** (`InpAfeDefensiveDdPct`, default 15%) — risk scaled by
+  `InpAfeDefensiveMultiplier` (default 0.30x).
+- **LOCKED** (`InpAfeLockedDdPct`, default 25%) — new entries hard-blocked
+  entirely. The state is recomputed fresh from current drawdown every
+  tick with no hysteresis, so it drops straight back to DEFENSIVE the
+  moment drawdown ticks back under 25% — not down to the CAUTION or
+  NORMAL line. If you want a wider recovery margin before risk resumes,
+  set `InpAfeLockedDdPct` with that gap already built in.
+
+**Win probability and expected value.** Every entry attempt gets a
+blended win-probability estimate: once `InpAfeMinTradesForStats` trades
+exist, it's half the trailing realized win rate and half the current
+signal's own score confidence; before that, it leans on the live score
+alone rather than a noisy small sample. Expected value is then computed
+in **R-multiples** (1R = the amount risked on the trade) using the
+realized win/loss ratio once there's history, or
+`InpAfeAssumedRewardRisk` (default 1.5) before there is. An entry whose
+EV falls below `InpAfeMinExpectedValueR` (default 0.0 — literally
+"positive expectancy required") is blocked.
+
+**Risk of ruin — read this caveat before trusting the number.**
+`InpAfeMaxRiskOfRuinPct` (default 5%) gates entries against a **classic
+closed-form gambler's-ruin approximation** adapted to fixed-fractional
+position sizing. It is a heuristic, not an exact result: it assumes
+independent trade outcomes and a roughly constant edge and risk fraction
+per trade, neither of which is exactly true of live markets. "Ruin" here
+means falling `InpAfeRuinThresholdPct` (default 50%) from peak equity, not
+literal bankruptcy — fixed-fractional sizing asymptotically approaches but
+never mathematically reaches zero. Treat this number the way you'd treat
+any other risk estimate in trading literature: directionally useful,
+not a guarantee.
+
+**Account health** blends margin level and current drawdown-from-peak
+into one 0-100 score; entries are blocked below `InpAfeMinAccountHealth`
+(default 25).
+
+**Execution-quality scaling.** Reuses the poor-fill streak the EA already
+tracks (see section 12) for a softer, earlier size-down (0.70x at one
+consecutive poor fill, 0.40x at two) ahead of the outright kill switch
+that fires later at `InpMaxConsecutivePoorFills`.
+
+**Trade autopsy integration.** Rather than a second logging system, AFE's
+readings at the moment of entry (capital state, risk of ruin, expected
+value, win probability, the risk multiplier actually applied) are carried
+through `SAxPositionState` into the closed-trade record and written as
+five extra columns on the existing autopsy CSV — so you can see, after
+the fact, exactly what AFE believed about a trade when it let it through.
+
+**Turning it off.** `InpUseAdaptiveFlipEngine=false` skips every AFE gate
+and returns a risk multiplier of exactly 1.0 — a true A/B baseline against
+every earlier round of work in this file. The dashboard's AFE section
+reflects live readings whenever it's on; note that risk-of-ruin, expected
+value, win probability, and account health only update at the moment of
+an actual entry attempt (that's the only point they can affect anything),
+so they hold their last value while a position is open or the engine is
+idle between signals, rather than refreshing every tick.

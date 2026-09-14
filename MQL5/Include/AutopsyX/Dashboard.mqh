@@ -51,6 +51,16 @@ struct SAxDashboardExtras
    bool           heatmapAvailable;
    double         heatmapBuyPressure;    // 0..100
    double         heatmapSellPressure;   // 0..100
+
+   //--- Adaptive Flip Engine ---
+   bool           afeEnabled;
+   ENUM_AX_CAPITAL_STATE afeState;
+   double         afeDrawdownFromPeakPct;
+   double         afeRiskOfRuinPct;
+   double         afeExpectedValueR;
+   double         afeWinProbability;      // 0..1
+   double         afeAccountHealth;       // 0..100
+   double         afeRiskMultiplier;      // 0..1, last applied
   };
 
 class CDashboard
@@ -127,7 +137,7 @@ public:
          ObjectCreate(m_chartId,full,OBJ_BUTTON,0,0,0);
          ObjectSetInteger(m_chartId,full,OBJPROP_CORNER,CORNER_LEFT_UPPER);
          ObjectSetInteger(m_chartId,full,OBJPROP_XDISTANCE,m_x);
-         ObjectSetInteger(m_chartId,full,OBJPROP_YDISTANCE,m_y+773);
+         ObjectSetInteger(m_chartId,full,OBJPROP_YDISTANCE,m_y+837);
          ObjectSetInteger(m_chartId,full,OBJPROP_XSIZE,m_width);
          ObjectSetInteger(m_chartId,full,OBJPROP_YSIZE,26);
          ObjectSetString(m_chartId,full,OBJPROP_TEXT,"KILL ENGINE");
@@ -159,7 +169,7 @@ public:
                              const ENUM_AX_ENGINE_STATE engineState,const ENUM_AX_GATE gate,
                              const SAxDashboardExtras &extras)
      {
-      MakeRect("BG",m_x-6,m_y-6,m_width,843,C'12,12,14');
+      MakeRect("BG",m_x-6,m_y-6,m_width,907,C'12,12,14');
 
       int y=m_y; int x=m_x+4;
       MakeLabel("T1",x,y,"AUTOPSY X",clrGold,12); y+=18;
@@ -276,6 +286,34 @@ public:
             MakeLabel("HEATMAP",x,y,"HEATMAP: "+hmStr,extras.heatmapAvailable?clrWhite:clrSilver); y+=m_lineH;
            }
          y+=4;
+        }
+
+      //--- Adaptive Flip Engine - always rendered (matches the SNIPER section's pattern) so the ---
+      //--- panel's reserved height/kill-button offset never goes stale when the toggle changes ---
+      if(!extras.afeEnabled)
+        {
+         MakeLabel("AFE_STATE",x,y,"AFE: OFF",clrSilver); y+=m_lineH;
+         MakeLabel("AFE_ROR",x,y,"",clrSilver); y+=m_lineH;
+         MakeLabel("AFE_PROB",x,y,"",clrSilver); y+=m_lineH;
+         MakeLabel("AFE_MULT",x,y,"",clrSilver); y+=m_lineH+4;
+        }
+      else
+        {
+         color stateClr2 = (extras.afeState==AX_CAPITAL_LOCKED) ? clrRed :
+                            (extras.afeState==AX_CAPITAL_DEFENSIVE) ? clrOrange :
+                            (extras.afeState==AX_CAPITAL_CAUTION) ? clrGold : clrLime;
+         MakeLabel("AFE_STATE",x,y,StringFormat("AFE: %s (%.1f%% off peak)",
+                   AxCapitalStateToString(extras.afeState),extras.afeDrawdownFromPeakPct),stateClr2); y+=m_lineH;
+
+         color rorClr = (extras.afeRiskOfRuinPct>=10.0) ? clrTomato : clrWhite;
+         MakeLabel("AFE_ROR",x,y,StringFormat("RISK OF RUIN: %.1f%%   EV: %.2fR",
+                   extras.afeRiskOfRuinPct,extras.afeExpectedValueR),rorClr); y+=m_lineH;
+
+         MakeLabel("AFE_PROB",x,y,StringFormat("WIN PROB: %.0f%%   HEALTH: %.0f",
+                   extras.afeWinProbability*100.0,extras.afeAccountHealth),clrWhite); y+=m_lineH;
+
+         color multClr = (extras.afeRiskMultiplier<1.0) ? clrGold : clrSilver;
+         MakeLabel("AFE_MULT",x,y,StringFormat("RISK MULTIPLIER: x%.2f",extras.afeRiskMultiplier),multClr); y+=m_lineH+4;
         }
 
       color engClr = (engineState==AX_ENGINE_ATTACKING)?clrLime:(engineState==AX_ENGINE_KILLED)?clrRed:clrSilver;

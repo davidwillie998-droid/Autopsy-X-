@@ -94,6 +94,16 @@ enum ENUM_AX_GATE
    AX_GATE_INSUFFICIENT_DATA
   };
 
+//--- Adaptive Flip Engine capital state - a graduated de-risking ladder driven by continuous
+//--- peak-equity drawdown, distinct from CRiskEngine's binary day-anchored daily loss limit ---
+enum ENUM_AX_CAPITAL_STATE
+  {
+   AX_CAPITAL_NORMAL = 0,     // full configured risk
+   AX_CAPITAL_CAUTION,        // scaled-down risk, drawdown-from-peak is building
+   AX_CAPITAL_DEFENSIVE,      // heavily scaled-down risk, drawdown-from-peak is serious
+   AX_CAPITAL_LOCKED          // AFE hard-blocks new risk entirely until conditions recover
+  };
+
 //--- One microstructure/momentum tick sample ---------------------------------
 struct SAxTick
   {
@@ -159,6 +169,14 @@ struct SAxTradeRecord
    int                 flipSeq;          // 0 = not a flip result, >0 = flip generation number
    bool                isPartial;        // true = a scale-out slice, not a full trade outcome -
                                           // excluded from win/loss and adaptive-tuning statistics
+
+   //--- Adaptive Flip Engine readings AT ENTRY TIME - carried through so the autopsy CSV shows ---
+   //--- why AFE allowed/scaled this specific trade, not just what happened to it afterward ---
+   ENUM_AX_CAPITAL_STATE afeCapitalState;
+   double                afeRiskOfRuinPct;
+   double                afeExpectedValueR;
+   double                afeWinProbability;
+   double                afeRiskMultiplier;
   };
 
 //--- helpers -----------------------------------------------------------------
@@ -228,6 +246,18 @@ string AxTradeClassToString(const ENUM_AX_TRADE_CLASS c)
    return("UNKNOWN");
   }
 
+string AxCapitalStateToString(const ENUM_AX_CAPITAL_STATE s)
+  {
+   switch(s)
+     {
+      case AX_CAPITAL_NORMAL:     return("NORMAL");
+      case AX_CAPITAL_CAUTION:    return("CAUTION");
+      case AX_CAPITAL_DEFENSIVE:  return("DEFENSIVE");
+      case AX_CAPITAL_LOCKED:     return("LOCKED");
+     }
+   return("UNKNOWN");
+  }
+
 string AxGateToString(const ENUM_AX_GATE g)
   {
    switch(g)
@@ -276,6 +306,13 @@ struct SAxPositionState
                                             // than time avoids same-second collisions - MT5 deal
                                             // time has only 1-second resolution, but deal tickets
                                             // are strictly increasing in chronological order.
+
+   //--- Adaptive Flip Engine readings captured at entry, carried into the closed trade record ---
+   ENUM_AX_CAPITAL_STATE afeCapitalState;
+   double                afeRiskOfRuinPct;
+   double                afeExpectedValueR;
+   double                afeWinProbability;
+   double                afeRiskMultiplier;
   };
 
 //--- exit decision returned by CExitEngine::Evaluate --------------------------

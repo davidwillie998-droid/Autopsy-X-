@@ -35,6 +35,7 @@
 #include <AutopsyX/Heatmap.mqh>
 #include <AutopsyX/TradeAutopsy.mqh>
 #include <AutopsyX/Statistics.mqh>
+#include <AutopsyX/AdaptiveFlipEngine.mqh>
 #include <AutopsyX/Dashboard.mqh>
 
 //====================================================================
@@ -64,6 +65,20 @@ input int             InpFootprintStackedLevels   = 3;      // Consecutive imbal
 input ENUM_TIMEFRAMES InpFootprintTimeframe       = PERIOD_M1; // Bar clock the footprint grid snapshots on
 input bool            InpUseHeatmap               = true;   // Attempt to subscribe to broker market depth (silently unavailable if the broker doesn't provide it)
 input double          InpHeatmapRangePoints       = 50.0;   // How far from the touch price DOM levels are considered, points
+
+input group "=== ADAPTIVE FLIP ENGINE (CAPITAL PROTECTION) ===";
+input bool            InpUseAdaptiveFlipEngine    = true;   // Enable the AFE capital-protection layer (applies to fresh entries AND flips)
+input double          InpAfeCautionDdPct          = 8.0;    // Peak-equity drawdown % that enters CAUTION (risk scaled down)
+input double          InpAfeDefensiveDdPct        = 15.0;   // Peak-equity drawdown % that enters DEFENSIVE (risk scaled down further)
+input double          InpAfeLockedDdPct           = 25.0;   // Peak-equity drawdown % that enters LOCKED (new entries hard-blocked)
+input double          InpAfeCautionMultiplier     = 0.65;   // Risk multiplier applied in CAUTION
+input double          InpAfeDefensiveMultiplier   = 0.30;   // Risk multiplier applied in DEFENSIVE
+input double          InpAfeMaxRiskOfRuinPct      = 5.0;    // Block entries once estimated risk of ruin exceeds this, %
+input double          InpAfeRuinThresholdPct      = 50.0;   // The peak-equity drawdown % that "ruin" means for that estimate
+input double          InpAfeMinExpectedValueR     = 0.0;    // Block entries whose expected value, in R-multiples, is below this
+input double          InpAfeMinAccountHealth      = 25.0;   // Block entries when the blended 0-100 account-health score is below this
+input int             InpAfeMinTradesForStats     = 20;     // Trades required before trailing stats blend into the probability/EV estimate
+input double          InpAfeAssumedRewardRisk     = 1.5;    // Cold-start reward:risk assumption before enough trade history exists
 
 input group "=== RISK ENGINE ===";
 input double         InpDailyLossLimitPercent   = 8.0;    // Daily loss limit (%) - stops session when hit
@@ -171,6 +186,7 @@ CVolumeProfileEngine  g_volProfile;
 CFootprintEngine      g_footprint;
 CPulseEngine          g_pulse;
 CHeatmapEngine        g_heatmap;
+CAdaptiveFlipEngine   g_afe;
 CTradeAutopsy         g_autopsy;
 CStatistics           g_stats;
 CAccuracyEngine       g_accuracy;
@@ -296,6 +312,11 @@ SAxTradeRecord AxBuildTradeRecord(const double closePrice,const double grossProf
    // so tag it flipSeq=0 to keep it out of CORRECT_FLIP/FALSE_FLIP classification entirely
    rec.flipSeq       = isPartial ? 0 : g_posState.flipSeq;
    rec.isPartial     = isPartial;
+   rec.afeCapitalState   = g_posState.afeCapitalState;
+   rec.afeRiskOfRuinPct  = g_posState.afeRiskOfRuinPct;
+   rec.afeExpectedValueR = g_posState.afeExpectedValueR;
+   rec.afeWinProbability = g_posState.afeWinProbability;
+   rec.afeRiskMultiplier = g_posState.afeRiskMultiplier;
    return(rec);
   }
 
@@ -551,6 +572,23 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       return(false);
      }
 
+   // Adaptive Flip Engine: capital-protection gate + position-size scaler, applied unconditionally
+   // like every other gate above - a flip re-entry gets no exemption from risk-of-ruin/drawdown
+   // protection just because it's defensive in nature. Computing the stats snapshot here (rather
+   // than reusing OnTimer's cached one) keeps this function a pure read of current state; it's only
+   // ever called at an actual entry attempt, far rarer than the tick loop, so this cost is fine.
+   double afeRiskMultiplier = 1.0;
+   if(InpUseAdaptiveFlipEngine)
+     {
+      SAxStatsSnapshot afeStats = g_stats.Compute(g_autopsy,g_risk.DayStartEquity()>0?g_risk.DayStartEquity():AccountInfoDouble(ACCOUNT_EQUITY));
+      string afeReason;
+      if(!g_afe.Evaluate(score,afeStats,g_consecutivePoorFills,afeRiskMultiplier,afeReason))
+        {
+         if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked by Adaptive Flip Engine (%s)",afeReason);
+         return(false);
+        }
+     }
+
    double intendedPrice = (dir==AX_DIR_BUY) ? g_md.CurrentAsk() : g_md.CurrentBid();
    double point = g_md.Point();
    double slPrice,tpPrice;
@@ -592,6 +630,24 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    double actualSlDistPts = (point>0) ? MathAbs(intendedPrice-slPrice)/point : InpEmergencySlPoints;
 
    double lots = g_risk.CalculateLotSize(g_md,actualSlDistPts);
+   // AFE only ever SCALES DOWN from RiskEngine's already-configured, already-capped risk percent -
+   // afeRiskMultiplier is clamped to [0,1] inside CAdaptiveFlipEngine, so this can never push size
+   // past what RiskEngine itself already decided was the maximum acceptable for this stop distance.
+   // NormalizeVolume() clamps UP to the broker's minimum rather than down to zero, so a scaled size
+   // that falls below half a volume step must be treated as "AFE wants this skipped", not silently
+   // promoted back up to the broker minimum - that would defeat DEFENSIVE/CAUTION sizing outright
+   // on small accounts where the base lot size already sits near the minimum.
+   if(afeRiskMultiplier<1.0)
+     {
+      double scaledLots = lots*afeRiskMultiplier;
+      // the real trigger for the up-clamp defeat is scaledLots < VolumeMin() - anything below that
+      // floors to (or below) the broker minimum inside NormalizeVolume and gets forced back up to
+      // volMin by its own clamp, regardless of how close it is to volMin. A base lot size that's
+      // already at the broker minimum (the small-account case this fix targets) times any scaling
+      // multiplier below 1.0 will always land under volMin, so it must be zeroed here, not normalized.
+      double volMin = g_md.VolumeMin();
+      lots = (scaledLots < volMin) ? 0.0 : g_md.NormalizeVolume(scaledLots);
+     }
    if(lots<=0)
      {
       if(InpVerboseLogging) Print("AUTOPSY X: computed lot size is zero - entry skipped");
@@ -615,6 +671,12 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    g_consecutiveExecFailures = 0;
 
    AxInitPositionState(newTicket,dir,lots,fillPrice,slPrice,tpPrice,score,entryReason,flipSeq,intendedPrice);
+   // AFE's readings at the moment of this entry, carried through to the closed-trade autopsy record
+   g_posState.afeCapitalState   = g_afe.State();
+   g_posState.afeRiskOfRuinPct  = g_afe.RiskOfRuinPct();
+   g_posState.afeExpectedValueR = g_afe.ExpectedValueR();
+   g_posState.afeWinProbability = g_afe.WinProbability();
+   g_posState.afeRiskMultiplier = afeRiskMultiplier;
    AxRegisterFillQuality(g_posState.entrySlippagePts,fillLatencyMs);
 
    if(dir==AX_DIR_BUY && g_liq.BullishAttackReady(g_mom.DisplacementPts())) g_liq.ConsumeBullishAttack();
@@ -685,6 +747,13 @@ void AxReconcileExistingPosition(void)
    g_posState.flipSeq = 0;
    g_posState.active  = true;
    g_posState.modifyFailCount = 0;
+   // no live AFE reading exists for a position the EA is re-attaching to after a restart -
+   // neutral defaults rather than a fabricated one; the autopsy record for this trade will show them
+   g_posState.afeCapitalState   = AX_CAPITAL_NORMAL;
+   g_posState.afeRiskOfRuinPct  = 0.0;
+   g_posState.afeExpectedValueR = 0.0;
+   g_posState.afeWinProbability = 0.5;
+   g_posState.afeRiskMultiplier = 1.0;
 
    // baseline to any OUT deals that already happened on this position before this EA session
    // started (e.g. a partial close from before a restart), so they are never re-reported -
@@ -771,6 +840,12 @@ int OnInit(void)
    g_sniper.Configure(InpSniperPullbackPoints*g_md.Point(),InpSniperResumePoints*g_md.Point(),
                        InpSniperMaxWaitSeconds,InpSniperMaxChasePoints*g_md.Point());
 
+   g_afe.Configure(InpUseAdaptiveFlipEngine,InpAfeCautionDdPct,InpAfeDefensiveDdPct,InpAfeLockedDdPct,
+                    InpAfeCautionMultiplier,InpAfeDefensiveMultiplier,InpAfeMaxRiskOfRuinPct,
+                    InpAfeRuinThresholdPct,InpAfeMinExpectedValueR,InpAfeMinAccountHealth,
+                    InpAfeMinTradesForStats,InpAfeAssumedRewardRisk,g_risk.RiskPercent());
+   g_afe.Init(_Symbol,InpMagicNumber);
+
    if(!g_autopsy.Init("AutopsyX_FlipDemon_Extreme",_Symbol))
       Print("AUTOPSY X: warning - could not open trade autopsy CSV log");
 
@@ -809,6 +884,7 @@ void OnTick(void)
   {
    if(!g_md.OnTickUpdate()) return;
    g_risk.OnTickHousekeeping();
+   g_afe.OnTickHousekeeping();
 
    //--- roll the "poor fills today" counter at broker midnight, same day boundary RiskEngine uses ---
    MqlDateTime dtNow; TimeToStruct(TimeCurrent(),dtNow);
@@ -1137,6 +1213,15 @@ void OnTimer(void)
    extras.heatmapAvailable      = g_heatmap.IsAvailable();
    extras.heatmapBuyPressure    = g_heatmap.BuyWallPressure();
    extras.heatmapSellPressure   = g_heatmap.SellWallPressure();
+
+   extras.afeEnabled             = InpUseAdaptiveFlipEngine;
+   extras.afeState                = g_afe.State();
+   extras.afeDrawdownFromPeakPct  = g_afe.DrawdownFromPeakPct();
+   extras.afeRiskOfRuinPct        = g_afe.RiskOfRuinPct();
+   extras.afeExpectedValueR       = g_afe.ExpectedValueR();
+   extras.afeWinProbability       = g_afe.WinProbability();
+   extras.afeAccountHealth        = g_afe.AccountHealth();
+   extras.afeRiskMultiplier       = g_afe.LastRiskMultiplier();
 
    g_dash.Render(InpMode,g_regime.Regime(),g_lastScore,g_mom.VelocityLabel(),
                  (g_mom.PersistentBull()?"BULLISH":g_mom.PersistentBear()?"BEARISH":"NEUTRAL"),
