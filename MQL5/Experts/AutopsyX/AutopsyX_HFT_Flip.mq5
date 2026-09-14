@@ -7,8 +7,8 @@
 //+------------------------------------------------------------------+
 #property copyright "AUTOPSY X"
 #property link      ""
-#property version   "1.00"
-#property description "Institutional-grade MT5 HFT flip trading engine. Attach, select symbol, set risk, enable trading."
+#property version   "2.00"
+#property description "AUTOPSY X HFT FLIP ENGINE - VX. Institutional-grade MT5 HFT flip trading engine with an account-agnostic Adaptive Flip Engine (probability, expected value, account health, risk-of-ruin, capital states, edge-decay protection). Attach, select symbol, set risk, enable trading."
 
 #include <AutopsyX/Defines.mqh>
 #include <AutopsyX/SymbolProfile.mqh>
@@ -24,6 +24,7 @@
 #include <AutopsyX/ExitEngine.mqh>
 #include <AutopsyX/AutopsyEngine.mqh>
 #include <AutopsyX/AdaptiveEngine.mqh>
+#include <AutopsyX/AdaptiveFlipEngine.mqh>
 #include <AutopsyX/LiveCalibrationEngine.mqh>
 #include <AutopsyX/VolumeProfileEngine.mqh>
 #include <AutopsyX/OrderFlowEngine.mqh>
@@ -108,6 +109,24 @@ input double InpDisplacementCostMultiplier = 1.5;   // Min displacement = measur
 input double InpAtrCostMultiplier          = 3.0;   // Min ATR = measured median spread * this
 input double InpDeviationToleranceMultiplier = 1.5; // Execution deviation = measured P90 spread * this
 
+input group "=== VX: Adaptive Flip Engine ==="
+input bool   InpEnableAdaptiveFlip        = true;   // Enable probability/EV/health/RoR gating & dynamic sizing
+input int    InpFlipMinSampleSize         = 20;     // Trades needed before the engine gates/sizes anything (warm-up)
+input int    InpFlipMinBucketSamples      = 15;     // Trades needed in a regime bucket before trusting its win rate
+input int    InpFlipRecentWindow          = 15;     // Recent-performance window (trades) for edge-decay comparison
+input int    InpFlipBaselineWindow        = 60;     // Baseline-performance window (trades) for edge-decay comparison
+input double InpFlipEdgeDecayThresholdR   = 0.15;   // EV drop (R) from baseline to recent that flags edge decay
+input double InpFlipMinExpectedValueR     = -0.02;  // Trades below this EV(R) are blocked outright
+input double InpFlipMaxRiskOfRuinPct      = 20.0;   // Risk-of-ruin (%) that triggers the risk-engine kill switch
+input double InpFlipCautionHealthThresh   = 55.0;   // Account health below this -> CAUTION state
+input double InpFlipRecoveryHealthThresh  = 35.0;   // Account health below this (or edge decay) -> RECOVERY state
+input double InpFlipConfidentHealthThresh = 80.0;   // Account health at/above this (+ EV) -> CONFIDENT state
+input double InpFlipConfidentEvThreshR    = 0.10;   // Minimum EV(R) required for CONFIDENT state
+input double InpFlipConfidentSizeMult     = 1.15;   // Size multiplier in CONFIDENT (hard-capped, see Defines.mqh)
+input double InpFlipCautionSizeMult       = 0.60;   // Size multiplier in CAUTION
+input double InpFlipRecoverySizeMult      = 0.30;   // Size multiplier in RECOVERY
+input double InpAbsoluteMaxRiskPerTradePct = 1.5;   // Hard ceiling on implied risk% per trade - never crossed
+
 input group "=== Volume Profile / Order Flow / Heatmap / Pulse ==="
 input int    InpVolumeProfileLookbackBars = 60;    // Bars used to build the volume profile
 input int    InpOrderFlowDivergenceWindow = 10;    // Bars compared for price/flow divergence
@@ -129,6 +148,7 @@ CAXExecution       g_execution;
 CAXExit            g_exit;
 CAXAutopsy         g_autopsy;
 CAXAdaptive        g_adaptive;
+CAXAdaptiveFlip    g_flip;
 CAXCalibration     g_calibration;
 CAXVolumeProfile   g_volumeProfile;
 CAXOrderFlow       g_orderFlow;
@@ -204,6 +224,12 @@ int OnInit()
 
    g_adaptive.Init(InpEntryThreshold, InpExitThreshold, InpTickWindow, InpMaxHoldingSec,
                     InpTrailDistancePoints, InpBaseCooldownSec, InpMaxFlipsPerMinute);
+
+   g_flip.Init(InpFlipMinSampleSize, InpFlipMinBucketSamples, InpFlipRecentWindow, InpFlipBaselineWindow,
+               InpFlipEdgeDecayThresholdR, InpFlipMinExpectedValueR, InpFlipMaxRiskOfRuinPct,
+               InpFlipCautionHealthThresh, InpFlipRecoveryHealthThresh, InpFlipConfidentHealthThresh,
+               InpFlipConfidentEvThreshR, InpFlipConfidentSizeMult, InpFlipCautionSizeMult,
+               InpFlipRecoverySizeMult);
 
    string journalPath = "AutopsyX\\" + _Symbol + "_journal.csv";
    g_autopsy.Init(journalPath, InpSlippageFailurePts, InpSpreadFailurePts);
@@ -350,6 +376,19 @@ void OnTimer()
    d.domImbalance          = g_heatmap.Imbalance();
    d.domAvailable          = g_heatmap.DomAvailable();
 
+   d.flipEnabled = InpEnableAdaptiveFlip;
+   if(InpEnableAdaptiveFlip)
+   {
+      AXFlipDecision peek = g_flip.Evaluate(g_regime.CurrentRegime(), AccountInfoDouble(ACCOUNT_EQUITY),
+                                             g_risk.PeakEquity(), AccountInfoDouble(ACCOUNT_MARGIN_LEVEL),
+                                             g_risk.ConsecutiveLosses(), InpRiskPerTradePct);
+      d.flipWarmingUp   = peek.warmingUp;
+      d.capitalState    = peek.capitalState;
+      d.accountHealth   = peek.accountHealth;
+      d.expectedValueR  = peek.expectedValueR;
+      d.riskOfRuinPct   = peek.riskOfRuinPct;
+   }
+
    g_dashboard.Update(d);
 }
 
@@ -471,6 +510,17 @@ void FinalizeClosedPosition(const ENUM_AX_EXIT_REASON fallbackReason)
    rec.holding_seconds = (int)(closeTime - g_position.open_time);
    rec.exit_reason     = reason;
 
+   //--- VX: R-multiple + flip context, feeding straight back into the flip engine's history
+   rec.risk_amount              = g_position.risk_amount;
+   rec.capital_state_at_entry   = g_position.capital_state_at_entry;
+   rec.probability_at_entry     = g_position.probability_at_entry;
+   rec.expected_value_r_at_entry = g_position.expected_value_r_at_entry;
+   rec.size_multiplier_at_entry = g_position.size_multiplier_at_entry;
+   rec.r_multiple = (g_position.risk_amount > 0.0) ? (profit / g_position.risk_amount) : 0.0;
+
+   if(InpEnableAdaptiveFlip)
+      g_flip.RegisterOutcome(rec.r_multiple, rec.regime_at_entry, rec.slippage_points, closeTime);
+
    g_autopsy.OnTradeClosed(rec);
    g_risk.RegisterTradeClosed(profit);
    RegisterAdaptiveSample(profit >= 0.0);
@@ -544,7 +594,30 @@ void EvaluateEntry(void)
       tpPoints = g_regime.AtrPts() * InpTpAtrMultiplier;
    }
 
-   double lots = g_risk.LotsForRisk(g_profile, slPoints);
+   //--- VX: Adaptive Flip Engine - probability/EV/health/risk-of-ruin gate + dynamic sizing
+   AXFlipDecision flip;
+   flip.allowed = true; flip.warmingUp = true; flip.criticalRiskOfRuin = false; flip.edgeDecayDetected = false;
+   flip.sizeMultiplier = 1.0; flip.probability = 0.5; flip.expectedValueR = 0.0; flip.accountHealth = 100.0;
+   flip.riskOfRuinPct = 0.0; flip.capitalState = AX_CAPSTATE_NORMAL; flip.reason = "adaptive flip disabled";
+
+   if(InpEnableAdaptiveFlip)
+   {
+      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      double marginLevel = AccountInfoDouble(ACCOUNT_MARGIN_LEVEL);
+      flip = g_flip.Evaluate(g_regime.CurrentRegime(), equity, g_risk.PeakEquity(), marginLevel,
+                              g_risk.ConsecutiveLosses(), InpRiskPerTradePct);
+
+      if(flip.criticalRiskOfRuin && !g_risk.KillSwitchActive())
+         g_risk.TriggerKillSwitch(StringFormat("adaptive flip: %s", flip.reason));
+
+      if(!flip.allowed)
+         return; // negative expected value or critical risk-of-ruin - no trade, no exceptions
+   }
+
+   // the absolute risk ceiling applies regardless of whether adaptive gating
+   // is toggled on - it's a hard safety limit, not an optional feature
+   double riskAmount = 0.0;
+   double lots = g_risk.LotsForRiskAdaptive(g_profile, slPoints, flip.sizeMultiplier, InpAbsoluteMaxRiskPerTradePct, riskAmount);
 
    string entryReason;
    if(!g_entry.Validate(g_profile, dir, lots, g_micro.SpreadCurrentPts(), g_micro.SpreadExpansionRatio(),
@@ -583,6 +656,12 @@ void EvaluateEntry(void)
    g_position.signal_time_msc  = signalMsc;
    g_position.order_submit_msc = res.submit_msc;
    g_position.order_fill_msc   = res.fill_msc;
+
+   g_position.risk_amount              = riskAmount;
+   g_position.capital_state_at_entry   = flip.capitalState;
+   g_position.probability_at_entry     = flip.probability;
+   g_position.expected_value_r_at_entry = flip.expectedValueR;
+   g_position.size_multiplier_at_entry = flip.sizeMultiplier;
 
    g_risk.RegisterTradeOpened();
    if(g_lastTradeDirection != AX_DIR_NONE && g_lastTradeDirection != dir)

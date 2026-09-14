@@ -1,8 +1,12 @@
-# AUTOPSY X HFT FLIP ENGINE — MT5 Expert Advisor
+# AUTOPSY X HFT FLIP ENGINE VX — MT5 Expert Advisor
 
 Institutional-grade, single-terminal MT5 high-frequency flip trading engine.
 `Detect -> Validate -> Enter -> Capture -> Exit -> Reassess.` Default behaviour
 is always **NO TRADE** unless multiple independent signals agree.
+
+**VX** adds an account-agnostic Adaptive Flip Engine on top of the same
+strategy logic (see below) — nothing about signal generation, execution, or
+exits changed; VX is a gating and sizing layer bolted on top.
 
 ## Install (single terminal, no external infrastructure)
 
@@ -26,8 +30,8 @@ under `Include/AutopsyX`:
 
 ```
 MarketDataEngine -> MicrostructureEngine -> LiquidityEngine -> MomentumEngine
--> RegimeEngine -> ConfidenceEngine -> EntryEngine -> ExecutionEngine
--> ExitEngine -> RiskEngine -> AutopsyEngine
+-> RegimeEngine -> ConfidenceEngine -> AdaptiveFlipEngine (VX) -> EntryEngine
+-> ExecutionEngine -> ExitEngine -> RiskEngine -> AutopsyEngine
 ```
 
 - **MicrostructureEngine** — tick direction, velocity, acceleration,
@@ -64,6 +68,10 @@ MarketDataEngine -> MicrostructureEngine -> LiquidityEngine -> MomentumEngine
   window, holding-time limit and trailing distance. Every adaptive parameter
   has a hard, non-negotiable min/max (see `AX_ADAPT_*` constants in
   `Include/AutopsyX/Defines.mqh`).
+- **AdaptiveFlipEngine (VX)** — account-agnostic probability/expected-value/
+  account-health/risk-of-ruin gating and bounded dynamic position sizing,
+  sitting between ConfidenceEngine and EntryEngine. See the dedicated VX
+  section below.
 
 ## Live calibration (why demo settings don't carry over)
 
@@ -142,20 +150,80 @@ All four feed into the confidence engine as additional weighted evidence
 show up on the dashboard as `PULSE`, `VOLUME POC`, `VALUE AREA`, `ORDER FLOW
 DELTA (proxy)`, and `DOM IMBALANCE`.
 
+## VX: the Adaptive Flip Engine
+
+`Include/AutopsyX/AdaptiveFlipEngine.mqh` is a gating and sizing layer that
+sits between the existing risk check and order entry (`EvaluateEntry()` in
+the main `.mq5`). It does not replace `RiskEngine`'s hard kill switch, daily
+loss limit, drawdown shutdown, or cooldown logic — those are unchanged and
+still fire independently. What VX adds:
+
+- **Probability** — an empirical win rate from the trade history the EA has
+  actually recorded, bucketed by market regime when there's enough data in
+  that bucket (`InpFlipMinBucketSamples`), falling back to the overall rate
+  otherwise. Never a hard-coded assumption.
+- **Expected value in R-multiples**, not currency — `EV = P(win)·avgWinR −
+  P(loss)·avgLossR`, where 1R is the amount actually risked on that specific
+  trade. This is what makes the engine **account-agnostic**: an EV of
+  +0.3R means the same thing on a $500 account as a $500,000 one. Trades
+  with EV below `InpFlipMinExpectedValueR` are **blocked outright**, not
+  just downsized.
+- **Account health (0–100)** — blends equity drawdown from peak, margin
+  level, the trend in recent vs. overall win rate, and recent execution
+  quality (slippage vs. its own established baseline) into one score, all
+  from live `AccountInfoDouble()` reads.
+- **Risk of ruin** — a practical approximation (not a rigorous closed-form
+  proof) of the probability of blowing through the account at the
+  configured risk-per-trade, given the measured edge. This is a guardrail
+  trigger, not a precise probability claim. Crossing
+  `InpFlipMaxRiskOfRuinPct` engages the *existing* `RiskEngine` kill switch
+  — VX deliberately does not add a second, competing stop-trading mechanism.
+- **Capital states** (`NORMAL` / `CONFIDENT` / `CAUTION` / `RECOVERY`) —
+  drive a bounded position-size multiplier. `CONFIDENT` can scale size up
+  to `InpFlipConfidentSizeMult`, hard-capped at 1.25x no matter what;
+  `CAUTION`/`RECOVERY` scale size down, floored at 0.15x. These bounds
+  (`AX_FLIP_SIZE_MULT_MIN`/`MAX` in `Defines.mqh`) are compile-time
+  constants — no input or account condition can push sizing outside them.
+- **Edge-decay detection** — compares expected value over a recent window
+  (`InpFlipRecentWindow` trades) against a longer baseline window
+  (`InpFlipBaselineWindow` trades). A meaningful EV drop even amid mixed
+  win/loss results (not just a loss streak) forces `RECOVERY` state — this
+  catches a strategy quietly degrading, which a simple consecutive-loss
+  counter misses.
+- **Dynamic position sizing with a hard ceiling** — `RiskEngine::
+  LotsForRiskAdaptive()` applies the capital-state multiplier on top of the
+  normal risk-per-trade sizing, then re-derives the *implied* risk% of the
+  resulting lot size and clamps it to `InpAbsoluteMaxRiskPerTradePct`. This
+  ceiling applies even with VX turned off — it's a safety limit, not a
+  feature toggle.
+
+**Warm-up is safe by design.** Until `InpFlipMinSampleSize` trades have
+closed, the engine reports `warmingUp = true`, never blocks a trade, and
+applies no size adjustment (multiplier stays 1.0) — it has no data to
+judge on yet, so it stays out of the way rather than guessing. Every closed
+trade's flip context (risk amount, R-multiple, capital state, probability,
+expected value, size multiplier) is written to the autopsy journal CSV for
+after-the-fact review. Set `InpEnableAdaptiveFlip = false` to fall back to
+the pre-VX sizing/gating behaviour exactly.
+
 ## Dashboard
 
 A lightweight on-chart panel (status, regime, direction, buy/sell score,
 confidence, spread, tick velocity, momentum, trades today, win rate, daily
-P/L, drawdown, current position, hold time, exit mode) refreshes on a timer
-(`InpDashboardRefreshMs`, default 500ms) — never on every tick — so it cannot
-interfere with execution.
+P/L, drawdown, current position, hold time, exit mode, pulse, volume
+profile, order-flow delta, DOM imbalance, capital state, account health,
+expected value, risk of ruin) refreshes on a timer (`InpDashboardRefreshMs`,
+default 500ms) — never on every tick — so it cannot interfere with execution.
 
 ## Testing components independently
 
 Run `Scripts/AutopsyX/AutopsyX_SelfTest.mq5` from the Navigator on any chart.
 It exercises the symbol profile, tick buffer, microstructure, liquidity,
-momentum, risk, adaptive, autopsy and entry/exit-stop logic against synthetic
-data and prints PASS/FAIL per assertion — no orders are placed. Full
+momentum, risk, adaptive, autopsy, volume profile, order flow, heatmap,
+pulse, entry/exit-stop, and the VX Adaptive Flip Engine (warm-up behaviour,
+positive- and negative-edge gating, bounded size multipliers, risk-of-ruin
+response, and the hard-capped `LotsForRiskAdaptive` sizing) against
+synthetic data, and prints PASS/FAIL per assertion — no orders are placed. Full
 strategy-level backtesting (net profit, profit factor, win rate, average
 win/loss, max drawdown, consecutive losses, trade frequency, average holding
 time, expected value, slippage impact, spread impact) is available by running

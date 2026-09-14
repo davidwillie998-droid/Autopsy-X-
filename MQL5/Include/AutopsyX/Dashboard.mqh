@@ -37,9 +37,17 @@ struct AXDashboardData
    int                orderFlowDivergence; // -1 bearish, 0 none, +1 bullish
    double             domImbalance;
    bool               domAvailable;
+
+   // VX: Adaptive Flip Engine
+   ENUM_AX_CAPITAL_STATE capitalState;
+   double             accountHealth;
+   double             expectedValueR;
+   double             riskOfRuinPct;
+   bool               flipWarmingUp;
+   bool               flipEnabled;
 };
 
-#define AX_DASH_ROWS 22
+#define AX_DASH_ROWS 26
 
 class CAXDashboard
 {
@@ -81,7 +89,8 @@ public:
          "", "STATUS", "REGIME", "DIRECTION", "BUY SCORE", "SELL SCORE", "CONFIDENCE",
          "SPREAD", "TICK VELOCITY", "MOMENTUM", "TRADES TODAY", "WIN RATE", "DAILY P/L",
          "DRAWDOWN", "CURRENT POSITION", "HOLD TIME", "EXIT MODE",
-         "PULSE", "VOLUME POC", "VALUE AREA", "ORDER FLOW DELTA (proxy)", "DOM IMBALANCE"
+         "PULSE", "VOLUME POC", "VALUE AREA", "ORDER FLOW DELTA (proxy)", "DOM IMBALANCE",
+         "CAPITAL STATE", "ACCOUNT HEALTH", "EXPECTED VALUE", "RISK OF RUIN"
       };
 
       string bgName = m_prefix + "BG";
@@ -105,7 +114,7 @@ public:
          m_valueNames[i] = m_prefix + "V" + IntegerToString(i);
          int y = m_y + i * m_lineHeight;
          bool titleRow = (i == 0);
-         CreateLabel(m_labelNames[i], m_x, y, titleRow ? "AUTOPSY X HFT" : (labels[i] + ":"),
+         CreateLabel(m_labelNames[i], m_x, y, titleRow ? "AUTOPSY X HFT VX" : (labels[i] + ":"),
                      titleRow ? clrGold : clrSilver, titleRow ? 11 : 9, titleRow);
          if(!titleRow)
             CreateLabel(m_valueNames[i], m_x + 170, y, "--", clrWhite, 9, false);
@@ -142,6 +151,28 @@ public:
       SetValue(20, StringFormat("%.1f%s", d.orderFlowDelta, DivergenceSuffix(d.orderFlowDivergence)),
                DirColor((ENUM_AX_DIRECTION)(d.orderFlowDelta > 0 ? 1 : (d.orderFlowDelta < 0 ? -1 : 0))));
       SetValue(21, d.domAvailable ? StringFormat("%.2f", d.domImbalance) : "N/A (no DOM)", clrSilver);
+
+      if(!d.flipEnabled)
+      {
+         SetValue(22, "DISABLED", clrGray);
+         SetValue(23, "--", clrSilver);
+         SetValue(24, "--", clrSilver);
+         SetValue(25, "--", clrSilver);
+      }
+      else if(d.flipWarmingUp)
+      {
+         SetValue(22, "WARMING UP", clrDeepSkyBlue);
+         SetValue(23, "--", clrSilver);
+         SetValue(24, "--", clrSilver);
+         SetValue(25, "--", clrSilver);
+      }
+      else
+      {
+         SetValue(22, AXCapitalStateToString(d.capitalState), CapitalStateColor(d.capitalState));
+         SetValue(23, StringFormat("%.0f / 100", d.accountHealth), HealthColor(d.accountHealth));
+         SetValue(24, StringFormat("%.3fR", d.expectedValueR), (d.expectedValueR >= 0) ? clrLime : clrTomato);
+         SetValue(25, StringFormat("%.1f%%", d.riskOfRuinPct), (d.riskOfRuinPct >= 15.0) ? clrTomato : clrSilver);
+      }
 
       ChartRedraw(0);
    }
@@ -235,5 +266,24 @@ private:
       if(divergence > 0) return " (BULL DIV)";
       if(divergence < 0) return " (BEAR DIV)";
       return "";
+   }
+
+   color CapitalStateColor(const ENUM_AX_CAPITAL_STATE s) const
+   {
+      switch(s)
+      {
+         case AX_CAPSTATE_CONFIDENT: return clrLime;
+         case AX_CAPSTATE_NORMAL:    return clrSilver;
+         case AX_CAPSTATE_CAUTION:   return clrOrange;
+         case AX_CAPSTATE_RECOVERY:  return clrTomato;
+      }
+      return clrSilver;
+   }
+
+   color HealthColor(const double health) const
+   {
+      if(health >= 70.0) return clrLime;
+      if(health >= 40.0) return clrOrange;
+      return clrTomato;
    }
 };

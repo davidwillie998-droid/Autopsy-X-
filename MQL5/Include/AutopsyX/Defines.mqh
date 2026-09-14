@@ -72,6 +72,20 @@ enum ENUM_AX_AUTOPSY_TAG
    AX_TAG_RISK_SHUTDOWN
 };
 
+//--- capital state, driven by the Adaptive Flip Engine (VX) ------------
+// CONFIDENT/NORMAL/CAUTION/RECOVERY only ever scale size *down* from
+// NORMAL except the small, hard-capped CONFIDENT bonus. There is no
+// separate "locked" state here - a breach severe enough to stop trading
+// routes through the existing CAXRisk kill switch instead of a second,
+// divergent stop-trading mechanism.
+enum ENUM_AX_CAPITAL_STATE
+{
+   AX_CAPSTATE_NORMAL,
+   AX_CAPSTATE_CONFIDENT,
+   AX_CAPSTATE_CAUTION,
+   AX_CAPSTATE_RECOVERY
+};
+
 //--- adaptive parameter hard boundaries (never crossed by self-tuning) --
 #define AX_ADAPT_ENTRY_THRESH_MIN     55.0
 #define AX_ADAPT_ENTRY_THRESH_MAX     90.0
@@ -87,6 +101,12 @@ enum ENUM_AX_AUTOPSY_TAG
 #define AX_ADAPT_TRAIL_MAX_POINTS     1000.0
 #define AX_ADAPT_MAXFLIPS_MIN         1
 #define AX_ADAPT_MAXFLIPS_MAX         20
+
+//--- Adaptive Flip Engine (VX) hard boundaries - never crossed regardless
+//    of account health, capital state, or any dynamic sizing computation
+#define AX_FLIP_SIZE_MULT_MIN         0.15    // dynamic sizing can shrink a trade this far...
+#define AX_FLIP_SIZE_MULT_MAX         1.25    // ...but never grow it beyond this, ever
+#define AX_FLIP_MAX_RISK_OF_RUIN_PCT  100.0   // ceiling on the RoR input itself (it's a %)
 
 //--- misc constants --------------------------------------------------
 #define AX_TICK_BUFFER_CAPACITY       512
@@ -129,6 +149,14 @@ struct AXTradeRecord
    ENUM_AX_REGIME regime_at_entry;
    ulong    signal_to_order_ms;
    ulong    order_to_fill_ms;
+
+   // Adaptive Flip Engine (VX) context captured at entry, for autopsy review
+   double   risk_amount;             // account-currency amount at risk on this trade
+   double   r_multiple;              // profit / risk_amount - account-agnostic outcome
+   ENUM_AX_CAPITAL_STATE capital_state_at_entry;
+   double   probability_at_entry;
+   double   expected_value_r_at_entry;
+   double   size_multiplier_at_entry;
 };
 
 //--- state of the (single) currently managed position ------------------
@@ -150,6 +178,13 @@ struct AXPositionState
    ulong    signal_time_msc;
    ulong    order_submit_msc;
    ulong    order_fill_msc;
+
+   // Adaptive Flip Engine (VX) context, carried through to the closed-trade record
+   double   risk_amount;
+   ENUM_AX_CAPITAL_STATE capital_state_at_entry;
+   double   probability_at_entry;
+   double   expected_value_r_at_entry;
+   double   size_multiplier_at_entry;
 };
 
 //--- clamp helper -------------------------------------------------------
@@ -236,6 +271,18 @@ string AXAutopsyTagToString(const ENUM_AX_AUTOPSY_TAG t)
       case AX_TAG_TAKE_PROFIT:      return "TAKE_PROFIT";
       case AX_TAG_OPPOSITE_SIGNAL:  return "OPPOSITE_SIGNAL";
       case AX_TAG_RISK_SHUTDOWN:    return "RISK_SHUTDOWN";
+   }
+   return "UNKNOWN";
+}
+
+string AXCapitalStateToString(const ENUM_AX_CAPITAL_STATE s)
+{
+   switch(s)
+   {
+      case AX_CAPSTATE_NORMAL:    return "NORMAL";
+      case AX_CAPSTATE_CONFIDENT: return "CONFIDENT";
+      case AX_CAPSTATE_CAUTION:   return "CAUTION";
+      case AX_CAPSTATE_RECOVERY:  return "RECOVERY";
    }
    return "UNKNOWN";
 }

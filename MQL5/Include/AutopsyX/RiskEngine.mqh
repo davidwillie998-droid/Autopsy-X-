@@ -173,6 +173,44 @@ public:
       return profile.NormalizeVolume(lots);
    }
 
+   // VX: applies the Adaptive Flip Engine's bounded size multiplier on top of
+   // the base risk-per-trade sizing, then re-derives the *implied* risk% of
+   // the resulting lot size and hard-clamps it to absoluteMaxRiskPct - a
+   // ceiling that dynamic sizing can never cross regardless of capital state,
+   // account health, or any other multiplier. Also reports the $ amount
+   // actually at risk so it can be stored for later R-multiple computation.
+   double LotsForRiskAdaptive(const CAXSymbolProfile &profile, const double stopDistancePoints,
+                               const double sizeMultiplier, const double absoluteMaxRiskPct,
+                               double &riskAmountOut) const
+   {
+      riskAmountOut = 0.0;
+      if(stopDistancePoints <= 0.0 || profile.tick_size <= 0.0 || profile.tick_value <= 0.0)
+         return profile.volume_min;
+
+      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      double valuePerPointPerLot = profile.tick_value * (profile.point / profile.tick_size);
+      if(valuePerPointPerLot <= 0.0 || equity <= 0.0) return profile.volume_min;
+
+      double baseLots = LotsForRisk(profile, stopDistancePoints);
+      double mult = AXClamp(sizeMultiplier, AX_FLIP_SIZE_MULT_MIN, AX_FLIP_SIZE_MULT_MAX);
+      double lots = baseLots * mult;
+
+      double impliedRiskAmount = lots * stopDistancePoints * valuePerPointPerLot;
+      double impliedRiskPct = impliedRiskAmount / equity * 100.0;
+      double capPct = MathMax(0.01, absoluteMaxRiskPct);
+
+      if(impliedRiskPct > capPct)
+      {
+         double scale = capPct / impliedRiskPct;
+         lots *= scale;
+         impliedRiskAmount *= scale;
+      }
+
+      lots = profile.NormalizeVolume(lots);
+      riskAmountOut = lots * stopDistancePoints * valuePerPointPerLot;
+      return lots;
+   }
+
    bool   KillSwitchActive(void) const { return m_killSwitch; }
    string KillReason(void)       const { return m_killReason; }
    double DailyPL(void)          const { return m_dailyPL; }
@@ -185,6 +223,7 @@ public:
       return MathMax(0.0, (m_peakEquity - eq) / m_peakEquity * 100.0);
    }
    bool InCooldown(void) const { return TimeTradeServer() < m_cooldownUntil; }
+   double PeakEquity(void) const { return m_peakEquity; }
 
 private:
    datetime CurrentDayStamp(void) const

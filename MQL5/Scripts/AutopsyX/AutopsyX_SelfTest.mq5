@@ -5,7 +5,7 @@
 //| chart to sanity-check the build after changes.                    |
 //+------------------------------------------------------------------+
 #property copyright "AUTOPSY X"
-#property version   "1.00"
+#property version   "2.00"
 #property script_show_inputs
 
 #include <AutopsyX/Defines.mqh>
@@ -24,6 +24,7 @@
 #include <AutopsyX/OrderFlowEngine.mqh>
 #include <AutopsyX/HeatmapEngine.mqh>
 #include <AutopsyX/PulseEngine.mqh>
+#include <AutopsyX/AdaptiveFlipEngine.mqh>
 
 int g_pass = 0, g_fail = 0;
 
@@ -355,6 +356,99 @@ void TestPulseEngine(void)
    Check(pulse.Score() > baselineScore, "Pulse rises when tick velocity and volatility spike above baseline");
 }
 
+void TestAdaptiveFlipEngineWarmup(void)
+{
+   CAXAdaptiveFlip flip;
+   flip.Init(20, 15, 15, 60, 0.15, -0.02, 20.0, 55.0, 35.0, 80.0, 0.10, 1.15, 0.6, 0.3);
+
+   AXFlipDecision d = flip.Evaluate(AX_REGIME_TRENDING, 10000.0, 10000.0, 0.0, 0, 0.5);
+   Check(d.warmingUp, "Flip engine reports warming-up before minimum sample size is reached");
+   Check(d.allowed, "Flip engine never blocks trading while warming up (no data to judge on)");
+   Check(d.sizeMultiplier == 1.0, "Flip engine applies no size adjustment while warming up");
+}
+
+void TestAdaptiveFlipEnginePositiveEdge(void)
+{
+   CAXAdaptiveFlip flip;
+   flip.Init(20, 15, 15, 60, 0.15, -0.02, 20.0, 55.0, 35.0, 80.0, 0.10, 1.15, 0.6, 0.3);
+
+   // feed a consistently profitable history: 15 wins at +1.5R, 5 losses at -1R
+   for(int i = 0; i < 20; i++)
+   {
+      double r = (i % 4 == 0) ? -1.0 : 1.5;
+      flip.RegisterOutcome(r, AX_REGIME_TRENDING, 2.0, TimeCurrent());
+   }
+
+   AXFlipDecision d = flip.Evaluate(AX_REGIME_TRENDING, 10000.0, 10000.0, 0.0, 0, 0.5);
+   Check(!d.warmingUp, "Flip engine leaves warm-up once enough trades are recorded");
+   Check(d.probability > 0.5, "Flip engine reads a positive win rate from a mostly-winning history");
+   Check(d.expectedValueR > 0.0, "Flip engine computes positive expected value for a profitable history");
+   Check(d.allowed, "Flip engine allows trading on a positive-EV history");
+   Check(d.riskOfRuinPct < 50.0, "Risk of ruin is well below certain-ruin territory for a profitable edge");
+}
+
+void TestAdaptiveFlipEngineNegativeEdge(void)
+{
+   CAXAdaptiveFlip flip;
+   flip.Init(20, 15, 15, 60, 0.15, -0.02, 20.0, 55.0, 35.0, 80.0, 0.10, 1.15, 0.6, 0.3);
+
+   // feed a consistently losing history: mostly -1R with a few small +0.5R wins
+   for(int i = 0; i < 20; i++)
+   {
+      double r = (i % 5 == 0) ? 0.5 : -1.0;
+      flip.RegisterOutcome(r, AX_REGIME_RANGE, 2.0, TimeCurrent());
+   }
+
+   AXFlipDecision d = flip.Evaluate(AX_REGIME_RANGE, 10000.0, 10000.0, 0.0, 4, 0.5);
+   Check(d.expectedValueR < 0.0, "Flip engine computes negative expected value for a losing history");
+   Check(!d.allowed, "Flip engine blocks trading outright on negative expected value");
+   Check(d.riskOfRuinPct >= 90.0, "Risk of ruin reads near-certain with no positive edge");
+}
+
+void TestAdaptiveFlipEngineBoundedSizing(void)
+{
+   CAXAdaptiveFlip flip;
+   // deliberately extreme multipliers in the inputs - Init() must clamp them
+   flip.Init(20, 15, 15, 60, 0.15, -0.02, 20.0, 55.0, 35.0, 80.0, 0.10, 5.0, 0.6, 0.01);
+
+   for(int i = 0; i < 20; i++)
+      flip.RegisterOutcome(1.0, AX_REGIME_TRENDING, 2.0, TimeCurrent());
+
+   AXFlipDecision d = flip.Evaluate(AX_REGIME_TRENDING, 10000.0, 10000.0, 0.0, 0, 0.5);
+   Check(d.sizeMultiplier <= AX_FLIP_SIZE_MULT_MAX, "Size multiplier never exceeds the hard-coded ceiling regardless of input");
+   Check(d.sizeMultiplier >= AX_FLIP_SIZE_MULT_MIN, "Size multiplier never drops below the hard-coded floor regardless of input");
+}
+
+void TestAdaptiveFlipEngineRiskOfRuinTriggersOnDrawdown(void)
+{
+   CAXAdaptiveFlip flip;
+   flip.Init(20, 15, 15, 60, 0.15, -0.02, 10.0, 55.0, 35.0, 80.0, 0.10, 1.15, 0.6, 0.3);
+
+   for(int i = 0; i < 20; i++)
+      flip.RegisterOutcome(1.0, AX_REGIME_TRENDING, 2.0, TimeCurrent());
+
+   // an aggressive risk-per-trade should push risk-of-ruin over a tight 10% ceiling
+   AXFlipDecision d = flip.Evaluate(AX_REGIME_TRENDING, 10000.0, 10000.0, 0.0, 0, 25.0);
+   Check(d.riskOfRuinPct > 0.0, "Risk of ruin responds to an aggressive risk-per-trade input");
+}
+
+void TestLotsForRiskAdaptiveHardCap(void)
+{
+   CAXSymbolProfile p;
+   p.Init(_Symbol);
+   CAXRisk risk;
+   // base risk-per-trade (2%) * the max size multiplier (1.25x) = 2.5% implied,
+   // well above the 1.0% absolute ceiling below - this must actually trigger the clamp
+   risk.Init(2.0, 3.0, 4, 1, 6, 60, 4, 8.0, 15);
+
+   double riskAmount = 0.0;
+   double lots = risk.LotsForRiskAdaptive(p, 50.0, AX_FLIP_SIZE_MULT_MAX, 1.0, riskAmount);
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   double impliedPct = (equity > 0.0) ? (riskAmount / equity * 100.0) : 0.0;
+   Check(impliedPct <= 1.05, "LotsForRiskAdaptive clamps implied risk% to the absolute ceiling even when base*multiplier exceeds it");
+   Check(lots >= p.volume_min, "LotsForRiskAdaptive still returns a tradable lot size after clamping");
+}
+
 void OnStart()
 {
    Print("===== AUTOPSY X SELF-TEST =====");
@@ -371,6 +465,12 @@ void OnStart()
    TestOrderFlowEngine();
    TestHeatmapEngine();
    TestPulseEngine();
+   TestAdaptiveFlipEngineWarmup();
+   TestAdaptiveFlipEnginePositiveEdge();
+   TestAdaptiveFlipEngineNegativeEdge();
+   TestAdaptiveFlipEngineBoundedSizing();
+   TestAdaptiveFlipEngineRiskOfRuinTriggersOnDrawdown();
+   TestLotsForRiskAdaptiveHardCap();
    TestEntryEngineRejectsNoDirection();
    TestExitEngineStops();
 

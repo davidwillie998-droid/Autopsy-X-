@@ -20,6 +20,7 @@ private:
    double   m_sumSlippagePts, m_sumSpreadPts;
    int      m_curConsecLosses, m_maxConsecLosses;
    double   m_cumProfit, m_peakCum, m_maxDrawdown;
+   double   m_sumRMultiple;
    datetime m_firstTradeTime, m_lastTradeTime;
    int      m_tagCounts[13];
 
@@ -27,7 +28,7 @@ public:
    CAXAutopsy(void) : m_fileHandle(INVALID_HANDLE), m_slippageFailurePts(8.0), m_spreadFailurePts(35.0),
       m_totalTrades(0), m_wins(0), m_losses(0), m_grossProfit(0), m_grossLoss(0), m_sumHoldSec(0),
       m_sumSlippagePts(0), m_sumSpreadPts(0), m_curConsecLosses(0), m_maxConsecLosses(0),
-      m_cumProfit(0), m_peakCum(0), m_maxDrawdown(0), m_firstTradeTime(0), m_lastTradeTime(0)
+      m_cumProfit(0), m_peakCum(0), m_maxDrawdown(0), m_sumRMultiple(0), m_firstTradeTime(0), m_lastTradeTime(0)
    {
       ArrayInitialize(m_tagCounts, 0);
    }
@@ -47,7 +48,8 @@ public:
          FileWrite(m_fileHandle, "ticket", "open_time", "close_time", "direction", "requested_price",
                     "filled_price", "exit_price", "slippage_pts", "spread_pts", "lots", "profit",
                     "holding_sec", "exit_reason", "autopsy_tag", "buy_score", "sell_score", "regime",
-                    "signal_to_order_ms", "order_to_fill_ms");
+                    "signal_to_order_ms", "order_to_fill_ms",
+                    "risk_amount", "r_multiple", "capital_state", "probability", "expected_value_r", "size_multiplier");
       }
    }
 
@@ -90,7 +92,10 @@ public:
                     DoubleToString(rec.profit, 2), rec.holding_seconds,
                     AXExitReasonToString(rec.exit_reason), AXAutopsyTagToString(rec.autopsy_tag),
                     DoubleToString(rec.buy_score_at_entry, 1), DoubleToString(rec.sell_score_at_entry, 1),
-                    AXRegimeToString(rec.regime_at_entry), rec.signal_to_order_ms, rec.order_to_fill_ms);
+                    AXRegimeToString(rec.regime_at_entry), rec.signal_to_order_ms, rec.order_to_fill_ms,
+                    DoubleToString(rec.risk_amount, 2), DoubleToString(rec.r_multiple, 3),
+                    AXCapitalStateToString(rec.capital_state_at_entry), DoubleToString(rec.probability_at_entry, 3),
+                    DoubleToString(rec.expected_value_r_at_entry, 3), DoubleToString(rec.size_multiplier_at_entry, 2));
          FileFlush(m_fileHandle);
       }
 
@@ -99,6 +104,7 @@ public:
       m_sumHoldSec += rec.holding_seconds;
       m_sumSlippagePts += rec.slippage_points;
       m_sumSpreadPts += rec.spread_at_entry;
+      m_sumRMultiple += rec.r_multiple;
       if(m_firstTradeTime == 0) m_firstTradeTime = rec.open_time;
       m_lastTradeTime = rec.close_time;
 
@@ -136,6 +142,7 @@ public:
       double avgHoldSec = (m_totalTrades > 0) ? ((double)m_sumHoldSec / m_totalTrades) : 0.0;
       double avgSlippage = (m_totalTrades > 0) ? (m_sumSlippagePts / m_totalTrades) : 0.0;
       double avgSpread = (m_totalTrades > 0) ? (m_sumSpreadPts / m_totalTrades) : 0.0;
+      double avgRMultiple = (m_totalTrades > 0) ? (m_sumRMultiple / m_totalTrades) : 0.0;
       double hours = (m_lastTradeTime > m_firstTradeTime) ? (double)(m_lastTradeTime - m_firstTradeTime) / 3600.0 : 0.0;
       double freqPerHour = (hours > 0.0) ? (m_totalTrades / hours) : 0.0;
 
@@ -154,6 +161,7 @@ public:
       s += StringFormat("Expected Value / Trade: %.2f\n", expectedValue);
       s += StringFormat("Average Slippage: %.2f pts\n", avgSlippage);
       s += StringFormat("Average Spread at Entry: %.2f pts\n", avgSpread);
+      s += StringFormat("Average R-Multiple: %.3fR\n", avgRMultiple);
       s += "--- Autopsy Tag Breakdown ---\n";
       for(int i = 0; i < 13; i++)
          if(m_tagCounts[i] > 0)
