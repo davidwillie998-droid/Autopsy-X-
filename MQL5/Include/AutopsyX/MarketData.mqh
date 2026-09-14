@@ -99,6 +99,10 @@ public:
       m_ticks[m_head].mid       = mid;
       m_ticks[m_head].spreadPts = (m_point>0) ? (tick.ask-tick.bid)/m_point : 0.0;
       m_ticks[m_head].dir       = dir;
+      // real traded size when the feed provides it, else a per-tick count proxy - either way a
+      // consistent >=1 weight so order-flow/footprint volume sums are never silently zero
+      m_ticks[m_head].volume    = (tick.volume_real>0) ? (long)MathRound(tick.volume_real)
+                                                        : (tick.volume>0 ? tick.volume : 1);
 
       if(m_count<AX_TICK_BUFFER_SIZE) m_count++;
       m_lastMid  = mid;

@@ -28,6 +28,11 @@
 #include <AutopsyX/ExecutionEngine.mqh>
 #include <AutopsyX/ExitEngine.mqh>
 #include <AutopsyX/SniperEngine.mqh>
+#include <AutopsyX/OrderFlow.mqh>
+#include <AutopsyX/VolumeProfile.mqh>
+#include <AutopsyX/Footprint.mqh>
+#include <AutopsyX/Pulse.mqh>
+#include <AutopsyX/Heatmap.mqh>
 #include <AutopsyX/TradeAutopsy.mqh>
 #include <AutopsyX/Statistics.mqh>
 #include <AutopsyX/Dashboard.mqh>
@@ -47,6 +52,18 @@ input int             InpSniperMaxWaitSeconds     = 8;     // Give up waiting fo
 input double          InpSniperMaxChasePoints     = 40;    // Abandon if price runs this far in our favor without ever pulling back
 input bool            InpSniperUseStructureStop   = true;  // Prefer a stop just beyond the nearest liquidity level when it's tighter than ATR/fixed
 input double          InpSniperStructureBufferPts = 10;    // Buffer placed beyond the structural level, points
+
+input group "=== ORDER FLOW / VOLUME PROFILE / FOOTPRINT / HEATMAP / PULSE ===";
+input bool            InpUseOrderFlow             = true;  // Blend order-flow/footprint/volume-profile into the score (advisory, not a hard gate)
+input double          InpOrderFlowScoreWeight     = 15.0;  // Max points each of order flow / footprint / volume profile can add to a side's score
+input int             InpVolumeProfileBars        = 120;   // Rolling lookback for the volume profile, bars
+input double          InpVolumeProfileBinPoints   = 5.0;    // Volume profile bin width, points
+input double          InpFootprintBinPoints       = 3.0;    // Footprint level width, points (finer than the volume profile)
+input double          InpFootprintImbalanceRatio  = 0.70;   // Buy-or-sell share at a level that counts as "imbalanced"
+input int             InpFootprintStackedLevels   = 3;      // Consecutive imbalanced levels required to call it "stacked"
+input ENUM_TIMEFRAMES InpFootprintTimeframe       = PERIOD_M1; // Bar clock the footprint grid snapshots on
+input bool            InpUseHeatmap               = true;   // Attempt to subscribe to broker market depth (silently unavailable if the broker doesn't provide it)
+input double          InpHeatmapRangePoints       = 50.0;   // How far from the touch price DOM levels are considered, points
 
 input group "=== RISK ENGINE ===";
 input double         InpDailyLossLimitPercent   = 8.0;    // Daily loss limit (%) - stops session when hit
@@ -149,6 +166,11 @@ CEntryEngine          g_entryEngine;
 CExecutionEngine      g_exec;
 CExitEngine           g_exit;
 CSniperEngine         g_sniper;
+COrderFlowEngine      g_orderFlow;
+CVolumeProfileEngine  g_volProfile;
+CFootprintEngine      g_footprint;
+CPulseEngine          g_pulse;
+CHeatmapEngine        g_heatmap;
 CTradeAutopsy         g_autopsy;
 CStatistics           g_stats;
 CAccuracyEngine       g_accuracy;
@@ -161,6 +183,10 @@ datetime              g_lastBarTime = 0;
 datetime              g_lastHtfBarTime = 0;
 int                   g_consecutiveExecFailures = 0;
 double                g_adaptiveConfMultiplier = 1.0;
+// the score actually acted on this tick, AFTER AxApplyOrderFlowBonus - CSignalScorer's own Last()
+// only ever holds the PRE-bonus reading, so the dashboard reads this instead to show what really
+// drove the decision rather than a stale, lower-confidence number that silently diverges from it
+SAxScore              g_lastScore;
 
 //--- live execution-quality tracking: a demo feed rarely shows meaningful slippage or fill    ---
 //--- latency, so these only really start to matter once running on a live account. Tracked    ---
@@ -427,6 +453,52 @@ bool AxHtfConfluenceOk(const ENUM_AX_DIR dir)
    return(true);
   }
 
+//--- blends order flow / footprint / volume profile / heatmap into an already-computed score as a ---
+//--- bounded advisory bonus (never a hard gate) - each of the (up to) four contributes at most     ---
+//--- InpOrderFlowScoreWeight points to a side's raw score (heatmap only when available - see       ---
+//--- below), same additive-component pattern the scorer already uses internally for micro/         ---
+//--- liquidity/momentum. Confidence and action are then                                            ---
+//--- RE-derived from the blended scores using the EA's own configured thresholds, so a strong      ---
+//--- order-flow read can genuinely turn a sub-threshold score into an actionable one (and vice     ---
+//--- versa a contradicting order-flow read can silently keep a borderline score from firing)       ---
+//--- exactly as if it had been part of the score from the start. ---
+void AxApplyOrderFlowBonus(SAxScore &score)
+  {
+   if(!InpUseOrderFlow) return;
+   // mirror CSignalScorer::Evaluate's own regime gate - an unsafe/untradeable regime already forces
+   // an all-zero score with action=NONE, and a bonus must never be the thing that overrides that
+   if(!g_regime.TradingAllowed()) return;
+
+   double w = InpOrderFlowScoreWeight;
+   double refPrice = g_md.CurrentMid();
+
+   double buyBonus  = (g_orderFlow.BullishScoreComponent()/100.0)*w
+                     + (g_footprint.BullishScoreComponent()/100.0)*w
+                     + (g_volProfile.BullishScoreComponent(refPrice)/100.0)*w;
+   double sellBonus = (g_orderFlow.BearishScoreComponent()/100.0)*w
+                     + (g_footprint.BearishScoreComponent()/100.0)*w
+                     + (g_volProfile.BearishScoreComponent(refPrice)/100.0)*w;
+
+   if(InpUseHeatmap && g_heatmap.IsAvailable())
+     {
+      buyBonus  += (g_heatmap.BullishScoreComponent()/100.0)*w;
+      sellBonus += (g_heatmap.BearishScoreComponent()/100.0)*w;
+     }
+
+   score.buyScore  = AxClampD(score.buyScore+buyBonus,0,100);
+   score.sellScore = AxClampD(score.sellScore+sellBonus,0,100);
+
+   double gap = MathAbs(score.buyScore-score.sellScore);
+   score.confidence = AxClampD(gap*1.15,0,100);
+
+   score.action = AX_DIR_NONE;
+   if(gap>=InpMinGapToAct)
+     {
+      if(score.buyScore>score.sellScore && score.buyScore>=InpMinScoreToAct)       score.action = AX_DIR_BUY;
+      else if(score.sellScore>score.buyScore && score.sellScore>=InpMinScoreToAct) score.action = AX_DIR_SELL;
+     }
+  }
+
 //--- tracks live execution quality (slippage + fill latency) across fills. A demo feed rarely
 //--- exercises this path meaningfully; on a live account, repeated poor fills are a real signal
 //--- that current broker/network conditions aren't fit for this strategy right now, and the EA
@@ -675,6 +747,13 @@ int OnInit(void)
    g_regime.Update();
    g_regimeHtf.Update();
 
+   g_volProfile.Init(_Symbol,InpVolumeProfileBars,InpVolumeProfileBinPoints,g_md.Point(),InpRegimeTimeframe);
+   g_volProfile.Refresh();
+   g_footprint.Configure(InpFootprintBinPoints,InpFootprintImbalanceRatio,InpFootprintStackedLevels,g_md.Point());
+   // market depth is unavailable on most retail forex/CFD symbols via MT5 - this is expected, not
+   // an error, and the dashboard/score both degrade to "N/A"/no contribution when it's not there
+   if(InpUseHeatmap) g_heatmap.Init(_Symbol);
+
    g_scorer.Configure(InpMinScoreToAct,InpMinGapToAct);
    g_flip.Configure(InpFlipRequiredConfirmations,InpFlipMinConfidence);
    g_chop.Configure(InpAntiChopBaseCooldownSec,InpAntiChopMaxCooldownSec);
@@ -720,6 +799,7 @@ void OnDeinit(const int reason)
    g_autopsy.Deinit();
    g_regime.Deinit();
    g_regimeHtf.Deinit();
+   g_heatmap.Deinit();
   }
 
 //====================================================================
@@ -743,13 +823,29 @@ void OnTick(void)
    g_mom.Update(g_md);
    g_micro.Update(g_md,g_mom);
 
-   //--- refresh structural regime/liquidity levels only on a new bar - not every tick ---
+   //--- order flow: session CVD + rolling imbalance/absorption, every tick (O(window) scan, same ---
+   //--- performance category as Microstructure's own per-tick loop above) ---
+   g_orderFlow.Update(g_md);
+   if(InpUseOrderFlow)
+     {
+      // guard barTime>0 the same way the regime/HTF bar-tracking blocks below do - a transient 0
+      // from iTime (history-cache eviction/feed hiccup) must never be treated as a new bar boundary,
+      // or Footprint would snapshot a partially-filled bar early and then double-count the real
+      // boundary once iTime recovers, splitting one bar's grid across two history entries
+      datetime fpBarTime = iTime(_Symbol,InpFootprintTimeframe,0);
+      if(fpBarTime>0)
+         g_footprint.OnTick(fpBarTime,g_md.CurrentMid(),g_orderFlow.LastTickBuyVol(),g_orderFlow.LastTickSellVol());
+     }
+   g_pulse.Update(g_mom,g_micro,g_regime,g_orderFlow);
+
+   //--- refresh structural regime/liquidity/volume-profile levels only on a new bar - not every tick ---
    datetime barTime = iTime(_Symbol,InpRegimeTimeframe,0);
    if(barTime!=g_lastBarTime && barTime>0)
      {
       g_lastBarTime = barTime;
       g_regime.Update();
       g_liq.RefreshLevels();
+      g_volProfile.Refresh();
       g_adaptiveConfMultiplier = AxAdaptiveConfidenceMultiplier();
       g_entryEngine.Configure(InpMinConfidenceToEnter*g_adaptiveConfMultiplier);
      }
@@ -764,6 +860,8 @@ void OnTick(void)
 
    //--- SCORE ---
    SAxScore score = g_scorer.Evaluate(g_md,g_mom,g_micro,g_liq,g_regime);
+   AxApplyOrderFlowBonus(score);
+   g_lastScore = score; // dashboard reads this, not g_scorer.Last(), so it shows the blended score
    g_accuracy.OnTickUpdate(g_md.CurrentMid());
    //--- sample into the accuracy engine on signal-direction change or at most once/second -   ---
    //--- registering every tick of a sustained signal would saturate the ring buffer on fast-  ---
@@ -981,6 +1079,11 @@ void OnTimer(void)
   {
    if(!InpShowDashboard) return;
 
+   // DOM refresh is heavier than a tick read and doesn't need tick-rate freshness to stay useful -
+   // the dashboard/timer's 1s cadence (the only periodic clock this EA runs) is the natural home for it
+   if(InpUseHeatmap)
+      g_heatmap.Update(g_md.CurrentBid(),g_md.CurrentAsk(),InpHeatmapRangePoints,g_md.Point());
+
    double floatingPnl = 0;
    double curPrice = g_md.CurrentMid();
    int holdSeconds = 0;
@@ -1019,7 +1122,23 @@ void OnTimer(void)
    extras.sniperPullbackSeen    = g_sniper.PullbackSeen();
    extras.sniperSecondsWaiting  = g_sniper.SecondsWaiting();
 
-   g_dash.Render(InpMode,g_regime.Regime(),g_scorer.Last(),g_mom.VelocityLabel(),
+   extras.orderFlowEnabled      = InpUseOrderFlow;
+   extras.sessionCvd            = g_orderFlow.SessionCvd();
+   extras.orderFlowImbalance    = g_orderFlow.ImbalanceRatio();
+   extras.bullAbsorption        = g_orderFlow.BullishAbsorption();
+   extras.bearAbsorption        = g_orderFlow.BearishAbsorption();
+   extras.volProfileValid       = g_volProfile.IsValid();
+   extras.volProfilePosition    = g_volProfile.Position(g_md.CurrentMid());
+   extras.footprintStackedDir   = g_footprint.LastBarStackedDir();
+   extras.pulseValue            = g_pulse.Value();
+   extras.pulseDirection        = g_pulse.Direction();
+   extras.pulseLabel            = g_pulse.Label();
+   extras.heatmapEnabled        = InpUseHeatmap;
+   extras.heatmapAvailable      = g_heatmap.IsAvailable();
+   extras.heatmapBuyPressure    = g_heatmap.BuyWallPressure();
+   extras.heatmapSellPressure   = g_heatmap.SellWallPressure();
+
+   g_dash.Render(InpMode,g_regime.Regime(),g_lastScore,g_mom.VelocityLabel(),
                  (g_mom.PersistentBull()?"BULLISH":g_mom.PersistentBear()?"BEARISH":"NEUTRAL"),
                  g_md.CurrentSpreadPts(),g_posState.dir,g_posState.entryPrice,curPrice,floatingPnl,
                  holdSeconds,g_risk.FlipsToday(),g_autopsy.Count(),snap,g_risk.DailyPnL(),

@@ -34,6 +34,23 @@ struct SAxDashboardExtras
    bool           sniperArmed;
    bool           sniperPullbackSeen;
    int            sniperSecondsWaiting;
+
+   //--- order flow / volume profile / footprint / pulse / heatmap ---
+   bool           orderFlowEnabled;
+   double         sessionCvd;
+   double         orderFlowImbalance;    // -1..+1
+   bool           bullAbsorption;
+   bool           bearAbsorption;
+   bool           volProfileValid;
+   int            volProfilePosition;    // +1 above VAH, -1 below VAL, 0 inside
+   int            footprintStackedDir;   // +1/-1/0, last completed bar
+   double         pulseValue;            // 0..100
+   int            pulseDirection;        // +1/-1/0
+   string         pulseLabel;
+   bool           heatmapEnabled;
+   bool           heatmapAvailable;
+   double         heatmapBuyPressure;    // 0..100
+   double         heatmapSellPressure;   // 0..100
   };
 
 class CDashboard
@@ -110,7 +127,7 @@ public:
          ObjectCreate(m_chartId,full,OBJ_BUTTON,0,0,0);
          ObjectSetInteger(m_chartId,full,OBJPROP_CORNER,CORNER_LEFT_UPPER);
          ObjectSetInteger(m_chartId,full,OBJPROP_XDISTANCE,m_x);
-         ObjectSetInteger(m_chartId,full,OBJPROP_YDISTANCE,m_y+679);
+         ObjectSetInteger(m_chartId,full,OBJPROP_YDISTANCE,m_y+773);
          ObjectSetInteger(m_chartId,full,OBJPROP_XSIZE,m_width);
          ObjectSetInteger(m_chartId,full,OBJPROP_YSIZE,26);
          ObjectSetString(m_chartId,full,OBJPROP_TEXT,"KILL ENGINE");
@@ -142,7 +159,7 @@ public:
                              const ENUM_AX_ENGINE_STATE engineState,const ENUM_AX_GATE gate,
                              const SAxDashboardExtras &extras)
      {
-      MakeRect("BG",m_x-6,m_y-6,m_width,749,C'12,12,14');
+      MakeRect("BG",m_x-6,m_y-6,m_width,843,C'12,12,14');
 
       int y=m_y; int x=m_x+4;
       MakeLabel("T1",x,y,"AUTOPSY X",clrGold,12); y+=18;
@@ -226,6 +243,40 @@ public:
       else if(extras.sniperPullbackSeen) { sniperStr=StringFormat("ARMED - awaiting resume (%ds)",extras.sniperSecondsWaiting); sniperClr=clrGold; }
       else { sniperStr=StringFormat("ARMED - awaiting pullback (%ds)",extras.sniperSecondsWaiting); sniperClr=clrAqua; }
       MakeLabel("SNIPER",x,y,"SNIPER: "+sniperStr,sniperClr); y+=m_lineH+4;
+
+      //--- order flow / volume profile / footprint / pulse / heatmap ---
+      if(extras.orderFlowEnabled)
+        {
+         color cvdClr = (extras.sessionCvd>=0) ? clrLime : clrTomato;
+         MakeLabel("CVD",x,y,StringFormat("CVD: %s%.0f  IMB: %+.0f%%",
+                   extras.sessionCvd>=0?"+":"",extras.sessionCvd,extras.orderFlowImbalance*100.0),cvdClr); y+=m_lineH;
+
+         string absorbStr = extras.bullAbsorption?"BULLISH":(extras.bearAbsorption?"BEARISH":"-");
+         color absorbClr  = extras.bullAbsorption?clrLime:(extras.bearAbsorption?clrTomato:clrSilver);
+         MakeLabel("ABSORB",x,y,"ABSORPTION: "+absorbStr,absorbClr); y+=m_lineH;
+
+         string vpStr = !extras.volProfileValid ? "N/A" :
+                        (extras.volProfilePosition>0 ? "ABOVE VALUE AREA" :
+                         (extras.volProfilePosition<0 ? "BELOW VALUE AREA" : "INSIDE VALUE AREA"));
+         MakeLabel("VP",x,y,"VOL PROFILE: "+vpStr,clrAqua); y+=m_lineH;
+
+         string fpStr = (extras.footprintStackedDir>0) ? "STACKED BUY" :
+                        (extras.footprintStackedDir<0 ? "STACKED SELL" : "-");
+         color fpClr  = (extras.footprintStackedDir>0) ? clrLime : (extras.footprintStackedDir<0 ? clrTomato : clrSilver);
+         MakeLabel("FOOTPRINT",x,y,"FOOTPRINT: "+fpStr,fpClr); y+=m_lineH;
+
+         string pulseDirStr = (extras.pulseDirection>0)?"UP":(extras.pulseDirection<0?"DOWN":"FLAT");
+         color pulseClr = (extras.pulseValue>=55)?clrGold:clrWhite;
+         MakeLabel("PULSE",x,y,StringFormat("PULSE: %.0f %s (%s)",extras.pulseValue,extras.pulseLabel,pulseDirStr),pulseClr); y+=m_lineH;
+
+         if(extras.heatmapEnabled)
+           {
+            string hmStr = !extras.heatmapAvailable ? "N/A (no broker depth)" :
+                           StringFormat("BUY %.0f%% / SELL %.0f%%",extras.heatmapBuyPressure,extras.heatmapSellPressure);
+            MakeLabel("HEATMAP",x,y,"HEATMAP: "+hmStr,extras.heatmapAvailable?clrWhite:clrSilver); y+=m_lineH;
+           }
+         y+=4;
+        }
 
       color engClr = (engineState==AX_ENGINE_ATTACKING)?clrLime:(engineState==AX_ENGINE_KILLED)?clrRed:clrSilver;
       MakeLabel("ENGINE",x,y,"ENGINE: "+stateStr,engClr); y+=m_lineH;

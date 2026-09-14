@@ -407,3 +407,72 @@ too rare or too fast to be usable. The dashboard's SNIPER line shows OFF,
 IDLE, or ARMED with a live pullback/resume phase and wait-timer so you can
 see the state machine working in real time rather than inferring it from
 trade timestamps after the fact.
+
+## 14. Order flow, footprints, volume profile, heatmap, pulse
+
+Five modules that read the market's internal structure rather than just
+price — `Include/AutopsyX/OrderFlow.mqh`, `Footprint.mqh`,
+`VolumeProfile.mqh`, `Heatmap.mqh`, `Pulse.mqh`. All five are advisory:
+they add a bounded bonus to the existing BUY/SELL score
+(`InpOrderFlowScoreWeight` points max, per module, per side — up to 4x
+that when the heatmap is also available) through
+`AxApplyOrderFlowBonus()`, and can genuinely tip a borderline score over
+the action threshold or hold back a contradicted one — but none of them
+is a hard gate the way HTF confluence is. Turn the whole group off with
+`InpUseOrderFlow=false` to get the pre-existing score exactly as before.
+
+**The honest caveat first.** A retail MT5 forex/CFD feed is quotes (bid/ask),
+not a trade tape. There is usually no real "buyer lifted the offer" flag on
+a tick. Every module below that needs a buy/sell split infers it the same
+way the rest of this EA already infers direction: which way the mid price
+moved, tick to tick. That's a reasonable, widely-used proxy — it is not the
+same thing as a genuine exchange trade-and-quote feed, and stacked-imbalance
+or absorption readings should be read as "the price action *looked like*
+this," not as ground truth about actual buyer/seller identity.
+
+- **Order flow** (`COrderFlowEngine`). A session cumulative delta (CVD,
+  resets at the broker's midnight) plus a rolling-window buy/sell volume
+  imbalance ratio (-1..+1). Also flags **absorption**: heavy one-sided
+  volume that *failed* to move price — heavy selling that didn't push
+  price down implies hidden buying strength (bullish absorption), and the
+  mirror case for bearish. Volume weight is the feed's real traded size
+  when available, else a per-tick count proxy, so CVD stays meaningful
+  even on a broker reporting flat "1 per tick" volume.
+- **Footprints** (`CFootprintEngine`). Bins order flow's per-tick
+  buy/sell classification into price levels *within the currently forming
+  bar* — the actual definition of a footprint, and the one thing volume
+  profile can't give you since it has no direction. At bar close it scans
+  the finished grid for **stacked imbalance**: several consecutive price
+  levels all lopsidedly one-sided (`InpFootprintImbalanceRatio`,
+  `InpFootprintStackedLevels`), a classic aggression/exhaustion tell.
+- **Volume profile** (`CVolumeProfileEngine`). POC (point of control) and
+  a 70% value area (VAH/VAL), built from completed bars' `tick_volume`
+  spread evenly across each bar's High-Low range — rebuilt once per new
+  bar over a rolling lookback (`InpVolumeProfileBars`), the same cadence
+  `CLiquidityEngine::RefreshLevels` already uses, never per tick. Feeds a
+  breakout-confirmation lean when price pushes outside the value area.
+- **Heatmap** (`CHeatmapEngine`). Subscribes to the broker's order book
+  (`MarketBookAdd`/`MarketBookGet`) and tracks buildup vs. pull of resting
+  size near the touch price between refreshes — a growing level is read as
+  a wall forming, a shrinking one as being pulled. **Most retail
+  forex/CFD symbols on MT5 provide no real depth at all.** This is
+  detected, not papered over: the dashboard shows `HEATMAP: N/A (no
+  broker depth)` and the score contribution is a hard zero rather than a
+  fabricated reading. Refreshed once a second from the dashboard's own
+  timer (`OnTimer`), not the tick loop — DOM reads are heavier than a
+  tick and don't need tick-rate freshness to stay useful. If
+  `InpShowDashboard=false` the timer never runs and the heatmap never
+  refreshes; a genuinely dashboard-independent DOM feed wasn't judged
+  worth a second timer chain for this feature.
+- **Pulse** (`CPulseEngine`). One compact 0-100 "is the market alive
+  right now" gauge plus a direction lean, blending tick velocity, order-
+  flow imbalance magnitude, volatility expansion, and spread quality. It
+  is a dashboard read, not a gate by default — it's the fastest way to
+  glance at the chart and tell whether current conditions are worth
+  watching at all, in a single number, rather than cross-referencing four
+  separate readouts.
+
+**Dashboard.** All five surface on the panel: CVD + rolling imbalance,
+absorption direction, volume-profile position relative to the value area,
+the last completed bar's footprint stacking, the pulse gauge, and the
+heatmap wall-pressure split (or its honest "N/A").

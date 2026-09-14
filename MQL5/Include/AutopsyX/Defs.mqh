@@ -103,6 +103,10 @@ struct SAxTick
    double   mid;
    double   spreadPts;
    int      dir;          // +1 up, -1 down, 0 flat (vs previous mid)
+   long     volume;        // broker tick volume for this sample (>=1 - most feeds report at least
+                            // a tick-count proxy even without real traded size); used to weight
+                            // order-flow/footprint/volume-profile calculations rather than treating
+                            // every tick as equal
   };
 
 //--- Independent BUY/SELL score bundle ---------------------------------------
