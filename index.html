@@ -863,11 +863,12 @@
       <div class="mt5-header">
         <div class="mt5-title">Research Modes</div>
       </div>
-      <div class="mt5-note" style="margin-top:0;margin-bottom:14px;">Separate from the trade engine above — these are equity/portfolio research lenses, not forex trade calls. Analysis and scenarios, not a personal recommendation to act on.</div>
+      <div class="mt5-note" style="margin-top:0;margin-bottom:14px;">Separate from the trade engine above — these are research lenses across equities, FX, commodities, and crypto. Analysis and scenarios, not a personal recommendation to act on.</div>
       <div class="mt5-form">
         <div class="mt5-field" style="width:280px;">
           <label for="modeSelect">MODE</label>
           <select id="modeSelect" onchange="onModeChange()">
+            <option value="x20_flip">Autopsy X — X20 Flip Scanner</option>
             <option value="stock_screener">Goldman Sachs — Stock Screener</option>
             <option value="dcf_valuation">Morgan Stanley — DCF Valuation</option>
             <option value="risk_analysis">Bridgewater — Portfolio Risk</option>
@@ -1226,6 +1227,11 @@ function getCss(varName){
 const HOUSE_STYLE = `House rules for this analysis: search the web for real, current, verifiable data before writing anything factual — don't invent tickers, prices, financials, or dates. Where you can't verify something, say "unverified" or "estimate" rather than stating it as fact. This is analysis to inform the reader's own decision, not a personalized recommendation to act — present the reasoning and let them conclude, and don't tell them what to personally do with their money. Output GitHub-flavored markdown only (headers, bold, bullet lists, and simple pipe tables where a table is the clearest format) — no code fences, no preamble. You have a hard, limited output budget: stay under roughly 500 words total, trim item counts and depth rather than leaving sections unfinished, and end with a short "Key uncertainties" line naming what would most change the picture.`;
 
 const MODE_PROMPTS = {
+  x20_flip: {
+    label:'Autopsy X — X20 Flip Scanner', inputLabel:'SYMBOLS / PAIRS (COMMA-SEPARATED)',
+    placeholder:'e.g. XAUUSD, GBPJPY, USDCHF, WTI, DXY',
+    system:`You are the X20 desk: this engine's short-duration relative-value and mispricing-convergence scanner, built on five arbitrage frameworks from the academic literature (volatility arbitrage neutral, volatility arbitrage long-biased, structured-product/relative-value arbitrage, capital-structure arbitrage, and credit/carry arbitrage), adapted here for retail-accessible flip trades across FX, commodities, indices, and crypto. Given the stated symbols or pairs, search for real current prices, correlations, implied volatility, and yield/carry data, then hunt specifically for a currently observable mispricing or divergence between related instruments that plausibly closes within hours to a few days — a flip, not a multi-week thesis. For each genuine candidate (up to 4, ranked by conviction) report: which of the five frameworks it maps to, the actual current numbers behind the divergence claim, entry zone, hard invalidation level, convergence target, estimated time-to-close, and resulting R:R. If nothing in the given list shows a real, currently verifiable divergence, say that plainly rather than manufacturing a setup — "no flip candidate found" is a legitimate output here. Close with one line making clear X20 is this module's name, not a return promise: nothing here implies a specific multiple on capital, flip trades carry elevated gap and transaction-cost risk from the short hold, and any candidate still needs sizing through the calculator above before anything is sent live. ${HOUSE_STYLE}`
+  },
   stock_screener: {
     label:'Goldman Sachs — Stock Screener', inputLabel:'YOUR CRITERIA',
     placeholder:'e.g. large-cap tech, moderate risk, $50k, 5-year horizon',
