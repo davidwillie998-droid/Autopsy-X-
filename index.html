@@ -410,6 +410,10 @@
   .report-output hr{border:none;border-top:1px solid var(--hairline);margin:var(--sp-5) 0;}
 
   .size-panel{background:var(--panel);border:1px solid var(--hairline);box-shadow:var(--shadow-panel);padding:var(--sp-6) var(--sp-7);margin-top:var(--sp-4);}
+  .flip-panel{background:var(--panel);border:1px solid var(--hairline);box-shadow:var(--shadow-panel);padding:var(--sp-6) var(--sp-7);margin-top:var(--sp-4);}
+  .flip-panel textarea{font-family:'IBM Plex Mono',monospace;font-size:13px;background:var(--panel-sunken);border:1px solid var(--hairline);color:var(--bone);padding:10px;resize:vertical;width:100%;}
+  .flip-panel textarea:focus{border-color:var(--gold);outline:none;}
+  .flip-panel label{display:block;font-family:'IBM Plex Mono',monospace;font-size:var(--fs-label);color:var(--grey);letter-spacing:var(--tracking-label);text-transform:uppercase;margin-bottom:6px;}
   .size-source{font-family:'IBM Plex Mono',monospace;font-size:var(--fs-label);color:var(--grey);letter-spacing:var(--tracking-label);text-transform:uppercase;}
   .size-error{
     margin-top:var(--sp-4);padding:var(--sp-2) var(--sp-3);background:rgba(212,108,95,0.08);border:1px solid rgba(212,108,95,0.35);
@@ -856,6 +860,64 @@
           <div><div class="stat-label">ACTUAL RISK AT THIS LOT</div><div class="stat-val" id="sizeActualRisk">—</div></div>
         </div>
         <div class="size-warning" id="sizeWarning" style="display:none;"></div>
+      </div>
+    </div>
+
+    <div class="flip-panel">
+      <div class="mt5-header">
+        <div class="mt5-title">Flipdemon HFT Pro Max</div>
+        <span class="size-source">4-ENGINE FUSION</span>
+      </div>
+      <div class="mt5-note" style="margin-top:0;margin-bottom:14px;">One consolidated call built from four deterministic reads: a liquidity/regime flag (Huang, O'Neill, Ranaldo &amp; Yu, 2023 — HFT depth looks fine on a spread chart but withdraws around vol spikes and scheduled news), a participation/conviction score (He &amp; Kang, 2026 — informativeness peaks at a balanced fast/slow trader mix, not at either extreme), an SMA trend side gated by a meta-label confirmation (Shishlenin, Harke &amp; Koppisetti, 2019), and a maximum-profit-strategy pivot structure with a cost filter, single-unit position limit (Salov, 2019). Everything runs locally in this tab on the prices you paste in — no order routing, no multi-account logic, no detection-evasion of any kind. Treat it as a second opinion, not a signal to blindly execute.</div>
+
+      <div class="mt5-form">
+        <div class="mt5-field" style="width:170px;">
+          <label for="flipHorizon">HORIZON</label>
+          <select id="flipHorizon" onchange="onFlipHorizonChange()">
+            <option value="scalp">Scalp</option>
+            <option value="day" selected>Day</option>
+            <option value="swing">Swing</option>
+          </select>
+        </div>
+        <div class="mt5-field" style="width:200px;">
+          <label for="flipFilterCost">FILTER COST (price units)</label>
+          <input id="flipFilterCost" type="text" placeholder="blank = auto">
+        </div>
+        <div class="mt5-field">
+          <label for="flipPreNews">PRE-SCHEDULED-NEWS WINDOW</label>
+          <select id="flipPreNews">
+            <option value="no">No</option>
+            <option value="yes">Yes — inside the ~5min pre-announcement window</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="mt5-field" style="margin-top:12px;">
+        <label for="flipBars">CLOSE PRICES — oldest to newest, one per line or comma-separated</label>
+        <textarea id="flipBars" rows="6" placeholder="2434.10, 2434.60, 2433.90, 2435.20, 2436.05, ..."></textarea>
+      </div>
+
+      <div class="mt5-form" style="margin-top:12px;">
+        <button id="flipRunBtn" onclick="runFlipdemon()">Run Flipdemon</button>
+      </div>
+
+      <div class="size-error" id="flipError"></div>
+
+      <div id="flipResult" style="display:none;margin-top:var(--sp-5);">
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:var(--sp-4);">
+          <span class="pill" id="flipVerdictPill" style="padding:6px 14px;font-size:14px;font-weight:600;">—</span>
+          <span id="flipHorizonFit" style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--grey);"></span>
+        </div>
+        <div class="size-grid" style="margin-bottom:var(--sp-5);">
+          <div><div class="stat-label">CONFIDENCE</div><div class="stat-val gold" id="flipConfidence">—</div></div>
+          <div><div class="stat-label">SIZE MULTIPLIER</div><div class="stat-val" id="flipSizeMult">—</div></div>
+          <div><div class="stat-label">BEST-FIT HORIZON</div><div class="stat-val" id="flipBestHorizon">—</div></div>
+          <div><div class="stat-label">LAST PIVOT</div><div class="stat-val" id="flipLastPivot">—</div></div>
+        </div>
+        <div class="evidence-list">
+          <span class="ev-kicker">Engine Breakdown</span>
+          <div id="flipEngineRows"></div>
+        </div>
       </div>
     </div>
 
@@ -2476,6 +2538,239 @@ function renderScannerTable(){
       <td class="${r.error?'error-cell':''}">${esc(r.error?'ERROR: '+r.error:r.decision)}</td>
       <td>${esc(r.time)}</td>
     </tr>`).join('');
+}
+
+/* ============================================================
+   FLIPDEMON HFT PRO MAX
+   Four deterministic engines, fused into one verdict.
+   Runs entirely client-side on pasted close prices.
+   ============================================================ */
+
+const FLIP_HORIZON_PARAMS={
+  scalp:{fastN:5,  slowN:15, volWindow:10, partWindow:10, fcMult:0.5},
+  day:  {fastN:10, slowN:30, volWindow:20, partWindow:20, fcMult:1.0},
+  swing:{fastN:20, slowN:60, volWindow:30, partWindow:30, fcMult:2.5}
+};
+
+function onFlipHorizonChange(){
+  const h=document.getElementById('flipHorizon').value;
+  document.getElementById('flipFilterCost').placeholder='blank = auto from '+h+' bar-to-bar range';
+}
+onFlipHorizonChange();
+
+function flipMean(arr){ return arr.reduce((a,b)=>a+b,0)/arr.length; }
+function flipMeanLast(closes,n){ return flipMean(closes.slice(-n)); }
+function flipStdev(arr){
+  if(arr.length<2) return 0;
+  const m=flipMean(arr);
+  const v=arr.reduce((a,b)=>a+(b-m)*(b-m),0)/(arr.length-1);
+  return Math.sqrt(v);
+}
+function flipQuantile(arr,q){
+  const sorted=[...arr].sort((a,b)=>a-b);
+  const pos=(sorted.length-1)*q, base=Math.floor(pos), rest=pos-base;
+  return sorted[base+1]!==undefined ? sorted[base]+rest*(sorted[base+1]-sorted[base]) : sorted[base];
+}
+function flipFmt(n){ return (n===null||n===undefined||isNaN(n)) ? '—' : n.toFixed(5); }
+
+// Engine 1 — liquidity/regime read (Huang, O'Neill, Ranaldo & Yu, 2023):
+// HFT order-book liquidity looks resilient on a plain spread chart but is
+// measurably less reliable once realized volatility spikes above its own
+// recent norm. We proxy "the VIX-dummy above its 90th percentile" with a
+// rolling stdev of returns compared to its own trailing distribution.
+function flipRegimeEngine(closes, window){
+  const rets=[];
+  for(let i=1;i<closes.length;i++) rets.push(closes[i]-closes[i-1]);
+  if(rets.length<window+5) return {state:'INSUFFICIENT DATA', vol:null, q90:null, liquidityMultiplier:1};
+  const volSeries=[];
+  for(let i=window;i<rets.length;i++) volSeries.push(flipStdev(rets.slice(i-window,i)));
+  const currentVol=volSeries[volSeries.length-1];
+  const q90=flipQuantile(volSeries,0.9);
+  const state = currentVol>q90 ? 'VOL-SPIKE' : 'NORMAL';
+  return {state, vol:currentVol, q90, liquidityMultiplier: state==='VOL-SPIKE' ? 0.5 : 1};
+}
+
+// Engine 2 — participation/conviction read (He & Kang, 2026):
+// price informativeness is hump-shaped in the fast/slow trader mix, peaking
+// at a balanced participation structure rather than at either extreme. We
+// proxy participation concentration with the share of the total absolute
+// move over the lookback window contributed by its single largest bar — a
+// diffuse move (near 0) or a one-print spike (near 1) both score lower
+// conviction than a moderate, catalyst-plus-follow-through mix.
+function flipParticipationEngine(closes, window){
+  if(closes.length<window+1) return {concentration:null, conviction:0.5};
+  const slice=closes.slice(-window-1);
+  const abs=[];
+  for(let i=1;i<slice.length;i++) abs.push(Math.abs(slice[i]-slice[i-1]));
+  const total=abs.reduce((a,b)=>a+b,0);
+  if(total===0) return {concentration:0, conviction:0.3};
+  const concentration=Math.max(...abs)/total;
+  const peak=0.35;
+  const conviction=Math.max(0, Math.min(1, 1 - Math.abs(concentration-peak)/Math.max(peak,1-peak)));
+  return {concentration, conviction};
+}
+
+function flipRSI(closes, period){
+  if(closes.length<period+1) return null;
+  const slice=closes.slice(-period-1);
+  let gains=0, losses=0;
+  for(let i=1;i<slice.length;i++){ const d=slice[i]-slice[i-1]; if(d>=0) gains+=d; else losses-=d; }
+  const avgGain=gains/period, avgLoss=losses/period;
+  if(avgLoss===0) return 100;
+  return 100 - (100/(1+avgGain/avgLoss));
+}
+
+// Engine 3 — trend + meta-label (Shishlenin, Harke & Koppisetti, 2019):
+// the base side comes from an SMA(fast) vs SMA(slow) cross, exactly their
+// smart-beta trade-timing signal. Instead of trading every cross, a second
+// signal (RSI position, latest-bar thrust direction) has to independently
+// agree before the side counts as "confirmed" — the same side/bet-or-not
+// split their meta-labelling / triple-barrier layer makes, simplified here
+// to a rule-based gate rather than a trained classifier.
+function flipTrendEngine(closes, fastN, slowN){
+  if(closes.length<slowN+2) return {side:'FLAT', confirmed:false, confirmations:0, rsi:null};
+  const fast=flipMeanLast(closes,fastN), slow=flipMeanLast(closes,slowN);
+  const side = fast>slow ? 'LONG' : fast<slow ? 'SHORT' : 'FLAT';
+  const rsi=flipRSI(closes,14);
+  const last=closes[closes.length-1], prev=closes[closes.length-2];
+  const thrustAlign = side==='LONG' ? last>prev : side==='SHORT' ? last<prev : false;
+  const momentumAlign = rsi==null ? false : (side==='LONG' ? rsi>50 : side==='SHORT' ? rsi<50 : false);
+  const confirmations=(thrustAlign?1:0)+(momentumAlign?1:0);
+  return {side, confirmed: side!=='FLAT' && confirmations>=1, fast, slow, rsi, confirmations};
+}
+
+// Engine 4 — MPS0 pivot structure (Salov, 2019):
+// the classical O(n) zigzag that Salov's maximum-profit-strategy (MPS0)
+// reduces to for a single-unit position limit (W=1): track the running
+// extreme since the last confirmed pivot, flip only once price has moved
+// against that extreme by more than the filter cost. The current bar's
+// distance into its leg, normalized by the average confirmed leg size,
+// is what actually decides whether the setup reads as scalp/day/swing —
+// the horizon isn't just a label, it falls out of the pivot structure.
+function flipPivotEngine(closes, filterCost){
+  const pivots=[];
+  let dir=0, extreme=closes[0], extremeIdx=0;
+  for(let i=1;i<closes.length;i++){
+    const p=closes[i];
+    if(dir>=0 && p>extreme){ extreme=p; extremeIdx=i; if(dir===0) dir=1; }
+    if(dir<=0 && p<extreme){ extreme=p; extremeIdx=i; if(dir===0) dir=-1; }
+    if(dir===1 && (extreme-p)>=filterCost){ pivots.push({idx:extremeIdx, price:extreme, type:'HIGH'}); dir=-1; extreme=p; extremeIdx=i; }
+    else if(dir===-1 && (p-extreme)>=filterCost){ pivots.push({idx:extremeIdx, price:extreme, type:'LOW'}); dir=1; extreme=p; extremeIdx=i; }
+  }
+  const lastIdx=closes.length-1;
+  const lastPivot = pivots.length ? pivots[pivots.length-1] : {idx:0, price:closes[0], type:'START'};
+  const legLenBars = lastIdx-lastPivot.idx;
+  const currentMove = closes[lastIdx]-lastPivot.price;
+  let avgLeg=filterCost*3;
+  if(pivots.length>1){
+    const legs=[];
+    for(let i=1;i<pivots.length;i++) legs.push(Math.abs(pivots[i].price-pivots[i-1].price));
+    avgLeg=flipMean(legs);
+  }
+  const extension = avgLeg>0 ? Math.abs(currentMove)/avgLeg : null;
+  const horizon = legLenBars<=2 ? 'SCALP' : (extension!==null && extension<0.65 ? 'DAY' : 'SWING');
+  const impliedDirection = currentMove>0 ? 'LONG' : currentMove<0 ? 'SHORT' : 'FLAT';
+  return {pivots, lastPivot, legLenBars, currentMove, avgLeg, extension, horizon, impliedDirection};
+}
+
+function flipEvRow(claim, detail, state){
+  return '<div class="ev-row"><div class="ev-claim"><b style="color:var(--bone);">'+esc(claim)+
+    '</b><br><span style="color:var(--grey);">'+esc(detail)+'</span></div>'+
+    '<div class="ev-state '+state+'">'+state.toUpperCase()+'</div></div>';
+}
+
+function runFlipdemon(){
+  const errorEl=document.getElementById('flipError');
+  const resultEl=document.getElementById('flipResult');
+  errorEl.classList.remove('active'); errorEl.textContent='';
+
+  const raw=document.getElementById('flipBars').value.trim();
+  if(!raw){ errorEl.textContent='Paste a series of close prices first, oldest to newest.'; errorEl.classList.add('active'); return; }
+  const closes=raw.split(/[\n,]+/).map(s=>parseFloat(s.trim())).filter(n=>!isNaN(n));
+  if(closes.length<20){ errorEl.textContent='Need at least 20 close prices for a meaningful read — more for the swing horizon (80+).'; errorEl.classList.add('active'); return; }
+
+  const horizonKey=document.getElementById('flipHorizon').value;
+  const params=FLIP_HORIZON_PARAMS[horizonKey];
+  const preNews=document.getElementById('flipPreNews').value==='yes';
+
+  if(closes.length<params.slowN+2){
+    errorEl.textContent='The '+horizonKey+' horizon needs at least '+(params.slowN+2)+' close prices for its '+params.fastN+'/'+params.slowN+' SMA read. Paste more history or switch horizon.';
+    errorEl.classList.add('active');
+    return;
+  }
+
+  let fc=parseFloat(document.getElementById('flipFilterCost').value);
+  if(isNaN(fc) || fc<=0){
+    const abs=[];
+    for(let i=1;i<closes.length;i++) abs.push(Math.abs(closes[i]-closes[i-1]));
+    fc=flipMean(abs)*params.fcMult;
+    if(!(fc>0)) fc=0.0001;
+  }
+
+  const regime=flipRegimeEngine(closes, params.volWindow);
+  const participation=flipParticipationEngine(closes, params.partWindow);
+  const trend=flipTrendEngine(closes, params.fastN, params.slowN);
+  const pivot=flipPivotEngine(closes, fc);
+
+  let verdict='STAND ASIDE';
+  if(trend.side!=='FLAT' && trend.confirmed && regime.state!=='VOL-SPIKE' && !preNews){
+    verdict=trend.side;
+  }
+
+  let confidence=50;
+  confidence += trend.confirmed ? 15 : -15;
+  confidence += (participation.conviction-0.5)*30;
+  if(trend.side!=='FLAT') confidence += pivot.impliedDirection===trend.side ? 15 : -10;
+  if(regime.state==='VOL-SPIKE') confidence -= 25;
+  if(preNews) confidence -= 20;
+  confidence=Math.max(0, Math.min(100, Math.round(confidence)));
+  if(verdict==='STAND ASIDE') confidence=Math.min(confidence,45);
+
+  const sizeMultiplier=Math.round(regime.liquidityMultiplier*(preNews?0.5:1)*100)/100;
+
+  const pillEl=document.getElementById('flipVerdictPill');
+  pillEl.textContent=verdict;
+  pillEl.className='pill '+(verdict==='LONG'?'bull':verdict==='SHORT'?'bear':'neutral');
+
+  document.getElementById('flipHorizonFit').textContent=
+    'Requested horizon: '+horizonKey.toUpperCase()+' — pivot structure reads '+pivot.horizon+
+    (pivot.horizon!==horizonKey.toUpperCase() ? ' (disagrees with your selection, see breakdown)' : ' (agrees)');
+
+  document.getElementById('flipConfidence').textContent=confidence+' / 100';
+  document.getElementById('flipSizeMult').textContent=sizeMultiplier+'×';
+  document.getElementById('flipBestHorizon').textContent=pivot.horizon;
+  document.getElementById('flipLastPivot').textContent=
+    pivot.lastPivot.type+' @ '+pivot.lastPivot.price.toFixed(5)+', '+pivot.legLenBars+' bar(s) ago';
+
+  const rows=[];
+  rows.push(flipEvRow(
+    'Liquidity / regime — Huang, O\'Neill, Ranaldo & Yu',
+    regime.vol===null ? 'insufficient data for this window' :
+      regime.state+' — realized vol '+flipFmt(regime.vol)+' vs. its own 90th-pct threshold '+flipFmt(regime.q90),
+    regime.state==='VOL-SPIKE'?'conflicting':(regime.vol===null?'stale':'verified')
+  ));
+  rows.push(flipEvRow(
+    'Participation / conviction — He & Kang',
+    participation.concentration===null ? 'insufficient data for this window' :
+      'flow concentration '+flipFmt(participation.concentration)+' → conviction '+flipFmt(participation.conviction),
+    participation.conviction>=0.6?'verified':participation.conviction>=0.35?'partial':'conflicting'
+  ));
+  rows.push(flipEvRow(
+    'Trend + meta-label — Shishlenin, Harke & Koppisetti',
+    'SMA'+params.fastN+'/'+params.slowN+' side '+trend.side+', RSI '+(trend.rsi!=null?trend.rsi.toFixed(1):'—')+
+      ', '+trend.confirmations+'/2 secondary confirmations',
+    trend.confirmed?'verified':'conflicting'
+  ));
+  rows.push(flipEvRow(
+    'MPS0 pivot structure — Salov',
+    pivot.pivots.length+' confirmed pivot(s), filter cost '+flipFmt(fc)+', current leg '+pivot.legLenBars+
+      ' bar(s) / '+flipFmt(Math.abs(pivot.currentMove))+' since last pivot, extension '+(pivot.extension!=null?pivot.extension.toFixed(2):'—'),
+    trend.side!=='FLAT' && pivot.impliedDirection===trend.side ? 'verified' : 'partial'
+  ));
+  if(preNews) rows.push(flipEvRow('Manual flag', 'Pre-scheduled-news window — treated as a hard liquidity veto regardless of the other three reads', 'conflicting'));
+
+  document.getElementById('flipEngineRows').innerHTML=rows.join('');
+  resultEl.style.display='block';
 }
 </script>
 </body>
