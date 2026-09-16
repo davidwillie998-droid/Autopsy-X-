@@ -61,15 +61,45 @@ Demo servers are usually forgiving: tight constant spread, instant fills, permis
 
 None of this is simulated in a way that would show up identically in a backtest — the Strategy Tester's default execution model doesn't reproduce filling-mode rejections, real partial fills, or live spread-spike behavior particularly faithfully. Treat a green backtest as necessary, not sufficient, and watch the dashboard's execution section (and the account's own trade history) during the demo-account phase of the validation workflow below — that's where these numbers become real.
 
+## Adaptive Flip Engine
+
+Every setup so far (A-F, and now G below) used to hit a hard wall the instant an opposing position was already open: `ExposureEngine::HasOpposingPosition()` returning true was an outright refusal, full stop, regardless of how much better the new signal was. `risk/AdaptiveFlipEngine.mqh` replaces that wall with a judgment call — off by default (`InpFlipEngineEnabled=false`), so the EA's behavior is byte-for-byte identical to before unless you turn it on.
+
+When enabled, a new signal that opposes an existing position must clear every one of the following before the EA will close that position and take the new one, in `CAdaptiveFlipEngine::EvaluateFlip()`:
+
+- **Confirmed regime change.** The regime attached to the new signal must differ from the regime the open position was entered under — same-regime opposition looks like chop, not a real reversal.
+- **Minimum confidence improvement** (`InpFlipMinConfidenceDelta`, default 12 points) over the open position's original fused confidence.
+- **Minimum expected-value improvement** (`InpFlipMinEvImprovementR`, default 0.15R) over the open position's original expected R.
+- **Execution quality.** If this account's own observed average slippage (once there are enough real fills to trust it) exceeds `InpFlipMaxExecSlippagePoints`, a flip is refused — closing a real position to chase a new one isn't worth it on a feed that can't fill cleanly.
+- **Risk-of-ruin.** A fixed-fractional risk-of-ruin approximation (classic gambler's-ruin-with-edge form — see the method's own comment in `AdaptiveFlipEngine.mqh` for the exact formula and its derivation) computed from *this account's own* empirical win rate and average win/loss R from the trade journal. Below 15 closed trades it degrades to a conservative flat estimate rather than pretending to know the account's edge. A flip is refused above `InpFlipMaxRiskOfRuinPercent` (default 5%).
+- **Capital state.** A 5-state machine — `Normal → Cautious → Recovery → Defensive → Locked` — driven by daily/weekly drawdown, consecutive losses, risk-of-ruin, and `DriftEngine`'s statistical significance flag. Escalation (risk rising) is immediate; de-escalation steps down exactly one level per re-evaluation, and `Defensive`/`Locked` must pass back through `Recovery` before regaining full-size risk — one good trade can't undo a real breach. `Locked` blocks flips (and, separately, Setup G entries) outright. Every other state scales the new trade's risk% by a multiplier (`Normal`=1.0, `Cautious`=0.7, `Recovery`=0.4, `Defensive`=0.25) rather than an all-or-nothing switch.
+- **Hard limits**: a cooldown (`InpFlipCooldownMinutes`), and daily/weekly flip caps (`InpMaxFlipsPerDay`/`InpMaxFlipsPerWeek`) — all persisted through terminal restarts via global variables, same pattern as `DrawdownEngine`.
+
+All of this is account-agnostic by construction: every threshold is a percentage, an R-multiple, or a point count derived from *this* account's live equity/journal — never a fixed dollar amount — so the same engine is correct on a $500 account and a $500,000 one. This also fulfils the original spec's section-17 "Swing Flip Engine" requirement, which the initial build never actually implemented.
+
+The dashboard's new **ADAPTIVE FLIP ENGINE** panel shows the live capital state, risk-of-ruin%, edge-health score, and today's/this-week's flip counts regardless of whether flipping itself is enabled — so you can watch the account-health machinery working even with `InpFlipEngineEnabled=false`.
+
+## VWAP trend/flip (Setup G)
+
+Added per Zarattini & Aziz, *"VWAP: The Holy Grail for Day Trading Systems"* (SSRN 4631351, 2023) — a real academic backtest of trading the session VWAP as a trend/flip signal. Off by default (`InpVWAPSetupEnabled=false`); enabling it adds a **new, independent trading mode** alongside setups A-F, not a replacement for them.
+
+- **VWAP itself is real**, computed in `intelligence/VWAPEngine.mqh` from `CopyRates(PERIOD_M1, ...)` since the configured session start (`InpVWAPSessionStartHour`) — `Sum(HLC3 × Volume) / Sum(Volume)` over every *completed* M1 bar, using real exchange volume (`SYMBOL_VOLUME_REAL`) when the broker provides it and falling back honestly to tick volume otherwise (`UsedRealVolume()` reports which).
+- **The paper's actual trigger, reproduced faithfully**: a direction is only trusted when the most recently *completed* M1 candle **closes** beyond VWAP — a wick through it intrabar is explicitly not a signal, in the paper or here (`CVWAPEngine::LastCompletedBarClosedAbove/Below`).
+- **Always-in-market by design.** Once VWAP data is valid, `CSetupEngine::EvaluateVWAPFlip()` always resolves to a side (long above, short below) — there's no "no trade" state the way A-F have one, which is why this runs on its own M1 cadence (`TryEnterOrFlipVWAP()` in the main file), completely separate from the H1-gated `TryEnterTrade()` pipeline for setups A-F.
+- **The real exit is the flip itself, or the session close** — not a fixed take-profit. A confirmed VWAP recross closes the current position and opens the opposite one in the same motion (`TryEnterOrFlipVWAP`); `InpVWAPFlattenAtSessionEnd`/`InpVWAPSessionEndHour` flattens any open VWAP position at the configured server hour regardless, reproducing the paper's no-overnight rule. `ManageVWAPPosition()` handles only this — Setup G positions bypass `PositionManager`'s phase machine entirely, since phases (partials/breakeven/trailing) don't apply to a strategy with no fixed TP.
+- **Position sizing deliberately does NOT reproduce the paper's own methodology.** The paper backtests at up to 100% of equity per trade, appropriate for isolated academic backtesting, not for a live account. Every VWAP trade here is sized through the same `RiskEngine` as setups A-F, off `InpVWAPRiskPercent` (independent dial from `InpRiskPercentDefault`) with the stop set at VWAP itself (plus a small ATR buffer) — capital preservation takes priority over reproducing the paper's raw numbers.
+- **A VWAP flip still respects the Adaptive Flip Engine's capital-state machine** (a `Locked` account blocks new VWAP entries and flips too, and risk scales by the same multiplier as everything else) but deliberately skips `EvaluateFlip()`'s confidence-delta/EV-improvement/regime-change/cooldown checks — those exist to judge "should I abandon my *swing* thesis for a different one," and Setup G's entire mechanic *is* flipping on every confirmed VWAP recross. Gating it on swing-specific criteria would silently break the paper's actual method.
+- Recovery after a restart identifies an open Setup G position the same way every other setup is identified in the trade journal — a tag in the position's own broker comment (`AXSD15-G: VWAP Trend/Flip`) — since MT5 doesn't let you store a custom enum on a position across restarts.
+
 ## Layout
 
 ```
 AUTOPSY_X_SWINGDEMON_X15.mq5   - main orchestrator: inputs, OnInit/OnTick/OnTimer/OnTrade/OnDeinit
 core/        MarketState, StructureEngine, LiquidityEngine, IPDAEngine, RegimeEngine, BiasEngine, HeatmapEngine, Types
-signals/     SetupEngine (setups A-F), ProbabilityEngine, ExpectedValue, SignalFusion
-risk/        RiskEngine, ExposureEngine, DrawdownEngine
+signals/     SetupEngine (setups A-F, plus G: VWAP Trend/Flip), ProbabilityEngine, ExpectedValue, SignalFusion
+risk/        RiskEngine, ExposureEngine, DrawdownEngine, AdaptiveFlipEngine
 execution/   BrokerAdapter, ExecutionEngine, PositionManager, PendingOrderManager
-intelligence/CorrelationEngine, NewsEngine, SeasonalityEngine, VolatilityEngine, OrderFlowEngine
+intelligence/CorrelationEngine, NewsEngine, SeasonalityEngine, VolatilityEngine, OrderFlowEngine, VWAPEngine
 autopsy/     TradeJournal, DiagnosticEngine, DriftEngine
 ui/          Dashboard
 ```
@@ -109,9 +139,12 @@ This is the workflow from the spec's section 44 — it hasn't been executed here
 - **CORRELATION/MACRO** — comma-separated watch-symbol list (only symbols your broker actually offers are used; the rest are silently skipped).
 - **ORDER FLOW / VOLUME PROFILE / HEATMAP** — on/off for the tick-based order-flow engine and the DOM heatmap, volume-profile lookback window/bucket count, refresh throttle, and the tick-count safety cap.
 - **WEEKEND** — hold/reduce/close and the Friday server-time hour to apply it.
+- **VWAP TREND (SETUP G)** — on/off (default off), session-start hour, independent risk% dial, session-end flatten on/off and hour.
+- **ADAPTIVE FLIP ENGINE** — on/off (default off), daily/weekly flip caps, cooldown, minimum confidence-delta/EV-improvement to justify a flip, max risk-of-ruin%, the equity-drawdown% treated as "ruin," and the execution-slippage ceiling above which a flip is refused.
 
 ## Data persistence
 
 - **Trade journal**: `AutopsyX_Journal_<symbol>_<magic>.csv` in the terminal's `MQL5/Files` folder — full forensic record per closed trade, reloaded on every restart to seed the probability/seasonality/diagnostic engines.
 - **Drawdown baselines and consecutive-loss counter**: terminal global variables (`AXSD15_<symbol>_<magic>_*`), so a terminal restart doesn't reset the day's risk budget or let a losing streak quietly re-risk.
-- **Open positions**: reconstructed from broker position state on `OnInit` (direction/entry/SL/TP/volume) — a restart never duplicates or abandons a position, though the original entry *thesis* text is necessarily generic after a restart (the broker doesn't store it).
+- **Open positions**: reconstructed from broker position state on `OnInit` (direction/entry/SL/TP/volume) — a restart never duplicates or abandons a position, though the original entry *thesis* text is necessarily generic after a restart (the broker doesn't store it). An open Setup G (VWAP) position is re-identified the same way via its `AXSD15-G: VWAP Trend/Flip` order comment.
+- **Adaptive Flip Engine state**: capital state, and today's/this-week's flip counts, persisted through terminal restarts via global variables (`AXSD15_FLIP_<symbol>_<magic>_*`), same pattern as the drawdown engine.

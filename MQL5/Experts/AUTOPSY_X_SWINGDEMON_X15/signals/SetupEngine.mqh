@@ -17,6 +17,7 @@
 #include "../core/RegimeEngine.mqh"
 #include "../intelligence/VolatilityEngine.mqh"
 #include "../intelligence/NewsEngine.mqh"
+#include "../intelligence/VWAPEngine.mqh"
 
 class CSetupEngine
   {
@@ -376,6 +377,55 @@ public:
       BuildSignal(sig, SETUP_F_MACRO_REPRICING, direction, entry, stop, levels,
                   StringFormat("Post-event structural repricing confirmed after: %s", postEventName),
                   "Entry after genuine price discovery, not on the event candle itself.");
+      return true;
+     }
+
+   //--- Setup G: VWAP trend/flip (Zarattini & Aziz, "VWAP: The Holy Grail for Day Trading Systems",
+   //--- SSRN 4631351). Cadence and exit semantics are fundamentally different from A-F: M1-driven,
+   //--- always resolves to a direction once the session VWAP is valid, and the real exit is a
+   //--- close-confirmed recross of VWAP or the session close - not a fixed TP - so this is deliberately
+   //--- NOT part of EvaluateAll()'s shared H1 pipeline; the caller evaluates it on its own M1 cadence.
+   //--- Stop is sized off distance to VWAP itself (the level whose loss invalidates the thesis), and
+   //--- position sizing still goes through the same RiskEngine as every other setup here - the paper's
+   //--- own 100%-equity backtest sizing is deliberately NOT reproduced; capital preservation comes first.
+   bool EvaluateVWAPFlip(const CVWAPEngine &vwap, AXSignal &sig) const
+     {
+      if(!vwap.IsDataValid() || vwap.CompletedBars()<5) return false; // let the session average stabilize first
+
+      bool closedAbove = vwap.LastCompletedBarClosedAbove();
+      bool closedBelow = vwap.LastCompletedBarClosedBelow();
+      if(!closedAbove && !closedBelow) return false; // straddling VWAP intrabar - no confirmed close, no signal
+
+      int direction = closedAbove ? 1 : -1;
+      double entry = m_market.Mid();
+      double vwapLevel = vwap.CurrentVWAP();
+
+      // stop sits at VWAP itself plus a small ATR buffer so ordinary noise doesn't stop it out the instant
+      // it fires - the paper's real invalidation (a confirmed CLOSE back through VWAP) is enforced by the
+      // caller's position management on the M1 cadence; this stop is only the hard broker-side backstop.
+      double buffer = AtrStopDistance(PERIOD_M15)*0.15;
+      double stop = direction>0 ? vwapLevel-buffer : vwapLevel+buffer;
+      double riskDist = MathAbs(entry-stop);
+      if(riskDist<=0.0) return false;
+
+      sig.setup = SETUP_G_VWAP_TREND;
+      sig.direction = direction;
+      sig.entryPrice = entry;
+      sig.stopLoss = stop;
+      sig.entryModel = ENTRY_MARKET;
+      sig.invalidationPrice = vwapLevel;
+      sig.poiConfluence = false;
+      sig.precisionScore = 60.0;
+      sig.rationaleWhyNow = closedAbove
+                               ? "Last completed M1 candle closed above session VWAP."
+                               : "Last completed M1 candle closed below session VWAP.";
+      sig.rationaleWhyHere = "Market entry - trades the confirmed side of the session volume-weighted average, not a resting zone.";
+      // no fixed take-profit by design - real exit is a close-confirmed VWAP recross or session flatten,
+      // handled by position management; these are wide placeholders never expected to actually fill.
+      sig.tp1 = direction>0 ? entry+riskDist*20.0 : entry-riskDist*20.0;
+      sig.tp2 = sig.tp1; sig.tpFinal = sig.tp1;
+      sig.liquidityTarget = sig.tpFinal;
+      sig.rawScore = 0.0;
       return true;
      }
 

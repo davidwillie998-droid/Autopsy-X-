@@ -61,7 +61,8 @@ enum ENUM_AX_SETUP
    SETUP_C_BREAKOUT_RETEST,
    SETUP_D_RANGE_REVERSAL,
    SETUP_E_HTF_IMBALANCE,
-   SETUP_F_MACRO_REPRICING
+   SETUP_F_MACRO_REPRICING,
+   SETUP_G_VWAP_TREND
   };
 
 enum ENUM_AX_QUALITY
@@ -78,6 +79,18 @@ enum ENUM_AX_ENTRY_MODEL
    ENTRY_MARKET,
    ENTRY_LIMIT,
    ENTRY_CONFIRMATION
+  };
+
+//--- capital-state machine driving the Adaptive Flip Engine's risk multiplier.
+//--- states only ever step one level per re-evaluation (see AdaptiveFlipEngine.mqh)
+//--- so a single bad trade can't jump the account straight from NORMAL to LOCKED.
+enum ENUM_AX_CAPITAL_STATE
+  {
+   CAPITAL_NORMAL,      // full configured risk
+   CAPITAL_CAUTIOUS,    // early drawdown/edge-decay warning - reduced risk
+   CAPITAL_DEFENSIVE,   // meaningful drawdown or ruin-risk elevated - materially reduced risk
+   CAPITAL_RECOVERY,    // clawing back from defensive/locked - small fixed risk until proven
+   CAPITAL_LOCKED       // hard safety limit breached - no new entries or flips until manual/daily reset
   };
 
 enum ENUM_AX_PHASE
@@ -340,8 +353,22 @@ string AXSetupToString(ENUM_AX_SETUP s)
       case SETUP_D_RANGE_REVERSAL:   return "D: Range Extreme Reversal";
       case SETUP_E_HTF_IMBALANCE:    return "E: HTF Imbalance+LTF Confirm";
       case SETUP_F_MACRO_REPRICING:  return "F: Macro Repricing";
+      case SETUP_G_VWAP_TREND:       return "G: VWAP Trend/Flip";
       default: return "None";
      }
+  }
+
+string AXCapitalStateToString(ENUM_AX_CAPITAL_STATE s)
+  {
+   switch(s)
+     {
+      case CAPITAL_NORMAL:    return "Normal";
+      case CAPITAL_CAUTIOUS:  return "Cautious";
+      case CAPITAL_DEFENSIVE: return "Defensive";
+      case CAPITAL_RECOVERY:  return "Recovery";
+      case CAPITAL_LOCKED:    return "Locked";
+     }
+   return "Unknown";
   }
 
 string AXExitReasonToString(ENUM_AX_EXIT_REASON e)

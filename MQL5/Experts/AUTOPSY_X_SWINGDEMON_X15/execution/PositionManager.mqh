@@ -56,6 +56,16 @@ public:
    AXTradeThesis GetThesis(int i) const { return m_theses[i]; }
    bool HasThesis(ulong ticket) const { return FindIndex(ticket)>=0; }
 
+   //--- fetch a tracked thesis by ticket rather than index - needed by the Adaptive Flip Engine, which
+   //--- must evaluate a flip against the SPECIFIC opposing position's original thesis, not "some" thesis
+   bool GetThesisByTicket(ulong ticket, AXTradeThesis &out) const
+     {
+      int idx = FindIndex(ticket);
+      if(idx<0) return false;
+      out = m_theses[idx];
+      return true;
+     }
+
    void RemoveThesis(ulong ticket)
      {
       int idx = FindIndex(ticket);

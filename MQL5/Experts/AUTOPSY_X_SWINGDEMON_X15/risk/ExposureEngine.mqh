@@ -55,6 +55,25 @@ public:
       return false;
      }
 
+   //--- like HasOpposingPosition, but also returns the ticket of the (first) opposing position found -
+   //--- needed by the Adaptive Flip Engine, which evaluates a flip against a SPECIFIC position's thesis
+   bool GetOpposingPosition(const string symbol, long magic, int newDirection, ulong &foundTicket) const
+     {
+      foundTicket = 0;
+      int total = PositionsTotal();
+      for(int i=0;i<total;i++)
+        {
+         ulong ticket = PositionGetTicket(i);
+         if(ticket==0 || !PositionSelectByTicket(ticket)) continue;
+         if(PositionGetInteger(POSITION_MAGIC)!=magic) continue;
+         if(PositionGetString(POSITION_SYMBOL)!=symbol) continue;
+         long type = PositionGetInteger(POSITION_TYPE);
+         int existingDir = (type==POSITION_TYPE_BUY) ? 1 : -1;
+         if(existingDir != newDirection) { foundTicket = ticket; return true; }
+        }
+      return false;
+     }
+
    int CountPositions(const string symbol, long magic) const
      {
       int count=0;

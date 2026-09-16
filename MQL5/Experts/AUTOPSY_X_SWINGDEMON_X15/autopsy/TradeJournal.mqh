@@ -61,6 +61,33 @@ public:
 
    double Expectancy(int lastN=0) const { return AverageR(lastN); }
 
+   //--- average R of winners only (0 if none) - used by the risk-of-ruin approximation,
+   //--- which needs average win/loss magnitudes separately, not just net expectancy.
+   double AverageWinR(int lastN=0) const
+     {
+      int n = ArraySize(m_records);
+      int start = (lastN>0 && lastN<n) ? n-lastN : 0;
+      double sum=0.0; int total=0;
+      for(int i=start;i<n;i++)
+        {
+         if(m_records[i].rMultiple>0.0) { sum+=m_records[i].rMultiple; total++; }
+        }
+      return total>0 ? sum/total : 0.0;
+     }
+
+   //--- average R of losers only, returned as a POSITIVE magnitude (0 if none)
+   double AverageLossR(int lastN=0) const
+     {
+      int n = ArraySize(m_records);
+      int start = (lastN>0 && lastN<n) ? n-lastN : 0;
+      double sum=0.0; int total=0;
+      for(int i=start;i<n;i++)
+        {
+         if(m_records[i].rMultiple<0.0) { sum+=-m_records[i].rMultiple; total++; }
+        }
+      return total>0 ? sum/total : 0.0;
+     }
+
    double ProfitFactor(int lastN=0) const
      {
       int n = ArraySize(m_records);

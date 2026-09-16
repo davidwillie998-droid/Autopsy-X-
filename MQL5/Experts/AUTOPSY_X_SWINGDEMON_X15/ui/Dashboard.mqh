@@ -34,6 +34,11 @@ struct AXDashboardData
    int recentTrades; double expectancy; string aPlusPerformance; string regimePerformance;
    //--- state
    string tradingState; // ACTIVE / SUSPENDED / FAILSAFE
+   //--- adaptive flip engine
+   string capitalState; double riskOfRuinPct; double edgeHealthScore;
+   int    flipsToday; int flipsThisWeek; bool flipEngineEnabled;
+   //--- VWAP trend/flip (Setup G)
+   bool   vwapEnabled; double vwapValue; string vwapSide; bool vwapPositionOpen;
   };
 
 class CDashboard
@@ -93,7 +98,7 @@ public:
 
    void Render(const AXDashboardData &d)
      {
-      Background(380, 610);
+      Background(380, 700);
       int y = m_y; int lh = 15;
       color hdr = clrKhaki, val = clrWhiteSmoke, warn = clrTomato, good = clrLightGreen;
 
@@ -155,7 +160,23 @@ public:
       Label("H_AUT", "-- AUTOPSY --", m_x, y, hdr); y+=lh;
       Label("AUT1", StringFormat("Trades: %d  Expectancy: %.2fR", d.recentTrades, d.expectancy), m_x, y, val); y+=lh;
       Label("AUT2", StringFormat("A+ perf: %s", d.aPlusPerformance), m_x, y, val); y+=lh;
-      Label("AUT3", StringFormat("Regime perf: %s", d.regimePerformance), m_x, y, val); y+=lh;
+      Label("AUT3", StringFormat("Regime perf: %s", d.regimePerformance), m_x, y, val); y+=lh+4;
+
+      Label("H_FLIP", "-- ADAPTIVE FLIP ENGINE --", m_x, y, hdr); y+=lh;
+      Label("FLIP1", StringFormat("Capital state: %s%s", d.capitalState, d.flipEngineEnabled?"":" (flips disabled)"), m_x, y,
+            d.capitalState=="Normal" ? good : (d.capitalState=="Locked" ? warn : clrKhaki)); y+=lh;
+      Label("FLIP2", StringFormat("Risk-of-ruin: %.1f%%  Edge health: %.0f", d.riskOfRuinPct, d.edgeHealthScore), m_x, y,
+            d.riskOfRuinPct>15.0 ? warn : val); y+=lh;
+      Label("FLIP3", StringFormat("Flips today: %d  This week: %d", d.flipsToday, d.flipsThisWeek), m_x, y, val); y+=lh+4;
+
+      Label("H_VWAP", "-- VWAP TREND (SETUP G) --", m_x, y, hdr); y+=lh;
+      if(d.vwapEnabled)
+        {
+         Label("VWAP1", StringFormat("VWAP: %.5f  Price is: %s", d.vwapValue, d.vwapSide), m_x, y, val); y+=lh;
+         Label("VWAP2", d.vwapPositionOpen ? "Position: OPEN" : "Position: flat", m_x, y, d.vwapPositionOpen?good:val); y+=lh;
+        }
+      else
+        { Label("VWAP1", "Disabled (InpVWAPSetupEnabled=false)", m_x, y, val); y+=lh; Label("VWAP2","",m_x,y,val); y+=lh; }
 
       ChartRedraw(0);
      }

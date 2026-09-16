@@ -35,10 +35,12 @@
 #include "intelligence/SeasonalityEngine.mqh"
 #include "intelligence/VolatilityEngine.mqh"
 #include "intelligence/OrderFlowEngine.mqh"
+#include "intelligence/VWAPEngine.mqh"
 #include "core/HeatmapEngine.mqh"
 #include "autopsy/TradeJournal.mqh"
 #include "autopsy/DiagnosticEngine.mqh"
 #include "autopsy/DriftEngine.mqh"
+#include "risk/AdaptiveFlipEngine.mqh"
 #include "ui/Dashboard.mqh"
 
 //==================== CORE ====================
@@ -108,6 +110,26 @@ enum ENUM_AX_WEEKEND_MODE { WEEKEND_HOLD, WEEKEND_REDUCE, WEEKEND_CLOSE };
 input ENUM_AX_WEEKEND_MODE InpWeekendMode  = WEEKEND_HOLD;
 input int InpWeekendActionHourServer       = 20; // server-time hour on Friday to apply the weekend action
 
+//==================== VWAP TREND (SETUP G) ====================
+//--- off by default: purely additive, existing setups A-F behave identically unless this is enabled
+input bool   InpVWAPSetupEnabled        = false;
+input int    InpVWAPSessionStartHour    = 0;     // server-time hour the session VWAP resets at
+input double InpVWAPRiskPercent         = 0.35;  // % equity risked per VWAP trade - independent of InpRiskPercentDefault
+input bool   InpVWAPFlattenAtSessionEnd = true;
+input int    InpVWAPSessionEndHour      = 23;    // server-time hour to flatten any open VWAP position
+
+//==================== ADAPTIVE FLIP ENGINE ====================
+//--- off by default: preserves the original hard block on any opposing position unless enabled
+input bool   InpFlipEngineEnabled          = false;
+input int    InpMaxFlipsPerDay             = 2;
+input int    InpMaxFlipsPerWeek            = 6;
+input int    InpFlipCooldownMinutes        = 60;
+input double InpFlipMinConfidenceDelta     = 12.0;  // new fused confidence must beat the open thesis's by this much
+input double InpFlipMinEvImprovementR      = 0.15;  // new expected value must beat the open thesis's by this many R
+input double InpFlipMaxRiskOfRuinPercent   = 5.0;
+input double InpFlipRuinThresholdEquityPct = 30.0;  // equity drawdown% treated as "ruin" by the approximation
+input double InpFlipMaxExecSlippagePoints  = 25.0;
+
 //==================== engines (stable addresses: taken by pointer everywhere) ====================
 CBrokerAdapter     g_broker;
 CMarketState       g_market;
@@ -136,6 +158,8 @@ CProbabilityEngine g_prob;
 CExpectedValue     g_ev;
 CSignalFusion      g_fusion;
 CDashboard         g_dash;
+CVWAPEngine        g_vwap;
+CAdaptiveFlipEngine g_flipEngine;
 
 ulong  g_knownTickets[];
 bool   g_tradingSuspended = false;
@@ -143,6 +167,8 @@ string g_suspendReason = "";
 bool   g_weekendActionDoneToday = false;
 int    g_tradesToday = 0, g_tradesThisWeek = 0;
 int    g_lastCountedDay = -1, g_lastCountedWeek = -1;
+ulong  g_vwapTicket = 0;              // 0 when Setup G holds no position - see ManageVWAPPosition/TryEnterOrFlipVWAP
+bool   g_vwapSessionFlattenedToday = false;
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -194,6 +220,13 @@ int OnInit()
    g_fusion.Init(InpMinConfidence, InpMinRiskReward, InpMinExpectedR, InpAllowGradeB);
    if(InpShowDashboard) g_dash.Init("AXSD15_", 12, 20);
 
+   if(InpVWAPSetupEnabled) g_vwap.Init(_Symbol, InpVWAPSessionStartHour);
+   // initialized unconditionally (cheap; just GlobalVariable-backed counters) so capital-state and
+   // risk-of-ruin are visible on the dashboard even when InpFlipEngineEnabled is left off
+   g_flipEngine.Init(_Symbol, InpMagicNumber, InpMaxFlipsPerDay, InpMaxFlipsPerWeek, InpFlipCooldownMinutes,
+                      InpFlipMinConfidenceDelta, InpFlipMinEvImprovementR, InpFlipMaxRiskOfRuinPercent,
+                      InpFlipRuinThresholdEquityPct, InpFlipMaxExecSlippagePoints);
+
    RecoverExistingPositions();
 
    EventSetTimer(30);
@@ -228,6 +261,7 @@ void OnBookEvent(const string &symbol)
 void RecoverExistingPositions()
   {
    ArrayResize(g_knownTickets, 0);
+   g_vwapTicket = 0;
    int total = PositionsTotal();
    for(int i=0;i<total;i++)
      {
@@ -237,6 +271,10 @@ void RecoverExistingPositions()
       if(PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber) continue;
 
       int n=ArraySize(g_knownTickets); ArrayResize(g_knownTickets,n+1); g_knownTickets[n]=ticket;
+      // Setup G positions are tagged in the order comment (same convention as every other setup's
+      // "AXSD15-<setup>" comment) - that's the only durable way to identify one across a restart
+      if(StringFind(PositionGetString(POSITION_COMMENT), AXSetupToString(SETUP_G_VWAP_TREND))>=0)
+         g_vwapTicket = ticket;
       if(!g_posMgr.HasThesis(ticket))
          g_posMgr.AddThesis(g_posMgr.ReconstructThesis(ticket));
      }
@@ -288,6 +326,7 @@ void ReconcilePositions()
       g_season.Record(rec.openTime, rec.rMultiple);
       g_drawdown.RecordTradeResult(rec.netProfit>0.0);
       g_posMgr.RemoveThesis(ticket);
+      if(ticket==g_vwapTicket) g_vwapTicket = 0; // SL hit or session flatten - Setup G is flat again
 
       ArrayRemove(g_knownTickets, i, 1);
      }
@@ -530,10 +569,37 @@ void TryEnterTrade()
    if(g_risk.WouldExceedOpenRiskCap(InpMagicNumber, riskPct)) return;
    string exReason;
    if(!g_exposure.AllowsNewExposure(_Symbol, InpMagicNumber, riskPct, exReason)) return;
-   if(g_exposure.HasOpposingPosition(_Symbol, InpMagicNumber, best.signal.direction)) return;
+
+   // an opposing position on this symbol/magic used to be a hard block outright; the Adaptive Flip
+   // Engine (when enabled) instead evaluates whether closing it for THIS specific new signal is
+   // actually justified - see AdaptiveFlipEngine.mqh. Disabled, or with no known thesis to evaluate
+   // against, falls back to the exact original behavior: refuse the new trade, never touch the position.
+   double flipRiskMultiplier = 1.0;
+   ulong opposingTicket = 0;
+   if(g_exposure.GetOpposingPosition(_Symbol, InpMagicNumber, best.signal.direction, opposingTicket))
+     {
+      AXTradeThesis openThesis;
+      if(!InpFlipEngineEnabled || !g_posMgr.GetThesisByTicket(opposingTicket, openThesis)) return;
+
+      g_flipEngine.Update();
+      AXExecutionQualityStats qs = g_exec.QualityStats();
+      AXFlipDecision flip = g_flipEngine.EvaluateFlip(best, openThesis, regime, g_journal, g_drawdown, qs, riskPct,
+                                                       InpMaxDailyDrawdownPercent, InpMaxWeeklyDrawdownPercent,
+                                                       InpFlipEngineEnabled);
+      if(!flip.allowed)
+        {
+         PrintFormat("AXSD15 FLIP REJECTED #%I64u -> %s: %s", opposingTicket, AXSetupToString(best.signal.setup), flip.reason);
+         return;
+        }
+      if(!g_exec.CloseFull(opposingTicket)) return;
+      g_posMgr.RemoveThesis(opposingTicket);
+      g_flipEngine.RecordFlip();
+      flipRiskMultiplier = flip.riskMultiplier;
+      PrintFormat("AXSD15 FLIP APPROVED #%I64u -> %s: %s", opposingTicket, AXSetupToString(best.signal.setup), flip.reason);
+     }
 
    double riskDist = MathAbs(best.signal.entryPrice-best.signal.stopLoss);
-   double volume = g_risk.ComputeVolume(g_broker, riskPct, riskDist);
+   double volume = g_risk.ComputeVolume(g_broker, riskPct*flipRiskMultiplier, riskDist);
    if(volume < g_broker.volumeMin) return;
 
    string macroContext = StringFormat("bias=%s conf=%.0f", AXBiasToString(biasStack.composite), biasStack.alignmentScore);
@@ -594,6 +660,96 @@ void BuildAndAddThesis(ulong ticket, const AXSignal &sig, double executedPrice, 
 
    int kt=ArraySize(g_knownTickets); ArrayResize(g_knownTickets,kt+1); g_knownTickets[kt]=ticket;
    g_tradesToday++; g_tradesThisWeek++;
+  }
+
+//+------------------------------------------------------------------+
+//| Setup G (VWAP Trend/Flip) runs on its own M1 cadence, independent |
+//| of the H1-gated TryEnterTrade() pipeline for setups A-F: its real |
+//| exit is a close-confirmed VWAP recross or session flatten, not a  |
+//| fixed TP, and the strategy is meant to always hold a side once    |
+//| session VWAP data is valid - see VWAPEngine.mqh and               |
+//| CSetupEngine::EvaluateVWAPFlip(). Flipping an EXISTING VWAP        |
+//| position still respects the Adaptive Flip Engine's capital-state  |
+//| machine (a LOCKED account blocks it too, and risk scales with the |
+//| same multiplier as everything else) but skips EvaluateFlip()'s    |
+//| confidence-delta/EV-improvement/regime-change/cooldown checks -   |
+//| those are specific to "should I abandon my SWING thesis for a     |
+//| different one", not to a strategy whose entire mechanic IS        |
+//| flipping on every confirmed VWAP recross. Gating it on swing-      |
+//| specific criteria would silently break the paper's actual method. |
+//+------------------------------------------------------------------+
+void TryEnterOrFlipVWAP()
+  {
+   g_vwap.Refresh();
+   if(!g_vwap.IsDataValid()) return;
+
+   AXSignal sig;
+   if(!g_setupEngine.EvaluateVWAPFlip(g_vwap, sig)) return;
+
+   g_flipEngine.Update();
+   ENUM_AX_CAPITAL_STATE capState = g_flipEngine.CurrentCapitalState();
+   if(capState==CAPITAL_LOCKED) return; // hard safety limit breached - no VWAP entries or flips either
+
+   bool hadPosition = false;
+   if(g_vwapTicket!=0 && PositionSelectByTicket(g_vwapTicket))
+     {
+      long type = PositionGetInteger(POSITION_TYPE);
+      int currentDir = (type==POSITION_TYPE_BUY) ? 1 : -1;
+      if(currentDir==sig.direction) return; // still on the confirmed side - nothing to do
+
+      if(!g_exec.CloseFull(g_vwapTicket)) return;
+      g_posMgr.RemoveThesis(g_vwapTicket);
+      g_vwapTicket = 0;
+      g_flipEngine.RecordFlip();
+      hadPosition = true;
+     }
+
+   if(g_risk.WouldExceedMaxPositions(InpMagicNumber)) return;
+
+   double riskDist = MathAbs(sig.entryPrice-sig.stopLoss);
+   if(riskDist<=0.0) return;
+   double riskPct = MathMax(0.0, InpVWAPRiskPercent) * g_flipEngine.RiskMultiplierFor(capState);
+   if(riskPct<=0.0) return;
+   if(g_risk.WouldExceedOpenRiskCap(InpMagicNumber, riskPct)) return;
+   string exReason;
+   if(!g_exposure.AllowsNewExposure(_Symbol, InpMagicNumber, riskPct, exReason)) return;
+
+   double volume = g_risk.ComputeVolume(g_broker, riskPct, riskDist);
+   if(volume < g_broker.volumeMin) return;
+
+   // no take-profit is sent - Setup G's real exit is a confirmed VWAP recross (handled above) or the
+   // session flatten (ManageVWAPPosition); a resting TP would fight both of those exit mechanisms.
+   AXExecutionResult res = g_exec.OpenMarket(sig.direction, volume, sig.stopLoss, 0.0,
+                                              StringFormat("AXSD15-%s", AXSetupToString(sig.setup)));
+   if(!res.success) return;
+
+   double actualVolume = res.filledVolume>0.0 ? res.filledVolume : volume;
+   BuildAndAddThesis(res.ticket, sig, res.executedPrice, QUALITY_B, sig.precisionScore, REGIME_TRANSITIONAL,
+                      "VWAP session trend/flip - no discretionary macro context", 0.0, actualVolume);
+   g_vwapTicket = res.ticket;
+   PrintFormat("AXSD15 VWAP %s #%I64u %s dir=%d entry=%.5f vwap=%.5f sl=%.5f vol=%.2f",
+               hadPosition?"FLIP":"ENTER", res.ticket, _Symbol, sig.direction, res.executedPrice,
+               g_vwap.CurrentVWAP(), sig.stopLoss, actualVolume);
+  }
+
+//+------------------------------------------------------------------+
+//| Called every tick for the open Setup G position instead of        |
+//| CPositionManager::Update() - VWAP has no phase machine, only a    |
+//| session flatten (the paper's own no-overnight rule).               |
+//+------------------------------------------------------------------+
+void ManageVWAPPosition(ulong ticket)
+  {
+   if(!InpVWAPFlattenAtSessionEnd) return;
+   MqlDateTime dt; TimeToStruct(TimeCurrent(), dt);
+   if(dt.hour >= InpVWAPSessionEndHour)
+     {
+      if(!g_vwapSessionFlattenedToday)
+        {
+         if(g_exec.CloseFull(ticket)) g_vwapSessionFlattenedToday = true;
+        }
+     }
+   else
+      g_vwapSessionFlattenedToday = false;
   }
 
 //+------------------------------------------------------------------+
@@ -704,6 +860,22 @@ void RenderDashboard()
    d.regimePerformance = StringFormat("%s: %.2fR", d.regime, g_journal.RegimeExpectancy(regime,20));
    d.tradingState = g_tradingSuspended ? "SUSPENDED" : "ACTIVE";
 
+   d.capitalState = AXCapitalStateToString(g_flipEngine.CurrentCapitalState());
+   d.riskOfRuinPct = g_flipEngine.EstimateRiskOfRuinPercent(g_journal, InpRiskPercentDefault);
+   AXDriftReport driftForDash = g_drift.Evaluate(g_journal);
+   d.edgeHealthScore = g_flipEngine.EstimateEdgeHealthScore(g_journal, driftForDash, g_drawdown.ConsecutiveLosses());
+   d.flipsToday = g_flipEngine.FlipsToday(); d.flipsThisWeek = g_flipEngine.FlipsThisWeek();
+   d.flipEngineEnabled = InpFlipEngineEnabled;
+
+   d.vwapEnabled = InpVWAPSetupEnabled;
+   if(d.vwapEnabled && g_vwap.IsDataValid())
+     {
+      d.vwapValue = g_vwap.CurrentVWAP();
+      d.vwapSide = g_market.Mid()>d.vwapValue ? "Above" : "Below";
+     }
+   else { d.vwapValue=0.0; d.vwapSide="n/a"; }
+   d.vwapPositionOpen = (g_vwapTicket!=0);
+
    g_dash.Render(d);
   }
 
@@ -728,7 +900,11 @@ void OnTick()
    // a hard stop (drawdown breach / emergency stop) pulls resting sniper orders outright rather than letting
    // one fill while the EA is supposed to be halted; anything short of that still processes normally so a
    // legitimate fill (or an expiry/invalidation cancel) during a transient condition like a spread spike isn't missed
-   if(InpEmergencyStop || hardStop) g_pending.CancelAll();
+   if(InpEmergencyStop || hardStop)
+     {
+      g_pending.CancelAll();
+      if(g_vwapTicket!=0) g_exec.CloseFull(g_vwapTicket); // hard safety limit breached - flatten Setup G too
+     }
    else ProcessPendingOrders();
 
    ReconcilePositions();
@@ -738,7 +914,10 @@ void OnTick()
      {
       ulong ticket = PositionGetTicket(i);
       if(ticket==0 || !IsOurPosition(ticket)) continue;
-      g_posMgr.Update(ticket);
+      if(InpVWAPSetupEnabled && ticket==g_vwapTicket)
+         ManageVWAPPosition(ticket);
+      else
+         g_posMgr.Update(ticket);
      }
 
    HandleWeekendRisk();
@@ -751,6 +930,9 @@ void OnTick()
       if(!suspendForDiag)
          TryEnterTrade();
      }
+
+   if(!g_tradingSuspended && InpVWAPSetupEnabled && g_market.IsNewBar(PERIOD_M1))
+      TryEnterOrFlipVWAP();
 
    static datetime lastDashRender=0;
    if(TimeCurrent()-lastDashRender>=1)
