@@ -719,6 +719,47 @@
   .empty-state p{color:var(--grey);font-size:13px;font-family:'IBM Plex Mono',monospace;}
 
   footer{max-width:1180px;margin:60px auto 0;padding:var(--sp-6) 48px 0;border-top:1px solid var(--hairline);font-family:'IBM Plex Mono',monospace;font-size:var(--fs-label);color:var(--grey);line-height:1.8;}
+
+  .flip-panel{background:var(--panel);border:1px solid var(--gold);box-shadow:var(--shadow-panel);padding:var(--sp-6) var(--sp-7);margin-top:var(--sp-4);}
+  .flip-subtitle{font-family:'IBM Plex Mono',monospace;font-size:var(--fs-note);color:var(--gold-bright);letter-spacing:var(--tracking-label);text-transform:uppercase;margin-top:2px;}
+  .flip-badge{
+    font-family:'IBM Plex Mono',monospace;font-size:var(--fs-label);letter-spacing:var(--tracking-label);
+    padding:5px 12px;border-radius:var(--r-xs);text-transform:uppercase;font-weight:600;height:fit-content;
+  }
+  .flip-badge.flat{background:rgba(255,255,255,0.05);color:var(--grey);}
+  .flip-badge.wait{background:rgba(217,178,92,0.12);color:var(--gold-bright);}
+  .flip-badge.long{background:rgba(92,155,120,0.14);color:var(--emerald-bright);}
+  .flip-badge.short{background:rgba(212,108,95,0.16);color:var(--oxblood-bright);}
+  .flip-risk-dial{display:flex;align-items:center;gap:var(--sp-3);margin-top:var(--sp-4);flex-wrap:wrap;}
+  .flip-risk-dial input[type=range]{width:180px;accent-color:var(--oxblood-bright);}
+  .flip-risk-label{font-family:'IBM Plex Mono',monospace;font-size:var(--fs-label);color:var(--grey);letter-spacing:var(--tracking-label);text-transform:uppercase;}
+  .flip-risk-val{font-family:'IBM Plex Mono',monospace;font-size:14px;color:var(--oxblood-bright);font-weight:600;min-width:32px;}
+  .flip-toggle-row{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--bone-dim);line-height:1.5;}
+  .flip-toggle-row input{width:auto;flex-shrink:0;margin-top:2px;}
+  .flip-grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+    gap:var(--sp-4);margin-top:var(--sp-5);padding-top:var(--sp-4);border-top:1px solid var(--hairline);
+  }
+  .flip-grid .stat-label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--grey);margin-bottom:4px;letter-spacing:var(--tracking-label);text-transform:uppercase;}
+  .flip-grid .stat-val{font-family:'IBM Plex Mono',monospace;font-size:16px;color:var(--bone);font-variant-numeric:tabular-nums;}
+  .flip-grid .stat-val.long{color:var(--emerald-bright);}
+  .flip-grid .stat-val.short{color:var(--oxblood-bright);}
+  .flip-grid .stat-val.gold{color:var(--gold-bright);}
+  .flip-log-wrap{margin-top:var(--sp-5);overflow-x:auto;max-height:260px;overflow-y:auto;}
+  .flip-log{width:100%;border-collapse:collapse;font-family:'IBM Plex Mono',monospace;font-size:11.5px;}
+  .flip-log th{text-align:left;padding:8px 10px;color:var(--gold);font-size:var(--fs-label);border-bottom:1px solid var(--hairline);position:sticky;top:0;background:var(--panel);}
+  .flip-log td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,0.05);color:var(--bone-dim);white-space:nowrap;}
+  .flip-log td.pos{color:var(--emerald-bright);}
+  .flip-log td.neg{color:var(--oxblood-bright);}
+  .flip-warning{
+    margin-top:var(--sp-4);padding:var(--sp-3) var(--sp-4);background:rgba(212,108,95,0.09);border:1px solid rgba(212,108,95,0.35);border-left:2px solid var(--oxblood-bright);
+    color:var(--oxblood-bright);font-size:var(--fs-note);line-height:1.6;
+  }
+  .flip-textarea{
+    background:var(--panel-raised);border:1px solid var(--hairline-strong);color:var(--bone);
+    font-family:'IBM Plex Mono',monospace;font-size:11.5px;padding:10px;width:100%;min-height:90px;outline:none;resize:vertical;
+  }
+  .flip-textarea:focus{border-color:var(--gold);}
 </style>
 </head>
 <body>
@@ -920,6 +961,100 @@
           </div>
         </div>
         <button style="margin-top:12px;background:transparent;border:1px solid var(--hairline);color:var(--bone-dim);padding:8px 14px;cursor:pointer;font-family:'Inter',sans-serif;font-size:12px;" onclick="disconnectBridge()">Disconnect</button>
+      </div>
+    </div>
+
+    <div class="flip-panel">
+      <div class="mt5-header">
+        <div>
+          <div class="mt5-title">Flipdemon HFT Pro</div>
+          <div class="flip-subtitle">VWAP Trend Trading — High-Risk Variant</div>
+        </div>
+        <span class="flip-badge flat" id="flipBadge">FLAT</span>
+      </div>
+      <div class="mt5-note" style="margin-top:0;">
+        Runs the VWAP Trend Trading rules from Zarattini &amp; Aziz, "VWAP: The Holy Grail for Day Trading Systems" (2023): long above session VWAP, short below, flip the instant a 1-minute candle closes on the other side, flat by the session close, nothing held overnight. This build stacks three risk amplifiers on top of the paper's flat, unlevered, one-shot version — leverage, pyramiding, and an instant no-confirmation flip — which is exactly what makes it higher risk than the source strategy: the paper's own numbers show that leverage triples both the return <em>and</em> the drawdown when going from QQQ to TQQQ (Table 2). This is a signal engine, not an auto-trader — it never sends an order on its own, it only pre-fills the MT5 order form below for you to review and arm.
+      </div>
+
+      <div class="mt5-form" style="margin-top:var(--sp-4);">
+        <div class="mt5-field">
+          <label for="flipDataSource">DATA SOURCE</label>
+          <select id="flipDataSource" onchange="onFlipDataSourceChange()">
+            <option value="live">Live Bridge Ticks</option>
+            <option value="backtest">Manual Bars (Backtest)</option>
+          </select>
+        </div>
+        <div class="mt5-field" id="flipSymbolField">
+          <label for="flipSymbol">SYMBOL (BRIDGE FEED)</label>
+          <input id="flipSymbol" type="text" placeholder="e.g. XAUUSD" value="XAUUSD">
+        </div>
+        <div class="mt5-field">
+          <label for="flipTF">BAR LENGTH</label>
+          <select id="flipTF">
+            <option value="15">15s (HFT)</option>
+            <option value="30">30s (HFT)</option>
+            <option value="60" selected>60s (paper default)</option>
+            <option value="300">300s / 5min</option>
+          </select>
+        </div>
+        <div class="mt5-field">
+          <label for="flipEquity">ACCOUNT EQUITY ($)</label>
+          <input id="flipEquity" type="text" placeholder="e.g. 25000" value="25000">
+        </div>
+        <div class="mt5-field">
+          <label for="flipUnitsPerLot">UNITS PER 1.0 LOT</label>
+          <input id="flipUnitsPerLot" type="text" value="100000">
+        </div>
+      </div>
+
+      <div class="flip-risk-dial">
+        <label for="flipLeverage" class="flip-risk-label">LEVERAGE</label>
+        <input id="flipLeverage" type="range" min="1" max="10" step="1" value="3" oninput="onFlipLeverageChange()">
+        <span class="flip-risk-val" id="flipLeverageVal">3x</span>
+        <span style="font-size:11px;color:var(--grey);">The paper tested 1x (QQQ) and 3x (TQQQ) only. Past 3x you're beyond anything it backtested.</span>
+      </div>
+
+      <div class="mt5-form" style="margin-top:var(--sp-4);flex-direction:column;align-items:flex-start;gap:10px;">
+        <div class="flip-toggle-row"><input id="flipInstant" type="checkbox"><label for="flipInstant">INSTANT FLIP — cross VWAP mid-bar, skip the paper's 1-candle close confirmation. Faster reversals, more whipsaw losses.</label></div>
+        <div class="flip-toggle-row"><input id="flipPyramid" type="checkbox"><label for="flipPyramid">PYRAMID — add 25% to a winning position every 5 bars the trend continues, up to 2x the original entry size.</label></div>
+        <div class="flip-toggle-row"><input id="flipSessionClose" type="checkbox" checked><label for="flipSessionClose">FLATTEN AT SESSION CLOSE — matches the paper's no-overnight-risk rule. Uncheck for 24h FX/crypto symbols.</label></div>
+      </div>
+
+      <div class="mt5-form" style="margin-top:14px;" id="flipLiveControls">
+        <button id="flipStartBtn" onclick="toggleFlipdemon()">Start Engine</button>
+        <button onclick="pushFlipdemonToOrder()" style="background:transparent;border:1px solid var(--hairline-strong);color:var(--bone-dim);">Push Signal to Order Panel ↓</button>
+      </div>
+
+      <div id="flipBacktestControls" style="display:none;margin-top:14px;">
+        <label for="flipBars" class="flip-risk-label">1-MIN BARS — CSV: timestamp,open,high,low,close,volume</label>
+        <textarea id="flipBars" class="flip-textarea" style="margin-top:8px;" placeholder="2024-01-02T09:30:00,478.10,478.40,477.90,478.20,152000&#10;2024-01-02T09:31:00,478.20,478.55,478.05,478.50,98000&#10;..."></textarea>
+        <div class="mt5-form" style="margin-top:10px;">
+          <button onclick="runFlipdemonBacktest()">Run Backtest</button>
+        </div>
+      </div>
+
+      <div class="flip-warning">High risk: leverage and pyramiding multiply losses exactly as fast as gains, and instant-flip mode trades on unconfirmed moves. The source paper's worst single day on TQQQ was -22.7% at 3x with no pyramiding — leverage or pyramiding beyond what the paper tested can lose more than that in one session. Paper-trade this before sizing anything real, and never arm the order below without checking it yourself.</div>
+
+      <div class="mt5-error" id="flipError"></div>
+
+      <div class="flip-grid" id="flipGrid" style="display:none;">
+        <div><div class="stat-label">BIAS</div><div class="stat-val" id="flipBias">—</div></div>
+        <div><div class="stat-label">SESSION VWAP</div><div class="stat-val" id="flipVwap">—</div></div>
+        <div><div class="stat-label">LAST PRICE</div><div class="stat-val" id="flipPrice">—</div></div>
+        <div><div class="stat-label">ENTRY PRICE</div><div class="stat-val" id="flipEntry">—</div></div>
+        <div><div class="stat-label">STOP (VWAP FLIP)</div><div class="stat-val" id="flipStop">—</div></div>
+        <div><div class="stat-label">SUGGESTED LOTS</div><div class="stat-val gold" id="flipLots">—</div></div>
+        <div><div class="stat-label">UNREALIZED P&amp;L</div><div class="stat-val" id="flipUpl">—</div></div>
+        <div><div class="stat-label">CUMULATIVE P&amp;L (COMPOUNDED)</div><div class="stat-val" id="flipSessionPnl">—</div></div>
+        <div><div class="stat-label">TRADES / HIT RATIO</div><div class="stat-val" id="flipStats">—</div></div>
+        <div><div class="stat-label">MAX DRAWDOWN</div><div class="stat-val" id="flipMdd">—</div></div>
+      </div>
+
+      <div class="flip-log-wrap" id="flipLogWrap" style="display:none;">
+        <table class="flip-log">
+          <thead><tr><th>TIME</th><th>SIDE</th><th>ENTRY</th><th>EXIT</th><th>REASON</th><th>RETURN</th></tr></thead>
+          <tbody id="flipLogBody"></tbody>
+        </table>
       </div>
     </div>
 
@@ -1514,7 +1649,325 @@ function disconnectBridge(){
   document.getElementById('bridgeConnectForm').style.display='flex';
   document.getElementById('bridgeLivePanel').style.display='none';
   document.getElementById('bridgeError').classList.remove('active');
+  if(flipRunning){
+    flipRunning=false;
+    const btn=document.getElementById('flipStartBtn');
+    if(btn) btn.textContent='Start Engine';
+  }
 }
+
+// ---------------------------------------------------------------------------
+// FLIPDEMON HFT PRO — VWAP Trend Trading (Zarattini & Aziz, 2023), high-risk build
+//
+// Core rule set straight from the paper: track a session-cumulative VWAP from
+// HLC-average x volume; go long the instant a bar closes above it, short the
+// instant one closes below; flip immediately on the next bar that closes back
+// across it; flatten at session end; no overnight risk. Position sizing here
+// uses a leverage multiplier instead of the paper's flat 100%-of-equity/no-leverage
+// approach — that multiplier (plus optional pyramiding and an unconfirmed
+// "instant flip" mode) is the deliberate risk amplifier this build adds on top
+// of the source strategy.
+//
+// When fed live bridge ticks there's no real trade volume available (MT5 ticks
+// carry bid/ask, not size), so each tick counts as one unit of volume — a tick-count
+// proxy, standard in FX/CFD contexts where "volume" usually means tick volume
+// anyway. Pasted backtest bars use whatever volume column you provide.
+// ---------------------------------------------------------------------------
+
+class FlipEngine{
+  constructor(opts){
+    this.opts=opts; // {leverage, instant, pyramid, sessionClose, commissionBps}
+    this.day=null;
+    this.cumPV=0; this.cumV=0; this.vwap=null;
+    this.position=null; // {side, entryPrice, entryTs, stacks, avgUnitsMultiplier}
+    this.trades=[];
+    this.equity=1;
+    this.peakEquity=1; this.maxDD=0;
+    this.barsClosed=0;
+    this.lastBiasAboveVwap=null;
+    this.trendBarsCount=0;
+  }
+
+  dayKeyOf(ts){
+    const d=new Date(ts);
+    return d.getUTCFullYear()+'-'+d.getUTCMonth()+'-'+d.getUTCDate();
+  }
+
+  commissionFrac(){ return this.opts.commissionBps/10000; }
+
+  onBarClose(bar){
+    const dayKey=this.dayKeyOf(bar.ts);
+    if(this.day!==dayKey){
+      if(this.opts.sessionClose && this.position){
+        this.closePosition(bar.c, bar.ts, 'SESSION CLOSE');
+      }
+      this.day=dayKey; this.cumPV=0; this.cumV=0; this.vwap=null;
+      this.trendBarsCount=0; this.lastBiasAboveVwap=null; this.barsClosed=0;
+    }
+
+    const hlc=(bar.h+bar.l+bar.c)/3;
+    const vol=bar.v>0?bar.v:1;
+    this.cumPV+=hlc*vol; this.cumV+=vol;
+    this.vwap=this.cumPV/this.cumV;
+    this.barsClosed++;
+
+    const priceAboveVwap=bar.c>this.vwap;
+    this.trendBarsCount = (this.lastBiasAboveVwap===priceAboveVwap) ? this.trendBarsCount+1 : 0;
+    this.lastBiasAboveVwap=priceAboveVwap;
+
+    if(!this.position){
+      this.openPosition(priceAboveVwap?'LONG':'SHORT', bar.c, bar.ts);
+    }else{
+      const wrongSide=(this.position.side==='LONG' && !priceAboveVwap) || (this.position.side==='SHORT' && priceAboveVwap);
+      if(wrongSide){
+        this.closePosition(bar.c, bar.ts, 'VWAP FLIP');
+        this.openPosition(priceAboveVwap?'LONG':'SHORT', bar.c, bar.ts);
+      }else if(this.opts.pyramid && this.position.stacks<4 && this.trendBarsCount>0 && this.trendBarsCount%5===0){
+        this.position.stacks++;
+        this.position.avgUnitsMultiplier+=0.25;
+      }
+    }
+  }
+
+  onIntraTick(price, ts){
+    if(!this.opts.instant || this.vwap===null || !this.position) return;
+    const aboveVwap=price>this.vwap;
+    const wrongSide=(this.position.side==='LONG' && !aboveVwap) || (this.position.side==='SHORT' && aboveVwap);
+    if(wrongSide){
+      this.closePosition(price, ts, 'INSTANT FLIP');
+      this.openPosition(aboveVwap?'LONG':'SHORT', price, ts);
+    }
+  }
+
+  openPosition(side, price, ts){
+    this.position={side, entryPrice:price, entryTs:ts, stacks:0, avgUnitsMultiplier:1};
+  }
+
+  closePosition(price, ts, reason){
+    const p=this.position;
+    const rawRet = p.side==='LONG' ? (price-p.entryPrice)/p.entryPrice : (p.entryPrice-price)/p.entryPrice;
+    const weight=p.avgUnitsMultiplier;
+    const commission=this.commissionFrac()*2*weight;
+    const netRet=rawRet*this.opts.leverage*weight - commission;
+    this.equity*=(1+netRet);
+    this.trades.push({ts, side:p.side, entry:p.entryPrice, exit:price, reason, ret:netRet});
+    this.peakEquity=Math.max(this.peakEquity, this.equity);
+    this.maxDD=Math.max(this.maxDD, (this.peakEquity-this.equity)/this.peakEquity);
+    this.position=null;
+  }
+
+  currentUnrealizedReturn(price){
+    if(!this.position) return 0;
+    const p=this.position;
+    const rawRet = p.side==='LONG' ? (price-p.entryPrice)/p.entryPrice : (p.entryPrice-price)/p.entryPrice;
+    return rawRet*this.opts.leverage*p.avgUnitsMultiplier;
+  }
+
+  stats(){
+    const wins=this.trades.filter(t=>t.ret>0);
+    const losses=this.trades.filter(t=>t.ret<=0);
+    const hitRatio=this.trades.length?wins.length/this.trades.length:0;
+    const avgWin=wins.length?wins.reduce((s,t)=>s+t.ret,0)/wins.length:0;
+    const avgLoss=losses.length?Math.abs(losses.reduce((s,t)=>s+t.ret,0)/losses.length):0;
+    return{
+      totalReturnPct:(this.equity-1)*100,
+      maxDDPct:this.maxDD*100,
+      trades:this.trades.length,
+      hitRatioPct:hitRatio*100,
+      gainLossRatio:avgLoss>0?avgWin/avgLoss:null,
+    };
+  }
+}
+
+let flipEngine=null;
+let flipRunning=false;
+let flipCurrentBar=null;
+let flipTfMs=60000;
+
+function flipdemonOpts(){
+  return{
+    leverage:parseFloat(document.getElementById('flipLeverage').value)||1,
+    instant:document.getElementById('flipInstant').checked,
+    pyramid:document.getElementById('flipPyramid').checked,
+    sessionClose:document.getElementById('flipSessionClose').checked,
+    commissionBps:0.5,
+  };
+}
+
+function onFlipLeverageChange(){
+  document.getElementById('flipLeverageVal').textContent=document.getElementById('flipLeverage').value+'x';
+}
+
+function onFlipDataSourceChange(){
+  const mode=document.getElementById('flipDataSource').value;
+  document.getElementById('flipLiveControls').style.display = mode==='live' ? 'flex' : 'none';
+  document.getElementById('flipBacktestControls').style.display = mode==='backtest' ? 'block' : 'none';
+  document.getElementById('flipSymbolField').style.display = mode==='live' ? 'flex' : 'none';
+}
+
+function toggleFlipdemon(){
+  const btn=document.getElementById('flipStartBtn');
+  if(flipRunning){
+    flipRunning=false;
+    btn.textContent='Start Engine';
+    return;
+  }
+  const errEl=document.getElementById('flipError');
+  errEl.classList.remove('active');
+  if(!bridge.connected){
+    errEl.textContent='Connect the Live Bridge above first — Flipdemon reads its tick feed.';
+    errEl.classList.add('active');
+    return;
+  }
+  flipEngine=new FlipEngine(flipdemonOpts());
+  flipCurrentBar=null;
+  flipTfMs=(parseInt(document.getElementById('flipTF').value,10)||60)*1000;
+  flipRunning=true;
+  btn.textContent='Stop Engine';
+  document.getElementById('flipGrid').style.display='grid';
+  document.getElementById('flipLogWrap').style.display='block';
+  renderFlipdemon();
+}
+
+function flipdemonOnBridgeState(state){
+  if(!flipRunning || !flipEngine) return;
+  const symbol=document.getElementById('flipSymbol').value.trim().toUpperCase();
+  const entry=state.symbols && state.symbols[symbol];
+  if(!entry || typeof entry.bid!=='number' || typeof entry.ask!=='number') return;
+  const price=(entry.bid+entry.ask)/2;
+  const ts=entry.receivedAt||Date.now();
+
+  if(!flipCurrentBar || ts-flipCurrentBar.startTs>=flipTfMs){
+    if(flipCurrentBar){
+      flipEngine.onBarClose({ts:flipCurrentBar.startTs, o:flipCurrentBar.o, h:flipCurrentBar.h, l:flipCurrentBar.l, c:flipCurrentBar.c, v:flipCurrentBar.v});
+    }
+    flipCurrentBar={startTs:ts, o:price, h:price, l:price, c:price, v:1};
+  }else{
+    flipCurrentBar.h=Math.max(flipCurrentBar.h,price);
+    flipCurrentBar.l=Math.min(flipCurrentBar.l,price);
+    flipCurrentBar.c=price;
+    flipCurrentBar.v+=1;
+  }
+  flipEngine.onIntraTick(price, ts);
+  renderFlipdemon(price);
+}
+
+function renderFlipdemon(livePrice){
+  if(!flipEngine) return;
+  const price = livePrice!=null ? livePrice : (flipCurrentBar?flipCurrentBar.c:null);
+  const pos=flipEngine.position;
+  const badge=document.getElementById('flipBadge');
+  const biasEl=document.getElementById('flipBias');
+  let label='FLAT', cls='flat';
+  if(flipEngine.vwap===null){ label='WAIT'; cls='wait'; }
+  else if(pos){ label=pos.side; cls=pos.side.toLowerCase(); }
+  badge.className='flip-badge '+cls;
+  badge.textContent=label;
+  biasEl.textContent=label;
+  biasEl.className='stat-val '+(cls==='long'?'long':cls==='short'?'short':'');
+
+  document.getElementById('flipVwap').textContent=flipEngine.vwap!==null?flipEngine.vwap.toFixed(5):'—';
+  document.getElementById('flipPrice').textContent=price!=null?price.toFixed(5):'—';
+  document.getElementById('flipEntry').textContent=pos?pos.entryPrice.toFixed(5):'—';
+  document.getElementById('flipStop').textContent=flipEngine.vwap!==null?flipEngine.vwap.toFixed(5):'—';
+
+  const equity=parseFloat(document.getElementById('flipEquity').value)||0;
+  const unitsPerLot=parseFloat(document.getElementById('flipUnitsPerLot').value)||100000;
+  const leverage=parseFloat(document.getElementById('flipLeverage').value)||1;
+  let lots='—';
+  if(price>0 && equity>0){
+    const notional=equity*leverage*(pos?pos.avgUnitsMultiplier:1);
+    lots=(notional/price/unitsPerLot).toFixed(2);
+  }
+  document.getElementById('flipLots').textContent=lots;
+
+  const uplEl=document.getElementById('flipUpl');
+  if(pos && price!=null){
+    const upl=flipEngine.currentUnrealizedReturn(price)*100;
+    uplEl.textContent=(upl>=0?'+':'')+upl.toFixed(2)+'%';
+    uplEl.className='stat-val '+(upl>=0?'long':'short');
+  }else{
+    uplEl.textContent='—'; uplEl.className='stat-val';
+  }
+
+  const sessionPnlEl=document.getElementById('flipSessionPnl');
+  const totalRet=(flipEngine.equity-1)*100;
+  sessionPnlEl.textContent=(totalRet>=0?'+':'')+totalRet.toFixed(2)+'%';
+  sessionPnlEl.className='stat-val '+(totalRet>=0?'long':'short');
+
+  const st=flipEngine.stats();
+  document.getElementById('flipStats').textContent=st.trades+' / '+st.hitRatioPct.toFixed(0)+'%';
+  document.getElementById('flipMdd').textContent=st.maxDDPct.toFixed(2)+'%';
+
+  const logBody=document.getElementById('flipLogBody');
+  logBody.innerHTML=flipEngine.trades.slice(-50).reverse().map(t=>{
+    const retPct=(t.ret*100).toFixed(2);
+    return '<tr><td>'+esc(new Date(t.ts).toLocaleString())+'</td><td>'+esc(t.side)+'</td><td>'+t.entry.toFixed(5)+'</td><td>'+t.exit.toFixed(5)+'</td><td>'+esc(t.reason)+'</td><td class="'+(t.ret>=0?'pos':'neg')+'">'+(t.ret>=0?'+':'')+retPct+'%</td></tr>';
+  }).join('') || '<tr><td colspan="6" style="color:var(--grey);">No trades yet.</td></tr>';
+}
+
+function pushFlipdemonToOrder(){
+  const errEl=document.getElementById('flipError');
+  errEl.classList.remove('active');
+  if(!flipEngine || !flipEngine.position){
+    errEl.textContent='No open Flipdemon position to push — engine is FLAT or WAIT.';
+    errEl.classList.add('active');
+    return;
+  }
+  const pos=flipEngine.position;
+  const symbol=document.getElementById('flipSymbol').value.trim().toUpperCase();
+  const equity=parseFloat(document.getElementById('flipEquity').value)||0;
+  const unitsPerLot=parseFloat(document.getElementById('flipUnitsPerLot').value)||100000;
+  const leverage=parseFloat(document.getElementById('flipLeverage').value)||1;
+  const price=flipCurrentBar?flipCurrentBar.c:pos.entryPrice;
+  const notional=equity*leverage*pos.avgUnitsMultiplier;
+  const lots=price>0?(notional/price/unitsPerLot).toFixed(2):'0.01';
+
+  document.getElementById('orderSymbol').value=symbol;
+  document.getElementById('orderSide').value=pos.side==='LONG'?'BUY':'SELL';
+  document.getElementById('orderVolume').value=lots;
+  document.getElementById('orderSL').value=flipEngine.vwap!==null?flipEngine.vwap.toFixed(5):'';
+  const panel=document.getElementById('orderPanel');
+  if(panel) panel.scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+function parseFlipBarsCsv(text){
+  return text.trim().split('\n').map(l=>l.trim()).filter(Boolean).map(line=>{
+    const parts=line.split(',').map(s=>s.trim());
+    const ts=Date.parse(parts[0]);
+    return {
+      ts: isNaN(ts)?null:ts,
+      o: parseFloat(parts[1]), h: parseFloat(parts[2]), l: parseFloat(parts[3]), c: parseFloat(parts[4]),
+      v: parts[5]!==undefined ? parseFloat(parts[5]) : 1,
+    };
+  }).filter(b=>b.ts!==null && !isNaN(b.o) && !isNaN(b.h) && !isNaN(b.l) && !isNaN(b.c));
+}
+
+function runFlipdemonBacktest(){
+  const errEl=document.getElementById('flipError');
+  errEl.classList.remove('active');
+  const bars=parseFlipBarsCsv(document.getElementById('flipBars').value);
+  if(bars.length<3){
+    errEl.textContent='Paste at least a few rows of timestamp,open,high,low,close,volume — need enough bars to establish a VWAP and take trades.';
+    errEl.classList.add('active');
+    return;
+  }
+  bars.sort((a,b)=>a.ts-b.ts);
+  const engine=new FlipEngine(flipdemonOpts());
+  bars.forEach(b=>engine.onBarClose(b));
+  const lastBar=bars[bars.length-1];
+  if(engine.position){
+    engine.closePosition(lastBar.c, lastBar.ts, 'END OF DATA');
+  }
+  flipEngine=engine;
+  flipCurrentBar={startTs:lastBar.ts, o:lastBar.c, h:lastBar.c, l:lastBar.c, c:lastBar.c, v:1};
+  document.getElementById('flipGrid').style.display='grid';
+  document.getElementById('flipLogWrap').style.display='block';
+  renderFlipdemon(lastBar.c);
+}
+
+onFlipDataSourceChange();
+onFlipLeverageChange();
 
 async function pollBridgeOnce(){
   if(!bridge.connected) return;
@@ -1524,6 +1977,7 @@ async function pollBridgeOnce(){
     const state=await res.json();
     bridge.lastState=state;
     renderBridgeTicker(state);
+    flipdemonOnBridgeState(state);
 
     if(state.account && typeof state.account.balance==='number'){
       const balEl=document.getElementById('sizeBalance');
