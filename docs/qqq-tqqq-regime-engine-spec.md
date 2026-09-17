@@ -2,7 +2,9 @@
 
 **Modular Intelligence Layer for Existing Trading Bots**
 
-This is a design specification, recorded as project knowledge alongside `docs/flipdemon-x15-spec.md`. Nothing in this document is implemented yet. It describes a gatekeeper/risk-governor layer for QQQ/TQQQ exposure that sits in front of an existing execution bot (including Flipdemon) rather than replacing it.
+This is a design specification, recorded as project knowledge alongside `docs/flipdemon-x15-spec.md`. It describes a gatekeeper/risk-governor layer for QQQ/TQQQ exposure that sits in front of an existing execution bot (including Flipdemon) rather than replacing it.
+
+**Implementation status (update):** the price-based core — §4 Direction Engine, §5 Trend-Efficiency Engine, §6-7 Volatility Engine and shock detector, a partial §8 Macro Engine (Treasury yields, Fed funds trend, EUR/USD as a DXY proxy), §10 Liquidity via QQQ's own relative volume, §11 composite confidence with breadth excluded, §12 regime decision matrix, and a real-money-relevant slice of §13's leverage model plus §14's drawdown governor — is now built and running in `index.html`'s "Regime Engine — QQQ/TQQQ" panel, fed by live Alpha Vantage data, and wired as an actual gate in front of Flipdemon HFT Pro (§19) rather than just described. §9 Breadth, §15 Correlation Protection, §16 News/Event Governor, and §21 MT5/MQL5 implementation remain unbuilt — see the "What's built vs. not" section at the end of this document for the precise line.
 
 ---
 
@@ -428,8 +430,21 @@ The engine is a gatekeeper and adaptive risk layer, not another entry indicator.
 
 ---
 
-## Relationship to what's currently built
+## What's built vs. not
 
-Nothing in this spec is implemented. The live Flipdemon HFT Pro panel in `index.html` currently has no regime awareness at all — it trades its VWAP flip signal unconditionally, gated only by the leverage/pyramid/instant-flip toggles a person sets by hand. There is no `ALLOW_LONG`/`ALLOW_SHORT`/`RISK_MULTIPLIER` gate in front of it, no regime classifier, no drawdown governor, no correlation or event governor.
+The "Regime Engine — QQQ/TQQQ" panel in `index.html` (next to the Flipdemon HFT Pro panel) now runs a real subset of this spec:
 
-Per §19, the intended relationship once this is built is that Flipdemon's signal becomes a *request* this engine can approve, throttle, or block — not that this engine replaces Flipdemon's entry logic. Building it requires data this project doesn't currently source client-side (VIX, DXY, yields, breadth, macro calendar), so it's a separate data-integration project before it's a code project.
+**Built, against live Alpha Vantage data, computed client-side (not Alpha Vantage's own indicator endpoints, so every number traces to a formula in `index.html`):**
+
+- §4 Direction Engine — EMA20/50/200 alignment, 20-day momentum, 20-day breakout position, and higher-high/higher-low vs lower-high/lower-low structure, combined into a -100..+100 `DIRECTION_SCORE`.
+- §5 Trend-Efficiency Engine — the exact ratio formula, averaged over 10- and 20-day lookbacks.
+- §6-7 Volatility Engine and shock detector — Wilder ATR(14), its 1-year percentile rank, LOW/NORMAL/ELEVATED/HIGH/EXTREME classification, and an R6 shock trigger on extreme ATR percentile + expansion, an abnormal single-day move, or an abnormal daily range.
+- §8 Macro Confirmation Engine (partial) — 2Y/10Y Treasury yield level and spread, 10Y year-over-year change, Fed funds rate trend, and EUR/USD as a single-pair USD-strength proxy (explicitly **not** the real trade-weighted DXY basket). Each sub-fetch fails independently and degrades the macro score's status (FULL/PARTIAL/UNAVAILABLE) rather than the whole run failing.
+- §10 Liquidity Engine (partial) — QQQ's own volume relative to its 20-day average (a single-instrument proxy, not cross-market breadth).
+- §11 Composite Confidence — the spec's weighting table with breadth's 10% removed and the rest renormalized, rather than defaulting breadth to a guessed value.
+- §12 Regime Decision Matrix — full R1-R6 classification and the resulting `ALLOW_LONG`/`ALLOW_SHORT`/base risk-multiplier range per regime.
+- §13 TQQQ Leverage Model (partial) — `BASE_RISK × REGIME_MULTIPLIER × CONFIDENCE_MULTIPLIER × VOLATILITY_MULTIPLIER`, missing only the correlation multiplier (§15 isn't built).
+- §14 Drawdown Governor — live, fed from Flipdemon's own running peak-to-trough equity, not a placeholder: the governor table (0-3%/3-5%/5-8%/8-10%/10%+) actually scales Flipdemon's suggested size in real time as its paper P&L moves.
+- §17 Entry Permission API and §19 Flipdemon Compatibility — this is the part that used to be only a diagram. Flipdemon HFT Pro now has a "GATE THROUGH REGIME ENGINE" toggle (on by default): with it on, a new Flipdemon entry or flip is a request that must clear `ALLOW_LONG`/`ALLOW_SHORT` before it opens, and its suggested lot size is scaled by the regime's risk multiplier. No regime read yet means every new entry is blocked, not silently allowed — matching §20's fail-safe rule rather than assuming missing data is fine. The gate is force-disabled during Flipdemon backtests, since applying today's regime read to historical bars would be lookahead bias.
+
+**Not built:** §9 real cross-market Breadth (no free data source wired — explicitly excluded from the confidence weighting, not defaulted), §15 Correlation Protection across multiple bots/instruments, §16 News/Event Governor (no economic calendar feed), §21 the MQL5/MT5-native module split (`AutopsyRegimeEngine.mqh` etc.) — everything here runs in the browser tab, not inside an EA, §23 structured per-decision logging (there's a live status readout, not a persisted audit trail), and §24's out-of-sample/walk-forward/Monte-Carlo validation (none of this has been backtested at all yet — treat every score and threshold in this build as an untested heuristic, exactly as §24 requires before anyone trusts it with size).

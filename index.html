@@ -967,6 +967,43 @@
     <div class="flip-panel">
       <div class="mt5-header">
         <div>
+          <div class="mt5-title">Regime Engine — QQQ/TQQQ</div>
+          <div class="flip-subtitle">Nasdaq Regime Classifier (Alpha Vantage)</div>
+        </div>
+        <div class="mt5-status disconnected" id="avStatusBadge"><span class="dot2"></span><span id="avStatusText">NOT RUN</span></div>
+      </div>
+      <div class="mt5-note" style="margin-top:0;">
+        Implements the price-based half of <code>docs/qqq-tqqq-regime-engine-spec.md</code> against real Alpha Vantage data: EMA20/50/200 alignment, 20-day breakout structure and momentum for the Direction Engine (§4), efficiency ratio for the Trend-Efficiency Engine (§5), Wilder ATR + its 1-year percentile for the Volatility Engine (§6) and shock detector (§7), and 2s/10s Treasury yields, the Fed funds rate trend, and EUR/USD (as a rough single-pair proxy for DXY, not the real trade-weighted index) for the Macro Engine (§8). <strong>Breadth (§9) is intentionally left unavailable</strong> — Alpha Vantage's free tier has no cross-market advance/decline data, and per the spec's fail-safe rule (§20) that's excluded from the confidence weighting rather than defaulted bullish, not silently assumed. Liquidity (§10) uses QQQ's own volume relative to its 20-day average, not true cross-market breadth. The correlation and news/event governors (§15–16) aren't implemented. This calls Alpha Vantage directly from your browser — nothing about your API key or these results goes through any server. A free key is limited to 25 requests/day and this uses 5 per run, so roughly 5 runs a day.
+      </div>
+
+      <div class="mt5-form" style="margin-top:var(--sp-4);">
+        <div class="mt5-field" style="flex:1;min-width:260px;">
+          <label for="avApiKey">ALPHA VANTAGE API KEY</label>
+          <input id="avApiKey" type="password" placeholder="get a free key at alphavantage.co/support/#api-key">
+        </div>
+        <button id="avRunBtn" onclick="runRegimeAnalysis()">Run Regime Analysis</button>
+      </div>
+      <div class="mt5-error" id="avError"></div>
+
+      <div class="flip-grid" id="avGrid" style="display:none;">
+        <div><div class="stat-label">REGIME</div><div class="stat-val" id="avRegime">—</div></div>
+        <div><div class="stat-label">NASDAQ BIAS</div><div class="stat-val" id="avDirection">—</div></div>
+        <div><div class="stat-label">TREND EFFICIENCY</div><div class="stat-val" id="avTrendEff">—</div></div>
+        <div><div class="stat-label">VOLATILITY</div><div class="stat-val" id="avVol">—</div></div>
+        <div><div class="stat-label">MACRO SCORE</div><div class="stat-val" id="avMacro">—</div></div>
+        <div><div class="stat-label">LIQUIDITY (QQQ vol.)</div><div class="stat-val" id="avLiquidity">—</div></div>
+        <div><div class="stat-label">BREADTH</div><div class="stat-val" id="avBreadth" style="color:var(--grey);font-size:12px;">UNAVAILABLE</div></div>
+        <div><div class="stat-label">CONFIDENCE</div><div class="stat-val gold" id="avConfidence">—</div></div>
+        <div><div class="stat-label">ALLOW LONG / SHORT</div><div class="stat-val" id="avAllow">—</div></div>
+        <div><div class="stat-label">BASE RISK MULTIPLIER</div><div class="stat-val gold" id="avRiskMult">—</div></div>
+        <div><div class="stat-label">AS OF (QQQ SESSION)</div><div class="stat-val" id="avAsOf" style="font-size:13px;">—</div></div>
+        <div><div class="stat-label">DATA STATUS</div><div class="stat-val" id="avDataStatus" style="font-size:13px;">—</div></div>
+      </div>
+    </div>
+
+    <div class="flip-panel">
+      <div class="mt5-header">
+        <div>
           <div class="mt5-title">Flipdemon HFT Pro</div>
           <div class="flip-subtitle">VWAP Trend Trading — High-Risk Variant</div>
         </div>
@@ -1018,6 +1055,7 @@
         <div class="flip-toggle-row"><input id="flipInstant" type="checkbox"><label for="flipInstant">INSTANT FLIP — cross VWAP mid-bar, skip the paper's 1-candle close confirmation. Faster reversals, more whipsaw losses.</label></div>
         <div class="flip-toggle-row"><input id="flipPyramid" type="checkbox"><label for="flipPyramid">PYRAMID — add 25% to a winning position every 5 bars the trend continues, up to 2x the original entry size.</label></div>
         <div class="flip-toggle-row"><input id="flipSessionClose" type="checkbox" checked><label for="flipSessionClose">FLATTEN AT SESSION CLOSE — matches the paper's no-overnight-risk rule. Uncheck for 24h FX/crypto symbols.</label></div>
+        <div class="flip-toggle-row"><input id="flipRegimeGate" type="checkbox" checked><label for="flipRegimeGate">GATE THROUGH REGIME ENGINE — new entries and flips need ALLOW_LONG/ALLOW_SHORT from the Regime Engine panel above, and size scales by its risk multiplier (further scaled down by this engine's own live drawdown). No regime read yet means every new entry is blocked, not silently allowed. Ignored during backtests (would be lookahead bias against today's regime).</label></div>
       </div>
 
       <div class="mt5-form" style="margin-top:14px;" id="flipLiveControls">
@@ -1048,6 +1086,7 @@
         <div><div class="stat-label">CUMULATIVE P&amp;L (COMPOUNDED)</div><div class="stat-val" id="flipSessionPnl">—</div></div>
         <div><div class="stat-label">TRADES / HIT RATIO</div><div class="stat-val" id="flipStats">—</div></div>
         <div><div class="stat-label">MAX DRAWDOWN</div><div class="stat-val" id="flipMdd">—</div></div>
+        <div><div class="stat-label">REGIME GATE</div><div class="stat-val" id="flipRegimeTile" style="font-size:13px;">—</div></div>
       </div>
 
       <div class="flip-log-wrap" id="flipLogWrap" style="display:none;">
@@ -1686,6 +1725,17 @@ class FlipEngine{
     this.barsClosed=0;
     this.lastBiasAboveVwap=null;
     this.trendBarsCount=0;
+    this.blockedByRegime=0;
+  }
+
+  currentDrawdownPct(){
+    return this.peakEquity>0 ? (this.peakEquity-this.equity)/this.peakEquity*100 : 0;
+  }
+
+  regimeAllowsSide(side){
+    if(!this.opts.regimeGate) return true;
+    if(!regimeState || regimeState.dataStatus==='BLOCKED') return false;
+    return side==='LONG' ? regimeState.allowLong : regimeState.allowShort;
   }
 
   dayKeyOf(ts){
@@ -1716,12 +1766,16 @@ class FlipEngine{
     this.lastBiasAboveVwap=priceAboveVwap;
 
     if(!this.position){
-      this.openPosition(priceAboveVwap?'LONG':'SHORT', bar.c, bar.ts);
+      const side=priceAboveVwap?'LONG':'SHORT';
+      if(this.regimeAllowsSide(side)) this.openPosition(side, bar.c, bar.ts);
+      else this.blockedByRegime++;
     }else{
       const wrongSide=(this.position.side==='LONG' && !priceAboveVwap) || (this.position.side==='SHORT' && priceAboveVwap);
       if(wrongSide){
         this.closePosition(bar.c, bar.ts, 'VWAP FLIP');
-        this.openPosition(priceAboveVwap?'LONG':'SHORT', bar.c, bar.ts);
+        const side=priceAboveVwap?'LONG':'SHORT';
+        if(this.regimeAllowsSide(side)) this.openPosition(side, bar.c, bar.ts);
+        else this.blockedByRegime++;
       }else if(this.opts.pyramid && this.position.stacks<4 && this.trendBarsCount>0 && this.trendBarsCount%5===0){
         this.position.stacks++;
         this.position.avgUnitsMultiplier+=0.25;
@@ -1735,7 +1789,9 @@ class FlipEngine{
     const wrongSide=(this.position.side==='LONG' && !aboveVwap) || (this.position.side==='SHORT' && aboveVwap);
     if(wrongSide){
       this.closePosition(price, ts, 'INSTANT FLIP');
-      this.openPosition(aboveVwap?'LONG':'SHORT', price, ts);
+      const side=aboveVwap?'LONG':'SHORT';
+      if(this.regimeAllowsSide(side)) this.openPosition(side, price, ts);
+      else this.blockedByRegime++;
     }
   }
 
@@ -1790,8 +1846,24 @@ function flipdemonOpts(){
     instant:document.getElementById('flipInstant').checked,
     pyramid:document.getElementById('flipPyramid').checked,
     sessionClose:document.getElementById('flipSessionClose').checked,
+    regimeGate:document.getElementById('flipRegimeGate').checked,
     commissionBps:0.5,
   };
+}
+
+function getEffectiveRiskMultiplier(){
+  if(!regimeState || regimeState.dataStatus==='BLOCKED') return 0;
+  let mult=regimeState.baseRiskMultiplier;
+  if(flipEngine){
+    const dd=flipEngine.currentDrawdownPct();
+    let ddMult=1.0;
+    if(dd>=10) ddMult=0;
+    else if(dd>=8) ddMult=0.25;
+    else if(dd>=5) ddMult=0.5;
+    else if(dd>=3) ddMult=0.75;
+    mult*=ddMult;
+  }
+  return Math.round(mult*100)/100;
 }
 
 function onFlipLeverageChange(){
@@ -1826,6 +1898,10 @@ function toggleFlipdemon(){
   btn.textContent='Stop Engine';
   document.getElementById('flipGrid').style.display='grid';
   document.getElementById('flipLogWrap').style.display='block';
+  if(document.getElementById('flipRegimeGate').checked && !regimeState){
+    errEl.textContent='Regime gate is ON but no regime read exists yet — Flipdemon will stay flat until you run Regime Analysis above (this is the intended fail-safe, not a bug).';
+    errEl.classList.add('active');
+  }
   renderFlipdemon();
 }
 
@@ -1874,12 +1950,27 @@ function renderFlipdemon(livePrice){
   const equity=parseFloat(document.getElementById('flipEquity').value)||0;
   const unitsPerLot=parseFloat(document.getElementById('flipUnitsPerLot').value)||100000;
   const leverage=parseFloat(document.getElementById('flipLeverage').value)||1;
+  const gateOn=flipEngine.opts.regimeGate; // reflects the engine's actual config, not the checkbox (backtests force this off)
+  const riskMult=gateOn?getEffectiveRiskMultiplier():1;
   let lots='—';
   if(price>0 && equity>0){
-    const notional=equity*leverage*(pos?pos.avgUnitsMultiplier:1);
+    const notional=equity*leverage*(pos?pos.avgUnitsMultiplier:1)*riskMult;
     lots=(notional/price/unitsPerLot).toFixed(2);
   }
   document.getElementById('flipLots').textContent=lots;
+
+  const regimeTile=document.getElementById('flipRegimeTile');
+  if(!gateOn){
+    regimeTile.textContent='OFF (ungated)';
+    regimeTile.style.color='var(--grey)';
+  }else if(!regimeState){
+    regimeTile.textContent='NO READ — blocking entries';
+    regimeTile.style.color='var(--oxblood-bright)';
+  }else{
+    const blocked=flipEngine.blockedByRegime>0?' · '+flipEngine.blockedByRegime+' blocked':'';
+    regimeTile.textContent=regimeState.regime+' · x'+riskMult.toFixed(2)+blocked;
+    regimeTile.style.color=regimeState.dataStatus==='BLOCKED'?'var(--oxblood-bright)':'var(--bone)';
+  }
 
   const uplEl=document.getElementById('flipUpl');
   if(pos && price!=null){
@@ -1920,7 +2011,8 @@ function pushFlipdemonToOrder(){
   const unitsPerLot=parseFloat(document.getElementById('flipUnitsPerLot').value)||100000;
   const leverage=parseFloat(document.getElementById('flipLeverage').value)||1;
   const price=flipCurrentBar?flipCurrentBar.c:pos.entryPrice;
-  const notional=equity*leverage*pos.avgUnitsMultiplier;
+  const riskMult=flipEngine.opts.regimeGate?getEffectiveRiskMultiplier():1;
+  const notional=equity*leverage*pos.avgUnitsMultiplier*riskMult;
   const lots=price>0?(notional/price/unitsPerLot).toFixed(2):'0.01';
 
   document.getElementById('orderSymbol').value=symbol;
@@ -1953,7 +2045,7 @@ function runFlipdemonBacktest(){
     return;
   }
   bars.sort((a,b)=>a.ts-b.ts);
-  const engine=new FlipEngine(flipdemonOpts());
+  const engine=new FlipEngine({...flipdemonOpts(), regimeGate:false}); // today's regime read can't apply to historical bars — that would be lookahead bias
   bars.forEach(b=>engine.onBarClose(b));
   const lastBar=bars[bars.length-1];
   if(engine.position){
@@ -1968,6 +2060,338 @@ function runFlipdemonBacktest(){
 
 onFlipDataSourceChange();
 onFlipLeverageChange();
+
+// ---------------------------------------------------------------------------
+// REGIME ENGINE — QQQ/TQQQ Nasdaq regime classifier (docs/qqq-tqqq-regime-engine-spec.md)
+//
+// Runs against real Alpha Vantage data, fetched directly from this browser tab.
+// Implements the Direction, Trend-Efficiency, and Volatility engines (§4-7)
+// in full from a single QQQ daily series computed here (EMA/ATR/percentile —
+// not Alpha Vantage's own indicator endpoints, to keep this to one price call
+// and to make every number traceable to a formula in this file). The Macro
+// engine (§8) uses Treasury yields, the Fed funds rate trend, and EUR/USD as a
+// single-pair USD-strength proxy — a real but partial stand-in for the DXY
+// basket. Breadth (§9) has no free data source here, so per the spec's
+// fail-safe rule (§20) it is excluded from the confidence weighting rather
+// than assumed. Liquidity (§10) is QQQ's own relative volume, not cross-market
+// breadth. There is no correlation governor (§15) or news/event governor (§16).
+// ---------------------------------------------------------------------------
+
+let avKey='';
+let regimeState=null;
+let regimeBusy=false;
+
+const REGIME_INFO={
+  R1:{label:'Persistent Bullish Trend', allowLong:true,  allowShort:false, riskRange:[1.00,1.50]},
+  R2:{label:'Bullish But Unstable',     allowLong:true,  allowShort:false, riskRange:[0.50,0.75]},
+  R3:{label:'Range / Chop',             allowLong:false, allowShort:false, riskRange:[0.00,0.25]},
+  R4:{label:'Bearish Transition',       allowLong:false, allowShort:true,  riskRange:[0.25,0.50]},
+  R5:{label:'Persistent Bearish Trend', allowLong:false, allowShort:true,  riskRange:[1.00,1.50]},
+  R6:{label:'Volatility Shock',         allowLong:false, allowShort:false, riskRange:[0.00,0.00]},
+};
+const VOL_MULTIPLIER={LOW:1.0, NORMAL:1.0, ELEVATED:0.7, HIGH:0.5, EXTREME:0.25, UNKNOWN:0.5};
+
+function computeEMA(closes, period){
+  const ema=new Array(closes.length).fill(null);
+  if(closes.length<period) return ema;
+  const k=2/(period+1);
+  let sma=0;
+  for(let i=0;i<period;i++) sma+=closes[i];
+  ema[period-1]=sma/period;
+  for(let i=period;i<closes.length;i++) ema[i]=closes[i]*k + ema[i-1]*(1-k);
+  return ema;
+}
+
+function computeATR(highs, lows, closes, period){
+  const tr=closes.map((c,i)=> i===0 ? highs[i]-lows[i] : Math.max(highs[i]-lows[i], Math.abs(highs[i]-closes[i-1]), Math.abs(lows[i]-closes[i-1])));
+  const atr=new Array(closes.length).fill(null);
+  if(closes.length<period) return atr;
+  let sum=0;
+  for(let i=0;i<period;i++) sum+=tr[i];
+  atr[period-1]=sum/period;
+  for(let i=period;i<closes.length;i++) atr[i]=(atr[i-1]*(period-1)+tr[i])/period;
+  return atr;
+}
+
+function percentileRank(arr, value){
+  const clean=arr.filter(v=>v!=null);
+  if(!clean.length || value==null) return null;
+  return clean.filter(v=>v<=value).length/clean.length*100;
+}
+
+function trendEfficiency(closes, n){
+  if(closes.length<n+1) return null;
+  const slice=closes.slice(closes.length-1-n);
+  const net=Math.abs(slice[slice.length-1]-slice[0]);
+  let sumAbs=0;
+  for(let i=1;i<slice.length;i++) sumAbs+=Math.abs(slice[i]-slice[i-1]);
+  return sumAbs>0 ? net/sumAbs : 0;
+}
+
+function computeDirectionScore(bars, ema20, ema50, ema200){
+  const n=bars.length-1;
+  const price=bars[n].close, e20=ema20[n], e50=ema50[n], e200=ema200[n];
+  let score=0;
+  if(e20!=null && e50!=null && e200!=null){
+    let bull=0, bear=0;
+    if(price>e20) bull++; else if(price<e20) bear++;
+    if(e20>e50) bull++; else if(e20<e50) bear++;
+    if(e50>e200) bull++; else if(e50<e200) bear++;
+    if(price>e50) bull++; else if(price<e50) bear++;
+    if(price>e200) bull++; else if(price<e200) bear++;
+    score += (bull-bear)*9; // range -45..+45
+  }
+  const closes=bars.map(b=>b.close);
+  if(closes.length>21){
+    const roc=(closes[n]-closes[n-20])/closes[n-20];
+    score += Math.max(-25, Math.min(25, roc*250)); // heuristic: ~10% 20-day move -> +-25
+  }
+  if(closes.length>=21){
+    const window=closes.slice(n-19,n+1);
+    const hi=Math.max(...window), lo=Math.min(...window);
+    const rangePos = hi>lo ? (price-lo)/(hi-lo) : 0.5;
+    score += (rangePos-0.5)*40; // -20..+20
+  }
+  if(closes.length>=21){
+    const recent=closes.slice(n-9,n+1), prior=closes.slice(n-19,n-9);
+    const recentHigh=Math.max(...recent), recentLow=Math.min(...recent);
+    const priorHigh=Math.max(...prior), priorLow=Math.min(...prior);
+    if(recentHigh>priorHigh && recentLow>priorLow) score+=10;
+    else if(recentHigh<priorHigh && recentLow<priorLow) score-=10;
+  }
+  return Math.max(-100, Math.min(100, Math.round(score)));
+}
+
+function classifyVolatility(atrPct){
+  if(atrPct==null) return 'UNKNOWN';
+  if(atrPct<20) return 'LOW';
+  if(atrPct<60) return 'NORMAL';
+  if(atrPct<80) return 'ELEVATED';
+  if(atrPct<95) return 'HIGH';
+  return 'EXTREME';
+}
+
+function detectShock(bars, atr, atrPct){
+  const n=bars.length-1;
+  if(n<6) return false;
+  const priorAtr=atr[n-5];
+  const expansion=priorAtr?atr[n]/priorAtr:1;
+  const dailyMovePct=Math.abs(bars[n].close-bars[n-1].close)/bars[n-1].close*100;
+  const rangePct=(bars[n].high-bars[n].low)/bars[n-1].close*100;
+  return (atrPct!=null && atrPct>=95 && expansion>1.4) || dailyMovePct>=4 || rangePct>=4;
+}
+
+function computeLiquidityScore(bars){
+  const n=bars.length-1;
+  const window=bars.slice(Math.max(0,n-19), n+1);
+  const avgVol=window.reduce((s,b)=>s+b.volume,0)/window.length;
+  const relVol=avgVol>0?bars[n].volume/avgVol:1;
+  return Math.max(0, Math.min(100, Math.round(50+(relVol-1)*50)));
+}
+
+function computeMacroScore(macro){
+  let score=0, parts=0;
+  if(macro.y2!=null && macro.y10!=null){ score+=Math.max(-30, Math.min(30, (macro.y10-macro.y2)*15)); parts++; }
+  if(macro.y10Change!=null){ score+=Math.max(-30, Math.min(30, -macro.y10Change*60)); parts++; }
+  if(macro.fedTrend!=null){ score+=macro.fedTrend*40; parts++; }
+  if(macro.dxyChangePct!=null){ score+=Math.max(-20, Math.min(20, -macro.dxyChangePct*4)); parts++; }
+  if(parts===0) return {score:0, status:'UNAVAILABLE'};
+  return {score:Math.max(-100, Math.min(100, Math.round(score))), status: parts>=3?'FULL':'PARTIAL'};
+}
+
+function computeConfidence(direction, trendEff, volState, macroScoreObj, liquidity){
+  const volScoreNum={LOW:80, NORMAL:65, ELEVATED:45, HIGH:25, EXTREME:5, UNKNOWN:40}[volState];
+  const teScoreNum=trendEff!=null ? Math.min(100, trendEff*150) : 40;
+  const dirAbs=Math.abs(direction);
+  const macroConf=macroScoreObj.status==='UNAVAILABLE' ? 50 : (50+macroScoreObj.score/2);
+  const liqConf=liquidity!=null?liquidity:50;
+  // Spec §11 weights minus breadth(10%), renormalized over the remaining 90%.
+  const w={direction:30, trendEff:20, vol:20, macro:15, liquidity:5};
+  const totalW=Object.values(w).reduce((a,b)=>a+b,0);
+  const composite=(dirAbs*w.direction + teScoreNum*w.trendEff + volScoreNum*w.vol + macroConf*w.macro + liqConf*w.liquidity)/totalW;
+  return Math.max(0, Math.min(100, Math.round(composite)));
+}
+
+function classifyRegime(direction, trendEff, volState, shock){
+  if(shock) return 'R6';
+  const highEff=trendEff!=null && trendEff>=0.35;
+  const calmVol=volState==='LOW'||volState==='NORMAL';
+  if(direction>=40) return (highEff && calmVol) ? 'R1' : 'R2';
+  if(direction<=-40) return (highEff && calmVol) ? 'R5' : 'R4';
+  return 'R3';
+}
+
+async function avFetchJson(params){
+  const qs=new URLSearchParams({...params, apikey:avKey}).toString();
+  const res=await fetch('https://www.alphavantage.co/query?'+qs);
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  const data=await res.json();
+  if(data['Error Message']) throw new Error(data['Error Message']);
+  if(data['Note']) throw new Error(data['Note']);
+  if(data['Information']) throw new Error(data['Information']);
+  return data;
+}
+
+function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+
+async function fetchQQQDailyBars(){
+  const data=await avFetchJson({function:'TIME_SERIES_DAILY', symbol:'QQQ', outputsize:'full'});
+  const series=data['Time Series (Daily)'];
+  if(!series) throw new Error('Unexpected response shape from TIME_SERIES_DAILY — check your API key.');
+  const dates=Object.keys(series).sort();
+  const bars=dates.map(d=>{
+    const row=series[d];
+    return {date:d, open:parseFloat(row['1. open']), high:parseFloat(row['2. high']), low:parseFloat(row['3. low']), close:parseFloat(row['4. close']), volume:parseFloat(row['5. volume'])};
+  });
+  return bars.slice(-320);
+}
+
+async function fetchTreasuryYield(maturity){
+  const data=await avFetchJson({function:'TREASURY_YIELD', interval:'daily', maturity});
+  const rows=data.data;
+  if(!rows || !rows.length) throw new Error('No treasury yield data for '+maturity);
+  return rows.filter(r=>r.value!=='.').map(r=>({date:r.date, value:parseFloat(r.value)})).sort((a,b)=>a.date<b.date?-1:1);
+}
+
+async function fetchFedFundsRate(){
+  const data=await avFetchJson({function:'FEDERAL_FUNDS_RATE', interval:'monthly'});
+  const rows=data.data;
+  if(!rows || !rows.length) throw new Error('No fed funds rate data');
+  return rows.filter(r=>r.value!=='.').map(r=>({date:r.date, value:parseFloat(r.value)})).sort((a,b)=>a.date<b.date?-1:1);
+}
+
+async function fetchEurUsdDaily(){
+  const data=await avFetchJson({function:'FX_DAILY', from_symbol:'EUR', to_symbol:'USD', outputsize:'compact'});
+  const series=data['Time Series FX (Daily)'];
+  if(!series) throw new Error('Unexpected response shape from FX_DAILY.');
+  return Object.keys(series).sort().map(d=>({date:d, close:parseFloat(series[d]['4. close'])}));
+}
+
+function renderRegime(){
+  if(!regimeState) return;
+  document.getElementById('avGrid').style.display='grid';
+  const r=regimeState;
+  document.getElementById('avRegime').textContent=r.regime+' — '+r.regimeLabel;
+  document.getElementById('avDirection').textContent=(r.direction>0?'+':'')+r.direction+' ('+(r.direction>=40?'BULLISH':r.direction<=-40?'BEARISH':'NEUTRAL')+')';
+  document.getElementById('avTrendEff').textContent=r.trendEfficiency!=null?r.trendEfficiency.toFixed(2):'—';
+  document.getElementById('avVol').textContent=r.volatilityState+(r.shock?' — SHOCK':'')+(r.atrPercentile!=null?' ('+r.atrPercentile.toFixed(0)+' pct.)':'');
+  document.getElementById('avMacro').textContent=(r.macroScore>0?'+':'')+r.macroScore+' ('+r.macroStatus+')';
+  document.getElementById('avLiquidity').textContent=r.liquidityScore!=null?r.liquidityScore+' / 100':'—';
+  document.getElementById('avConfidence').textContent=r.confidence+' / 100';
+  document.getElementById('avAllow').textContent=(r.allowLong?'LONG':'—')+' / '+(r.allowShort?'SHORT':'—');
+  document.getElementById('avRiskMult').textContent='x'+r.baseRiskMultiplier.toFixed(2);
+  document.getElementById('avAsOf').textContent=r.asOf||'—';
+  document.getElementById('avDataStatus').textContent=r.dataStatus;
+  document.getElementById('avDataStatus').style.color=r.dataStatus==='BLOCKED'?'var(--oxblood-bright)':(r.dataStatus==='FULL'?'var(--emerald-bright)':'var(--gold-bright)');
+  if(flipEngine) renderFlipdemon();
+}
+
+async function runRegimeAnalysis(){
+  if(regimeBusy) return;
+  const errEl=document.getElementById('avError');
+  const statusEl=document.getElementById('avStatusText');
+  const badge=document.getElementById('avStatusBadge');
+  const btn=document.getElementById('avRunBtn');
+  errEl.classList.remove('active');
+  errEl.style.color='';
+  avKey=document.getElementById('avApiKey').value.trim();
+  if(!avKey){
+    errEl.textContent='Enter your Alpha Vantage API key first — a free one is available at alphavantage.co/support/#api-key.';
+    errEl.classList.add('active');
+    return;
+  }
+
+  regimeBusy=true;
+  btn.disabled=true;
+  badge.className='mt5-status connecting';
+  statusEl.textContent='FETCHING QQQ DAILY SERIES...';
+
+  let bars;
+  try{
+    bars=await fetchQQQDailyBars();
+  }catch(err){
+    regimeBusy=false;
+    btn.disabled=false;
+    badge.className='mt5-status error';
+    statusEl.textContent='BLOCKED — NO PRICE DATA';
+    errEl.textContent='Could not fetch QQQ price data: '+err.message+'. Per the spec\'s fail-safe rule (§20), this is treated as NEW_TRADES=FALSE rather than guessing.';
+    errEl.classList.add('active');
+    regimeState={dataStatus:'BLOCKED', regime:'R6', regimeLabel:'Data Unavailable', allowLong:false, allowShort:false, baseRiskMultiplier:0, confidence:0, direction:0, trendEfficiency:null, volatilityState:'UNKNOWN', shock:false, macroScore:0, macroStatus:'UNAVAILABLE', liquidityScore:null, asOf:null, timestamp:Date.now()};
+    renderRegime();
+    return;
+  }
+
+  const closes=bars.map(b=>b.close), highs=bars.map(b=>b.high), lows=bars.map(b=>b.low);
+  const ema20=computeEMA(closes,20), ema50=computeEMA(closes,50), ema200=computeEMA(closes,200);
+  const atr=computeATR(highs,lows,closes,14);
+  const n=bars.length-1;
+  const atrPct=percentileRank(atr.slice(Math.max(0,n-251)), atr[n]);
+  const volState=classifyVolatility(atrPct);
+  const shock=detectShock(bars, atr, atrPct);
+  const teVals=[trendEfficiency(closes,10), trendEfficiency(closes,20)].filter(v=>v!=null);
+  const trendEff=teVals.length?teVals.reduce((a,b)=>a+b,0)/teVals.length:null;
+  const direction=computeDirectionScore(bars, ema20, ema50, ema200);
+  const liquidity=computeLiquidityScore(bars);
+
+  statusEl.textContent='FETCHING MACRO (YIELDS, FED, USD)...';
+  const macro={};
+  let macroFails=0;
+  try{
+    const y2=await fetchTreasuryYield('2year');
+    macro.y2=y2[y2.length-1].value;
+  }catch(e){ macroFails++; }
+  await sleep(600);
+  try{
+    const y10=await fetchTreasuryYield('10year');
+    macro.y10=y10[y10.length-1].value;
+    if(y10.length>21){ macro.y10Change=macro.y10-y10[y10.length-22].value; }
+  }catch(e){ macroFails++; }
+  await sleep(600);
+  try{
+    const fed=await fetchFedFundsRate();
+    const last=fed[fed.length-1].value, prev=fed.length>3?fed[fed.length-4].value:last;
+    macro.fedTrend = last>prev ? -0.5 : (last<prev ? 0.5 : 0);
+  }catch(e){ macroFails++; }
+  await sleep(600);
+  try{
+    const eurusd=await fetchEurUsdDaily();
+    const last=eurusd[eurusd.length-1].close, prev20=eurusd.length>20?eurusd[eurusd.length-21].close:last;
+    macro.dxyChangePct = -((last-prev20)/prev20*100);
+  }catch(e){ macroFails++; }
+
+  const macroResult=computeMacroScore(macro);
+  const macroStatus = macroFails>=4 ? 'UNAVAILABLE' : (macroFails>0 ? 'PARTIAL' : macroResult.status);
+
+  const confidence=computeConfidence(direction, trendEff, volState, {score:macroResult.score, status:macroStatus}, liquidity);
+  const regime=classifyRegime(direction, trendEff, volState, shock);
+  const info=REGIME_INFO[regime];
+  const volMult=VOL_MULTIPLIER[volState]||0.5;
+  let baseRiskMultiplier = regime==='R6' ? 0 : (info.riskRange[0]+(info.riskRange[1]-info.riskRange[0])*(confidence/100))*volMult;
+  baseRiskMultiplier=Math.round(baseRiskMultiplier*100)/100;
+
+  regimeState={
+    dataStatus: macroStatus==='UNAVAILABLE' ? 'PARTIAL(NO MACRO)' : macroStatus,
+    regime, regimeLabel:info.label,
+    allowLong:info.allowLong, allowShort:info.allowShort,
+    baseRiskMultiplier, confidence,
+    direction, trendEfficiency:trendEff, volatilityState:volState, shock,
+    atrPercentile:atrPct, macroScore:macroResult.score, macroStatus,
+    liquidityScore:liquidity,
+    asOf:bars[n].date,
+    timestamp:Date.now(),
+  };
+
+  regimeBusy=false;
+  btn.disabled=false;
+  badge.className='mt5-status connected';
+  statusEl.textContent='LAST READ '+new Date().toLocaleTimeString();
+  if(macroFails>0){
+    errEl.style.color='var(--gold-bright)';
+    errEl.textContent=macroFails+' of 4 macro data calls failed or were rate-limited — macro score reflects only what came back, and is marked '+macroStatus+' rather than treated as neutral-good.';
+    errEl.classList.add('active');
+  }
+  renderRegime();
+}
 
 async function pollBridgeOnce(){
   if(!bridge.connected) return;
