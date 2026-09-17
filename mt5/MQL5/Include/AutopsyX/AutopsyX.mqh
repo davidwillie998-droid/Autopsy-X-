@@ -23,6 +23,7 @@
 #include "AutopsyCorrelationEngine.mqh"
 #include "AutopsyEventFilter.mqh"
 #include "AutopsyLogger.mqh"
+#include "AutopsyAlphaVantageBridge.mqh"
 
 //+------------------------------------------------------------------+
 //| Everything InitializeRegimeEngine() needs. Every field has a     |
@@ -44,6 +45,9 @@ struct AxConfig
    int    aggressive_min_confidence;    // composite confidence floor before AGGRESSIVE_MODE is permitted
 
    string log_filename;
+
+   string av_bridge_url;   // e.g. "http://127.0.0.1:8787" — the server/server.js bridge, not Alpha Vantage directly. Leave "" to disable.
+   string av_bridge_key;   // matches the bridge's BRIDGE_KEY
 
    AxWeights          weights;
    AxRegimeThresholds regime_th;
@@ -67,6 +71,9 @@ struct AxConfig
       correlation_limit_pct_equity = 15.0;
       aggressive_min_confidence = 60;
       log_filename = "AutopsyX_Log.csv";
+
+      av_bridge_url = "";
+      av_bridge_key = "";
 
       weights.Defaults();
       regime_th.Defaults();
@@ -96,6 +103,7 @@ private:
    CAxCorrelationEngine m_corr;
    CAxEventFilter       m_event;
    CAxLogger            m_logger;
+   CAxAlphaVantageBridge m_av;
 
    AxSnapshot           m_last;
    bool                 m_initialized;
@@ -112,6 +120,7 @@ public:
       m_risk.Init(m_cfg.base_risk_pct);
       m_corr.Init(m_cfg.bot_id, m_cfg.correlation_limit_pct_equity);
       m_event.Init(m_cfg.pre_event_minutes, m_cfg.blackout_minutes, m_cfg.post_event_cooldown_minutes);
+      m_av.Init(m_cfg.av_bridge_url, m_cfg.av_bridge_key);
       const bool logger_ok = m_logger.Init(m_cfg.log_filename);
       m_initialized = true;
       return logger_ok;
@@ -140,6 +149,40 @@ public:
    void ReportOwnExposure(const string symbol, const double notional_value)
      {
       m_corr.ReportExposure(symbol, notional_value, AccountInfoDouble(ACCOUNT_EQUITY));
+     }
+
+   //+---------------------------------------------------------------+
+   //| Blocking network call to the bridge server's /macro/snapshot   |
+   //| (see server/alphaVantage.js) — feeds real Treasury yields, Fed  |
+   //| funds momentum, actual CPI YoY into the macro engine, and the  |
+   //| top-actives-based breadth proxy into the breadth engine. Call  |
+   //| this once every H1-D1 bar from the host EA, never every tick — |
+   //| the underlying data only updates a few times a day regardless. |
+   //| Returns false (and changes nothing) if av_bridge_url wasn't    |
+   //| configured or the request failed; check the terminal log for   |
+   //| why (most commonly: the bridge URL isn't WebRequest-whitelisted|
+   //| yet, see mt5/README.md).                                        |
+   //+---------------------------------------------------------------+
+   bool RefreshFromAlphaVantageBridge()
+     {
+      if(!m_av.IsConfigured()) return false;
+
+      AxAlphaVantageSnapshot snap;
+      if(!m_av.Fetch(snap)) return false;
+
+      m_macro.SetExternalInputs(snap.ToMacroInputs());
+
+      if(snap.has_breadth)
+        {
+         // This engine's breadth slots expect an advance/decline COUNT
+         // pair and a %-above-50MA read; Alpha Vantage's top-actives
+         // proxy only gives the count pair, so pct_above_50ma and
+         // semis_participation are passed as neutral (50) rather than
+         // left stale from whatever fed them before.
+         m_regime.SetBreadthInputs(snap.breadth_advancers, snap.breadth_decliners, 50.0, 50.0, snap.fetched_at);
+        }
+
+      return true;
      }
 
    //+---------------------------------------------------------------+
@@ -326,6 +369,8 @@ double         GetLiquidityScore() { return g_AutopsyX.GetLiquidityScore(); }
 ENUM_AX_DATA_STATUS GetDataStatus() { return g_AutopsyX.GetDataStatus(); }
 ENUM_AX_DECISION    GetDecision() { return g_AutopsyX.GetDecision(); }
 string              GetDecisionNote() { return g_AutopsyX.GetDecisionNote(); }
+
+bool   RefreshFromAlphaVantageBridge() { return g_AutopsyX.RefreshFromAlphaVantageBridge(); }
 
 double GetAggregateExposure() { return g_AutopsyX.GetAggregateExposure(); }
 void   ReportOwnExposure(const string symbol, const double notional_value) { g_AutopsyX.ReportOwnExposure(symbol, notional_value); }

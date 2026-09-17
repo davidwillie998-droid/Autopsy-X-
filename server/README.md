@@ -8,7 +8,7 @@ Local server that keeps your Anthropic API key off the browser. `index.html`'s
 ```bash
 cd server
 npm install
-cp .env.example .env   # fill in ANTHROPIC_API_KEY and BRIDGE_KEY
+cp .env.example .env   # fill in ANTHROPIC_API_KEY and BRIDGE_KEY (+ ALPHA_VANTAGE_API_KEY if you want /macro/snapshot)
 npm start
 ```
 
@@ -44,7 +44,7 @@ slow, not broken.
 
 ## Endpoints
 
-- `GET /health` — `{ ok, hasAnthropicKey }`
+- `GET /health` — `{ ok, hasAnthropicKey, hasAlphaVantageKey }`
 - `GET /state` — `{ symbols, account, staleness_ms }`, whatever the last
   `/ingest/*` calls pushed in. **Unauthenticated**, matching the page's
   current unauthenticated poll — don't expose this past localhost without
@@ -55,6 +55,21 @@ slow, not broken.
 - `POST /ingest/tick` (requires `x-bridge-key`) — `{ symbol, bid, ask, dom? }`
 - `POST /ingest/account` (requires `x-bridge-key`) — `{ balance, equity,
   margin?, freeMargin?, currency?, leverage?, type? }`
+- `GET /macro/snapshot` (requires `x-bridge-key`) — flat JSON built from
+  Alpha Vantage: `us10y_level`, `us10y_momentum_bps_10d`,
+  `us2y_momentum_bps_10d`, `fed_funds_momentum_bps_30d`, `cpi_yoy_pct`,
+  `breadth_advancers`/`breadth_decliners`/`breadth_sample_size` (a rough
+  proxy from Alpha Vantage's top-20 most-actively-traded list — **not**
+  true market-wide advance/decline breadth), `news_sentiment_score`,
+  `news_article_count`, `generated_at`. Any field can come back `null` if
+  that Alpha Vantage leg failed or is rate-limited — the response still
+  returns 200 with whatever legs succeeded (see server logs for which
+  ones didn't). Consumed by `mt5/MQL5/Include/AutopsyX/
+  AutopsyAlphaVantageBridge.mqh` via MT5's `WebRequest()`; see
+  `mt5/README.md` for the MT5-side setup (you need to whitelist this
+  server's URL in Tools → Options → Expert Advisors). Cached server-side
+  per `server/alphaVantage.js`'s TTLs, so polling this endpoint often
+  costs cache hits, not Alpha Vantage quota.
 
 ## What's not here yet
 

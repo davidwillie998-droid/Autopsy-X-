@@ -93,6 +93,40 @@ struct AxDrawdownBand
   };
 
 //+------------------------------------------------------------------+
+//| Provider-agnostic external macro data — today it's fed by         |
+//| AutopsyAlphaVantageBridge.mqh, but AutopsyMacroEngine.mqh only     |
+//| knows this shape, not where it came from, the same way            |
+//| SetBreadthInputs() doesn't care whether breadth came from a       |
+//| bridge, a CSV, or a script.                                        |
+//+------------------------------------------------------------------+
+struct AxExternalMacroInputs
+  {
+   bool     has_us10y;
+   double   us10y_level;
+   double   us10y_momentum_bps;
+
+   bool     has_us2y_momentum;
+   double   us2y_momentum_bps;
+
+   bool     has_fed_funds_momentum;
+   double   fed_funds_momentum_bps;
+
+   bool     has_cpi;
+   double   cpi_yoy_pct;
+
+   datetime as_of;
+
+   void Clear()
+     {
+      has_us10y = false; us10y_level = 0.0; us10y_momentum_bps = 0.0;
+      has_us2y_momentum = false; us2y_momentum_bps = 0.0;
+      has_fed_funds_momentum = false; fed_funds_momentum_bps = 0.0;
+      has_cpi = false; cpi_yoy_pct = 0.0;
+      as_of = 0;
+     }
+  };
+
+//+------------------------------------------------------------------+
 //| One full snapshot of everything AutopsyX knows right now. This   |
 //| is what gets logged, and what the facade hands back to the EA.   |
 //+------------------------------------------------------------------+
@@ -176,6 +210,39 @@ double AxLerp(const double a, const double b, const double t01)
   {
    const double t = AxClamp(t01, 0.0, 1.0);
    return a + (b - a) * t;
+  }
+
+//+------------------------------------------------------------------+
+//| Extracts a top-level numeric field from a FLAT JSON object —      |
+//| "key":123.45 or "key":null. No nesting, no arrays: this is not a  |
+//| general JSON parser, it only needs to handle the shape the        |
+//| AutopsyX bridge server actually sends. Returns false (leaving out |
+//| untouched) if the key is missing or its value is null.             |
+//+------------------------------------------------------------------+
+bool AxJsonExtractNumber(const string json, const string key, double &out)
+  {
+   const string needle = "\"" + key + "\":";
+   const int key_pos = StringFind(json, needle);
+   if(key_pos < 0) return false;
+
+   int start = key_pos + StringLen(needle);
+   const int len = StringLen(json);
+   while(start < len && StringGetCharacter(json, start) == ' ') start++;
+
+   if(StringSubstr(json, start, 4) == "null") return false;
+
+   int end = start;
+   while(end < len)
+     {
+      const ushort c = StringGetCharacter(json, end);
+      if(c == ',' || c == '}' || c == ' ' || c == '\n' || c == '\r') break;
+      end++;
+     }
+
+   const string token = StringSubstr(json, start, end - start);
+   if(StringLen(token) == 0) return false;
+   out = StringToDouble(token);
+   return true;
   }
 
 string AxRegimeToString(const ENUM_AX_REGIME r)

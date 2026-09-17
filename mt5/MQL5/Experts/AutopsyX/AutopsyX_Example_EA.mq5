@@ -51,7 +51,17 @@ input bool   InpAllowRangeStrategy        = false; // set true only if YOUR EA h
 input bool     InpScheduleNextFOMC = false;
 input datetime InpNextFOMCTime     = 0;
 
+//--- Alpha Vantage bridge (optional — see mt5/README.md and server/README.md)
+//    Feeds real Treasury yields, Fed funds momentum, actual CPI, and a
+//    breadth proxy through server/alphaVantage.js. Leave InpAvBridgeUrl
+//    blank to skip this entirely; everything still works off broker CFD
+//    symbols alone, just with the gaps mt5/README.md already documents.
+input string InpAvBridgeUrl        = ""; // e.g. "http://127.0.0.1:8787" — must be WebRequest-whitelisted, see OnInit()
+input string InpAvBridgeKey        = "";
+input int    InpAvRefreshEveryBars = 24; // H1 chart -> refresh roughly once a day; adjust to your chart's timeframe
+
 datetime g_last_bar_time = 0;
+int      g_bars_since_av_refresh = 0;
 
 int OnInit()
   {
@@ -68,6 +78,8 @@ int OnInit()
    cfg.aggressive_min_confidence    = InpAggressiveMinConfidence;
    cfg.regime_th.allow_range_strategy = InpAllowRangeStrategy;
    cfg.log_filename = "AutopsyX_" + InpBotId + "_Log.csv";
+   cfg.av_bridge_url = InpAvBridgeUrl;
+   cfg.av_bridge_key = InpAvBridgeKey;
 
    if(!InitializeRegimeEngine(cfg))
      {
@@ -77,6 +89,15 @@ int OnInit()
 
    if(InpScheduleNextFOMC && InpNextFOMCTime > 0)
       AddManualEvent(InpNextFOMCTime, "FOMC");
+
+   if(StringLen(InpAvBridgeUrl) > 0)
+     {
+      // Fetch once at startup so the first UpdateMarketState() already has
+      // real macro data instead of waiting a full InpAvRefreshEveryBars.
+      if(!RefreshFromAlphaVantageBridge())
+         Print("AutopsyX: initial Alpha Vantage bridge fetch failed — see the WebRequest guidance above if this is error 4060. "
+               "Continuing on broker CFD symbols / manual inputs alone.");
+     }
 
    Print("AutopsyX initialized for ", InpSymbolPrice, ". This EA is a wiring example — it does not place real orders.");
    return INIT_SUCCEEDED;
@@ -95,6 +116,17 @@ void OnTick()
    const datetime bar_time = iTime(InpSymbolPrice, PERIOD_D1, 0);
    if(bar_time == g_last_bar_time) return;
    g_last_bar_time = bar_time;
+
+   if(StringLen(InpAvBridgeUrl) > 0)
+     {
+      g_bars_since_av_refresh++;
+      if(g_bars_since_av_refresh >= InpAvRefreshEveryBars)
+        {
+         g_bars_since_av_refresh = 0;
+         if(!RefreshFromAlphaVantageBridge())
+            Print("AutopsyX: Alpha Vantage bridge refresh failed this cycle — macro engine keeps using its last-known data.");
+        }
+     }
 
    if(!UpdateMarketState())
      {

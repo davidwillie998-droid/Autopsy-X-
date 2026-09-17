@@ -1,8 +1,11 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { getMacroSnapshot } from './alphaVantage.js';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+const ALPHA_VANTAGE_API_KEY = process.env.ALPHA_VANTAGE_API_KEY || '';
+const ALPHA_VANTAGE_NEWS_TICKERS = process.env.ALPHA_VANTAGE_NEWS_TICKERS || 'QQQ';
 const BRIDGE_KEY = process.env.BRIDGE_KEY || '';
 const PORT = process.env.PORT || 8787;
 const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
@@ -16,6 +19,9 @@ if (!ANTHROPIC_API_KEY) {
 }
 if (!BRIDGE_KEY) {
   console.warn('WARNING: BRIDGE_KEY is not set — /analyze and /ingest/* are UNAUTHENTICATED. Set BRIDGE_KEY before exposing this beyond localhost.');
+}
+if (!ALPHA_VANTAGE_API_KEY) {
+  console.warn('WARNING: ALPHA_VANTAGE_API_KEY is not set. /macro/snapshot will return an error until it is.');
 }
 
 const app = express();
@@ -37,7 +43,7 @@ function requireBridgeKey(req, res, next) {
 }
 
 app.get('/health', (req, res) => {
-  res.json({ ok: true, hasAnthropicKey: Boolean(ANTHROPIC_API_KEY) });
+  res.json({ ok: true, hasAnthropicKey: Boolean(ANTHROPIC_API_KEY), hasAlphaVantageKey: Boolean(ALPHA_VANTAGE_API_KEY) });
 });
 
 // Matches the frontend's pollBridgeOnce()/renderBridgeTicker() shape.
@@ -109,8 +115,26 @@ app.post('/analyze', requireBridgeKey, async (req, res) => {
   }
 });
 
+// Feeds AUTOPSY X's macro/breadth engines (mt5/MQL5/Include/AutopsyX) with
+// data MT5 itself has no native feed for: real Treasury yields, Fed funds
+// rate momentum, actual CPI YoY inflation, and a rough breadth proxy.
+// Flat JSON on purpose — AutopsyAlphaVantageBridge.mqh extracts fields
+// with plain string search rather than a full JSON parser.
+app.get('/macro/snapshot', requireBridgeKey, async (req, res) => {
+  if (!ALPHA_VANTAGE_API_KEY) {
+    return res.status(500).json({ error: 'Server has no ALPHA_VANTAGE_API_KEY configured.' });
+  }
+  try {
+    const snapshot = await getMacroSnapshot(ALPHA_VANTAGE_API_KEY, ALPHA_VANTAGE_NEWS_TICKERS);
+    res.json(snapshot);
+  } catch (err) {
+    res.status(502).json({ error: 'Failed to reach Alpha Vantage: ' + err.message });
+  }
+});
+
 app.listen(PORT, HOST, () => {
   console.log(`AUTOPSY X bridge listening on http://${HOST}:${PORT}`);
   console.log(`Anthropic key configured: ${Boolean(ANTHROPIC_API_KEY)}`);
+  console.log(`Alpha Vantage key configured: ${Boolean(ALPHA_VANTAGE_API_KEY)}`);
   console.log(`Bridge key configured: ${Boolean(BRIDGE_KEY)}`);
 });
