@@ -578,3 +578,5 @@ The live "Flipdemon HFT Pro" panel in `index.html` today implements a small, hon
 - direct MT5 EA integration (§23) — it currently only reads bridge ticks and pre-fills the manual order form, it does not call into the EA
 
 Building those out is a substantial follow-on project, not a drop-in change, since most of §6–§22 requires structured OHLCV history and order-flow data the browser-side bridge does not currently provide (it only pushes bid/ask ticks). Treat this document as the target architecture to implement incrementally against, not as a description of what already runs.
+
+See also `docs/qqq-tqqq-regime-engine-spec.md` — a separate gatekeeper/risk-governor layer meant to sit in front of Flipdemon (its §19 describes the intended hierarchy: Flipdemon's flip signal becomes a request the regime engine approves, throttles, or blocks before execution). Neither spec is implemented yet.
