@@ -193,6 +193,8 @@ A normalized 0–100 score. Suggested starting weights (engineering starting poi
 | Execution Quality | 5% |
 | Macro / Event Filter | 5% |
 
+**Execution Quality standard.** "Execution Quality" here should mean something specific, not a vague sense of "did the fill look okay." Patnaik & Thomas, *Profitability of Trading Strategies on High-Frequency Data, with Trading Costs* (SSRN 568363, 2004), is the standard this component is trying to meet: rather than assuming a trade fills at the quoted bid/ask, they reconstruct the actual fill price a given order size would get by walking the real limit-order-book depth, defining impact cost as `IC = 100 × [P_actual / (P_benchmark × Q) − 1]` against a mid-of-extremes benchmark price (their eq. 2–4). Applied here: before this component can output anything better than a guess, it needs the same thing — the actual depth-weighted fill price for the position size Flipdemon is about to take, not the last quoted bid/ask, because impact cost is non-proportional to size and a small paper backtest understates what a live account will actually pay to get in and out. Until MT5 order-book depth (not just top-of-book bid/ask) is wired in, this component should be treated as `UNAVAILABLE` per the §20 fail-safe rule, not defaulted to a passing score.
+
 Suggested interpretation (thresholds must remain configurable):
 
 | Score | Meaning |
@@ -351,6 +353,8 @@ When conditions exceed configured limits: `NEW ENTRY = BLOCKED`. Existing positi
 Before every order, check: symbol, market open, spread, lot size, margin, stop distance, trade mode, slippage, exposure, daily loss, cooldown, news filter, duplicate position.
 
 If any mandatory check fails: `ORDER = REJECTED`. Record the reason.
+
+The "slippage" check is the same execution-quality question as §8's Execution Quality component, and should be held to the same standard (Patnaik & Thomas, SSRN 568363 — see the Execution Quality note above): a slippage check that only compares the fill against the last quoted price is checking the wrong thing. The paper's point is that the *expected* cost of a trade of a given size is a function of order-book depth, not the quote — so the check that matters is whether the fill was consistent with the depth-weighted impact cost the position size implied, not merely "close to the last tick." A slippage check with no depth data behind it is a weaker check than it looks.
 
 ---
 
@@ -580,3 +584,5 @@ The live "Flipdemon HFT Pro" panel in `index.html` today implements a small, hon
 Building those out is a substantial follow-on project, not a drop-in change, since most of §6–§22 requires structured OHLCV history and order-flow data the browser-side bridge does not currently provide (it only pushes bid/ask ticks). Treat this document as the target architecture to implement incrementally against, not as a description of what already runs.
 
 See also `docs/qqq-tqqq-regime-engine-spec.md` — a separate gatekeeper/risk-governor layer meant to sit in front of Flipdemon (its §19 describes the intended hierarchy: Flipdemon's flip signal becomes a request the regime engine approves, throttles, or blocks before execution). Neither spec is implemented yet.
+
+Execution Quality (§8) and the slippage check in Execution Safety (§19) are the two places this document names an explicit external standard rather than an internal heuristic: Patnaik & Thomas, *Profitability of Trading Strategies on High-Frequency Data, with Trading Costs* (SSRN 568363, 2004) — a depth-weighted impact-cost model, reconstructed from real limit-order-book snapshots, standing in for "what did this fill actually cost" instead of a quoted-price assumption. Nothing in the current build measures this; it requires order-book depth data the live panel doesn't have access to (MT5 ticks give bid/ask, not depth). Treat both components as `UNAVAILABLE` rather than passing until that data exists.
