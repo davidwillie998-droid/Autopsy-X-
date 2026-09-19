@@ -28,6 +28,7 @@ AutopsyEventFilter.mqh            - real MT5 Economic Calendar governor: PRE_EVE
 AutopsyRiskGovernor.mqh           - the leverage model (never position_size x 3) + banded drawdown governor with a halt/reset
 AutopsyLogger.mqh                 - per-decision audit trail (Print + append-only CSV), section 23's format
 AutopsyRegimeEngine.mqh           - the ONLY file an existing EA needs to include: orchestrates everything above, R1-R6 classification, composite confidence, the public permission API
+AutopsyMomentumEngine.mqh         - standalone cross-sectional F/S/H momentum/contrarian engine (see below) - a peer module, not part of the facade
 ```
 
 `AUTOPSY_X_REGIME_DEMO.mq5` (in `MQL5/Experts/`) is a minimal reference EA showing the integration pattern - it is not meant to be run live unmodified (`InpEnableLiveTrading` defaults to `false`).
@@ -59,6 +60,19 @@ Real MT5 Economic Calendar data, not a guess. Three states around any curated hi
 ## Fail-safe (section 20)
 
 `AXRPermission.dataStatus` is `OK`, `DEGRADED`, or `CRITICAL`. `CRITICAL` (the reference symbol's own EMA/ATR data is unavailable - the classifier cannot honestly run at all) blocks new trades outright. `DEGRADED` (any optional input - macro, breadth, VIX, liquidity - missing or unreliable) caps the risk multiplier at 0.25x; it never raises it. Missing data is never interpreted as bullish OR bearish confirmation, in either direction.
+
+## Cross-sectional momentum/contrarian (AutopsyMomentumEngine.mqh)
+
+A standalone peer module - not part of `CAutopsyRegimeEngine`'s facade, since it's a distinct tradeable strategy overlay rather than a risk governor. Adapted from Patnaik & Thomas, *"Profitability of Trading Strategies on High-Frequency Data, with Trading Costs"* (SSRN 568363, 2004), which tested contrarian/momentum strategies on Indian equities (1996-2002) using real NSE limit-order-book snapshots to get genuine (non-fabricated) buy/sell prices, and found that "paper profits" from naive momentum/contrarian ranking mostly evaporate once real, non-proportional transaction costs (price impact, spread) are subtracted - profits that survive tend to come from short formation periods and from firm-specific (idiosyncratic) return behavior rather than common-factor exposure.
+
+What's ported, and how "current tech" replaces the paper's own methodology:
+
+- **Formation/Skip/Holding (F/S/H) ranking**, same as the paper: rank a configured basket (`CAutopsyMomentumEngine::Init`'s `universeCsv`) by their own formation-period return, skip a gap to avoid overlap between the ranking measurement and the live signal, and split into winner/loser groups (`InpMomentumWinnerFraction`, e.g. top/bottom 30%).
+- **A live, real cost gate - the paper's central discipline, not skipped.** Where the paper needed a monthly CD of NSE order-book snapshots to get a real (non-bid-ask-assumed) buy/sell price, this engine reads this account's own **live bid/ask spread** plus any observed execution slippage the caller supplies, every time it's asked - an always-current cost model a historical snapshot could never be. `GetSignal()` returns `direction=0` outright whenever the raw winner/loser spread doesn't clear that live cost by a configurable safety multiple (`InpMomentumCostSafetyMultiple`, default 2x) - exactly the paper's finding that most naive cross-sectional edges are "paper profits" only.
+- **The Lo & MacKinlay (1990) profit decomposition**, as a diagnostic (`ComputeProfitDecomposition()`): splits the cross-sectional edge into dispersion in mean returns, mean own-return serial covariance (idiosyncratic reaction), and mean cross-serial/lead-lag covariance between basket members - the paper's own answer to *why* an edge exists, not just whether it does.
+- **A data-driven style choice, not an inherited one.** The paper found momentum dominant in the Indian market of 1996-2002; nothing says that transfers to a different instrument universe two decades later. `RecommendedStyleFromDecomposition()` reads the sign of the decomposition on *your* current configured universe and recommends momentum or contrarian from that, instead of assuming either.
+
+This module produces a signal, not a permission - combine it with `CAutopsyRegimeEngine`'s `AllowLong()`/`AllowShort()` yourself if you want the FLIPDEMON-style layering (a momentum signal that the regime engine's own risk governor still gets to veto or scale).
 
 ## Using it from an existing bot
 
