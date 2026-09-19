@@ -868,7 +868,7 @@
         <div class="mt5-title">Flipdemon HFT Pro Max</div>
         <span class="size-source">4-ENGINE FUSION</span>
       </div>
-      <div class="mt5-note" style="margin-top:0;margin-bottom:14px;">One consolidated call built from four deterministic reads: a liquidity/regime flag (Huang, O'Neill, Ranaldo &amp; Yu, 2023 — HFT depth looks fine on a spread chart but withdraws around vol spikes and scheduled news), a participation/conviction score (He &amp; Kang, 2026 — informativeness peaks at a balanced fast/slow trader mix, not at either extreme), an SMA trend side gated by a meta-label confirmation (Shishlenin, Harke &amp; Koppisetti, 2019), and a maximum-profit-strategy pivot structure with a cost filter, single-unit position limit (Salov, 2019). Everything runs locally in this tab on the prices you paste in — no order routing, no multi-account logic, no detection-evasion of any kind. Treat it as a second opinion, not a signal to blindly execute.</div>
+      <div class="mt5-note" style="margin-top:0;margin-bottom:14px;">One consolidated call built from four deterministic reads: a liquidity/regime flag (Huang, O'Neill, Ranaldo &amp; Yu, 2023 — HFT depth looks fine on a spread chart but withdraws around vol spikes and scheduled news), a participation/conviction score (He &amp; Kang, 2026 — informativeness peaks at a balanced fast/slow trader mix, not at either extreme), an SMA trend side gated by a meta-label confirmation (Shishlenin, Harke &amp; Koppisetti, 2019), and a maximum-profit-strategy pivot structure with a cost filter, single-unit position limit (Salov, 2019). Everything runs locally in this tab on the prices you paste in — no order routing, no multi-account logic, no detection-evasion of any kind. Treat it as a second opinion, not a signal to blindly execute. One honest gap: the size multiplier below is a coarse liquidity/event throttle, not an actual execution-cost model — the standard it's aiming at is order-book price-impact costing computed for the real trade size, the way Patnaik &amp; Thomas (2004) do it for momentum/contrarian strategies (an order's true buy/sell price walked against the book, not just the quoted bid-ask), which this engine doesn't yet do.</div>
 
       <div class="mt5-form">
         <div class="mt5-field" style="width:170px;">
@@ -892,8 +892,22 @@
         </div>
       </div>
 
+      <div class="mt5-form" style="margin-top:12px;align-items:flex-end;">
+        <div class="mt5-field" style="width:140px;">
+          <label for="flipAvSymbol">SYMBOL</label>
+          <input id="flipAvSymbol" type="text" placeholder="e.g. QQQ" value="QQQ">
+        </div>
+        <div class="mt5-field" style="flex:1;min-width:220px;">
+          <label for="flipAvKey">ALPHA VANTAGE API KEY</label>
+          <input id="flipAvKey" type="password" placeholder="stored only in this browser">
+        </div>
+        <button id="flipAvFetchBtn" type="button" onclick="fetchFlipBarsFromAlphaVantage()">Fetch Live Bars</button>
+      </div>
+      <div class="mt5-note" style="margin-top:8px;margin-bottom:0;">Pulls straight from Alpha Vantage in your browser — the key never leaves this tab. Free-tier keys are capped at 25 requests/day and ~5/minute, so fetch once per setup rather than on every run. Horizon picks the bar size: scalp = 5min intraday, day = 60min intraday, swing = daily closes.</div>
+      <div class="size-error" id="flipAvError"></div>
+
       <div class="mt5-field" style="margin-top:12px;">
-        <label for="flipBars">CLOSE PRICES — oldest to newest, one per line or comma-separated</label>
+        <label for="flipBars">CLOSE PRICES — oldest to newest, one per line or comma-separated (auto-filled by Fetch Live Bars, or paste your own)</label>
         <textarea id="flipBars" rows="6" placeholder="2434.10, 2434.60, 2433.90, 2435.20, 2436.05, ..."></textarea>
       </div>
 
@@ -1331,7 +1345,7 @@ const MODE_PROMPTS = {
   pattern_finder: {
     label:'Renaissance — Pattern Finder', inputLabel:'TICKER & PERIOD',
     placeholder:'e.g. AMD, last 3 years',
-    system:`You are a quantitative researcher looking for statistical patterns, not narratives. For the stated ticker and period, search for and report anything you can actually verify: seasonal best/worst months if a real pattern exists, notable price behavior around earnings (pre-run or post-gap tendencies), recent institutional ownership direction, short interest level and squeeze potential if elevated, and correlation to major macro events. If you find no real statistical edge, say so plainly rather than manufacturing one — "no discernible edge found" is a legitimate and useful answer here. ${HOUSE_STYLE}`
+    system:`You are a quantitative researcher looking for statistical patterns, not narratives. For the stated ticker and period, search for and report anything you can actually verify. Any seasonal or momentum claim must be stated as a defined structure, not a vague tendency, using the formation/skip/holding framework standard in the momentum-strategy literature (Patnaik & Thomas, 2004): the formation period the pattern was measured over (what window of past data defines the "winner," "loser," or seasonal window itself), the skip period between formation and entry (if none was used, say so explicitly — a pattern that only shows up without a skip period is very often a bid-ask-bounce artifact, not a real edge), and the holding period the return was measured over. A line like "this month tends to be bullish" is not an acceptable output on its own — state it as, e.g., "over a 25-day formation window, entering after a 1-day skip and holding 25 days, X tended to..." with the actual numbers, or don't make the claim at all. Also report: notable price behavior around earnings (pre-run or post-gap tendencies), recent institutional ownership direction, short interest level and squeeze potential if elevated, and correlation to major macro events. If you find no real statistical edge, say so plainly rather than manufacturing one — "no discernible edge found" is a legitimate and useful answer here. ${HOUSE_STYLE}`
   },
   macro_impact: {
     label:'McKinsey — Macro Impact', inputLabel:'HOLDINGS & CONCERN',
@@ -2558,6 +2572,81 @@ function onFlipHorizonChange(){
 }
 onFlipHorizonChange();
 
+//--- Live bars straight from Alpha Vantage, fetched client-side with the
+//    user's own key (never sent anywhere but alphavantage.co). Horizon picks
+//    the bar size: scalp -> 5min intraday, day -> 60min intraday, swing -> daily.
+(function flipAvRestoreKey(){
+  try{
+    const saved=localStorage.getItem('flipAvApiKey');
+    if(saved) document.getElementById('flipAvKey').value=saved;
+  }catch(e){ /* private-browsing / storage disabled — just skip the convenience */ }
+})();
+
+async function fetchFlipBarsFromAlphaVantage(){
+  const errorEl=document.getElementById('flipAvError');
+  errorEl.classList.remove('active'); errorEl.textContent='';
+
+  const symbol=document.getElementById('flipAvSymbol').value.trim().toUpperCase();
+  const apikey=document.getElementById('flipAvKey').value.trim();
+  if(!symbol){ errorEl.textContent='Enter a symbol first.'; errorEl.classList.add('active'); return; }
+  if(!apikey){
+    errorEl.textContent='Enter your Alpha Vantage API key first — free ones are issued at alphavantage.co/support/#api-key.';
+    errorEl.classList.add('active');
+    return;
+  }
+  try{ localStorage.setItem('flipAvApiKey', apikey); }catch(e){ /* fine, just won't persist across reloads */ }
+
+  const horizonKey=document.getElementById('flipHorizon').value;
+  const base='https://www.alphavantage.co/query?';
+  let url, seriesKey;
+  if(horizonKey==='scalp'){
+    url=base+new URLSearchParams({function:'TIME_SERIES_INTRADAY',symbol,interval:'5min',outputsize:'compact',datatype:'json',apikey});
+    seriesKey='Time Series (5min)';
+  } else if(horizonKey==='day'){
+    url=base+new URLSearchParams({function:'TIME_SERIES_INTRADAY',symbol,interval:'60min',outputsize:'full',datatype:'json',apikey});
+    seriesKey='Time Series (60min)';
+  } else {
+    url=base+new URLSearchParams({function:'TIME_SERIES_DAILY',symbol,outputsize:'compact',datatype:'json',apikey});
+    seriesKey='Time Series (Daily)';
+  }
+
+  const btn=document.getElementById('flipAvFetchBtn');
+  const prevLabel=btn.textContent;
+  btn.disabled=true;
+  btn.textContent='Fetching…';
+
+  try{
+    const res=await fetch(url);
+    const data=await res.json();
+
+    if(data['Error Message']) throw new Error('Alpha Vantage: '+data['Error Message']);
+    if(data['Note'])          throw new Error('Alpha Vantage rate limit: '+data['Note']);
+    if(data['Information'])   throw new Error('Alpha Vantage: '+data['Information']);
+
+    const series=data[seriesKey];
+    if(!series) throw new Error('Unexpected response — no "'+seriesKey+'" field back. Check the symbol and try again.');
+
+    const dates=Object.keys(series).sort(); // ISO-ish timestamps, so a plain string sort is chronological
+    const closes=dates.map(d=>parseFloat(series[d]['4. close'])).filter(n=>!isNaN(n));
+    if(closes.length<20)
+      throw new Error('Only got '+closes.length+' bars back — not enough for a read. Try a different symbol, or a longer horizon.');
+
+    document.getElementById('flipBars').value=closes.join(',');
+    errorEl.style.color='var(--grey)';
+    errorEl.textContent='Loaded '+closes.length+' bars for '+symbol+' ('+horizonKey+', most recent '+dates[dates.length-1]+'). Running Flipdemon…';
+    errorEl.classList.add('active');
+
+    runFlipdemon();
+  }catch(err){
+    errorEl.style.color='var(--oxblood-bright)';
+    errorEl.textContent='Fetch failed: '+err.message+' — could also be a rate limit (25/day, ~5/min on a free key) or a network hiccup.';
+    errorEl.classList.add('active');
+  }finally{
+    btn.disabled=false;
+    btn.textContent=prevLabel;
+  }
+}
+
 function flipMean(arr){ return arr.reduce((a,b)=>a+b,0)/arr.length; }
 function flipMeanLast(closes,n){ return flipMean(closes.slice(-n)); }
 function flipStdev(arr){
@@ -2726,6 +2815,18 @@ function runFlipdemon(){
   confidence=Math.max(0, Math.min(100, Math.round(confidence)));
   if(verdict==='STAND ASIDE') confidence=Math.min(confidence,45);
 
+  // EV/execution note: this is a coarse liquidity/event throttle on size, not
+  // a true execution-cost model. The methodology this is aiming at is Patnaik
+  // & Thomas (2004) "Profitability of Trading Strategies on High-Frequency
+  // Data, with Trading Costs" — they walk the actual limit-order book to get
+  // the real buy/sell price for a given order size (their impact-cost formula,
+  // Eq. 4: IC = 100*[P_buy/(P*·Q) - 1], benchmarked against the mid of the
+  // book's best/worst included prices) rather than assuming a fill at the
+  // quoted bid-ask, and show that ignoring this non-proportional cost
+  // overstates momentum/contrarian profits. This engine has no order book to
+  // walk (it only sees the close prices pasted in), so it can't do that —
+  // sizeMultiplier below is a placeholder standing in for a real impact-cost
+  // haircut until this takes actual depth-of-book input.
   const sizeMultiplier=Math.round(regime.liquidityMultiplier*(preNews?0.5:1)*100)/100;
 
   const pillEl=document.getElementById('flipVerdictPill');

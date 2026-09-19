@@ -8,7 +8,7 @@ Local server that keeps your Anthropic API key off the browser. `index.html`'s
 ```bash
 cd server
 npm install
-cp .env.example .env   # fill in ANTHROPIC_API_KEY and BRIDGE_KEY
+cp .env.example .env   # fill in ANTHROPIC_API_KEY, BRIDGE_KEY, and (optionally) ALPHAVANTAGE_API_KEY
 npm start
 ```
 
@@ -55,6 +55,16 @@ slow, not broken.
 - `POST /ingest/tick` (requires `x-bridge-key`) — `{ symbol, bid, ask, dom? }`
 - `POST /ingest/account` (requires `x-bridge-key`) — `{ balance, equity,
   margin?, freeMargin?, currency?, leverage?, type? }`
+- `GET /macro` (requires `x-bridge-key`) — Treasury yields + a real-yield
+  proxy from Alpha Vantage, for the `mt5/` AUTOPSY X regime engine's macro
+  feed. `?format=json` (default) for the full snapshot, `?format=kv` for the
+  flat `KEY=VALUE` lines `AutopsyMacroFeeder.mq5` polls and writes straight
+  into MT5 GlobalVariables. `?refresh=1` forces a refetch instead of serving
+  the 6-hour cache — use sparingly, a free Alpha Vantage key is 25
+  requests/day total. Requires `ALPHAVANTAGE_API_KEY` in `.env`; without it,
+  returns 500. Deliberately doesn't cover Fed-expectations or breadth —
+  Alpha Vantage has no genuine source for either, and faking one would be
+  worse than leaving those two macro/regime inputs unset.
 
 ## What's not here yet
 

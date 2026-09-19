@@ -28,6 +28,7 @@ mt5/
     AutopsyRegimeEngineCore.mqh   top-level facade + the public API + section-23 decision logging
   Experts/
     AutopsyX_Example_Governor_EA.mq5   reference wiring — copy the *pattern*, not the (deliberately trivial) signal
+    AutopsyMacroFeeder.mq5             polls the bridge's /macro endpoint and writes the Ax_* yield GlobalVariables
 ```
 
 Copy the whole `Include/AutopsyX/` folder into your terminal's
@@ -80,7 +81,8 @@ override what you disagree with in `OnInit()` before the first
 | QQQ/TQQQ price + volume | your broker's own symbol, required | engine can't initialize |
 | VIX | a broker symbol, if offered | that leg of the volatility score is dropped, not faked |
 | DXY / USD index | a broker symbol, if offered | that leg of the macro score is dropped |
-| 2Y / 10Y / real yields, Fed expectations | **no MT5-native source exists** | GlobalVariable feed, see below |
+| 2Y / 10Y / real yields | Alpha Vantage, via `server.js`'s `/macro` + `AutopsyMacroFeeder.mq5` — see below | that leg of the macro score is dropped, not faked |
+| Fed expectations | **no genuine source found** — deliberately left unfed | that leg of the macro score is dropped |
 | Breadth (advance/decline, % above MA) | **no MT5-native source exists** | GlobalVariable feed, see below |
 | Economic calendar (FOMC/CPI/PCE/NFP/GDP) | MT5's built-in Economic Calendar | works out of the box if your broker/terminal syncs it |
 
@@ -103,15 +105,28 @@ Ax_Breadth_Score               (-100 .. +100)
 Ax_Breadth_LastUpdateUnix
 ```
 
-This repo already runs a Node bridge (`server/server.js`) for the dashboard's
-live MT5 panel — the natural next step is teaching it to pull yields
-(Treasury/FRED), a Fed-expectations read, and a breadth stat, then push them
-into the terminal as global variables (e.g. via a small MT5-side script that
-polls an HTTP endpoint, or `GlobalVariableSet` from a companion indicator).
-That bridge extension is **not built yet** — until something is writing
-these variables, the corresponding score legs just degrade gracefully and
-drop out of the composite, per the section-20 fail-safe rule (missing data
-never gets treated as confirmation).
+**Yields are wired up.** `server/server.js` now exposes `GET /macro`, which
+pulls `TREASURY_YIELD` (2year, 10year) and `CPI` from Alpha Vantage,
+computes a real-yield proxy (10Y nominal minus trailing-12-month CPI
+inflation — not TIPS breakeven, documented as an approximation in the
+server code), and caches the result for 6 hours (a free Alpha Vantage key
+is 25 requests/day total). `mt5/Experts/AutopsyMacroFeeder.mq5` is a small
+script that runs alongside your EA, polls that endpoint every `PollMinutes`
+(default 360) via `WebRequest`, and writes the five `Ax_US02Y_*` /
+`Ax_US10Y_*` / `Ax_RealYield10Y_*` / `Ax_Macro_LastUpdateUnix` variables
+above straight into the terminal. Set `ALPHAVANTAGE_API_KEY` in the
+bridge's `.env`, run the bridge, add its URL under **Tools → Options →
+Expert Advisors → Allow WebRequest for listed URL**, then attach the
+feeder script once per terminal/account.
+
+**Fed expectations and breadth are still deliberately unfed.** Alpha
+Vantage has no market-implied Fed-funds-futures series and no
+advance/decline or breadth series, and relabeling something else (e.g. the
+realized Fed funds rate, which is backward-looking) as if it were either of
+those forward-looking measures would be a mislabeling, not a fix. Both
+`GlobalVariable`s stay unset; the macro and regime engines already treat an
+unset variable as "unavailable" and degrade gracefully rather than
+guessing, exactly as designed.
 
 ## What this build does *not* include
 
@@ -125,8 +140,10 @@ never gets treated as confirmation).
   been run here; there's no historical data feed in this environment to run
   it against. Do that in the Strategy Tester, on your own account's actual
   symbol, before trusting this with real capital.
-- **No live yields/breadth feed.** See above — those two inputs are wired
-  and ready to receive data, but nothing is sending them yet.
+- **No live breadth feed, and no genuine Fed-expectations feed.** See above —
+  yields now have a real feeder (`AutopsyMacroFeeder.mq5` + Alpha Vantage);
+  breadth and Fed expectations remain intentionally unfed, since no honest
+  source for either was found.
 
 ## Design notes worth knowing
 
