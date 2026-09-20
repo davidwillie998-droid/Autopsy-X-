@@ -61,6 +61,10 @@ struct SAxDashboardExtras
    double         afeWinProbability;      // 0..1
    double         afeAccountHealth;       // 0..100
    double         afeRiskMultiplier;      // 0..1, last applied
+
+   //--- order-book impact-cost sizing ---
+   bool           impactCostEnabled;
+   double         impactCostPct;          // last measured, for the originally-intended size
   };
 
 class CDashboard
@@ -283,6 +287,10 @@ public:
            {
             string hmStr = !extras.heatmapAvailable ? "N/A (no broker depth)" :
                            StringFormat("BUY %.0f%% / SELL %.0f%%",extras.heatmapBuyPressure,extras.heatmapSellPressure);
+            // impact-cost sizing rides on the same line rather than claiming its own row - it only
+            // ever produces a reading when the heatmap itself is available, so they share a fate
+            if(extras.impactCostEnabled && extras.heatmapAvailable)
+               hmStr += StringFormat("   IMPACT: %.3f%%",extras.impactCostPct);
             MakeLabel("HEATMAP",x,y,"HEATMAP: "+hmStr,extras.heatmapAvailable?clrWhite:clrSilver); y+=m_lineH;
            }
          y+=4;

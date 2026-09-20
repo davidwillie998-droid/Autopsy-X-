@@ -65,6 +65,8 @@ input int             InpFootprintStackedLevels   = 3;      // Consecutive imbal
 input ENUM_TIMEFRAMES InpFootprintTimeframe       = PERIOD_M1; // Bar clock the footprint grid snapshots on
 input bool            InpUseHeatmap               = true;   // Attempt to subscribe to broker market depth (silently unavailable if the broker doesn't provide it)
 input double          InpHeatmapRangePoints       = 50.0;   // How far from the touch price DOM levels are considered, points
+input bool            InpUseImpactCostSizing      = true;   // Cap position size to what the order book can actually absorb within budget (needs broker depth - no-op otherwise)
+input double          InpMaxImpactCostPct         = 0.15;   // Max acceptable order-book impact cost for the full position size, %
 
 input group "=== ADAPTIVE FLIP ENGINE (CAPITAL PROTECTION) ===";
 input bool            InpUseAdaptiveFlipEngine    = true;   // Enable the AFE capital-protection layer (applies to fresh entries AND flips)
@@ -115,6 +117,7 @@ input double         InpBreakEvenLockPoints     = 20;      // Points locked in b
 input double         InpTrailStartPoints        = 220;     // Favorable move required to start trailing
 input double         InpTrailDistancePoints     = 120;     // Trailing distance, points
 input int            InpMaxHoldSeconds          = 900;     // Max holding time, seconds
+input double         InpMaxHoldExtensionMultiplier = 2.0;  // Let a still-profitable, still-trending position run up to this multiple of InpMaxHoldSeconds before the unconditional cutoff (1.0 = exact old behavior)
 input double         InpSpreadAbnormalMultiplier= 2.2;     // Spread-abnormal exit multiplier vs average
 input double         InpOpposingExitConfidence  = 55.0;    // Confidence required for a defensive opposite-signal exit
 input bool           InpUseAtrStops             = true;    // Widen the emergency SL by ATR when volatility warrants it
@@ -317,6 +320,7 @@ SAxTradeRecord AxBuildTradeRecord(const double closePrice,const double grossProf
    rec.afeExpectedValueR = g_posState.afeExpectedValueR;
    rec.afeWinProbability = g_posState.afeWinProbability;
    rec.afeRiskMultiplier = g_posState.afeRiskMultiplier;
+   rec.impactCostPct     = g_posState.impactCostPct;
    return(rec);
   }
 
@@ -648,6 +652,24 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       double volMin = g_md.VolumeMin();
       lots = (scaledLots < volMin) ? 0.0 : g_md.NormalizeVolume(scaledLots);
      }
+
+   // order-book impact-cost sizing (Patnaik & Thomas 2004): cap size to what the book can actually
+   // absorb within budget, rather than trusting a spread-based tolerance to say anything about a
+   // size-dependent cost. A no-op when the broker provides no real depth - EstimateExecution()
+   // returns false and lots is left exactly as AFE/RiskEngine already decided it.
+   double impactCostPct = 0.0;
+   if(InpUseImpactCostSizing && InpUseHeatmap && lots>0)
+     {
+      double maxAffordableLots = 0.0;
+      if(g_heatmap.EstimateExecution(dir,lots,InpMaxImpactCostPct,impactCostPct,maxAffordableLots))
+        {
+         if(maxAffordableLots<lots)
+           {
+            double volMin = g_md.VolumeMin();
+            lots = (maxAffordableLots < volMin) ? 0.0 : g_md.NormalizeVolume(maxAffordableLots);
+           }
+        }
+     }
    if(lots<=0)
      {
       if(InpVerboseLogging) Print("AUTOPSY X: computed lot size is zero - entry skipped");
@@ -677,6 +699,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    g_posState.afeExpectedValueR = g_afe.ExpectedValueR();
    g_posState.afeWinProbability = g_afe.WinProbability();
    g_posState.afeRiskMultiplier = afeRiskMultiplier;
+   g_posState.impactCostPct     = impactCostPct;
    AxRegisterFillQuality(g_posState.entrySlippagePts,fillLatencyMs);
 
    if(dir==AX_DIR_BUY && g_liq.BullishAttackReady(g_mom.DisplacementPts())) g_liq.ConsumeBullishAttack();
@@ -754,6 +777,7 @@ void AxReconcileExistingPosition(void)
    g_posState.afeExpectedValueR = 0.0;
    g_posState.afeWinProbability = 0.5;
    g_posState.afeRiskMultiplier = 1.0;
+   g_posState.impactCostPct     = 0.0;
 
    // baseline to any OUT deals that already happened on this position before this EA session
    // started (e.g. a partial close from before a restart), so they are never re-reported -
@@ -835,7 +859,7 @@ int OnInit(void)
    g_exit.Configure(InpEmergencySlPoints,InpDynamicTpRR,InpBreakEvenTriggerPoints,InpBreakEvenLockPoints,
                      InpTrailStartPoints,InpTrailDistancePoints,InpMaxHoldSeconds,
                      InpSpreadAbnormalMultiplier,InpOpposingExitConfidence,InpUseAtrStops,
-                     InpAtrStopMultiplier);
+                     InpAtrStopMultiplier,InpMaxHoldExtensionMultiplier);
    // sniper thresholds are configured in points but tracked internally in raw price units
    g_sniper.Configure(InpSniperPullbackPoints*g_md.Point(),InpSniperResumePoints*g_md.Point(),
                        InpSniperMaxWaitSeconds,InpSniperMaxChasePoints*g_md.Point());
@@ -1222,6 +1246,9 @@ void OnTimer(void)
    extras.afeWinProbability       = g_afe.WinProbability();
    extras.afeAccountHealth        = g_afe.AccountHealth();
    extras.afeRiskMultiplier       = g_afe.LastRiskMultiplier();
+
+   extras.impactCostEnabled       = InpUseImpactCostSizing;
+   extras.impactCostPct           = g_posState.impactCostPct;
 
    g_dash.Render(InpMode,g_regime.Regime(),g_lastScore,g_mom.VelocityLabel(),
                  (g_mom.PersistentBull()?"BULLISH":g_mom.PersistentBear()?"BEARISH":"NEUTRAL"),

@@ -177,6 +177,10 @@ struct SAxTradeRecord
    double                afeExpectedValueR;
    double                afeWinProbability;
    double                afeRiskMultiplier;
+
+   //--- order-book impact cost estimated at entry, for the size originally intended before any  ---
+   //--- AFE/impact-cost capping (Patnaik & Thomas 2004) - 0 when depth was unavailable to measure it ---
+   double                impactCostPct;
   };
 
 //--- helpers -----------------------------------------------------------------
@@ -313,6 +317,8 @@ struct SAxPositionState
    double                afeExpectedValueR;
    double                afeWinProbability;
    double                afeRiskMultiplier;
+
+   double                impactCostPct;
   };
 
 //--- exit decision returned by CExitEngine::Evaluate --------------------------

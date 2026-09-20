@@ -21,6 +21,9 @@ private:
    double            m_trailStartPts;
    double            m_trailDistancePts;
    int               m_maxHoldSeconds;
+   double            m_maxHoldExtensionMultiplier; // how far past m_maxHoldSeconds a still-favorable,
+                                                    // still-trending position may run before the
+                                                    // unconditional hard backstop fires regardless
    double            m_spreadAbnormalMult;
    double            m_opposingExitConfidence;
    bool              m_useAtrStops;
@@ -32,7 +35,7 @@ public:
       m_emergencySlPts=300; m_dynamicTpRR=1.6;
       m_breakEvenTriggerPts=150; m_breakEvenLockPts=20;
       m_trailStartPts=220; m_trailDistancePts=120;
-      m_maxHoldSeconds=900; m_spreadAbnormalMult=2.2;
+      m_maxHoldSeconds=900; m_maxHoldExtensionMultiplier=1.0; m_spreadAbnormalMult=2.2;
       m_opposingExitConfidence=55.0;
       m_useAtrStops=true; m_atrMultiplier=1.8;
      }
@@ -42,7 +45,7 @@ public:
                                 const double trailStartPts,const double trailDistancePts,
                                 const int maxHoldSeconds,const double spreadAbnormalMult,
                                 const double opposingExitConfidence,const bool useAtrStops,
-                                const double atrMultiplier)
+                                const double atrMultiplier,const double maxHoldExtensionMultiplier=1.0)
      {
       m_emergencySlPts=emergencySlPts; m_dynamicTpRR=dynamicTpRR;
       m_breakEvenTriggerPts=breakEvenTriggerPts; m_breakEvenLockPts=breakEvenLockPts;
@@ -50,6 +53,7 @@ public:
       m_maxHoldSeconds=maxHoldSeconds; m_spreadAbnormalMult=spreadAbnormalMult;
       m_opposingExitConfidence=opposingExitConfidence;
       m_useAtrStops=useAtrStops; m_atrMultiplier=atrMultiplier;
+      m_maxHoldExtensionMultiplier=MathMax(1.0,maxHoldExtensionMultiplier);
      }
 
    //--- initial protective stops placed at entry - always present, never "unlimited risk". ---
@@ -179,9 +183,30 @@ public:
      {
       SAxExitDecision d; d.shouldExit=false; d.reason=AX_EXIT_NONE;
 
-      //--- maximum holding time ---
+      //--- maximum holding time - Patnaik & Thomas (2004) find momentum profits RISE with holding ---
+      //--- period once formation is short (their Table 6: profits at a 250-day hold run 3-4x those ---
+      //--- at a 25-day hold, for the same short formation window this EA's tick-level lookback      ---
+      //--- mirrors). An unconditional clock cutoff throws away exactly the trades that finding says ---
+      //--- are worth holding. So: a SOFT cutoff at m_maxHoldSeconds is skippable, but only while the ---
+      //--- position is both currently in profit AND momentum is still persistent/not exhausted in   ---
+      //--- its own direction - every other defensive check below (momentum collapse, micro reversal,---
+      //--- opposing signal, abnormal spread) stays fully active regardless, so a position that's     ---
+      //--- actually turning still gets cut fast. A HARD backstop at                                  ---
+      //--- m_maxHoldSeconds*m_maxHoldExtensionMultiplier fires unconditionally no matter what, so    ---
+      //--- this can never become an unbounded hold - m_maxHoldExtensionMultiplier=1.0 (the default)  ---
+      //--- collapses soft==hard and restores the exact prior unconditional-cutoff behavior. ---
       int heldSec = (int)(TimeCurrent()-st.entryTime);
-      if(heldSec>=m_maxHoldSeconds) { d.shouldExit=true; d.reason=AX_EXIT_MAX_HOLD_TIME; return(d); }
+      int hardHoldCutoff = (int)((double)m_maxHoldSeconds*m_maxHoldExtensionMultiplier);
+      if(heldSec>=hardHoldCutoff) { d.shouldExit=true; d.reason=AX_EXIT_MAX_HOLD_TIME; return(d); }
+      if(heldSec>=m_maxHoldSeconds)
+        {
+         double curPrice = (st.dir==AX_DIR_BUY) ? md.CurrentBid() : md.CurrentAsk();
+         bool inProfit = (st.dir==AX_DIR_BUY) ? (curPrice>st.entryPrice) : (curPrice<st.entryPrice);
+         bool stillTrending = (st.dir==AX_DIR_BUY) ? (mom.PersistentBull() && !mom.IsExhausted())
+                                                    : (mom.PersistentBear() && !mom.IsExhausted());
+         if(!(inProfit && stillTrending)) { d.shouldExit=true; d.reason=AX_EXIT_MAX_HOLD_TIME; return(d); }
+         // else: still favorable and still trending - fall through to every check below unchanged
+        }
 
       //--- abnormal spread: preserve capital, don't trade through bad liquidity ---
       double avgSpread = MathMax(micro.AvgSpreadPts(),1.0);

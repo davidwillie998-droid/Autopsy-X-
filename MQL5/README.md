@@ -570,3 +570,64 @@ value, win probability, and account health only update at the moment of
 an actual entry attempt (that's the only point they can affect anything),
 so they hold their last value while a position is open or the engine is
 idle between signals, rather than refreshing every tick.
+
+## 16. Grounded in the literature — Patnaik & Thomas (2004)
+
+Two changes in this round come directly from a specific academic paper
+rather than general trading folklore: Tirthankar Patnaik & Susan Thomas,
+*"Profitability of Trading Strategies on High-Frequency Data, with
+Trading Costs"* (2004), a study of contrarian/momentum strategies on
+NSE (Indian equity) intraday order-book data, 1996-2002.
+
+**The honest scope caveat first.** That paper studies multi-day,
+cross-sectional equity portfolios (formation periods of 25-250 *days*,
+holding periods to match) — nothing about its specific parameters
+transfers to a tick-level single-instrument scalping EA. What transfers
+is the **methodology**, and two of its findings are general enough to
+apply here directly:
+
+- **Non-proportional trading costs must be measured from the actual
+  order book, not inferred from spread.** The paper's central technique:
+  for a trade of a given size, walk the limit-order book to find the
+  real weighted-average execution price, and compare it to the best
+  available price — that gap is the "impact cost," and it's *size-
+  dependent*, not proportional. A fixed spread tolerance says nothing
+  about what a large order actually pays once it eats through the book.
+  This EA already scaled deviation tolerance to spread (section 12) but
+  had no notion of size-dependent cost at all. `CHeatmapEngine::EstimateExecution`
+  (new) does exactly the paper's walk: for the prospective order, it
+  sums quantity × price level by level away from the best price,
+  computes the running average impact-cost percentage, and — new in
+  `AxAttemptEntry` — caps position size to the largest amount fillable
+  within `InpMaxImpactCostPct` (default 0.15%). Same graceful-degrade
+  rule as the rest of the heatmap suite: no real depth from the broker
+  means this is a no-op (`InpUseImpactCostSizing` toggles it off
+  outright), not a fabricated cost. The measured impact cost for the
+  originally-intended size is recorded on the dashboard (next to the
+  HEATMAP line) and as a new `ImpactCostPct` autopsy CSV column.
+
+- **Momentum profits rise with holding period, once the formation
+  period is short.** The paper's Table 6: for the same short formation
+  window, profits at a 250-day hold run roughly 3-4x those at a 25-day
+  hold. An *unconditional* time-based exit throws away exactly the
+  trades that finding says are worth holding onto. `CExitEngine::Evaluate`'s
+  `MaxHoldSeconds` check is now two-tiered: a **soft** cutoff at
+  `InpMaxHoldSeconds` that's skippable only while the position is both
+  currently in profit *and* momentum is still persistent/not exhausted
+  in its own direction, and a **hard**, unconditional backstop at
+  `InpMaxHoldSeconds × InpMaxHoldExtensionMultiplier` (default 2.0) that
+  fires no matter what. Every other defensive exit (momentum collapse,
+  microstructure reversal, opposing signal, abnormal spread) stays fully
+  active regardless — a position that's genuinely turning still gets cut
+  fast. `InpMaxHoldExtensionMultiplier=1.0` collapses soft into hard and
+  restores the exact prior unconditional-cutoff behavior.
+
+- **Not implemented, and why**: the paper's third major finding — that
+  momentum profits are driven roughly 50-80% by cross-sectional
+  correlation across a *basket* of stocks, not by a single instrument's
+  own serial autocorrelation — doesn't have a faithful single-instrument
+  analogue here without adding a second, separately-subscribed symbol as
+  a benchmark, which is a materially different feature (and a separate
+  data-reliability surface) from what this round scopes. Noted for a
+  future round rather than force-fit into something it doesn't cleanly
+  become.

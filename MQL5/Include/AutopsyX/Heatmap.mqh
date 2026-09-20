@@ -113,6 +113,96 @@ public:
    double            BuyWallPressure(void)  const { return(m_buyWallPressure); }
    double            SellWallPressure(void) const { return(m_sellWallPressure); }
 
+   //--- Patnaik & Thomas (2004), "Profitability of Trading Strategies on High-Frequency data,   ---
+   //--- with Trading Costs": non-proportional trading costs (price/market impact) must be        ---
+   //--- measured by walking the actual limit order book for the trade's own size, not inferred    ---
+   //--- from spread - a fixed spread/slippage tolerance says nothing about what a LARGE order      ---
+   //--- actually pays once it eats past the best price. This does a FRESH MarketBookGet (not the   ---
+   //--- Update() timer's cached buildup/pull snapshot - sizing needs precision at the moment of    ---
+   //--- the actual decision) and walks the opposite side of the book: a BUY consumes ask (SELL)    ---
+   //--- liquidity ascending from the best price, a SELL consumes bid (BUY) liquidity descending    ---
+   //--- from the best price - always walking away from the best available price, exactly the       ---
+   //--- paper's Eq. 2-4 construction. impactCostPctOut is the cost of filling requestedLots in     ---
+   //--- full (or of whatever the book could actually fill, if less); maxAffordableLotsOut is the   ---
+   //--- largest size fillable while the running average cost stays within maxImpactCostPct -       ---
+   //--- floored to the last fully-affordable level, never optimistically interpolated past it,     ---
+   //--- matching this codebase's existing "round down, don't round up" sizing convention (see      ---
+   //--- CAdaptiveFlipEngine's VolumeMin fix). Assumes the book's volume/volume_real field is in     ---
+   //--- the same units as order volume (lots) - the standard MT5 convention for symbols that        ---
+   //--- expose real depth (this engine's own buildup/pull tracking already makes the same           ---
+   //--- assumption). Returns false when depth is unavailable - callers must not treat that as       ---
+   //--- "zero cost", only as "this check cannot run right now". ---
+   bool              EstimateExecution(const ENUM_AX_DIR dir,const double requestedLots,
+                                        const double maxImpactCostPct,
+                                        double &impactCostPctOut,double &maxAffordableLotsOut) const
+     {
+      impactCostPctOut   = 0.0;
+      maxAffordableLotsOut = 0.0;
+      if(!m_subscribed || requestedLots<=0) return(false);
+
+      MqlBookInfo book[];
+      if(!MarketBookGet(m_symbol,book) || ArraySize(book)==0) return(false);
+
+      bool wantSellSide = (dir==AX_DIR_BUY); // BUY walks the ask/SELL side; SELL walks the bid/BUY side
+
+      int total = ArraySize(book);
+      int idx[]; int n=0;
+      ArrayResize(idx,total);
+      for(int i=0;i<total;i++)
+        {
+         bool isSell = (book[i].type==BOOK_TYPE_SELL || book[i].type==BOOK_TYPE_SELL_MARKET);
+         bool isBuy  = (book[i].type==BOOK_TYPE_BUY  || book[i].type==BOOK_TYPE_BUY_MARKET);
+         if((wantSellSide && isSell) || (!wantSellSide && isBuy)) { idx[n]=i; n++; }
+        }
+      if(n<=0) return(false);
+
+      //--- sort the relevant side into best-price-first order: ascending price for asks, descending ---
+      //--- for bids - insertion sort, n is small (a retail depth feed rarely exceeds a few dozen levels) ---
+      for(int i=1;i<n;i++)
+        {
+         int key=idx[i]; double kp=book[key].price; int j=i-1;
+         while(j>=0 && (wantSellSide ? (book[idx[j]].price>kp) : (book[idx[j]].price<kp)))
+           { idx[j+1]=idx[j]; j--; }
+         idx[j+1]=key;
+        }
+
+      double benchmarkPrice = book[idx[0]].price;
+      if(benchmarkPrice<=0) return(false);
+
+      double cumQty=0, cumCost=0;
+      double affordableLots=0; bool budgetSet=false;
+      for(int i=0;i<n && cumQty<requestedLots;i++)
+        {
+         double lvlVol = (book[idx[i]].volume_real>0) ? book[idx[i]].volume_real : (double)book[idx[i]].volume;
+         if(lvlVol<=0) continue;
+         double lvlPrice = book[idx[i]].price;
+
+         double take = MathMin(lvlVol,requestedLots-cumQty);
+         double newCumQty  = cumQty+take;
+         double newCumCost = cumCost+take*lvlPrice;
+         double avgPrice = newCumCost/newCumQty;
+         double icPct = wantSellSide ? 100.0*(avgPrice/benchmarkPrice-1.0)
+                                      : 100.0*(benchmarkPrice/avgPrice-1.0);
+
+         if(!budgetSet && icPct>maxImpactCostPct)
+           {
+            // this level would push the running average over budget - the affordable size is
+            // everything accumulated strictly BEFORE it, not an optimistic partial fill of it
+            affordableLots = cumQty;
+            budgetSet = true;
+           }
+
+         cumQty = newCumQty; cumCost = newCumCost;
+        }
+
+      if(!budgetSet) affordableLots = cumQty; // never breached budget, even filling the whole book/request
+
+      impactCostPctOut = (cumQty>0) ? (wantSellSide ? 100.0*(cumCost/cumQty/benchmarkPrice-1.0)
+                                                      : 100.0*(benchmarkPrice/(cumCost/cumQty)-1.0)) : 0.0;
+      maxAffordableLotsOut = MathMax(0.0,affordableLots);
+      return(true);
+     }
+
    //--- 0..100 bias components - only meaningful once IsAvailable(); callers must check that first ---
    //--- (an unavailable heatmap reports a neutral 50/50 split, which BullishScoreComponent turns   ---
    //--- into a harmless 0 rather than a false signal) ---

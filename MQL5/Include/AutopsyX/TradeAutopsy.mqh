@@ -27,7 +27,8 @@ private:
                 "SpreadAtEntry","SlippagePts","HoldSeconds","BuyScore","SellScore","Confidence",
                 "Regime","EntryReason","ExitReason","MFE","MAE","GrossProfit","Commission","Swap",
                 "NetProfit","Classification","FlipSeq","IsPartial",
-                "AfeCapitalState","AfeRiskOfRuinPct","AfeExpectedValueR","AfeWinProbability","AfeRiskMultiplier");
+                "AfeCapitalState","AfeRiskOfRuinPct","AfeExpectedValueR","AfeWinProbability","AfeRiskMultiplier",
+                "ImpactCostPct");
      }
 
 public:
@@ -121,7 +122,7 @@ public:
                    AxTradeClassToString(rec.tradeClass),rec.flipSeq,rec.isPartial,
                    AxCapitalStateToString(rec.afeCapitalState),DoubleToString(rec.afeRiskOfRuinPct,1),
                    DoubleToString(rec.afeExpectedValueR,2),DoubleToString(rec.afeWinProbability,3),
-                   DoubleToString(rec.afeRiskMultiplier,2));
+                   DoubleToString(rec.afeRiskMultiplier,2),DoubleToString(rec.impactCostPct,3));
          FileFlush(m_fileHandle);
         }
 
