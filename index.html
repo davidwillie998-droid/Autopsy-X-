@@ -538,6 +538,7 @@
   .dotline.dim{background:var(--grey);}
   .chart-canvas-wrap{position:relative;padding:var(--sp-2) 0;}
   #chartCanvas{display:block;width:100%;height:380px;}
+  #flipBotEquityCanvas{display:block;width:100%;height:120px;}
   .chart-empty{
     position:absolute;
     top:0;left:0;right:0;bottom:0;
@@ -987,6 +988,73 @@
             <button class="send-order-btn" id="sendOrderBtn" disabled onclick="sendOrder()">Send Order to MT5</button>
           </div>
           <div class="mt5-error" id="orderError"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt5-panel" id="flipBotPanel">
+      <div class="mt5-header">
+        <div class="mt5-title">VWAP Flip Bot</div>
+        <div class="mt5-status disconnected" id="flipBotStatusBadge"><span class="dot2"></span><span id="flipBotStatusText">STOPPED</span></div>
+      </div>
+      <div class="mt5-note" style="margin-top:0;margin-bottom:14px;">
+        Mechanical VWAP Trend Trading engine, after Zarattini &amp; Aziz, <i>"VWAP: The Holy Grail for Day Trading Systems"</i> (SSRN 4631351, 2023): always in the market, long while price trades above the running session VWAP, short while it trades below, flip the instant a 1-minute candle closes on the other side, flat at 4:00pm ET. The paper backtested QQQ/TQQQ 1-minute equity bars (671% / 8,242% total return, 2018–2023, ~17% hit rate offset by winners ~5.5x the size of losers) with a real traded-volume VWAP and $0.0005/share commission — this feeds off MT5 tick counts as a volume proxy and CFD/forex spreads, so treat it as the same rule set live-fired on different instruments, not a replication of the paper's numbers. Starts in PAPER mode; live order arming is separate and off by default.
+      </div>
+
+      <div class="mt5-form">
+        <div class="mt5-field">
+          <label for="flipBotSymbol">SYMBOL</label>
+          <input id="flipBotSymbol" type="text" value="XAUUSD">
+        </div>
+        <div class="mt5-field">
+          <label for="flipBotSource">PRICE SOURCE</label>
+          <select id="flipBotSource">
+            <option value="bridge">Live Bridge ticks</option>
+            <option value="mt5">MT5 (MetaApi RPC poll, 5s)</option>
+          </select>
+        </div>
+        <div class="mt5-field">
+          <label for="flipBotFraction">EQUITY FRACTION (0–1)</label>
+          <input id="flipBotFraction" type="text" value="1.0">
+        </div>
+        <div class="mt5-field">
+          <label for="flipBotLots">LIVE FLIP SIZE (LOTS, fixed)</label>
+          <input id="flipBotLots" type="text" value="0.01">
+        </div>
+        <div class="mt5-field" style="flex-direction:row;align-items:center;gap:8px;">
+          <input id="flipBotContinuous" type="checkbox" style="width:auto;">
+          <label for="flipBotContinuous" style="font-size:11px;text-transform:none;">24h continuous — skip the 9:30–16:00 ET session flatten (VWAP still resets daily at 00:00 ET)</label>
+        </div>
+        <button id="flipBotStartBtn" onclick="toggleFlipBot()">Start Bot</button>
+      </div>
+      <div class="mt5-error" id="flipBotError"></div>
+
+      <div id="flipBotLivePanel" style="display:none;">
+        <div class="mt5-account-grid" id="flipBotStats"></div>
+        <div class="chart-canvas-wrap" style="margin-top:16px;">
+          <canvas id="flipBotEquityCanvas"></canvas>
+        </div>
+
+        <div class="exec-mode-toggle" style="margin-top:18px;">
+          <span class="exec-mode-label">LIVE ARMING</span>
+          <div class="exec-mode-buttons">
+            <button type="button" class="exec-mode-btn active" id="flipBotArmOffBtn" onclick="setFlipBotArmed(false)">OFF — paper only</button>
+            <button type="button" class="exec-mode-btn" id="flipBotArmOnBtn" disabled onclick="setFlipBotArmed(true)">ON — sends real orders</button>
+          </div>
+        </div>
+        <div class="order-warning">Arming requires MT5 connected above AND its execution mode set to LIVE. Once armed, every flip closes the open position on this symbol and fires a market order for the fixed lot size above, fully mechanically, with no per-trade review. Test on a demo account before ever pointing this at a live one.</div>
+        <div class="mt5-form" style="margin-top:10px;">
+          <div class="mt5-field">
+            <label for="flipBotArmConfirm">TYPE "ARM" TO ENABLE LIVE ARMING</label>
+            <input class="order-confirm-input" id="flipBotArmConfirm" type="text" oninput="onFlipBotArmConfirmInput()">
+          </div>
+        </div>
+
+        <div class="scanner-table-wrap" style="margin-top:16px;">
+          <table class="scanner-table">
+            <thead><tr><th>TIME</th><th>SIDE</th><th>ENTRY</th><th>EXIT</th><th>VWAP@ENTRY</th><th>REASON</th><th>P&amp;L</th><th>MODE</th></tr></thead>
+            <tbody id="flipBotLog"></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -1524,6 +1592,7 @@ async function pollBridgeOnce(){
     const state=await res.json();
     bridge.lastState=state;
     renderBridgeTicker(state);
+    flipBotFeedFromBridge(state);
 
     if(state.account && typeof state.account.balance==='number'){
       const balEl=document.getElementById('sizeBalance');
@@ -1742,6 +1811,395 @@ async function sendOrder(){
     toggleSendButton();
   }
 }
+
+/* ===================== VWAP FLIP BOT =====================
+   Mechanical implementation of the VWAP Trend Trading rule set from
+   Zarattini & Aziz, "VWAP: The Holy Grail for Day Trading Systems"
+   (SSRN 4631351, 2023): long while price > running session VWAP, short
+   while price < VWAP, flip on the 1-minute candle that closes on the
+   other side, flat at 4:00pm ET. The paper backtests QQQ/TQQQ 1-minute
+   equity bars with real traded volume and $0.0005/share commission;
+   this engine builds 1-minute bars from live tick arrivals (bridge or
+   MT5) and uses tick count as a volume proxy, so it is the same rule
+   set live-fired on whatever symbol is configured, not a replication
+   of the paper's backtest. PAPER mode is the default and does not touch
+   any account; live order arming is a separate, explicitly-confirmed step. */
+let flipBot={
+  active:false,
+  armed:false,
+  dataSource:'bridge',
+  symbol:'',
+  continuous:false,
+  fraction:1,
+  liveLots:0.01,
+  timer:null,
+  currentBar:null,
+  vwap:{dayKey:null,cumPV:0,cumV:0,value:null},
+  position:null,
+  trades:[],
+  equity:25000,
+  startEquity:25000,
+  equityCurve:[],
+  lastPrice:null,
+  lastError:null
+};
+
+const FLIPBOT_SESSION_START=9*60+30; // 9:30am ET
+const FLIPBOT_SESSION_END=16*60;     // 4:00pm ET
+
+function etParts(date){
+  const fmt=new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',hour12:false,
+    year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const parts={};
+  fmt.formatToParts(date).forEach(p=>{ if(p.type!=='literal') parts[p.type]=p.value; });
+  const hh=Number(parts.hour)%24;
+  const mm=Number(parts.minute);
+  const dayKey=`${parts.year}-${parts.month}-${parts.day}`;
+  return {
+    dayKey, hh, mm, ss:Number(parts.second),
+    minuteKey:`${dayKey} ${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`,
+    minutesOfDay: hh*60+mm
+  };
+}
+
+function flipBotSetStatus(state,text){
+  const badge=document.getElementById('flipBotStatusBadge');
+  if(!badge) return;
+  badge.className='mt5-status '+state;
+  document.getElementById('flipBotStatusText').textContent=text;
+}
+
+function showFlipBotError(msg){
+  const el=document.getElementById('flipBotError');
+  if(!el) return;
+  el.style.color='var(--oxblood-bright)';
+  el.textContent=msg;
+  el.classList.add('active');
+}
+
+function toggleFlipBot(){
+  if(flipBot.active){ stopFlipBot(); }
+  else{ startFlipBot(); }
+}
+
+function startFlipBot(){
+  const errEl=document.getElementById('flipBotError');
+  errEl.classList.remove('active');
+
+  const symbol=document.getElementById('flipBotSymbol').value.trim().toUpperCase();
+  const source=document.getElementById('flipBotSource').value;
+  const fraction=Math.max(0,Math.min(1,parseFloat(document.getElementById('flipBotFraction').value)||1));
+  const liveLots=Math.max(0,parseFloat(document.getElementById('flipBotLots').value)||0.01);
+  const continuous=document.getElementById('flipBotContinuous').checked;
+
+  if(!symbol){ showFlipBotError('Enter a symbol.'); return; }
+  if(source==='bridge' && !bridge.connected){ showFlipBotError('Connect the Live Bridge above first, or switch source to MT5.'); return; }
+  if(source==='mt5' && !mt5.connected){ showFlipBotError('Connect MT5 above first, or switch source to Live Bridge.'); return; }
+
+  const balInput=parseFloat((document.getElementById('sizeBalance').value||'').replace(/,/g,''));
+
+  flipBot.symbol=symbol;
+  flipBot.dataSource=source;
+  flipBot.fraction=fraction;
+  flipBot.liveLots=liveLots;
+  flipBot.continuous=continuous;
+  flipBot.active=true;
+  flipBot.currentBar=null;
+  flipBot.vwap={dayKey:null,cumPV:0,cumV:0,value:null};
+  flipBot.position=null;
+  flipBot.trades=[];
+  flipBot.equity=(!isNaN(balInput)&&balInput>0)?balInput:25000;
+  flipBot.startEquity=flipBot.equity;
+  flipBot.equityCurve=[{t:Date.now(),equity:flipBot.equity}];
+  flipBot.lastError=null;
+
+  document.getElementById('flipBotStartBtn').textContent='Stop Bot';
+  document.getElementById('flipBotLivePanel').style.display='block';
+  flipBotSetStatus('connected','RUNNING — '+symbol+' via '+(source==='bridge'?'LIVE BRIDGE':'MT5'));
+
+  if(flipBot.timer){ clearInterval(flipBot.timer); flipBot.timer=null; }
+  if(source==='mt5'){
+    pollFlipBotMT5Price();
+    flipBot.timer=setInterval(pollFlipBotMT5Price, 5000);
+  }
+  // bridge source is fed from pollBridgeOnce()'s existing 2s interval — see flipBotFeedFromBridge()
+
+  renderFlipBot();
+}
+
+function stopFlipBot(){
+  flipBot.active=false;
+  if(flipBot.timer){ clearInterval(flipBot.timer); flipBot.timer=null; }
+  document.getElementById('flipBotStartBtn').textContent='Start Bot';
+  flipBotSetStatus('disconnected','STOPPED');
+}
+
+async function pollFlipBotMT5Price(){
+  if(!flipBot.active || flipBot.dataSource!=='mt5') return;
+  if(!mt5.connected || !mt5.connection){ showFlipBotError('MT5 disconnected — bot paused.'); return; }
+  try{
+    const q=await mt5.connection.getSymbolPrice(flipBot.symbol);
+    const price=(typeof q.bid==='number' && typeof q.ask==='number') ? (q.bid+q.ask)/2 : q.bid;
+    if(typeof price==='number') flipBotOnTick(price, Date.now());
+  }catch(err){
+    flipBotSetStatus('error','PRICE FEED ERROR');
+    showFlipBotError('MT5 price poll failed: '+(err.message||String(err)));
+  }
+}
+
+function flipBotFeedFromBridge(state){
+  if(!flipBot.active || flipBot.dataSource!=='bridge') return;
+  const entry=state && state.symbols ? state.symbols[flipBot.symbol] : null;
+  if(!entry || typeof entry.bid!=='number') return;
+  const price = typeof entry.ask==='number' ? (entry.bid+entry.ask)/2 : entry.bid;
+  flipBotOnTick(price, entry.receivedAt||Date.now());
+}
+
+function flipBotOnTick(price, tsMs){
+  flipBot.lastPrice=price;
+  const et=etParts(new Date(tsMs));
+
+  if(!flipBot.currentBar){
+    flipBot.currentBar={minuteKey:et.minuteKey, dayKey:et.dayKey, minutesOfDay:et.minutesOfDay, o:price,h:price,l:price,c:price,vol:1};
+    renderFlipBot();
+    return;
+  }
+
+  if(et.minuteKey!==flipBot.currentBar.minuteKey){
+    const closedBar=flipBot.currentBar;
+    flipBot.currentBar={minuteKey:et.minuteKey, dayKey:et.dayKey, minutesOfDay:et.minutesOfDay, o:price,h:price,l:price,c:price,vol:1};
+    flipBotOnBarClose(closedBar);
+  }else{
+    flipBot.currentBar.h=Math.max(flipBot.currentBar.h,price);
+    flipBot.currentBar.l=Math.min(flipBot.currentBar.l,price);
+    flipBot.currentBar.c=price;
+    flipBot.currentBar.vol+=1;
+  }
+  renderFlipBot();
+}
+
+function flipBotOnBarClose(bar){
+  if(flipBot.vwap.dayKey!==bar.dayKey){
+    flipBot.vwap={dayKey:bar.dayKey,cumPV:0,cumV:0,value:null};
+  }
+  const tp=(bar.h+bar.l+bar.c)/3;
+  flipBot.vwap.cumPV+=tp*bar.vol;
+  flipBot.vwap.cumV+=bar.vol;
+  flipBot.vwap.value=flipBot.vwap.cumPV/flipBot.vwap.cumV;
+  const vwapNow=flipBot.vwap.value;
+
+  const pastClose = !flipBot.continuous && bar.minutesOfDay>=FLIPBOT_SESSION_END;
+  const inSession = flipBot.continuous || (bar.minutesOfDay>=FLIPBOT_SESSION_START && bar.minutesOfDay<FLIPBOT_SESSION_END);
+
+  if(pastClose){
+    if(flipBot.position) flipBotClosePosition(bar.c, 'SESSION CLOSE');
+    return;
+  }
+  if(!inSession || vwapNow==null) return;
+
+  if(!flipBot.position){
+    if(bar.c>vwapNow) flipBotOpenPosition('LONG', bar.c, vwapNow);
+    else if(bar.c<vwapNow) flipBotOpenPosition('SHORT', bar.c, vwapNow);
+    return;
+  }
+
+  if(flipBot.position.side==='LONG' && bar.c<vwapNow){
+    flipBotClosePosition(bar.c, 'VWAP FLIP');
+    flipBotOpenPosition('SHORT', bar.c, vwapNow);
+  }else if(flipBot.position.side==='SHORT' && bar.c>vwapNow){
+    flipBotClosePosition(bar.c, 'VWAP FLIP');
+    flipBotOpenPosition('LONG', bar.c, vwapNow);
+  }
+}
+
+function flipBotOpenPosition(side, price, vwapAtEntry){
+  const notional=flipBot.equity*flipBot.fraction;
+  const qty=price>0 ? notional/price : 0;
+  flipBot.position={side, entryPrice:price, entryTime:Date.now(), entryVWAP:vwapAtEntry, qty};
+  if(flipBot.armed) flipBotSendLiveOrder(side);
+  renderFlipBot();
+}
+
+function flipBotClosePosition(price, reason){
+  const pos=flipBot.position;
+  if(!pos) return;
+  const pnl = pos.side==='LONG' ? (price-pos.entryPrice)*pos.qty : (pos.entryPrice-price)*pos.qty;
+  flipBot.equity+=pnl;
+  flipBot.equityCurve.push({t:Date.now(), equity:flipBot.equity});
+  if(flipBot.equityCurve.length>500) flipBot.equityCurve.shift();
+
+  flipBot.trades.unshift({
+    time:new Date().toLocaleString(),
+    side:pos.side, entry:pos.entryPrice, exit:price,
+    vwapAtEntry:pos.entryVWAP, reason, pnl,
+    mode: flipBot.armed?'LIVE':'PAPER'
+  });
+  if(flipBot.trades.length>200) flipBot.trades.pop();
+  flipBot.position=null;
+
+  if(flipBot.armed && reason==='SESSION CLOSE') flipBotSendLiveFlatten();
+  renderFlipBot();
+}
+
+async function flipBotCloseAllPositions(symbol){
+  if(typeof mt5.connection.closePositionsBySymbol==='function'){
+    await mt5.connection.closePositionsBySymbol(symbol);
+    return;
+  }
+  const positions=await mt5.connection.getPositions();
+  const mine=(positions||[]).filter(p=>(p.symbol||'').toUpperCase()===symbol.toUpperCase());
+  for(const p of mine){ await mt5.connection.closePosition(p.id); }
+}
+
+async function flipBotSendLiveOrder(side){
+  if(!mt5.connected || !mt5.connection || executionMode!=='LIVE'){
+    flipBotNoteLiveEvent('Skipped live order ('+side+') — MT5 not connected or execution mode not set to LIVE.', false);
+    return;
+  }
+  try{
+    await flipBotCloseAllPositions(flipBot.symbol);
+    const result = side==='LONG'
+      ? await mt5.connection.createMarketBuyOrder(flipBot.symbol, flipBot.liveLots)
+      : await mt5.connection.createMarketSellOrder(flipBot.symbol, flipBot.liveLots);
+    flipBotNoteLiveEvent('Live '+side+' order sent for '+flipBot.symbol+'. Result: '+JSON.stringify(result), true);
+  }catch(err){
+    flipBotNoteLiveEvent('LIVE ORDER FAILED ('+side+'): '+(err.message||String(err)), false);
+  }
+}
+
+async function flipBotSendLiveFlatten(){
+  if(!mt5.connected || !mt5.connection || executionMode!=='LIVE') return;
+  try{
+    await flipBotCloseAllPositions(flipBot.symbol);
+    flipBotNoteLiveEvent('Live session-close flatten sent for '+flipBot.symbol+'.', true);
+  }catch(err){
+    flipBotNoteLiveEvent('LIVE FLATTEN FAILED: '+(err.message||String(err)), false);
+  }
+}
+
+function flipBotNoteLiveEvent(msg, ok){
+  flipBot.lastError={msg, ok};
+  renderFlipBot();
+}
+
+function onFlipBotArmConfirmInput(){
+  const val=document.getElementById('flipBotArmConfirm').value.trim().toUpperCase();
+  document.getElementById('flipBotArmOnBtn').disabled = (val!=='ARM');
+}
+
+function setFlipBotArmed(on){
+  if(on){
+    const val=document.getElementById('flipBotArmConfirm').value.trim().toUpperCase();
+    if(val!=='ARM'){ showFlipBotError('Type ARM in the confirm field first.'); return; }
+    if(!mt5.connected){ showFlipBotError('Connect MT5 above before arming live orders.'); return; }
+    if(executionMode!=='LIVE'){ showFlipBotError('Set the MT5 execution mode toggle above to LIVE before arming.'); return; }
+  }
+  flipBot.armed=on;
+  document.getElementById('flipBotArmOffBtn').classList.toggle('active', !on);
+  document.getElementById('flipBotArmOnBtn').classList.toggle('active', on);
+  if(!on){
+    const confirmEl=document.getElementById('flipBotArmConfirm');
+    confirmEl.value='';
+    onFlipBotArmConfirmInput();
+  }
+  renderFlipBot();
+}
+
+function renderFlipBot(){
+  if(!flipBot.symbol) return;
+  const vwapNow=flipBot.vwap.value;
+  const price=flipBot.currentBar?flipBot.currentBar.c:flipBot.lastPrice;
+  const pos=flipBot.position;
+  const unrealized = pos && price!=null
+    ? (pos.side==='LONG' ? (price-pos.entryPrice)*pos.qty : (pos.entryPrice-price)*pos.qty)
+    : 0;
+  const markEquity=flipBot.equity+(pos?unrealized:0);
+  const wins=flipBot.trades.filter(t=>t.pnl>0).length;
+  const winRate=flipBot.trades.length ? (100*wins/flipBot.trades.length).toFixed(1)+'%' : '—';
+  const totalPnl=markEquity-flipBot.startEquity;
+  const totalPnlPct=flipBot.startEquity>0 ? (totalPnl/flipBot.startEquity)*100 : 0;
+
+  const stats=[
+    ['PRICE', price!=null?price.toFixed(5):'—'],
+    ['SESSION VWAP', vwapNow!=null?vwapNow.toFixed(5):'—'],
+    ['POSITION', pos ? pos.side+' @ '+pos.entryPrice.toFixed(5) : 'FLAT'],
+    ['UNREALIZED', pos ? (unrealized>=0?'+':'')+unrealized.toFixed(2) : '—'],
+    ['EQUITY (MTM)', markEquity.toFixed(2)],
+    ['TOTAL P&L', (totalPnl>=0?'+':'')+totalPnl.toFixed(2)+' ('+totalPnlPct.toFixed(2)+'%)'],
+    ['TRADES / WIN RATE', flipBot.trades.length+' / '+winRate],
+    ['MODE', flipBot.armed?'LIVE ARMED':'PAPER']
+  ];
+  const grid=document.getElementById('flipBotStats');
+  if(grid){
+    grid.innerHTML=stats.map(([label,val])=>{
+      let color='var(--bone)';
+      if(label==='UNREALIZED'||label==='TOTAL P&L'){
+        color = val.startsWith('+') ? 'var(--emerald-bright)' : (val.startsWith('-')?'var(--oxblood-bright)':'var(--bone)');
+      }
+      if(label==='POSITION') color = pos ? (pos.side==='LONG'?'var(--emerald-bright)':'var(--oxblood-bright)') : 'var(--grey)';
+      if(label==='MODE') color = flipBot.armed ? 'var(--oxblood-bright)' : 'var(--gold-bright)';
+      return `<div><div class="stat-label">${esc(label)}</div><div class="stat-val" style="color:${color};">${esc(val)}</div></div>`;
+    }).join('');
+  }
+
+  const logBody=document.getElementById('flipBotLog');
+  if(logBody){
+    logBody.innerHTML = flipBot.trades.map(t=>`
+      <tr>
+        <td>${esc(t.time)}</td>
+        <td class="symbol">${esc(t.side)}</td>
+        <td>${esc(t.entry.toFixed(5))}</td>
+        <td>${esc(t.exit.toFixed(5))}</td>
+        <td>${esc(t.vwapAtEntry!=null?t.vwapAtEntry.toFixed(5):'—')}</td>
+        <td>${esc(t.reason)}</td>
+        <td style="color:${t.pnl>=0?'var(--emerald-bright)':'var(--oxblood-bright)'}">${(t.pnl>=0?'+':'')+t.pnl.toFixed(2)}</td>
+        <td>${esc(t.mode)}</td>
+      </tr>`).join('') || '<tr><td colspan="8" style="color:var(--grey);">No closed trades yet.</td></tr>';
+  }
+
+  const errEl=document.getElementById('flipBotError');
+  if(flipBot.lastError && errEl){
+    errEl.style.color = flipBot.lastError.ok ? 'var(--emerald-bright)' : 'var(--oxblood-bright)';
+    errEl.textContent=flipBot.lastError.msg;
+    errEl.classList.add('active');
+  }
+
+  renderFlipBotEquityChart();
+}
+
+function renderFlipBotEquityChart(){
+  const canvas=document.getElementById('flipBotEquityCanvas');
+  if(!canvas) return;
+  const wrap=canvas.parentElement;
+  const curve=flipBot.equityCurve;
+  const dpr=window.devicePixelRatio||1;
+  const w=wrap.clientWidth||600, h=120;
+  canvas.width=w*dpr; canvas.height=h*dpr;
+  canvas.style.width=w+'px'; canvas.style.height=h+'px';
+  const ctx=canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,w,h);
+  if(curve.length<2) return;
+
+  const vals=curve.map(c=>c.equity);
+  const max=Math.max(...vals), min=Math.min(...vals);
+  const span=(max-min)||Math.abs(max*0.01)||1;
+  const pad=span*0.12;
+  const top=max+pad, bottom=min-pad;
+  const marginX=8, marginY=10;
+  const plotW=w-marginX*2, plotH=h-marginY*2;
+
+  ctx.beginPath();
+  curve.forEach((c,i)=>{
+    const x=marginX+(i/(curve.length-1))*plotW;
+    const y=marginY+(top-c.equity)/(top-bottom)*plotH;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  });
+  ctx.strokeStyle=vals[vals.length-1]>=vals[0]?getCss('--emerald-bright'):getCss('--oxblood-bright');
+  ctx.lineWidth=1.5;
+  ctx.stroke();
+}
+/* =================== /VWAP FLIP BOT =================== */
 
 let runHistory=[];
 
