@@ -46,6 +46,28 @@ paper's own sizing (100% of equity, no fixed stop) is a research finding
 about return/risk asymmetry, not a recommendation for how much of an account
 to risk on any single instrument.
 
+## AUTOPSY X FLIPDEMON EXTREME (native MT5 EA)
+
+`MQL5/` is a separate, complementary system from the browser-based VWAP
+Flip Bot above: a full native MetaTrader 5 Expert Advisor — `SCAN -> SCORE
+-> ATTACK -> MANAGE -> FLIP -> EXIT -> REASSESS` — built from 24 focused
+engine modules (momentum, microstructure, liquidity, regime classification,
+order flow/volume profile/footprint/heatmap, sniper entry timing, a flip
+engine requiring multi-signal confirmation before reversing, an adaptive
+capital-protection layer on top of a hard-limit risk engine, execution,
+exits, and per-trade CSV trade-autopsy logging), rather than the
+dashboard's single VWAP-flip rule set. It runs entirely inside the MT5
+terminal — no bridge server, no browser tab open.
+
+Same discipline as the web bot, enforced in MQL5 instead of JS: no
+martingale, no averaging down, a risk engine that hard-clamps position size
+regardless of input, and a kill switch. **It has not been machine-compiled**
+(this repo was built without a MetaEditor available) — compile it yourself
+in MetaEditor before attaching it to any chart, and see `MQL5/README.md`
+for installation, the module table, risk modes, and the five-phase
+backtest → in-sample → out-of-sample → unseen-data → demo-forward
+validation workflow it expects before anyone risks real capital on it.
+
 ## Everything else
 
 See `server/README.md` for the self-hosted bridge server (keeps your
