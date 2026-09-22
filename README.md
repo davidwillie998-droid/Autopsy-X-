@@ -68,6 +68,40 @@ for installation, the module table, risk modes, and the five-phase
 backtest → in-sample → out-of-sample → unseen-data → demo-forward
 validation workflow it expects before anyone risks real capital on it.
 
+## AutopsyXFlipdemonX15.mq5 (native MT5 decision engine)
+
+A third, separate system, also under `MQL5/Experts/AutopsyX/`: a
+journal-gated adaptive-risk *decision engine*, not a full trading EA — it
+never calls `OrderSend` and closes no positions itself. It tracks whatever
+positions already exist on its chart (yours, another EA's, or a future
+entry engine wired into its `GetCompositeDirection()` extension point) to
+build its own trade journal, and every external signal only ever earns
+influence over position sizing through that journal's own logged,
+out-of-sample track record — never through the credibility of the paper
+it's based on. Three engines:
+
+- **VWAP trend** (Zarattini & Aziz, SSRN 4631351 — the same paper behind
+  the browser VWAP Flip Bot above), gated on its own ≥20-trade aligned
+  subset with positive expectancy before its sizing bonus applies.
+- **VP-MACD** (Lin, Lin, Zhang, Zheng & Wang, arXiv:2604.26063) — a
+  volume/volatility/candle-structure adjusted price feeding an
+  asymmetric-sensitivity MACD crossover, gated the same independent way.
+  Untested on gold/FX in the source paper, independent-researcher
+  authorship, mixed results even in its own equity backtests — all stated
+  plainly in the file.
+- **News Defense** (Martins & Lopes, QREF 2025 / arXiv:2411.16244) —
+  suppresses *new* entries (never touches existing positions) within 30
+  minutes of one of nine Bayesian-validated USD/AUD macro events, via the
+  real MQL5 Economic Calendar API, with a clearly-marked lower-confidence
+  fallback for every other currency. The one engine here that defaults ON
+  rather than off, since it can only ever suppress risk, never add it.
+
+Every input defaults to inert (VWAP and VP-MACD off, no bonus without a
+real track record) except News Defense, which defaults on for the reason
+above. Not machine-compiled, same caveat as FLIPDEMON EXTREME — compile
+and verify in MetaEditor before use. Full detail, citations, and caveats
+are in the file's own header comments rather than duplicated here.
+
 ## Everything else
 
 See `server/README.md` for the self-hosted bridge server (keeps your

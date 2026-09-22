@@ -138,6 +138,7 @@ struct OpenPositionMeta
    bool              nearValidatedNewsEvent;
   };
 OpenPositionMeta g_openMeta[];
+bool g_firstSyncDone = false; // flips true after SyncOpenPositions' first pass -- see RecordEntryMeta's isPreExisting handling
 
 //====================================================================
 // STATS
@@ -381,24 +382,23 @@ struct VPMACDResult
   };
 
 // P*_t = sum(P_i * Volume_i * sigma_i * r_i, i = t-N..t-1) / sum(Volume_i, i = t-N..t-1)
-// shift follows this file's raw CopyRates shift convention (0 = the most
-// recent bar CopyRates returns for this call, 1 = one bar back from that,
-// etc.) -- t = shift is deliberately EXCLUDED from the sum, matching the
-// paper's i = t-N..t-1 range.
-double GetVPAdjustedPrice(string symbol, int shift, int lookbackN)
+// Operates on an already-fetched, oldest-first MqlRates array (totalBars
+// entries) rather than calling CopyRates itself, so a caller building a
+// whole P*_t series (GetVPMACD below) can fetch the underlying bars ONCE
+// and slice this over it repeatedly instead of re-fetching overlapping
+// ranges per point. shift follows this file's raw CopyRates shift
+// convention relative to the END of the array (0 = rates[totalBars-1], the
+// most recent bar in it); t = shift is deliberately EXCLUDED from the sum,
+// matching the paper's i = t-N..t-1 range.
+double ComputeVPAdjustedPriceFromRates(MqlRates &rates[], int totalBars, int shift, int lookbackN)
   {
    if(lookbackN <= 0 || shift < 0) return(-1.0);
+   int endIdx   = totalBars - 1 - shift; // index of bar t (excluded from the sum below)
+   int startIdx = endIdx - lookbackN;    // index of the oldest bar in the i=t-N..t-1 window
+   if(startIdx < 0 || endIdx >= totalBars) return(-1.0); // insufficient history for this window -- never compute on a partial window
 
-   MqlRates rates[];
-   int need = lookbackN + 1; // the N-bar window (i=t-N..t-1) plus bar t itself, which we fetch but exclude from the sum
-   int got = CopyRates(symbol, PERIOD_CURRENT, shift, need, rates);
-   if(got < need) return(-1.0); // insufficient history for this window -- never compute on a partial window
-
-   // CopyRates(..., shift, count, rates) with a starting shift returns
-   // bars oldest-first: rates[got-1] is the bar AT `shift` (bar t, excluded
-   // below); rates[0..got-2] is the i=t-N..t-1 window.
    double sumWeighted = 0.0, sumVolume = 0.0;
-   for(int i = 0; i < got - 1; i++)
+   for(int i = startIdx; i < endIdx; i++)
      {
       double closeP = rates[i].close;
       double openP  = rates[i].open;
@@ -423,6 +423,21 @@ double GetVPAdjustedPrice(string symbol, int shift, int lookbackN)
 
    if(sumVolume <= 0.0) return(-1.0);
    return(sumWeighted / sumVolume);
+  }
+
+// Single-shift convenience wrapper for external callers that just want one
+// P*_t value -- fetches only the bars that one value needs. GetVPMACD below
+// does NOT use this (it fetches the whole range once and calls
+// ComputeVPAdjustedPriceFromRates directly, to avoid ~2x34 overlapping
+// CopyRates calls per signal check).
+double GetVPAdjustedPrice(string symbol, int shift, int lookbackN)
+  {
+   if(lookbackN <= 0 || shift < 0) return(-1.0);
+   MqlRates rates[];
+   int need = lookbackN + 1; // the N-bar window (i=t-N..t-1) plus bar t itself, which we fetch but exclude from the sum
+   int got = CopyRates(symbol, PERIOD_CURRENT, shift, need, rates);
+   if(got < need) return(-1.0);
+   return(ComputeVPAdjustedPriceFromRates(rates, got, 0, lookbackN));
   }
 
 // VP-MACD_t = EMA12(P*_t) - EMA26(P*_t); Signal_t = EMA9(VP-MACD_t).
@@ -451,12 +466,20 @@ VPMACDResult GetVPMACD(string symbol, int shift)
    int barsAvailable = Bars(symbol, PERIOD_CURRENT);
    if(barsAvailable < barsNeeded) return(result); // insufficient history -- unavailable, not a guess
 
+   // One bulk fetch covering the whole range this call needs, instead of one
+   // CopyRates per P*_t point (up to 34 of them) -- every point's window
+   // overlaps almost entirely with its neighbors', so this replaces ~34
+   // redundant terminal-history round trips with one.
+   MqlRates allRates[];
+   int gotAll = CopyRates(symbol, PERIOD_CURRENT, 0, barsNeeded, allRates);
+   if(gotAll < barsNeeded) return(result);
+
    double pStar[];
    ArrayResize(pStar, seriesLen);
    for(int k = 0; k < seriesLen; k++)
      {
       int s = shift + (seriesLen - 1) - k; // pStar[0] = oldest, pStar[seriesLen-1] = at `shift`
-      double p = GetVPAdjustedPrice(symbol, s, VPMACDLookbackN);
+      double p = ComputeVPAdjustedPriceFromRates(allRates, gotAll, s, VPMACDLookbackN);
       if(p < 0.0) return(result); // any missing bar in the window -- unavailable, don't interpolate
       pStar[k] = p;
      }
@@ -626,13 +649,22 @@ bool IsWhitelistedEvent(string eventName, string currency)
    return(false);
   }
 
-// Task 15 -- parses a symbol's two currency legs. Handles the standard
-// 6-letter FX/metal convention; broker suffixes ("XAUUSD.m", "EURUSD+")
-// come after the first 6 characters, so a simple prefix split is robust
-// without a suffix-stripping table. XAUUSD/XAGUSD fall out of this
-// naturally as base="XAU"/"XAG", quote="USD" -- no special-casing needed.
+// Task 15 -- parses a symbol's two currency legs. Prefers the broker's own
+// SYMBOL_CURRENCY_BASE/SYMBOL_CURRENCY_PROFIT fields, which are correct
+// regardless of how the broker names the symbol (a naive first-6-characters
+// split silently breaks on any broker that prefixes symbols, e.g. "mEURUSD"
+// or "iXAUUSD" -- those aren't parsed as EUR/USD or XAU/USD by a prefix
+// split, and would silently fall through to News Defense's unvalidated
+// fallback path forever on such a broker). Falls back to the prefix-split
+// heuristic only if the broker-provided fields come back empty (seen on
+// some synthetic/custom symbols) -- XAUUSD/XAGUSD fall out of the fallback
+// naturally as base="XAU"/"XAG", quote="USD".
 void GetTradeCurrencies(string symbol, string &base, string &quote)
   {
+   base  = SymbolInfoString(symbol, SYMBOL_CURRENCY_BASE);
+   quote = SymbolInfoString(symbol, SYMBOL_CURRENCY_PROFIT);
+   if(base != "" && quote != "") return;
+
    base = ""; quote = "";
    if(StringLen(symbol) < 6) return;
    base  = StringSubstr(symbol, 0, 3);
@@ -745,6 +777,20 @@ string BuildAlignedStatsLine(string label, StatsResult &s, int minTrades)
                         label, s.sampleSize, s.winRate*100.0, s.expectancy));
   }
 
+// Shared by both alignment-bonus blocks in ComputeAdaptiveRisk below, so a
+// future change to the gating logic itself (e.g. tightening the expectancy
+// check, adding a max-drawdown guard) is made once and provably applies to
+// every signal that uses this pattern, instead of risking the two blocks
+// drifting out of sync from a fix applied to only one of them. "signalAgrees"
+// is the caller's own structural-agreement check (trend/classification vs.
+// trade direction); this function only owns the statistical gate + multiply.
+void ApplyAlignmentBonus(bool signalAgrees, StatsResult &stats, int minTrades, double bonus, double &multiplier)
+  {
+   if(!signalAgrees) return;
+   if(stats.sampleSize >= minTrades && stats.expectancy > 0.0)
+      multiplier *= bonus;
+  }
+
 double ComputeAdaptiveRisk(string symbol, int direction, bool isFlipReentry = false)
   {
    double multiplier = 1.0;
@@ -772,12 +818,8 @@ double ComputeAdaptiveRisk(string symbol, int direction, bool isFlipReentry = fa
       string vwapTrend = ClassifyVWAPTrend(symbol);
       bool vwapAgrees = (direction == 1  && vwapTrend == "BULLISH")
                       || (direction == -1 && vwapTrend == "BEARISH");
-      if(vwapAgrees)
-        {
-         StatsResult vwapStats = ComputeVWAPAlignedStats();
-         if(vwapStats.sampleSize >= MinVWAPAlignedTradesForBonus && vwapStats.expectancy > 0.0)
-            multiplier *= VWAPAlignmentBonus;
-        }
+      StatsResult vwapStats = ComputeVWAPAlignedStats();
+      ApplyAlignmentBonus(vwapAgrees, vwapStats, MinVWAPAlignedTradesForBonus, VWAPAlignmentBonus, multiplier);
      }
 
    // ---- Task 11: VP-MACD alignment bonus -------------------------------
@@ -792,12 +834,8 @@ double ComputeAdaptiveRisk(string symbol, int direction, bool isFlipReentry = fa
       string vpMacdSignal = ClassifyVPMACDSignal(symbol);
       bool vpMacdAgrees = (direction == 1  && vpMacdSignal == "BULLISH")
                         || (direction == -1 && vpMacdSignal == "BEARISH");
-      if(vpMacdAgrees)
-        {
-         StatsResult vpStats = ComputeVPMACDAlignedStats();
-         if(vpStats.sampleSize >= MinVPMACDAlignedTradesForBonus && vpStats.expectancy > 0.0)
-            multiplier *= VPMACDAlignmentBonus;
-        }
+      StatsResult vpStats = ComputeVPMACDAlignedStats();
+      ApplyAlignmentBonus(vpMacdAgrees, vpStats, MinVPMACDAlignedTradesForBonus, VPMACDAlignmentBonus, multiplier);
      }
 
    // ---- hard bounds: final word regardless of how many bonuses stacked --
@@ -861,10 +899,22 @@ void RemoveOpenMetaAt(int idx)
    ArrayResize(g_openMeta, n - 1);
   }
 
-// Captures the VWAP/VP-MACD alignment reads AT ENTRY (frozen for the trade's
-// life) plus the entry price and SL actually set on the position, which is
-// the real risk basis used to compute the closed trade's R-multiple later.
-void RecordEntryMeta(ulong ticket)
+// Captures the VWAP/VP-MACD/News alignment reads AT ENTRY (frozen for the
+// trade's life) plus the entry price and SL actually set on the position,
+// which is the real risk basis used to compute the closed trade's
+// R-multiple later.
+//
+// isPreExisting: true when this ticket was already open the very first
+// time this EA ever synced positions (i.e. it existed before this run
+// started -- attached to a chart with a position already open, or a
+// terminal/EA restart mid-trade). In that case "at entry" is unknowable:
+// reading the signals NOW would silently violate the "captured at entry,
+// frozen" invariant every alignment stat in this file depends on, by
+// stamping a position with a signal read from hours or days after it
+// actually opened. Rather than fabricate that, all three alignment flags
+// are forced false (== "unknown," same convention as an unavailable
+// signal) and this is logged plainly rather than done silently.
+void RecordEntryMeta(ulong ticket, bool isPreExisting)
   {
    if(!PositionSelectByTicket(ticket)) return;
 
@@ -875,26 +925,36 @@ void RecordEntryMeta(ulong ticket)
    meta.entryPrice      = PositionGetDouble(POSITION_PRICE_OPEN);
    meta.slPriceAtEntry  = PositionGetDouble(POSITION_SL);
 
-   string symbol = PositionGetString(POSITION_SYMBOL);
+   if(isPreExisting)
+     {
+      meta.vwapAligned = false;
+      meta.vpMacdAligned = false;
+      meta.nearValidatedNewsEvent = false;
+      PrintFormat("AUTOPSY X15: position %I64u was already open when this EA started tracking -- its true entry-time signal state is unknown, so VWAP/VP-MACD/news alignment are recorded as unknown (false) rather than read from the CURRENT signal state.", ticket);
+     }
+   else
+     {
+      string symbol = PositionGetString(POSITION_SYMBOL);
 
-   string vwapClass = UseVWAPExit ? ClassifyVWAPTrend(symbol) : "NEUTRAL";
-   meta.vwapAligned = (meta.direction == 1  && vwapClass == "BULLISH")
-                   || (meta.direction == -1 && vwapClass == "BEARISH");
-   // NEUTRAL (whether genuinely flat or unavailable) never matches BULLISH/
-   // BEARISH above, so meta.vwapAligned is false in both cases -- satisfies
-   // "log as unknown/false rather than guessing" without a separate branch.
+      string vwapClass = UseVWAPExit ? ClassifyVWAPTrend(symbol) : "NEUTRAL";
+      meta.vwapAligned = (meta.direction == 1  && vwapClass == "BULLISH")
+                      || (meta.direction == -1 && vwapClass == "BEARISH");
+      // NEUTRAL (whether genuinely flat or unavailable) never matches BULLISH/
+      // BEARISH above, so meta.vwapAligned is false in both cases -- satisfies
+      // "log as unknown/false rather than guessing" without a separate branch.
 
-   string vpMacdClass = UseVPMACDEntry ? ClassifyVPMACDSignal(symbol) : "NEUTRAL";
-   meta.vpMacdAligned = (meta.direction == 1  && vpMacdClass == "BULLISH")
-                     || (meta.direction == -1 && vpMacdClass == "BEARISH");
+      string vpMacdClass = UseVPMACDEntry ? ClassifyVPMACDSignal(symbol) : "NEUTRAL";
+      meta.vpMacdAligned = (meta.direction == 1  && vpMacdClass == "BULLISH")
+                        || (meta.direction == -1 && vpMacdClass == "BEARISH");
 
-   // Task 17 -- computed unconditionally (NOT gated behind UseNewsDefense the
-   // way the two alignment reads above are gated behind their own engine
-   // toggles): this is a pure observation for later comparison, not an
-   // action-triggering read, so it needs to keep accumulating data even
-   // while News Defense's suppression is toggled on/off during testing.
-   NewsDefenseState newsAtEntry = CheckNewsDefense(symbol);
-   meta.nearValidatedNewsEvent = newsAtEntry.isValidatedEvent; // false unless a validated whitelist event actually matched -- never guessed true
+      // Task 17 -- computed unconditionally (NOT gated behind UseNewsDefense
+      // the way the two alignment reads above are gated behind their own
+      // engine toggles): this is a pure observation for later comparison,
+      // not an action-triggering read, so it needs to keep accumulating
+      // data even while News Defense's suppression is toggled during testing.
+      NewsDefenseState newsAtEntry = CheckNewsDefense(symbol);
+      meta.nearValidatedNewsEvent = newsAtEntry.isValidatedEvent; // false unless a validated whitelist event actually matched -- never guessed true
+     }
 
    int idx = ArraySize(g_openMeta);
    ArrayResize(g_openMeta, idx + 1);
@@ -915,7 +975,7 @@ void AppendJournalFromClosedPosition(OpenPositionMeta &meta)
 
    if(!HistorySelectByPosition((long)meta.ticket)) return;
    int total = HistoryDealsTotal();
-   double closePrice = 0.0;
+   double sumExitPriceVolume = 0.0, sumExitVolume = 0.0;
    datetime closeTime = 0;
    bool found = false;
    for(int i = 0; i < total; i++)
@@ -923,12 +983,22 @@ void AppendJournalFromClosedPosition(OpenPositionMeta &meta)
       ulong dealTicket = HistoryDealGetTicket(i);
       if(dealTicket == 0) continue;
       long entryType = HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
-      if(entryType != DEAL_ENTRY_OUT && entryType != DEAL_ENTRY_OUT_BY) continue;
-      closePrice = HistoryDealGetDouble(dealTicket, DEAL_PRICE);
-      closeTime  = (datetime)HistoryDealGetInteger(dealTicket, DEAL_TIME);
+      // OUT / OUT_BY covers ordinary and closed-by-opposite-order closes;
+      // INOUT covers a netting-account flip (close old direction + open new
+      // one in the same deal) -- all three are "this deal closed some or all
+      // of the position we're journaling," and are volume-weighted together
+      // below so a scaled-out close (multiple OUT deals at different prices)
+      // doesn't get reduced to just its last exit price.
+      if(entryType != DEAL_ENTRY_OUT && entryType != DEAL_ENTRY_OUT_BY && entryType != DEAL_ENTRY_INOUT) continue;
+      double dealVolume = HistoryDealGetDouble(dealTicket, DEAL_VOLUME);
+      double dealPrice  = HistoryDealGetDouble(dealTicket, DEAL_PRICE);
+      sumExitPriceVolume += dealPrice * dealVolume;
+      sumExitVolume       += dealVolume;
+      closeTime = (datetime)HistoryDealGetInteger(dealTicket, DEAL_TIME); // last matching deal's time -- the moment the position actually reached flat
       found = true;
      }
-   if(!found) return;
+   if(!found || sumExitVolume <= 0.0) return;
+   double closePrice = sumExitPriceVolume / sumExitVolume; // volume-weighted across every exit/flip deal, not just the last one
 
    double riskDistance = (meta.direction == 1)
                           ? (meta.entryPrice - meta.slPriceAtEntry)
@@ -981,12 +1051,20 @@ void SyncOpenPositions(void)
       liveCount++;
      }
 
-   // 2) any live ticket not yet tracked -> just opened, capture entry meta
+   // 2) any live ticket not yet tracked -> capture entry meta. On the very
+   // first sync of this run, every live ticket found is by definition
+   // PRE-EXISTING (this EA hasn't been running long enough to have opened
+   // or watched anything open yet) -- RecordEntryMeta() handles that case
+   // by recording unknown/false alignment instead of reading current
+   // signal state as if it were the entry-time read. g_firstSyncDone flips
+   // once, after this pass, so every later newly-discovered ticket is
+   // treated as a genuine new entry.
    for(int i = 0; i < liveCount; i++)
      {
       if(FindOpenMetaIndex(liveTickets[i]) < 0)
-         RecordEntryMeta(liveTickets[i]);
+         RecordEntryMeta(liveTickets[i], !g_firstSyncDone);
      }
+   g_firstSyncDone = true;
 
    // 3) any tracked ticket no longer live -> closed, journal it and drop it
    for(int i = ArraySize(g_openMeta) - 1; i >= 0; i--)
@@ -1086,6 +1164,7 @@ int OnInit(void)
   {
    ArrayResize(g_journal, 0);
    ArrayResize(g_openMeta, 0);
+   g_firstSyncDone = false;
    g_lastBarTime = 0;
    PrintFormat("AUTOPSY X FLIPDEMON X15: initialized on %s %s. VWAP engine %s, VP-MACD engine %s, News Defense %s.",
                _Symbol, EnumToString((ENUM_TIMEFRAMES)Period()),

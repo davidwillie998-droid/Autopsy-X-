@@ -1,5 +1,13 @@
 # AUTOPSY X FLIPDEMON EXTREME
 
+> This document covers only `AutopsyX_FlipDemon_Extreme.mq5` and its
+> `MQL5/Include/AutopsyX/` engine modules. `MQL5/Experts/AutopsyX/AutopsyXFlipdemonX15.mq5`
+> is a separate, unrelated Expert Advisor in the same folder — a
+> journal-gated adaptive-risk decision engine (VWAP trend, VP-MACD, News
+> Defense), not the FLIPDEMON EXTREME system described below. It documents
+> itself in full in its own file header; see the root `README.md` for a
+> summary of both.
+
 Ultra-aggressive MT5 HFT flipping & scalping Expert Advisor.
 
 `SCAN -> SCORE -> ATTACK -> MANAGE -> FLIP -> EXIT -> REASSESS`

@@ -1,0 +1,17 @@
+# MetaEditor build output — compiling any .mq5 in this repo locally drops
+# an .ex5 (and sometimes .ex4) next to the source; these are per-machine
+# binaries, never source, and should never be committed.
+*.ex5
+*.ex4
+
+# MT5 terminal artifacts that sometimes get copied alongside source when
+# people work directly out of their terminal's MQL5/ data folder.
+*.set
+*.tpl
+MQL5/Files/
+MQL5/Logs/
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+*.swp
