@@ -246,12 +246,26 @@ frameworks that govern retail forex/CFD accounts.
 **MQL5 Market publishing rules.** If this is ever submitted to the Market,
 MetaQuotes requires (among other things): no DLL/system-library calls, no
 `WebRequest`-based third-party licensing/update/accounting systems, no
-external links used as documentation, and no collection of users' personal
-data. This codebase has none of those — no `#import`, no `WebRequest`, no
-network calls of any kind, no data collection. It should clear that bar as
-written. (Submission itself has separate steps — compiling to `.ex5`,
-writing a product page, running the Market's own pre-publication checks —
-that are outside what code alone can satisfy.)
+external links used as documentation, no collection of users' personal
+data, no profit promises in the product listing, and no third-party
+support channels (Telegram, Discord, etc. — support has to run through
+`mql5.com`'s own comments/messaging). This codebase has none of those — no
+`#import`, no `WebRequest`, no network calls of any kind, no data
+collection, no messenger links anywhere in the docs, and the "no
+profitability promises" posture in this README is the same posture the
+code itself takes (`GATE:` is a live heuristic, never a claim). It should
+clear that bar as written. Two things code can't satisfy on its own: the
+product title has to start with a capital letter and read clearly to a
+non-professional (the current name does), and everything else — compiling
+to `.ex5`, writing the actual product page, running the Market's own
+pre-publication checks — happens outside this repository.
+
+**File I/O and data locality.** `TradeAutopsy.mqh` logs every closed trade
+to a CSV via `FileOpen()` without the `FILE_COMMON` flag, which keeps it in
+the calling terminal's own sandboxed `MQL5/Files/` folder rather than the
+machine-wide Common folder shared across every terminal installed. Nothing
+in this codebase reads, writes, or transmits anything outside that one
+sandboxed, per-terminal file.
 
 **Broker/platform mechanics — FIFO and netting.** US-regulated accounts
 (NFA Compliance Rule 2-43b) prohibit hedging and require first-in-first-out
@@ -270,6 +284,13 @@ and regulator, not by this EA — `RiskEngine` reads live account margin and
 adapts to whatever the account actually has, but it does not and cannot
 change what leverage you're offered.
 
+Related but distinct: `EntryEngine.mqh` checks `SymbolInfoInteger(symbol,
+SYMBOL_TRADE_MODE)` before every entry and refuses to trade a symbol the
+broker has set to `SYMBOL_TRADE_MODE_DISABLED` or
+`SYMBOL_TRADE_MODE_CLOSEONLY` — the broker/exchange-side equivalent of the
+account-side hedging guard: don't act on a signal the venue itself won't
+accept.
+
 **Financial-regulatory compliance (CFTC/NFA, FCA, ESMA, etc.).** These
 regimes regulate brokers and dealers, not the EA itself, but a few things
 carry over to how you use it:
@@ -279,12 +300,14 @@ carry over to how you use it:
   EA and its documentation are built the same way for a different reason
   (intellectual honesty about an untested strategy) — the profitability
   gate is explicitly a live-session heuristic, never a claim.
-- *Leverage caps and negative-balance protection* (ESMA: 30:1 major FX,
-  20:1 minors/gold/major indices, down to 2:1 on crypto CFDs; CFTC/NFA:
-  50:1 majors, 20:1 minors) are enforced by the broker on the account, not
-  by the EA. They constrain available margin, which `RiskEngine`'s
-  pre-trade margin-level check already respects dynamically — no EA-side
-  leverage configuration exists or is needed.
+- *Leverage caps and negative-balance protection* are enforced by the
+  broker on the account, not by the EA. ESMA's tiered caps: 30:1 major FX
+  pairs, 20:1 non-major pairs/gold/major indices, 10:1 commodities other
+  than gold and minor indices, 5:1 individual equities, 2:1 crypto CFDs.
+  CFTC/NFA: 50:1 major pairs, 20:1 everything else. These constrain
+  available margin, which `RiskEngine`'s pre-trade margin-level check
+  already respects dynamically — no EA-side leverage configuration exists
+  or is needed.
 - *Running this on your own account* as a retail trader operating through
   a licensed broker is not itself a regulated activity in any of these
   regimes. The line moves if you go further: distributing it for
