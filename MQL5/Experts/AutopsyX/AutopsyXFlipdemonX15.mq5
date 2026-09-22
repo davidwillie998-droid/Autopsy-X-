@@ -40,6 +40,26 @@
 //|  not "took on risk it shouldn't have." That asymmetry is why it   |
 //|  defaults on where everything else defaults off; see its own      |
 //|  header comment below for the full reasoning.                     |
+//|                                                                    |
+//|  LEARNING MACHINE: two things a "gate that clears or doesn't"      |
+//|  still lacked, both added below. (1) PERSISTENCE -- the journal    |
+//|  now loads from and saves to a CSV in the terminal's sandboxed     |
+//|  MQL5/Files folder (LoadJournalFromFile/SaveJournalToFile), so     |
+//|  earned trust survives an EA reattach, terminal restart, or VPS    |
+//|  reboot instead of resetting to zero every time; the journal IS    |
+//|  the model, there is no separate cached state to go stale against |
+//|  it. (2) GRADED SIZING -- ComputeLearnedBonus() replaces "gate     |
+//|  clears -> jump straight to the fixed ceiling" with a bonus that   |
+//|  scales continuously with the ALIGNED subset's measured            |
+//|  expectancy (BonusLearningRate R-per-multiplier-point), still      |
+//|  hard-capped at the same ceiling inputs as before and still        |
+//|  requiring the same sample-size gate to unlock at all -- so it     |
+//|  keeps adjusting as evidence accumulates rather than snapping to   |
+//|  one fixed value the instant 20 trades pass. News Defense gets a   |
+//|  parallel, REPORT-ONLY per-event breakdown (ComputePerEventStats)  |
+//|  -- it deliberately never auto-loosens the suppression itself;     |
+//|  loosening a safety default off a self-logged small sample would   |
+//|  invert this file's whole judgment, so that stays a human decision.|
 //+------------------------------------------------------------------+
 #property copyright "AUTOPSY X"
 #property link      ""
@@ -95,6 +115,12 @@ input bool    UseNewsDefense              = true;  // defaults ON -- see the ASY
 input int     NewsDefenseWindowMinutes    = 30;    // one-sided post-event window, per the paper's own finding (see engine header)
 input bool    NewsDefenseFallbackForUnvalidatedCurrencies = true; // generic CALENDAR_IMPORTANCE_HIGH filter for GBP/EUR/JPY/CAD/CHF/NZD legs, which the paper does not validate -- set false to run the validated USD/AUD filter only
 
+input group "=== LEARNING MACHINE ===";
+input bool    UsePersistentJournal        = true;  // load/save the trade journal to a CSV in this terminal's sandboxed MQL5/Files folder, so earned track record survives an EA reattach or terminal restart instead of resetting to zero
+input string  JournalFileNameOverride     = "";    // leave blank to auto-name as AutopsyX15_Journal_<SYMBOL>.csv
+input double  BonusLearningRate           = 0.10;  // how much measured expectancy (in R) translates into bonus size once a gate clears -- e.g. 0.10 means 1R of measured edge adds +10% to position size, still capped at VWAPAlignmentBonus/VPMACDAlignmentBonus below. This rate itself is an arbitrary starting point, not derived from anything -- same "unproven until logged" status as every other number in this file
+input int     MinTradesPerEventForReport  = 5;     // smallest per-event sample worth showing in the News Defense per-event breakdown -- reporting only, never feeds back into suppression (see the LEARNING MACHINE note above)
+
 //====================================================================
 // CORE DATA TYPES
 //====================================================================
@@ -111,6 +137,7 @@ struct JournalEntry
    bool              vwapAligned;    // Task 6: did VWAP trend agree with this trade's direction at entry? false if unavailable -- never guessed
    bool              vpMacdAligned;  // Task 11: same question for VP-MACD
    bool              nearValidatedNewsEvent; // Task 17: was a Task-14 whitelisted event within NewsDefenseWindowMinutes of this trade's entry? Recorded regardless of UseNewsDefense so the comparison sample keeps accumulating even while suppression is toggled during testing
+   string            newsEventNameAtEntry; // learning-machine extension: the SPECIFIC validated event name matched at entry (e.g. "US Non-Farm Payrolls (USD)"), or "" if none -- powers ComputePerEventStats()'s report-only per-event breakdown
   };
 JournalEntry g_journal[];
 
@@ -136,6 +163,7 @@ struct OpenPositionMeta
    bool              vwapAligned;
    bool              vpMacdAligned;
    bool              nearValidatedNewsEvent;
+   string            newsEventNameAtEntry;
   };
 OpenPositionMeta g_openMeta[];
 bool g_firstSyncDone = false; // flips true after SyncOpenPositions' first pass -- see RecordEntryMeta's isPreExisting handling
@@ -243,6 +271,61 @@ NewsProximityStats ComputeNewsProximityStats(void)
    result.near = ComputeStatsResultFromRArray(nearR);
    result.away = ComputeStatsResultFromRArray(awayR);
    return(result);
+  }
+
+// Learning-machine extension -- per-event breakdown, REPORT-ONLY. This
+// deliberately does NOT feed back into IsWhitelistedEvent() or
+// CheckNewsDefense()'s suppression logic: automatically loosening a safety
+// default because one specific event "only" looks costly across a
+// handful of self-logged trades would invert this file's whole judgment
+// -- protective defaults don't relax on a small sample, even one the
+// system logged itself. This exists purely so a human reviewing the
+// dashboard can see which specific validated events are actually
+// costing or helping THIS account's trades near them, as one more honest
+// input into an eventual human decision to adjust IsWhitelistedEvent()'s
+// patterns -- never an automatic one.
+struct EventStatsRow
+  {
+   string            eventName;
+   StatsResult       stats;
+  };
+
+int ComputePerEventStats(EventStatsRow &rows[])
+  {
+   string uniqueNames[];
+   int uniqueCount = 0;
+   int n = ArraySize(g_journal);
+   for(int i = 0; i < n; i++)
+     {
+      if(g_journal[i].newsEventNameAtEntry == "") continue;
+      bool known = false;
+      for(int u = 0; u < uniqueCount; u++)
+         if(uniqueNames[u] == g_journal[i].newsEventNameAtEntry) { known = true; break; }
+      if(!known)
+        {
+         ArrayResize(uniqueNames, uniqueCount + 1);
+         uniqueNames[uniqueCount] = g_journal[i].newsEventNameAtEntry;
+         uniqueCount++;
+        }
+     }
+
+   ArrayResize(rows, uniqueCount);
+   for(int u = 0; u < uniqueCount; u++)
+     {
+      double rValues[]; int count = 0; ArrayResize(rValues, n);
+      for(int i = 0; i < n; i++)
+        {
+         if(g_journal[i].newsEventNameAtEntry == uniqueNames[u])
+           {
+            rValues[count] = g_journal[i].rMultiple;
+            count++;
+           }
+        }
+      ArrayResize(rValues, count);
+      rows[u].eventName = uniqueNames[u];
+      rows[u].stats      = ComputeStatsResultFromRArray(rValues);
+     }
+   return(uniqueCount);
   }
 
 string EvaluateOverallGate(StatsResult &s)
@@ -762,19 +845,39 @@ NewsDefenseState CheckNewsDefense(string symbol)
 //====================================================================
 // ADAPTIVE RISK  (Tasks 6 + 11 gates, combined)
 //====================================================================
+// LEARNING MACHINE -- graded bonus sizing. Replaces the old binary "gate
+// clears -> jump straight to the fixed ceiling" with a bonus that scales
+// continuously with the aligned subset's OWN measured expectancy: more
+// evidence of real edge earns a bigger bonus, up to the ceiling, rather
+// than the ceiling being granted in full the instant the sample-size gate
+// merely clears. Still requires the same minTrades gate and positive
+// expectancy to unlock at all -- this changes HOW MUCH is earned once
+// unlocked, not whether the gate itself can be skipped.
+double ComputeLearnedBonus(StatsResult &stats, int minTrades, double bonusCeiling)
+  {
+   if(stats.sampleSize < minTrades || stats.expectancy <= 0.0) return(1.0); // gate not cleared -- no bonus, full stop
+   double maxBonusAboveOne = MathMax(0.0, bonusCeiling - 1.0);
+   double learnedBonusAboveOne = MathMin(maxBonusAboveOne, stats.expectancy * BonusLearningRate);
+   return(1.0 + learnedBonusAboveOne);
+  }
+
 // Formats a "n=X (need Y) -- INSUFFICIENT SAMPLE" / "... -- EXPECTANCY NOT
-// POSITIVE" / "... -- bonus ACTIVE" line, matching the file's practice of
-// making a gate's live state visible rather than only inferable from
-// whether a bonus silently did or didn't apply.
-string BuildAlignedStatsLine(string label, StatsResult &s, int minTrades)
+// POSITIVE" / "... -- learned bonus N.NNx (ceiling N.NNx)" line, matching
+// the file's practice of making a gate's live state visible rather than
+// only inferable from whether a bonus silently did or didn't apply. The
+// printed multiplier is computed via the exact same ComputeLearnedBonus()
+// call ComputeAdaptiveRisk uses, so the dashboard can never show a number
+// that isn't what sizing would actually apply right now.
+string BuildAlignedStatsLine(string label, StatsResult &s, int minTrades, double bonusCeiling)
   {
    if(s.sampleSize < minTrades)
       return(StringFormat("%s: n=%d (need %d) -- INSUFFICIENT SAMPLE", label, s.sampleSize, minTrades));
    if(s.expectancy <= 0.0)
       return(StringFormat("%s: n=%d, winRate=%.1f%%, expectancy=%.2fR -- EXPECTANCY NOT POSITIVE, bonus INACTIVE",
                            label, s.sampleSize, s.winRate*100.0, s.expectancy));
-   return(StringFormat("%s: n=%d, winRate=%.1f%%, expectancy=%.2fR -- bonus ACTIVE",
-                        label, s.sampleSize, s.winRate*100.0, s.expectancy));
+   double learned = ComputeLearnedBonus(s, minTrades, bonusCeiling);
+   return(StringFormat("%s: n=%d, winRate=%.1f%%, expectancy=%.2fR -- learned bonus %.3fx (ceiling %.2fx)",
+                        label, s.sampleSize, s.winRate*100.0, s.expectancy, learned, bonusCeiling));
   }
 
 // Shared by both alignment-bonus blocks in ComputeAdaptiveRisk below, so a
@@ -783,12 +886,12 @@ string BuildAlignedStatsLine(string label, StatsResult &s, int minTrades)
 // every signal that uses this pattern, instead of risking the two blocks
 // drifting out of sync from a fix applied to only one of them. "signalAgrees"
 // is the caller's own structural-agreement check (trend/classification vs.
-// trade direction); this function only owns the statistical gate + multiply.
-void ApplyAlignmentBonus(bool signalAgrees, StatsResult &stats, int minTrades, double bonus, double &multiplier)
+// trade direction); this function only owns the statistical gate + learned
+// multiply.
+void ApplyAlignmentBonus(bool signalAgrees, StatsResult &stats, int minTrades, double bonusCeiling, double &multiplier)
   {
    if(!signalAgrees) return;
-   if(stats.sampleSize >= minTrades && stats.expectancy > 0.0)
-      multiplier *= bonus;
+   multiplier *= ComputeLearnedBonus(stats, minTrades, bonusCeiling);
   }
 
 double ComputeAdaptiveRisk(string symbol, int direction, bool isFlipReentry = false)
@@ -930,6 +1033,7 @@ void RecordEntryMeta(ulong ticket, bool isPreExisting)
       meta.vwapAligned = false;
       meta.vpMacdAligned = false;
       meta.nearValidatedNewsEvent = false;
+      meta.newsEventNameAtEntry = "";
       PrintFormat("AUTOPSY X15: position %I64u was already open when this EA started tracking -- its true entry-time signal state is unknown, so VWAP/VP-MACD/news alignment are recorded as unknown (false) rather than read from the CURRENT signal state.", ticket);
      }
    else
@@ -954,11 +1058,107 @@ void RecordEntryMeta(ulong ticket, bool isPreExisting)
       // data even while News Defense's suppression is toggled during testing.
       NewsDefenseState newsAtEntry = CheckNewsDefense(symbol);
       meta.nearValidatedNewsEvent = newsAtEntry.isValidatedEvent; // false unless a validated whitelist event actually matched -- never guessed true
+      // Learning-machine extension -- only captures the specific name for a
+      // VALIDATED hit (never the generic fallback's synthetic reason string),
+      // so ComputePerEventStats()'s breakdown stays scoped to the paper's
+      // actual named events rather than mixing in unrelated fallback text.
+      meta.newsEventNameAtEntry = (newsAtEntry.active && newsAtEntry.isValidatedEvent) ? newsAtEntry.reason : "";
      }
 
    int idx = ArraySize(g_openMeta);
    ArrayResize(g_openMeta, idx + 1);
    g_openMeta[idx] = meta;
+  }
+
+//====================================================================
+// LEARNING MACHINE -- PERSISTENCE
+//--------------------------------------------------------------------
+// The journal itself IS the model: every gate, every learned bonus, every
+// per-event stat in this file is recomputed fresh from g_journal on every
+// call, nothing is cached separately. So making the journal durable is
+// all persistence has to do -- there is no second piece of "learned
+// state" that could ever go stale against it. Written the same way
+// TradeAutopsy-style CSV logs elsewhere in this repo are: FileOpen with
+// no FILE_COMMON flag, so it stays in this terminal's own sandboxed
+// MQL5/Files folder, never a machine-wide shared one.
+//====================================================================
+string GetJournalFileName(void)
+  {
+   if(JournalFileNameOverride != "") return(JournalFileNameOverride);
+   return("AutopsyX15_Journal_" + _Symbol + ".csv");
+  }
+
+// Rewrites the WHOLE file from g_journal every time it's called (rather
+// than appending), which trades a little I/O for a much simpler
+// correctness argument: g_journal in memory is always the single source
+// of truth, so the file can never drift from it or accumulate a
+// malformed trailing row from an interrupted append.
+void SaveJournalToFile(void)
+  {
+   if(!UsePersistentJournal) return;
+   string fname = GetJournalFileName();
+   int handle = FileOpen(fname, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ, ',');
+   if(handle == INVALID_HANDLE)
+     {
+      PrintFormat("AUTOPSY X15: could not open journal file '%s' for writing (error %d) -- learned state will NOT persist past this session.", fname, GetLastError());
+      return;
+     }
+   int n = ArraySize(g_journal);
+   for(int i = 0; i < n; i++)
+      FileWrite(handle, (long)g_journal[i].closeTime, g_journal[i].symbol, g_journal[i].direction,
+                g_journal[i].rMultiple, g_journal[i].vwapAligned?1:0, g_journal[i].vpMacdAligned?1:0,
+                g_journal[i].nearValidatedNewsEvent?1:0, g_journal[i].newsEventNameAtEntry);
+   FileClose(handle);
+  }
+
+// Called once from OnInit, before any new trade is processed this run.
+// Replaces g_journal wholesale with whatever was on disk (or leaves it
+// empty if there's nothing there yet / persistence is off) -- this always
+// runs before SyncOpenPositions' first pass, so a position that was
+// already open at startup is still correctly handled as isPreExisting
+// regardless of what history was just loaded.
+void LoadJournalFromFile(void)
+  {
+   ArrayResize(g_journal, 0);
+   if(!UsePersistentJournal) return;
+
+   string fname = GetJournalFileName();
+   if(!FileIsExist(fname))
+     {
+      PrintFormat("AUTOPSY X15: no existing journal file '%s' -- starting with an empty learned track record.", fname);
+      return;
+     }
+
+   int handle = FileOpen(fname, FILE_READ|FILE_CSV|FILE_ANSI|FILE_SHARE_READ, ',');
+   if(handle == INVALID_HANDLE)
+     {
+      PrintFormat("AUTOPSY X15: found journal file '%s' but could not open it for reading (error %d) -- starting empty rather than guessing its contents.", fname, GetLastError());
+      return;
+     }
+
+   int loaded = 0;
+   while(!FileIsEnding(handle))
+     {
+      long closeTimeRaw = (long)FileReadNumber(handle);
+      if(FileIsEnding(handle)) break; // trailing blank line at EOF -- stop cleanly rather than parse a partial row
+
+      JournalEntry entry;
+      entry.closeTime               = (datetime)closeTimeRaw;
+      entry.symbol                  = FileReadString(handle);
+      entry.direction               = (int)FileReadNumber(handle);
+      entry.rMultiple               = FileReadNumber(handle);
+      entry.vwapAligned             = (FileReadNumber(handle) != 0);
+      entry.vpMacdAligned           = (FileReadNumber(handle) != 0);
+      entry.nearValidatedNewsEvent  = (FileReadNumber(handle) != 0);
+      entry.newsEventNameAtEntry    = FileReadString(handle);
+
+      int idx = ArraySize(g_journal);
+      ArrayResize(g_journal, idx + 1);
+      g_journal[idx] = entry;
+      loaded++;
+     }
+   FileClose(handle);
+   PrintFormat("AUTOPSY X15: loaded %d journal entries from disk -- learned state carries over from before this run.", loaded);
   }
 
 // Sums realized P&L for a fully-closed position via its deal history, then
@@ -1021,10 +1221,13 @@ void AppendJournalFromClosedPosition(OpenPositionMeta &meta)
    entry.vwapAligned   = meta.vwapAligned;
    entry.vpMacdAligned = meta.vpMacdAligned;
    entry.nearValidatedNewsEvent = meta.nearValidatedNewsEvent;
+   entry.newsEventNameAtEntry   = meta.newsEventNameAtEntry;
 
    int idx = ArraySize(g_journal);
    ArrayResize(g_journal, idx + 1);
    g_journal[idx] = entry;
+
+   SaveJournalToFile(); // learning-machine persistence -- every closed trade is durable the instant it's journaled, not just for the rest of this session
   }
 
 // Polling-based sync, called once per tick: cheap at single-symbol EA
@@ -1101,14 +1304,14 @@ string RunDecision(void)
    if(UseVWAPExit)
      {
       StatsResult vwapStats = ComputeVWAPAlignedStats();
-      s += BuildAlignedStatsLine("VWAP-aligned trades", vwapStats, MinVWAPAlignedTradesForBonus) + "\n";
+      s += BuildAlignedStatsLine("VWAP-aligned trades", vwapStats, MinVWAPAlignedTradesForBonus, VWAPAlignmentBonus) + "\n";
      }
 
    s += "VP-MACD signal: " + (UseVPMACDEntry ? ClassifyVPMACDSignal(_Symbol) : "DISABLED (UseVPMACDEntry=false)") + "\n";
    if(UseVPMACDEntry)
      {
       StatsResult vpStats = ComputeVPMACDAlignedStats();
-      s += BuildAlignedStatsLine("VP-MACD-aligned trades", vpStats, MinVPMACDAlignedTradesForBonus) + "\n";
+      s += BuildAlignedStatsLine("VP-MACD-aligned trades", vpStats, MinVPMACDAlignedTradesForBonus, VPMACDAlignmentBonus) + "\n";
      }
 
    if(UseNewsDefense)
@@ -1134,6 +1337,21 @@ string RunDecision(void)
       s += StringFormat("Trades near validated news events: n=%d, expectancy=%.2fR vs. n=%d away from events, expectancy=%.2fR\n",
                          newsProx.near.sampleSize, newsProx.near.expectancy,
                          newsProx.away.sampleSize, newsProx.away.expectancy);
+
+   // Learning-machine per-event breakdown -- report-only, see
+   // ComputePerEventStats()'s header comment for why this never
+   // auto-adjusts the whitelist itself.
+   EventStatsRow eventRows[];
+   int eventRowCount = ComputePerEventStats(eventRows);
+   bool printedEventHeader = false;
+   for(int ev = 0; ev < eventRowCount; ev++)
+     {
+      if(eventRows[ev].stats.sampleSize < MinTradesPerEventForReport) continue;
+      if(!printedEventHeader) { s += "Per-event breakdown (report-only, does not auto-adjust the whitelist):\n"; printedEventHeader = true; }
+      s += StringFormat("  %s: n=%d, winRate=%.1f%%, expectancy=%.2fR\n",
+                         eventRows[ev].eventName, eventRows[ev].stats.sampleSize,
+                         eventRows[ev].stats.winRate*100.0, eventRows[ev].stats.expectancy);
+     }
 
    s += "----------------------------------------\n";
    s += StringFormat("Open positions tracked: %d\n", ArraySize(g_openMeta));
@@ -1162,15 +1380,16 @@ bool IsNewBar(void)
 
 int OnInit(void)
   {
-   ArrayResize(g_journal, 0);
+   LoadJournalFromFile(); // learning machine: repopulates g_journal from disk (or leaves it empty) -- always runs before SyncOpenPositions' first pass
    ArrayResize(g_openMeta, 0);
    g_firstSyncDone = false;
    g_lastBarTime = 0;
-   PrintFormat("AUTOPSY X FLIPDEMON X15: initialized on %s %s. VWAP engine %s, VP-MACD engine %s, News Defense %s.",
+   PrintFormat("AUTOPSY X FLIPDEMON X15: initialized on %s %s. VWAP engine %s, VP-MACD engine %s, News Defense %s, persistent journal %s.",
                _Symbol, EnumToString((ENUM_TIMEFRAMES)Period()),
                UseVWAPExit ? "ENABLED" : "disabled",
                UseVPMACDEntry ? "ENABLED" : "disabled",
-               UseNewsDefense ? "ENABLED (default)" : "disabled");
+               UseNewsDefense ? "ENABLED (default)" : "disabled",
+               UsePersistentJournal ? "ENABLED (default)" : "disabled");
    return(INIT_SUCCEEDED);
   }
 
