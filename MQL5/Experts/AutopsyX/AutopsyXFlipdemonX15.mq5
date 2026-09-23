@@ -121,6 +121,10 @@ input string  JournalFileNameOverride     = "";    // leave blank to auto-name a
 input double  BonusLearningRate           = 0.10;  // how much measured expectancy (in R) translates into bonus size once a gate clears -- e.g. 0.10 means 1R of measured edge adds +10% to position size, still capped at VWAPAlignmentBonus/VPMACDAlignmentBonus below. This rate itself is an arbitrary starting point, not derived from anything -- same "unproven until logged" status as every other number in this file
 input int     MinTradesPerEventForReport  = 5;     // smallest per-event sample worth showing in the News Defense per-event breakdown -- reporting only, never feeds back into suppression (see the LEARNING MACHINE note above)
 
+input group "=== PROVEN RUIN BOUND (Kelly) ===";
+input double  RuinBoundAlpha              = 0.8;   // DRAWDOWN THRESHOLD this bound protects against, as a fraction of starting capital: 0.8 = "protect against wealth falling to 80% of where it started" (a 20% drawdown). Must be strictly between 0 and 1. Closer to 1.0 = guarding against a SMALLER drawdown (stricter).
+input double  RuinBoundBeta               = 0.1;   // PROBABILITY TOLERANCE for that drawdown: 0.1 = "want less than a 10% chance of it happening." Must be strictly between 0 and 1. Smaller = wanting MORE confidence it won't happen (stricter).
+
 //====================================================================
 // CORE DATA TYPES
 //====================================================================
@@ -962,6 +966,113 @@ double ComputeAdaptiveRisk(string symbol, int direction, bool isFlipReentry = fa
   }
 
 //====================================================================
+// PROVEN RISK-OF-RUIN BOUND (Kelly)
+//--------------------------------------------------------------------
+// After Busseti, Ryu & Boyd, "Risk-Constrained Kelly Gambling,"
+// arXiv:1603.06183 (2016), Section 4, equations 6-7. This is different IN
+// KIND from every other check in this file -- it is not a heuristic, a
+// proxy, or an approximation calibrated on hope. It is a real, proven
+// bound from a stopping-time martingale argument: choose a drawdown
+// threshold alpha in (0,1) and a probability tolerance beta in (0,1),
+// compute lambda = log(beta)/log(alpha), and if the average of
+// (1 + f*R)^(-lambda) over the return distribution is <= 1, the bound
+// GUARANTEES the true probability of wealth ever falling below alpha (a
+// (1-alpha) drawdown) is less than beta. The authors validated this
+// against Monte Carlo simulation and found it conservative by roughly
+// 30% -- meaning when it's wrong, it overstates danger, never
+// understates it, which is the correct direction to be wrong in for a
+// risk gate.
+//
+// The paper's own setting solves for an optimal bet VECTOR b across many
+// simultaneous positions via convex optimization. This file doesn't need
+// that: it already has one candidate risk fraction f (from
+// ComputeAdaptiveRisk) for one instrument, so this is a direct
+// evaluation of the bound against that single fraction using this
+// system's own real, logged R-multiples as the empirical return
+// distribution -- no solver, no vector optimization, just a pass/fail
+// check against real history.
+//
+// INTEGRATION NOTE: this file has no "FLIP eligibility gate" or
+// MonteCarloRuinProbability() function to slot alongside -- neither
+// exists anywhere in this codebase, on any branch, as of this writing.
+// If a two-factor gate combining this bound with an independent Monte
+// Carlo check is wanted, that second check needs its own methodology
+// specified before it can be built; fabricating one here would mean
+// wiring a real proven bound together with an invented approximation
+// and presenting the pair as equally rigorous, which is exactly the
+// kind of false confidence this file's whole design exists to avoid.
+// Until that's specified, ComputeKellyRuinBound() is exposed as its own
+// callable check (see the dashboard line in RunDecision() below) for a
+// future entry/exit engine to call directly against its own candidate
+// risk fraction, the same "wire your own signal here" pattern used by
+// GetCompositeDirection() above.
+//====================================================================
+struct RuinBoundResult
+  {
+   bool              available;      // false if sample too small (MinTradesForStats) or RuinBoundAlpha/Beta are outside (0,1) -- never a computed answer from bad inputs
+   bool              ruinCertain;    // true if a SINGLE logged loss at this risk fraction would have wiped out (or gone negative on) the tested capital -- distinct from, and more severe than, "bound computed but exceeded 1.0"
+   bool              boundSatisfied; // true only when available && !ruinCertain && averageTerm <= 1.0
+   double            averageTerm;    // the computed average of (1+f*R)^(-lambda) -- how close to the 1.0 threshold, not just pass/fail. -1.0 when not available.
+   double            lambda;         // computed lambda = log(beta)/log(alpha), for display/debugging. -1.0 when not available.
+  };
+
+RuinBoundResult ComputeKellyRuinBound(StatsResult &stats, double riskFractionPct)
+  {
+   RuinBoundResult result;
+   result.available = false;
+   result.ruinCertain = false;
+   result.boundSatisfied = false;
+   result.averageTerm = -1.0;
+   result.lambda = -1.0;
+
+   // Reuses the same overall sample-size gate as everywhere else in this
+   // file (MinTradesForStats) rather than introducing a separate one --
+   // never compute a "proven bound" from an inadequate sample and call it
+   // real just because the math is real.
+   if(stats.sampleSize < MinTradesForStats) return(result);
+
+   // MathLog(RuinBoundAlpha) is undefined at alpha<=0 and MathLog(0) is
+   // -inf; either input at or outside the (0,1) boundary makes lambda
+   // meaningless (NaN, infinite, or a sign flip that silently inverts the
+   // bound). Guard explicitly rather than let a bad input quietly produce
+   // garbage that still looks like a number.
+   if(RuinBoundAlpha <= 0.0 || RuinBoundAlpha >= 1.0 || RuinBoundBeta <= 0.0 || RuinBoundBeta >= 1.0)
+     {
+      Print("AUTOPSY X15: RuinBoundAlpha and RuinBoundBeta must both be strictly between 0 and 1 -- refusing to compute a ruin bound from invalid inputs.");
+      return(result);
+     }
+
+   double lambda = MathLog(RuinBoundBeta) / MathLog(RuinBoundAlpha);
+   result.lambda = lambda;
+
+   double f = riskFractionPct / 100.0;
+   double sum = 0.0;
+   int n = ArraySize(g_journal); // same full-journal iteration ComputeStats() uses
+
+   for(int i = 0; i < n; i++)
+     {
+      double term = 1.0 + f * g_journal[i].rMultiple;
+      if(term <= 0.0)
+        {
+         // A single historical loss at this risk fraction would have
+         // caused outright ruin -- do not raise a non-positive base to a
+         // fractional/negative exponent (undefined / NaN in MathPow).
+         // This is a distinct, more severe outcome than "bound computed
+         // but exceeded 1.0" and is reported as such.
+         result.ruinCertain = true;
+         result.available = true;
+         return(result);
+        }
+      sum += MathPow(term, -lambda);
+     }
+
+   result.averageTerm = sum / n;
+   result.boundSatisfied = (result.averageTerm <= 1.0);
+   result.available = true;
+   return(result);
+  }
+
+//====================================================================
 // EXTENSION POINT -- wire your own entry/regime/structure signal here.
 // This file provides the adaptive-risk gating layer, not full signal
 // generation or order placement (see the file header). Returns 1/-1 for
@@ -1347,6 +1458,25 @@ string RunDecision(void)
                       (overall.sampleSize > 0 ? overall.winRate*100.0 : 0.0),
                       (overall.sampleSize > 0 ? overall.expectancy : 0.0),
                       EvaluateOverallGate(overall));
+
+   // Proven Kelly ruin bound (Busseti, Ryu & Boyd, arXiv:1603.06183),
+   // evaluated at the configured base risk fraction as a representative
+   // reference point -- not wired into any entry/exit decision here (see
+   // this function's header comment for why). A future entry engine
+   // should call ComputeKellyRuinBound() directly against its own
+   // ACTUAL candidate risk fraction (from ComputeAdaptiveRisk) before
+   // firing, not rely on this dashboard line, which is informational only.
+   RuinBoundResult ruinBound = ComputeKellyRuinBound(overall, InpBaseRiskPercent);
+   if(!ruinBound.available)
+      s += StringFormat("Kelly ruin bound: n=%d (need %d), or alpha/beta invalid -- UNAVAILABLE\n", overall.sampleSize, MinTradesForStats);
+   else if(ruinBound.ruinCertain)
+      s += StringFormat("Kelly ruin bound: RUIN CERTAIN AT %.2f%% RISK -- a single logged loss would exceed capital\n", InpBaseRiskPercent);
+   else if(ruinBound.boundSatisfied)
+      s += StringFormat("Kelly ruin bound: PASS (avg=%.3f, need <=1.0) at %.2f%% risk -- Prob(drawdown past %.0f%%) < %.0f%% is proven, not estimated\n",
+                         ruinBound.averageTerm, InpBaseRiskPercent, (1.0-RuinBoundAlpha)*100.0, RuinBoundBeta*100.0);
+   else
+      s += StringFormat("Kelly ruin bound: FAIL (avg=%.3f, need <=1.0) at %.2f%% risk -- bound does NOT guarantee Prob(drawdown past %.0f%%) < %.0f%%\n",
+                         ruinBound.averageTerm, InpBaseRiskPercent, (1.0-RuinBoundAlpha)*100.0, RuinBoundBeta*100.0);
 
    s += "VWAP trend: " + (UseVWAPExit ? ClassifyVWAPTrend(_Symbol) : "DISABLED (UseVWAPExit=false)") + "\n";
    if(UseVWAPExit)
