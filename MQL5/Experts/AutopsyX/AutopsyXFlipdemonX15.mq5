@@ -24,23 +24,27 @@
 //|  Verify this matches what you already had in mind before trusting|
 //|  it over a version you may have elsewhere.                        |
 //|                                                                    |
-//|  SCOPE: this file is a signal/decision/gating engine, not a full  |
-//|  execution EA -- it never opens a NEW position on its own signal  |
-//|  (GetCompositeDirection() is a stub returning 0) and never closes |
-//|  or modifies an existing one. It tracks whatever positions        |
-//|  already exist on its symbol (from a human, from another EA, or   |
-//|  from a future entry engine wired in at the GetCompositeDirection |
-//|  extension point below) purely to build its own trade journal and |
-//|  gate its own risk multiplier off it.                             |
+//|  SCOPE (autonomous robot): a full EA whose layers run strictly in  |
+//|  order -- DATA -> MARKET INTELLIGENCE (structure, liquidity,       |
+//|  regime, session, news gate) -> SIGNALS (VWAP, VP-MACD) ->         |
+//|  COMPOSITE DECISION -> EXECUTION ELIGIBILITY -> RISK -> ORDER ->   |
+//|  POSITION MANAGEMENT -> JOURNAL -> ADAPTATION. No layer is         |
+//|  bypassed: an order is only ever built from an ELIGIBLE decision.  |
 //|                                                                    |
-//|  EXCEPTION (Pyramiding Engine, section 21): this file's ONE real   |
-//|  order-placement path. It ONLY ever sends a same-direction         |
-//|  volume-ADD to a position that is already open and already        |
-//|  profitable by MinProfitRMultipleToAdd -- never a new position,    |
-//|  never a close, never an SL/TP change beyond passing the existing  |
-//|  SL/TP through unchanged. OFF by default (AllowPyramiding=false)   |
-//|  and inert even when on until ExecutionModeLive=true. See the      |
-//|  PYRAMIDING ENGINE section below for the full gate chain.          |
+//|  EXECUTION MODE defaults to ANALYSIS_ONLY: it analyses, validates  |
+//|  and reports, and sends nothing. PAPER_EXECUTION runs virtual      |
+//|  fills through the same management and journal; LIVE_EXECUTION    |
+//|  sends real orders via CTrade. THIS FILE HAS NOT BEEN COMPILED OR  |
+//|  RUN IN THE STRATEGY TESTER BY ITS AUTHOR (no MetaEditor was       |
+//|  available): compile it, backtest it, forward-test it on PAPER    |
+//|  and demo before ever selecting LIVE_EXECUTION.                    |
+//|                                                                    |
+//|  PROHIBITED BY CONSTRUCTION: martingale, grid recovery, averaging  |
+//|  down, doubling after losses, automatic opposite trades after a    |
+//|  loss, duplicate entries on one setup, news generating direction,  |
+//|  bonuses / Kelly / Monte Carlo raising risk past the hard limits.  |
+//|  The only add-on logic (Pyramiding) adds solely to positions       |
+//|  already in profit, and is off by default.                         |
 //|                                                                    |
 //|  ASYMMETRY: News Defense (Tasks 13-18) is the one engine in this  |
 //|  file that defaults ON. Every other engine here defaults OFF      |
@@ -328,13 +332,69 @@ input group "=== PROVEN RUIN BOUND (Kelly) ===";
 input double  RuinBoundAlpha              = 0.8;   // DRAWDOWN THRESHOLD this bound protects against, as a fraction of starting capital: 0.8 = "protect against wealth falling to 80% of where it started" (a 20% drawdown). Must be strictly between 0 and 1. Closer to 1.0 = guarding against a SMALLER drawdown (stricter).
 input double  RuinBoundBeta               = 0.1;   // PROBABILITY TOLERANCE for that drawdown: 0.1 = "want less than a 10% chance of it happening." Must be strictly between 0 and 1. Smaller = wanting MORE confidence it won't happen (stricter).
 
-input group "=== EXECUTION (new: pyramid adds are this file's first real order placement) ===";
-input bool    ExecutionModeLive           = false; // false = PAPER (log what would have been sent, never call a real order function); true = LIVE (real orders via CTrade). Independent of AllowPyramiding below -- both must be true before anything real is sent, matching this file's "prove it before it's armed" pattern for every other engine.
-input ulong   PyramidMagicNumber          = 1500001; // magic number tag for orders this file places
-input int     PyramidDeviationPoints      = 20;      // max acceptable slippage in points before a live add is rejected by the broker
+input group "=== EXECUTION MODE & MANUAL OVERRIDES ===";
+input ENUM_X15_EXEC_MODE InpExecutionMode = X15_ANALYSIS_ONLY; // stays ANALYSIS_ONLY until this file has been compiled and passed Strategy Tester runs
+input ulong   InpMagicNumber              = 1500015; // this EA's orders and positions; everything else on the account is 'external'
+input bool    InpEnableTrading            = true;    // master switch for NEW entries and adds (open positions are always still managed)
+input bool    InpEnableLong               = true;
+input bool    InpEnableShort              = true;
+input double  InpMaxRiskOverridePct       = 0;       // >0 caps per-trade risk at this % -- can only LOWER risk, never raise it past the hard limits
+input bool    InpEmergencyStop            = false;   // true: no new entries or adds, immediately. Open positions keep their stops and are still managed
+input bool    InpCloseAllManagedPositions = false;   // true: close every position and delete every pending order carrying InpMagicNumber on this symbol, each tick, until none remain
+input ENUM_X15_ENTRY_ORDER InpEntryOrderType = X15_ENTRY_MARKET;
+input int     InpPendingExpiryBars        = 3;       // stop-entry orders are cancelled after this many exec bars
+input double  InpStopEntryBufferATR       = 0.05;    // stop-entry trigger sits this x ATR beyond the confirmation bar's extreme
+input int     InpMaxSlippagePoints        = 30;      // CTrade deviation for market orders
 
-input group "=== ACCOUNT SAFETY GOVERNOR (new: required for any live execution) ===";
-input double  DailyLossLimitPercent       = 5.0;   // circuit breaker: no pyramid adds once today's equity drawdown from day-start equity reaches this. This is a MINIMAL governor scoped to what pyramiding needs (daily loss only) -- the sibling AutopsyX_FlipDemon_Extreme.mq5's RiskEngine.mqh has a more complete one (consecutive-loss limits, rolling trade-rate limits, spread/margin checks) that was NOT ported here; only what this feature explicitly required.
+input group "=== HARD RISK LIMITS (no adaptive bonus, override or evidence score can pass these) ===";
+input int     InpMaxPositionsTotal        = 3;     // this EA's positions + pending orders, all symbols
+input int     InpMaxPositionsPerSymbol    = 1;
+input int     InpMaxPositionsPerDirection = 1;     // per symbol, per direction
+input double  InpMaxTotalOpenRiskPct      = 3.0;   // this EA's money-at-risk-to-SL across all symbols, including the new trade
+input double  InpMaxDailyLossPct          = 4.0;   // account-wide, realized today + floating, from deal history (a restart cannot reset it)
+input double  InpMaxWeeklyLossPct         = 8.0;   // same, since Monday 00:00 server time
+input int     InpMaxConsecutiveLosses     = 4;     // this EA's own closed trades, from the persisted journal
+input int     InpConsecutiveLossPauseHours= 24;    // entries pause this long after the loss that hit the limit
+input double  InpMaxSpreadPoints          = 0;     // absolute spread cap in points, 0 = off
+input double  InpMaxSpreadATRFraction     = 0.15;  // spread must also be <= this x execution ATR (symbol-agnostic)
+input double  InpSpreadAbnormalMultiple   = 2.5;   // spread > this x its recent average = abnormal execution conditions
+input double  InpMaxMarginUsagePct        = 30.0;  // used margin after the new order must stay <= this % of equity
+input int     InpMaxTickAgeSeconds        = 60;    // last quote older than this = stale, no entry
+input int     InpMaxPingMs                = 0;     // 0 = off; otherwise block entries while the terminal's last ping exceeds this
+
+input group "=== FLIP / RE-ENTRY ===";
+input bool    InpAllowFlip                = true;  // an opposite-direction entry soon after a close is allowed ONLY as a fresh, fully re-validated setup at InpFlipRiskCapPct
+input int     InpFlipWindowBars           = 6;     // an opposite-direction entry within this many exec bars of a close counts as a flip
+input int     InpCooldownBarsAfterClose   = 1;     // no new entry on this symbol for this many exec bars after any close
+
+input group "=== POSITION MANAGEMENT ===";
+input bool    InpUseBreakEven             = true;
+input double  InpBreakEvenAtR             = 1.0;
+input double  InpBreakEvenLockR           = 0.1;   // SL moves to entry + this many R
+input bool    InpUsePartialClose          = true;
+input double  InpPartialAtR               = 1.5;
+input double  InpPartialClosePercent      = 50.0;
+input ENUM_X15_TRAIL_MODE InpTrailMode    = X15_TRAIL_STRUCTURE;
+input double  InpTrailStartR              = 1.5;
+input double  InpTrailATRMultiple         = 2.0;
+input double  InpTrailFixedR              = 1.0;
+input bool    InpUseInvalidationExit      = true;  // before break-even: close when a closed bar closes beyond the setup's invalidation level
+input int     InpMaxHoldBars              = 0;     // 0 = off
+input ENUM_X15_NEWS_EMERGENCY InpNewsEmergencyAction = X15_NEWS_EMERG_NONE; // default: never touch positions for news
+input int     InpNewsEmergencyLeadMinutes = 15;
+
+input group "=== LEARNING / EVIDENCE TIERS ===";
+input ENUM_X15_LEARN_SOURCE InpLearningSource = X15_LEARN_LIVE_ONLY;
+input datetime InpOutOfSampleStart        = D'2000.01.01 00:00'; // own trades closing on/after this form the OUT-OF-SAMPLE tier; earlier ones TRAINING. Reported separately, never merged silently
+
+input group "=== MONTE CARLO (report-only) ===";
+input bool    InpMonteCarloEnabled        = true;
+input int     InpMonteCarloSims           = 1000;
+input int     InpMonteCarloTradesPerSim   = 100;
+input int     InpMonteCarloSeed           = 15;    // fixed seed: the same journal always produces the same report
+input double  InpMonteCarloDDThreshold1R  = 5.0;
+input double  InpMonteCarloDDThreshold2R  = 10.0;
+input double  InpMonteCarloDDThreshold3R  = 20.0;
 
 input group "=== PYRAMIDING ENGINE (section 21) ===";
 input bool    AllowPyramiding             = false; // OFF by default -- this is a new way to increase aggregate exposure, so like every other engine in this file, it earns activation explicitly rather than starting on
@@ -405,25 +465,61 @@ input bool    InpShowDashboard            = true;
 //====================================================================
 // CORE DATA TYPES
 //====================================================================
-// JournalEntry: one row per CLOSED trade. vwapAligned / vpMacdAligned are
-// captured AT ENTRY (frozen for the life of the trade) by RecordEntryMeta()
-// below, never recomputed at close -- recomputing at close would let
-// hindsight leak into what's supposed to be a live, forward-looking read.
+// JournalEntry: one row per CLOSED position (spec 21) -- never one per
+// partial close, so a scale-out cannot turn one trade into two samples.
+// Alignment flags and every *State string are captured AT ENTRY and frozen;
+// recomputing them at close would let hindsight leak into what is supposed
+// to be a forward-looking read. positionId + source is the dedupe key that
+// keeps a restart, a repeated trade event or a reconcile pass from ever
+// journaling the same position twice.
 struct JournalEntry
   {
    datetime          closeTime;
    string            symbol;
    int               direction;      // 1 = long, -1 = short
-   double            rMultiple;      // realized P&L expressed in R (risk units), using the SL distance that was actually set at entry
+   double            rMultiple;      // own trades: net realized P&L / money at risk at entry. External/legacy: price-based, from blended entry and entry SL
    bool              vwapAligned;    // Task 6: did VWAP trend agree with this trade's direction at entry? false if unavailable -- never guessed
    bool              vpMacdAligned;  // Task 11: same question for VP-MACD
    bool              nearValidatedNewsEvent; // Task 17: was a Task-14 whitelisted event within NewsDefenseWindowMinutes of this trade's entry? Recorded regardless of UseNewsDefense so the comparison sample keeps accumulating even while suppression is toggled during testing
    string            newsEventNameAtEntry; // learning-machine extension: the SPECIFIC validated event name matched at entry (e.g. "US Non-Farm Payrolls (USD)"), or "" if none -- powers ComputePerEventStats()'s report-only per-event breakdown
+   // --- v2 fields (spec 21) ---
+   ulong             positionId;     // POSITION_IDENTIFIER (live/tester) or synthetic id (paper); 0 for legacy rows
+   ENUM_X15_TRADE_SOURCE source;
+   bool              valid;          // false = recorded for audit but never learned from
+   string            invalidReason;
+   string            setupId;
+   ENUM_X15_SETUP_TYPE setupType;
+   datetime          entryTime;
+   double            entryPrice;     // volume-weighted across every entry deal
+   double            sl;             // original SL at entry
+   double            tp;             // original TP at entry
+   double            volume;         // peak volume held
+   double            riskPct;
+   double            riskMoney;
+   datetime          exitTimeFirst;  // first exit deal (a partial), = closeTime when there was none
+   double            exitPrice;      // volume-weighted across every exit deal
+   double            grossProfit;
+   double            commission;     // entry + exit commissions and fees
+   double            swap;
+   double            netProfit;
+   double            spreadAtEntryPts;
+   string            vwapState;
+   string            vpmacdState;
+   string            newsState;
+   string            compositeState;
+   string            regime;
+   string            structureState;
+   string            liquidityState;
+   string            session;
+   string            entryReason;
+   ENUM_X15_EXIT_REASON exitReason;
+   bool              isFlip;
+   int               evidenceScore;
   };
 JournalEntry g_journal[];
 
 // StatsResult: same shape used by ComputeStats() and both *AlignedStats()
-// functions below, so every consumer (ComputeAdaptiveRisk, RunDecision)
+// functions below, so every consumer (ComputeAdaptiveRisk, the dashboard)
 // treats "the whole journal" and "a filtered subset of it" identically.
 struct StatsResult
   {
@@ -433,45 +529,73 @@ struct StatsResult
    int               sampleSize;
   };
 
-// OpenPositionMeta: bookkeeping for positions that are still open, captured
-// once at entry and consumed once at close. Never persisted beyond that.
+// X15Position: the registry row for every position this file tracks --
+// its own (live or paper) and, for journaling only, external ones.
 //
-// CORRECTNESS-CRITICAL, audited: `ticket` is captured ONCE, in
-// RecordEntryMeta, from PositionGetTicket() at the position's true open.
-// MQL5 distinguishes POSITION_TICKET (can CHANGE -- on a netting account,
-// a position reversal changes it to the ticket of the reversing order)
-// from POSITION_IDENTIFIER (fixed for the position's entire lifetime,
-// defined as the ticket of the order that originally opened it). Because
-// this field is captured once at true entry and never refreshed from a
-// later poll, its value permanently equals that position's
-// POSITION_IDENTIFIER -- which is what HistorySelectByPosition() actually
-// needs to retrieve the position's full deal history, including a later
-// DEAL_ENTRY_INOUT reversal deal. Do NOT "simplify" this by refreshing
-// `ticket` to the current PositionGetTicket() value on each
-// SyncOpenPositions poll -- that would silently break history lookups
-// for any position that gets reversed on a netting account. (Verified
-// against MQL5 documentation and community reference during a full-file
-// audit; not verified against a live hedging/netting account in this
-// environment, since no MT5 terminal is available here.)
-struct OpenPositionMeta
+// CORRECTNESS-CRITICAL: positions are keyed by `positionId` =
+// POSITION_IDENTIFIER, never POSITION_TICKET. The ticket can CHANGE (on a
+// netting account a reversal changes it to the reversing order's ticket);
+// the identifier is fixed for the position's life and is what
+// HistorySelectByPosition() needs. `ticket` below is only a cache of the
+// CURRENT ticket, refreshed on every reconcile, and is used only for
+// PositionModify/PositionClose calls.
+struct X15Position
   {
+   ulong             positionId;
    ulong             ticket;
+   bool              isOwn;
+   bool              isPaper;
+   bool              isPreExisting;   // was already open when this EA started and had no persisted context: entry-time signals UNKNOWN
+   string            setupId;
+   ENUM_X15_SETUP_TYPE setupType;
    int               direction;
-   double            entryPrice;
-   double            slPriceAtEntry;
+   datetime          entryTime;
+   datetime          entryBarTime;
+   double            entryPrice;      // first fill
+   double            avgEntryPrice;   // blended after pyramid adds
+   double            volume;
+   double            peakVolume;
+   double            originalSL;      // as placed at entry -- never moved by break-even/trailing, so R stays anchored
+   double            originalTP;
+   double            currentSL;
+   double            currentTP;
+   double            riskPct;
+   double            riskMoney;       // money at risk at entry (+ each add's)
+   double            invalidation;
+   double            spreadAtEntryPts;
+   bool              beDone;
+   bool              partialDone;
+   int               modifyFailCount;
+   datetime          lastModifyTime;
+   datetime          firstExitTime;
+   ENUM_X15_EXIT_REASON pendingExitReason; // set just before this EA itself closes, so the journal records WHY
+   bool              isFlip;
+   int               evidenceScore;
    bool              vwapAligned;
    bool              vpMacdAligned;
    bool              nearValidatedNewsEvent;
    string            newsEventNameAtEntry;
+   string            vwapState;
+   string            vpmacdState;
+   string            newsState;
+   string            compositeState;
+   string            regime;
+   string            structureState;
+   string            liquidityState;
+   string            session;
+   string            entryReason;
+   // paper-only accounting (a live position's are read from deal history)
+   double            paperExitPriceVolume;
+   double            paperExitVolume;
+   double            paperGross;
+   bool              closed;
+   bool              isPendingOrder;  // paper stop-entry not yet triggered
+   double            pendingPrice;
+   datetime          pendingExpiry;
+   int               finalizeAttempts;
   };
-OpenPositionMeta g_openMeta[];
-bool g_firstSyncDone = false; // flips true after SyncOpenPositions' first pass -- see RecordEntryMeta's isPreExisting handling
-
-// Account safety governor state (ported/minimized from this repo's own
-// RiskEngine.mqh daily-lockout pattern) -- see UpdateDailySafetyGovernor()
-// and IsAccountHalted() near the pyramiding engine below.
-double g_dayStartEquity = 0.0;
-datetime g_dayStartTime = 0;
+X15Position g_positions[];
+bool g_firstSyncDone = false; // flips true after the first reconcile pass -- positions found on that pass pre-date this run
 
 //====================================================================
 // STATS
@@ -503,10 +627,15 @@ StatsResult ComputeStatsResultFromRArray(double &rValues[])
 
 StatsResult ComputeStats(void)
   {
+   // learnable rows only (spec 22): see IsLearnable() -- external, legacy,
+   // invalid and duplicate records never feed a gate, bonus or bound
    int n = ArraySize(g_journal);
    double rValues[];
    ArrayResize(rValues, n);
-   for(int i = 0; i < n; i++) rValues[i] = g_journal[i].rMultiple;
+   int count = 0;
+   for(int i = 0; i < n; i++)
+      if(IsLearnable(g_journal[i])) { rValues[count] = g_journal[i].rMultiple; count++; }
+   ArrayResize(rValues, count);
    return(ComputeStatsResultFromRArray(rValues));
   }
 
@@ -519,7 +648,7 @@ StatsResult ComputeVWAPAlignedStats(void)
    int count = 0;
    for(int i = 0; i < n; i++)
      {
-      if(g_journal[i].vwapAligned)
+      if(g_journal[i].vwapAligned && IsLearnable(g_journal[i]))
         {
          rValues[count] = g_journal[i].rMultiple;
          count++;
@@ -538,7 +667,7 @@ StatsResult ComputeVPMACDAlignedStats(void)
    int count = 0;
    for(int i = 0; i < n; i++)
      {
-      if(g_journal[i].vpMacdAligned)
+      if(g_journal[i].vpMacdAligned && IsLearnable(g_journal[i]))
         {
          rValues[count] = g_journal[i].rMultiple;
          count++;
@@ -568,6 +697,7 @@ NewsProximityStats ComputeNewsProximityStats(void)
    double awayR[]; ArrayResize(awayR, n); int awayCount = 0;
    for(int i = 0; i < n; i++)
      {
+      if(!IsLearnable(g_journal[i])) continue;
       if(g_journal[i].nearValidatedNewsEvent) { nearR[nearCount] = g_journal[i].rMultiple; nearCount++; }
       else                                    { awayR[awayCount] = g_journal[i].rMultiple; awayCount++; }
      }
@@ -602,7 +732,7 @@ int ComputePerEventStats(EventStatsRow &rows[])
    int n = ArraySize(g_journal);
    for(int i = 0; i < n; i++)
      {
-      if(g_journal[i].newsEventNameAtEntry == "") continue;
+      if(g_journal[i].newsEventNameAtEntry == "" || !IsLearnable(g_journal[i])) continue;
       bool known = false;
       for(int u = 0; u < uniqueCount; u++)
          if(uniqueNames[u] == g_journal[i].newsEventNameAtEntry) { known = true; break; }
@@ -620,7 +750,7 @@ int ComputePerEventStats(EventStatsRow &rows[])
       double rValues[]; int count = 0; ArrayResize(rValues, n);
       for(int i = 0; i < n; i++)
         {
-         if(g_journal[i].newsEventNameAtEntry == uniqueNames[u])
+         if(g_journal[i].newsEventNameAtEntry == uniqueNames[u] && IsLearnable(g_journal[i]))
            {
             rValues[count] = g_journal[i].rMultiple;
             count++;
@@ -725,13 +855,11 @@ string ClassifyVWAPTrend(string symbol)
    return("NEUTRAL"); // exactly on VWAP -- genuinely flat, not an error
   }
 
-// Usable exit-signal helper for whatever position-management loop this
-// engine gets wired into -- returns true when UseVWAPExit is enabled and
-// the VWAP trend has flipped against an open position's direction. This
-// file does not call it itself (it places no orders and manages no
-// positions); it is exposed as the natural integration point for an exit
-// engine, following the same "wire your own signal here" pattern already
-// used elsewhere in this repo's sibling EAs.
+// Live-read exit helper: true when UseVWAPExit is enabled and the VWAP
+// trend has flipped against the position. The position manager's own
+// VWAP trailing mode uses the CLOSED-bar read (ClassifyVWAPClosedBar)
+// instead, so an intrabar wobble cannot close a trade; this helper remains
+// for callers that explicitly want the live read.
 bool ShouldVWAPExit(string symbol, int positionDirection)
   {
    if(!UseVWAPExit) return(false);
@@ -1014,11 +1142,11 @@ string ClassifyVPMACDSignal(string symbol)
 // adding volume to a position -- and must earn that trust with its own
 // track record first. News Defense is the opposite: it can only ever
 // SUPPRESS a new entry, it never adds risk, and it never touches an
-// existing position (see GetGatedEntryDirection() and CheckNewsDefense()
-// below -- there is no code path anywhere in News Defense that force-
-// closes or resizes a position; the only place this file ever sends a
-// real order at all is the separately-gated Pyramiding Engine below,
-// which News Defense has no interaction with). If the underlying
+// existing position (EvaluateNewsGate() below outputs only ALLOW or BLOCK
+// for NEW entries and adds; there is no code path anywhere in News Defense
+// that closes or resizes a position -- the optional pre-event position
+// action is a separate, off-by-default input, InpNewsEmergencyAction,
+// owned by the position manager). If the underlying
 // research turns out to be wrong, the failure mode is "skipped a trade
 // that would have been fine," not "took on risk it shouldn't have." That
 // asymmetric downside is the deliberate, specific reason this one engine
@@ -1323,11 +1451,12 @@ double ComputeAdaptiveRisk(string symbol, int direction, bool isFlipReentry = fa
 // wiring a real proven bound together with an invented approximation
 // and presenting the pair as equally rigorous, which is exactly the
 // kind of false confidence this file's whole design exists to avoid.
-// Until that's specified, ComputeKellyRuinBound() is exposed as its own
-// callable check (see the dashboard line in RunDecision() below) for a
-// future entry/exit engine to call directly against its own candidate
-// risk fraction, the same "wire your own signal here" pattern used by
-// GetCompositeDirection() above.
+// The robot keeps this bound REPORT-ONLY (spec 24): it is shown on the
+// dashboard with an explicit VALID / INSUFFICIENT_SAMPLE / BOUND_FAILED /
+// INVALID_INPUT / RUIN_CONDITION status (KellyStatus()) and is never
+// converted into position size. The Monte Carlo report now exists too
+// (RunMonteCarlo()), but as a separate report-only layer, not paired with
+// this bound into a gate.
 //====================================================================
 struct RuinBoundResult
   {
@@ -1381,10 +1510,12 @@ RuinBoundResult ComputeKellyRuinBound(StatsResult &stats, double riskFractionPct
 
    double f = riskFractionPct / 100.0;
    double sum = 0.0;
-   int n = ArraySize(g_journal); // same full-journal iteration ComputeStats() uses
+   int n = 0; // learnable rows only -- the same set ComputeStats() uses
 
-   for(int i = 0; i < n; i++)
+   for(int i = 0; i < ArraySize(g_journal); i++)
      {
+      if(!IsLearnable(g_journal[i])) continue;
+      n++;
       double term = 1.0 + f * g_journal[i].rMultiple;
       if(term <= 0.0)
         {
@@ -1400,486 +1531,11 @@ RuinBoundResult ComputeKellyRuinBound(StatsResult &stats, double riskFractionPct
       sum += MathPow(term, -lambda);
      }
 
+   if(n <= 0) return(result); // no learnable rows: unavailable, never a NaN average
    result.averageTerm = sum / n;
    result.boundSatisfied = (result.averageTerm <= 1.0);
    result.available = true;
    return(result);
-  }
-
-//====================================================================
-// ACCOUNT SAFETY GOVERNOR
-//--------------------------------------------------------------------
-// Minimal, real daily-loss circuit breaker -- ported and scoped down from
-// this repo's own AutopsyX_FlipDemon_Extreme.mq5 / RiskEngine.mqh, which
-// has a fuller version (consecutive-loss limits, rolling trade-rate caps,
-// spread/margin checks) not duplicated here. This file never had any
-// execution path before the pyramiding engine below, so it never needed
-// an account-level halt state until now; this is the minimum real one
-// that requirement needs, not a claim of parity with the sibling file's
-// more complete governor.
-//====================================================================
-void UpdateDailySafetyGovernor(void)
-  {
-   MqlDateTime dt;
-   TimeToStruct(TimeCurrent(), dt);
-   datetime dayStart = TimeCurrent() - (dt.hour*3600 + dt.min*60 + dt.sec);
-   if(dayStart != g_dayStartTime)
-     {
-      g_dayStartTime = dayStart;
-      g_dayStartEquity = AccountInfoDouble(ACCOUNT_EQUITY);
-     }
-   if(g_dayStartEquity <= 0.0) g_dayStartEquity = AccountInfoDouble(ACCOUNT_EQUITY);
-  }
-
-bool IsAccountHalted(string &reasonOut)
-  {
-   reasonOut = "";
-   // g_dayStartEquity is only <=0 before UpdateDailySafetyGovernor() has
-   // ever run once (e.g. OnInit hasn't ticked yet) -- fail OPEN only in
-   // that specific startup instant, never as an ongoing state; OnTick
-   // calls UpdateDailySafetyGovernor() before anything else every tick,
-   // so this window is at most the first tick of a run.
-   if(g_dayStartEquity <= 0.0) return(false);
-   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-   double lossPct = (g_dayStartEquity - equity) / g_dayStartEquity * 100.0;
-   if(lossPct >= DailyLossLimitPercent)
-     {
-      reasonOut = StringFormat("Daily loss limit reached: -%.2f%% (limit %.2f%%) -- pyramid adds halted for the rest of the day", lossPct, DailyLossLimitPercent);
-      return(true);
-     }
-   return(false);
-  }
-
-//====================================================================
-// PYRAMIDING ENGINE  (section 21)
-//--------------------------------------------------------------------
-// Adds to already-open, already-PROFITABLE positions only -- structurally
-// the opposite of martingale/averaging-down, which adds to LOSING
-// positions to lower the average entry. A position that has never been
-// profitable by MinProfitRMultipleToAdd can never receive an add here;
-// there is no code path in CheckPyramidEligibility() that reads a
-// negative or small-positive R and proceeds anyway.
-//
-// Every add is sized the SAME way a fresh trade would be sized: fresh
-// call to ComputeAdaptiveRisk() against CURRENT account equity at the
-// moment of the add, through the same real risk-to-lots math
-// (CalculateLotSizeFromRisk, ported from this repo's own already-audited
-// RiskEngine.CalculateLotSize) used everywhere else. There is no separate,
-// looser, "it's just adding to a winner" sizing path. If the account
-// already has more capital at risk elsewhere, or ComputeAdaptiveRisk's
-// earned bonuses have since changed, an add can come out SMALLER than
-// the original entry was -- that is correct behavior, not a bug, and is
-// exactly the mechanism that keeps this from becoming an ever-growing,
-// unhedged position the way an unconstrained pyramiding rule would.
-//
-// Aggregate risk across ALL legs of a pyramided position (not just the
-// newest one) is recalculated and capped against InpMaxRiskPct before
-// every single add, via ComputeAggregatePyramidRisk() + the cap inside
-// SizePyramidAdd() -- an add that would push the WHOLE position's risk
-// over that ceiling is shrunk to fit, the same reduce-not-reject
-// convention RiskEngine.mqh's own CalculateLotSize() already uses for
-// its max-exposure cap.
-//
-// Adds require FRESH structural confirmation, not merely "price moved
-// favorably since the last add" -- but this file does not yet have the
-// market-structure/BOS engine (design spec section 5) that language was
-// originally written against; that engine has not been built in this
-// file as of this writing. What DOES already exist as a genuine,
-// discrete, non-persistent EVENT in this file is a VP-MACD crossover
-// (CheckVPMACDBuySignal/SellSignal are true only on the bar the
-// crossover happens, never on later bars where it's merely still true) --
-// so RequireFreshConfirmation uses THAT as the fresh-event source, and
-// says so honestly rather than silently treating "structure still
-// agrees" as if it were a new signal. If UseVPMACDEntry is off, there is
-// currently no other discrete/event-based signal in this file to satisfy
-// RequireFreshConfirmation with, and eligibility is refused with a
-// specific reason rather than silently falling back to something weaker.
-//
-// Pyramiding is scoped to NETTING accounts only (checked explicitly
-// below) -- it relies on MT5 merging same-direction adds into one
-// position with one blended volume/entry/SL, which is netting-account
-// behavior. On a hedging account an "add" would open a SEPARATE
-// position/ticket instead of merging, which is a materially different
-// feature this file does not implement; this matches the sibling
-// AutopsyX_FlipDemon_Extreme.mq5's own explicit netting-only design for
-// the same underlying reason.
-//====================================================================
-
-// Ported from RiskEngine.mqh's NormalizeVolume -- floors to the broker's
-// volume step, clamps to [min,max], rounds to the step's own decimal
-// precision so the result is a clean, broker-acceptable lot value.
-double NormalizeVolumeForSymbol(string symbol, double rawLots)
-  {
-   double volMin  = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
-   double volMax  = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
-   double volStep = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
-   if(volStep <= 0.0) volStep = 0.01;
-
-   double vol = MathFloor(rawLots/volStep) * volStep;
-   vol = MathMax(volMin, MathMin(volMax, vol));
-
-   int stepDigits = 0;
-   double s = volStep;
-   while(MathAbs(s - MathRound(s)) > 1e-8 && stepDigits < 8) { s *= 10; stepDigits++; }
-   return(NormalizeDouble(vol, stepDigits));
-  }
-
-// Ported from RiskEngine.mqh's CalculateLotSize -- risk-percent based,
-// real symbol tick size/tick value, never a fixed or martingale-scaled
-// formula. stopDistancePrice is a raw PRICE distance (not points); the
-// caller is responsible for passing the right one (see SizePyramidAdd's
-// comment on which distance is "the add's own stop").
-double CalculateLotSizeFromRisk(string symbol, double riskPercent, double stopDistancePrice)
-  {
-   if(riskPercent <= 0.0 || stopDistancePrice <= 0.0) return(0.0);
-
-   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-   double riskAmount = equity * (riskPercent/100.0);
-
-   double tickSize  = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
-   double tickValue = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
-   if(tickSize <= 0.0 || tickValue <= 0.0) return(0.0);
-
-   double valuePerLot = (stopDistancePrice/tickSize) * tickValue;
-   if(valuePerLot <= 0.0) return(0.0);
-
-   double lots = riskAmount / valuePerLot;
-   // Refuse rather than round UP: NormalizeVolumeForSymbol clamps to the
-   // broker's SYMBOL_VOLUME_MIN, so a risk-derived size below that minimum
-   // would otherwise silently become a LARGER position than the risk budget
-   // allows. (The sibling RiskEngine.mqh's NormalizeVolume has that same
-   // clamp-up; it is deliberately not inherited here.)
-   double volMin  = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
-   double volStep = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
-   if(volStep <= 0.0) volStep = 0.01;
-   if(MathFloor(lots/volStep + 1e-9) * volStep < volMin - 1e-12) return(0.0);
-   return(NormalizeVolumeForSymbol(symbol, lots));
-  }
-
-// Authoritative pyramid-add count for a position, derived from real MT5
-// deal history rather than a broker comment string. DEAL_ENTRY_IN counts
-// every volume-increasing deal on this position's identifier -- the
-// original entry plus every same-direction add -- so add count = this - 1.
-// (A human-readable "PYR:N" tag is still written into each order's
-// comment via BuildPyramidComment() below, for visibility in the
-// terminal's own position list -- but it is NOT what this file trusts as
-// the count, since whether a broker/terminal reliably surfaces an
-// UPDATED comment on a merged netting position across multiple orders is
-// not something verifiable without a live MT5 terminal, which this
-// environment does not have. Deriving the count from deal history instead
-// sidesteps that uncertainty entirely and survives an EA/terminal restart
-// natively, since deal history is the broker's own permanent record.)
-int CountPositionEntryDeals(ulong positionIdentifier)
-  {
-   if(!HistorySelectByPosition((long)positionIdentifier)) return(0);
-   int total = HistoryDealsTotal();
-   int count = 0;
-   for(int i = 0; i < total; i++)
-     {
-      ulong dealTicket = HistoryDealGetTicket(i);
-      if(dealTicket == 0) continue;
-      long entryType = HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
-      if(entryType == DEAL_ENTRY_IN) count++;
-     }
-   return(count);
-  }
-
-string BuildPyramidComment(int addNumber)
-  {
-   return(StringFormat("X15 PYR:%d", addNumber));
-  }
-
-// Volume-weighted average price across every DEAL_ENTRY_IN deal on this
-// position's identifier -- the original entry plus every same-direction
-// add, each weighted by its own volume. This IS the aggregate position's
-// true entry basis on a netting account (MT5 computes POSITION_PRICE_OPEN
-// the same way for the still-open case; this recomputes it from deal
-// history so it's also available for a position that has already closed,
-// which is what AppendJournalFromClosedPosition below needs it for).
-// Returns -1.0 if there is no usable deal history -- callers must not
-// treat that as "entry price zero."
-double ComputeBlendedEntryPrice(ulong positionIdentifier)
-  {
-   if(!HistorySelectByPosition((long)positionIdentifier)) return(-1.0);
-   int total = HistoryDealsTotal();
-   double sumPriceVolume = 0.0, sumVolume = 0.0;
-   for(int i = 0; i < total; i++)
-     {
-      ulong dealTicket = HistoryDealGetTicket(i);
-      if(dealTicket == 0) continue;
-      long entryType = HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
-      if(entryType != DEAL_ENTRY_IN) continue; // original entry + adds only -- never an OUT/OUT_BY/INOUT (closing/reversal) deal
-      double dealVolume = HistoryDealGetDouble(dealTicket, DEAL_VOLUME);
-      double dealPrice  = HistoryDealGetDouble(dealTicket, DEAL_PRICE);
-      sumPriceVolume += dealPrice * dealVolume;
-      sumVolume      += dealVolume;
-     }
-   if(sumVolume <= 0.0) return(-1.0);
-   return(sumPriceVolume / sumVolume);
-  }
-
-// Best-effort, NOT authoritative (see CountPositionEntryDeals's comment
-// above) -- provided for symmetry with the task's original comment-
-// tagging request and for display purposes only.
-int ExtractPyramidCountFromComment(string comment)
-  {
-   int pos = StringFind(comment, "PYR:");
-   if(pos < 0) return(-1);
-   string tail = StringSubstr(comment, pos + 4);
-   return((int)StringToInteger(tail));
-  }
-
-struct AggregatePyramidRisk
-  {
-   double totalLots;
-   double blendedEntryPrice;
-   double totalRiskAmount;         // account-currency $ at risk to the position's CURRENT SL, across its full current volume
-   double totalRiskPercentOfEquity;
-  };
-
-// On a netting account MT5 already merges every same-direction add into
-// ONE position record with one blended volume and one blended entry
-// price -- PositionGetDouble() returns that aggregate directly. This
-// function does not need to re-derive it deal-by-deal; it exists to turn
-// that already-aggregate state into the risk-percent figure the pre-add
-// cap check (inside SizePyramidAdd) needs.
-AggregatePyramidRisk ComputeAggregatePyramidRisk(ulong positionTicket)
-  {
-   AggregatePyramidRisk agg;
-   agg.totalLots = 0.0; agg.blendedEntryPrice = 0.0;
-   agg.totalRiskAmount = 0.0; agg.totalRiskPercentOfEquity = 0.0;
-
-   if(!PositionSelectByTicket(positionTicket)) return(agg);
-   agg.totalLots = PositionGetDouble(POSITION_VOLUME);
-   agg.blendedEntryPrice = PositionGetDouble(POSITION_PRICE_OPEN);
-
-   double slPrice = PositionGetDouble(POSITION_SL);
-   if(slPrice == 0.0) return(agg); // no SL -- risk undefined, leave totals at 0 rather than guess
-
-   long posType = PositionGetInteger(POSITION_TYPE);
-   int direction = (posType == POSITION_TYPE_BUY) ? 1 : -1;
-   double riskDistancePrice = (direction == 1) ? (agg.blendedEntryPrice - slPrice) : (slPrice - agg.blendedEntryPrice);
-   if(riskDistancePrice <= 0.0) return(agg);
-
-   string symbol = PositionGetString(POSITION_SYMBOL);
-   double tickSize  = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
-   double tickValue = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
-   if(tickSize <= 0.0 || tickValue <= 0.0) return(agg);
-
-   agg.totalRiskAmount = (riskDistancePrice/tickSize) * tickValue * agg.totalLots;
-
-   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-   if(equity > 0.0) agg.totalRiskPercentOfEquity = (agg.totalRiskAmount/equity) * 100.0;
-
-   return(agg);
-  }
-
-struct PyramidEligibility
-  {
-   bool   eligible;
-   string reason;
-  };
-
-PyramidEligibility CheckPyramidEligibility(ulong positionTicket)
-  {
-   PyramidEligibility result;
-   result.eligible = false;
-   result.reason = "";
-
-   if(!AllowPyramiding) { result.reason = "AllowPyramiding is OFF"; return(result); }
-
-   string haltReason;
-   if(IsAccountHalted(haltReason)) { result.reason = haltReason; return(result); }
-
-   if(!PositionSelectByTicket(positionTicket)) { result.reason = "position not found"; return(result); }
-
-   string symbol = PositionGetString(POSITION_SYMBOL);
-   long posType = PositionGetInteger(POSITION_TYPE);
-   int direction = (posType == POSITION_TYPE_BUY) ? 1 : -1;
-   double entryPrice = PositionGetDouble(POSITION_PRICE_OPEN);
-   double slPrice = PositionGetDouble(POSITION_SL);
-   double currentPrice = PositionGetDouble(POSITION_PRICE_CURRENT);
-
-   if(slPrice == 0.0) { result.reason = "no SL on this position -- undefined risk basis, cannot evaluate profit in R"; return(result); }
-
-   double riskDistance = (direction == 1) ? (entryPrice - slPrice) : (slPrice - entryPrice);
-   if(riskDistance <= 0.0) { result.reason = "SL on the wrong side of entry -- undefined risk basis"; return(result); }
-
-   double currentR = (direction == 1) ? (currentPrice - entryPrice)/riskDistance : (entryPrice - currentPrice)/riskDistance;
-   if(currentR < MinProfitRMultipleToAdd)
-     {
-      result.reason = StringFormat("position at %.2fR, needs >= %.2fR to add", currentR, MinProfitRMultipleToAdd);
-      return(result);
-     }
-
-   int addsSoFar = CountPositionEntryDeals((ulong)PositionGetInteger(POSITION_IDENTIFIER)) - 1; // identifier, not ticket: they diverge after a netting reversal
-   if(addsSoFar < 0) addsSoFar = 0;
-   if(addsSoFar >= MaxPyramidAdds)
-     {
-      result.reason = StringFormat("already at max adds (%d/%d)", addsSoFar, MaxPyramidAdds);
-      return(result);
-     }
-
-   if(RequireFreshConfirmation)
-     {
-      if(!UseVPMACDEntry)
-        {
-         result.reason = "RequireFreshConfirmation needs UseVPMACDEntry enabled -- no other discrete, event-based confirmation signal exists in this file yet";
-         return(result);
-        }
-      bool freshBuy  = CheckVPMACDBuySignal(symbol);
-      bool freshSell = CheckVPMACDSellSignal(symbol);
-      bool freshConfirmed = (direction == 1 && freshBuy) || (direction == -1 && freshSell);
-      if(!freshConfirmed)
-        {
-         result.reason = "no fresh VP-MACD crossover confirmation in the position's direction on this bar";
-         return(result);
-        }
-     }
-
-   result.eligible = true;
-   result.reason = "eligible";
-   return(result);
-  }
-
-// Sizes one add exactly like a fresh trade would be sized -- see the
-// engine header comment above for why. The stop distance used here is
-// CURRENT PRICE to the position's EXISTING SL, not the original entry's
-// distance: this reflects what the NEW lot itself would actually lose if
-// stopped out from where it's about to fill, which is the risk this
-// specific add introduces, not the risk the position as a whole has
-// already proven it can absorb.
-double SizePyramidAdd(ulong positionTicket, string symbol, int direction)
-  {
-   if(!PositionSelectByTicket(positionTicket)) return(0.0);
-   double slPrice = PositionGetDouble(POSITION_SL);
-   if(slPrice == 0.0) return(0.0);
-
-   double currentPrice = SymbolInfoDouble(symbol, direction == 1 ? SYMBOL_ASK : SYMBOL_BID);
-   if(currentPrice <= 0.0) return(0.0);
-
-   double stopDistancePrice = (direction == 1) ? (currentPrice - slPrice) : (slPrice - currentPrice);
-   if(stopDistancePrice <= 0.0) return(0.0); // current price is already through the existing SL -- do not add
-
-   double riskPct = ComputeAdaptiveRisk(symbol, direction, false); // false: an add is not a flip re-entry
-   double rawLots = CalculateLotSizeFromRisk(symbol, riskPct, stopDistancePrice);
-   if(rawLots <= 0.0) return(0.0);
-
-   // Aggregate-risk cap: if adding rawLots would push the WHOLE position's
-   // risk-to-current-SL over InpMaxRiskPct, shrink the add to fit rather
-   // than reject it outright -- the same reduce-not-reject convention
-   // RiskEngine.mqh's own CalculateLotSize() already uses for its max-
-   // exposure cap (MathMin(lots, m_maxExposureLots)).
-   AggregatePyramidRisk aggBefore = ComputeAggregatePyramidRisk(positionTicket);
-   double tickSize  = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
-   double tickValue = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
-   if(tickSize <= 0.0 || tickValue <= 0.0) return(0.0);
-
-   double addRiskAmount = (stopDistancePrice/tickSize) * tickValue * rawLots;
-   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-   if(equity <= 0.0) return(0.0);
-
-   double projectedTotalRiskPct = ((aggBefore.totalRiskAmount + addRiskAmount) / equity) * 100.0;
-   if(projectedTotalRiskPct > InpMaxRiskPct)
-     {
-      double allowedAddRiskAmount = MathMax(0.0, equity*(InpMaxRiskPct/100.0) - aggBefore.totalRiskAmount);
-      double allowedAddRiskPct = (allowedAddRiskAmount/equity) * 100.0;
-      rawLots = CalculateLotSizeFromRisk(symbol, allowedAddRiskPct, stopDistancePrice);
-     }
-
-   return(rawLots);
-  }
-
-struct PyramidAddResult
-  {
-   bool   sent;         // true only if a LIVE order was actually confirmed placed
-   bool   isPaper;
-   double lots;
-   double price;
-   string errorReason;
-  };
-
-PyramidAddResult SendPyramidAdd(ulong positionTicket)
-  {
-   PyramidAddResult result;
-   result.sent = false; result.isPaper = !ExecutionModeLive;
-   result.lots = 0.0; result.price = 0.0; result.errorReason = "";
-
-   if(!PositionSelectByTicket(positionTicket)) { result.errorReason = "position not found"; return(result); }
-   string symbol = PositionGetString(POSITION_SYMBOL);
-   long posType = PositionGetInteger(POSITION_TYPE);
-   int direction = (posType == POSITION_TYPE_BUY) ? 1 : -1;
-   double existingSl = PositionGetDouble(POSITION_SL);
-   double existingTp = PositionGetDouble(POSITION_TP);
-
-   double addLots = SizePyramidAdd(positionTicket, symbol, direction);
-   if(addLots <= 0.0)
-     {
-      result.errorReason = "sized add rounds to zero lots (risk too small relative to the volume step, or the aggregate risk cap is already saturated)";
-      return(result);
-     }
-
-   int addsSoFar = CountPositionEntryDeals((ulong)PositionGetInteger(POSITION_IDENTIFIER)) - 1; // identifier, not ticket: they diverge after a netting reversal
-   if(addsSoFar < 0) addsSoFar = 0;
-   string comment = BuildPyramidComment(addsSoFar + 1);
-   result.lots = addLots;
-
-   if(!ExecutionModeLive)
-     {
-      PrintFormat("AUTOPSY X15 [PAPER]: would add %.2f lots to %s position %I64u (%s), preserving SL=%.5f TP=%.5f, comment='%s'. Nothing sent -- ExecutionModeLive=false.",
-                  addLots, symbol, positionTicket, direction == 1 ? "BUY" : "SELL", existingSl, existingTp, comment);
-      return(result);
-     }
-
-   // LIVE: a real order. existingSl/existingTp are passed through EXACTLY
-   // as read above, unchanged -- CRITICAL, not cosmetic. On a netting
-   // account, the SL/TP carried on ANY order against a symbol with an
-   // already-open position typically becomes that position's new SL/TP.
-   // Passing anything other than the position's own current values here
-   // would be a real, silent way to lose stop-loss protection on the
-   // WHOLE blended position because of an add meant to only add volume.
-   bool ok = (direction == 1)
-             ? g_trade.Buy(addLots, symbol, 0.0, existingSl, existingTp, comment)
-             : g_trade.Sell(addLots, symbol, 0.0, existingSl, existingTp, comment);
-
-   if(!ok)
-     {
-      result.errorReason = StringFormat("OrderSend failed: %u %s", g_trade.ResultRetcode(), g_trade.ResultRetcodeDescription());
-      PrintFormat("AUTOPSY X15 [LIVE]: pyramid add FAILED for position %I64u: %s", positionTicket, result.errorReason);
-      return(result);
-     }
-
-   result.sent = true;
-   result.price = g_trade.ResultPrice();
-   PrintFormat("AUTOPSY X15 [LIVE]: pyramid add SENT for position %I64u: %.2f lots %s %s @ ~%.5f, SL=%.5f TP=%.5f, comment='%s'.",
-               positionTicket, addLots, symbol, direction == 1 ? "BUY" : "SELL", result.price, existingSl, existingTp, comment);
-   return(result);
-  }
-
-// Called once per new bar from OnTick (see LIFECYCLE below) -- scans this
-// symbol's currently open positions, checks eligibility, and sends any
-// eligible add. Netting-account-only (see engine header comment).
-void ProcessPyramidOpportunities(void)
-  {
-   if(!AllowPyramiding) return;
-
-   long marginMode = AccountInfoInteger(ACCOUNT_MARGIN_MODE);
-   if(marginMode != ACCOUNT_MARGIN_MODE_RETAIL_NETTING) return;
-
-   int total = PositionsTotal();
-   for(int i = 0; i < total; i++)
-     {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket == 0) continue;
-      if(!PositionSelectByTicket(ticket)) continue;
-      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
-      if(InpMagicNumberFilter != 0 && (ulong)PositionGetInteger(POSITION_MAGIC) != InpMagicNumberFilter) continue;
-
-      PyramidEligibility elig = CheckPyramidEligibility(ticket);
-      if(!elig.eligible) continue;
-
-      SendPyramidAdd(ticket);
-     }
   }
 
 //====================================================================
@@ -3415,113 +3071,1650 @@ void RunMarketAnalysis(void)
   }
 
 //====================================================================
-// TRADE LIFECYCLE -- journal population
+// EXECUTION-LAYER STATE
 //====================================================================
-int FindOpenMetaIndex(ulong ticket)
+bool     g_reconcileRequested = true;
+bool     g_stateDirty = false;
+bool     g_perfDirty = true;
+bool     g_sendInFlight = false;
+datetime g_lastTradeTime = 0;
+string   g_lastError = "";
+datetime g_lastErrorTime = 0;
+ulong    g_paperCounter = 0;
+
+void X15Error(string category, string message)
   {
-   for(int i = 0; i < ArraySize(g_openMeta); i++)
-      if(g_openMeta[i].ticket == ticket) return(i);
+   g_lastError = "[" + category + "] " + message;
+   g_lastErrorTime = TimeCurrent();
+   X15Log(category, message, true);
+  }
+
+bool IsTester(void)
+  {
+   return(MQLInfoInteger(MQL_TESTER) != 0);
+  }
+
+bool IsNettingAccount(void)
+  {
+   return(AccountInfoInteger(ACCOUNT_MARGIN_MODE) != ACCOUNT_MARGIN_MODE_RETAIL_HEDGING);
+  }
+
+// Journal source for trades this run places itself.
+ENUM_X15_TRADE_SOURCE OwnTradeSource(void)
+  {
+   if(InpExecutionMode == X15_PAPER_EXECUTION) return(X15_SRC_PAPER);
+   if(IsTester()) return(X15_SRC_TESTER);
+   return(X15_SRC_LIVE);
+  }
+
+string SourceLabel(ENUM_X15_TRADE_SOURCE s)
+  {
+   return(EnumLabel(EnumToString(s), "X15_SRC_"));
+  }
+
+string ExitReasonLabel(ENUM_X15_EXIT_REASON r)
+  {
+   return(EnumLabel(EnumToString(r), "X15_EXIT_"));
+  }
+
+double NormalizePriceToTick(double price)
+  {
+   if(g_spec.tickSize <= 0.0) return(NormalizeDouble(price, g_spec.digits));
+   return(NormalizeDouble(MathRound(price / g_spec.tickSize) * g_spec.tickSize, g_spec.digits));
+  }
+
+int VolumeDigits(void)
+  {
+   int d = 0;
+   double s = g_spec.volStep;
+   while(s > 0.0 && MathAbs(s - MathRound(s)) > 1e-8 && d < 8) { s *= 10.0; d++; }
+   return(d);
+  }
+
+// Floors to the broker volume step. Below the broker minimum it returns 0:
+// a position is never rounded UP into more risk than was budgeted.
+double FloorLots(double rawLots)
+  {
+   double step = (g_spec.volStep > 0.0) ? g_spec.volStep : 0.01;
+   double v = MathFloor(rawLots / step + 1e-9) * step;
+   v = MathMin(v, g_spec.volMax);
+   if(v < g_spec.volMin - 1e-12) return(0.0);
+   return(NormalizeDouble(v, VolumeDigits()));
+  }
+
+// Broker stops level and freeze level, whichever is larger. Stops placed at
+// least this far away can also be modified later without hitting the freeze.
+double MinStopDistancePrice(void)
+  {
+   return(MathMax(g_spec.stopsLevelPts, g_spec.freezeLevelPts) * g_spec.point);
+  }
+
+//====================================================================
+// POSITION REGISTRY
+//====================================================================
+void ResetPosition(X15Position &p)
+  {
+   p.positionId = 0; p.ticket = 0; p.isOwn = false; p.isPaper = false; p.isPreExisting = false;
+   p.setupId = ""; p.setupType = X15_SETUP_NONE; p.direction = 0;
+   p.entryTime = 0; p.entryBarTime = 0; p.entryPrice = 0.0; p.avgEntryPrice = 0.0;
+   p.volume = 0.0; p.peakVolume = 0.0;
+   p.originalSL = 0.0; p.originalTP = 0.0; p.currentSL = 0.0; p.currentTP = 0.0;
+   p.riskPct = 0.0; p.riskMoney = 0.0; p.invalidation = 0.0; p.spreadAtEntryPts = 0.0;
+   p.beDone = false; p.partialDone = false; p.modifyFailCount = 0; p.lastModifyTime = 0;
+   p.firstExitTime = 0; p.pendingExitReason = X15_EXIT_NONE;
+   p.isFlip = false; p.evidenceScore = 0;
+   p.vwapAligned = false; p.vpMacdAligned = false; p.nearValidatedNewsEvent = false; p.newsEventNameAtEntry = "";
+   p.vwapState = "UNKNOWN"; p.vpmacdState = "UNKNOWN"; p.newsState = "UNKNOWN"; p.compositeState = "UNKNOWN";
+   p.regime = "UNKNOWN"; p.structureState = "UNKNOWN"; p.liquidityState = "UNKNOWN"; p.session = "UNKNOWN";
+   p.entryReason = "";
+   p.paperExitPriceVolume = 0.0; p.paperExitVolume = 0.0; p.paperGross = 0.0;
+   p.closed = false; p.isPendingOrder = false; p.pendingPrice = 0.0; p.pendingExpiry = 0;
+   p.finalizeAttempts = 0;
+  }
+
+int FindPositionIndex(ulong positionId, bool isPaper)
+  {
+   for(int i = 0; i < ArraySize(g_positions); i++)
+      if(g_positions[i].positionId == positionId && g_positions[i].isPaper == isPaper) return(i);
    return(-1);
   }
 
-void RemoveOpenMetaAt(int idx)
+void RemovePositionAt(int idx)
   {
-   int n = ArraySize(g_openMeta);
-   for(int i = idx; i < n - 1; i++) g_openMeta[i] = g_openMeta[i+1];
-   ArrayResize(g_openMeta, n - 1);
+   int n = ArraySize(g_positions);
+   if(idx < 0 || idx >= n) return;
+   for(int i = idx; i < n - 1; i++) g_positions[i] = g_positions[i+1];
+   ArrayResize(g_positions, n - 1);
+   g_stateDirty = true;
   }
 
-// Captures the VWAP/VP-MACD/News alignment reads AT ENTRY (frozen for the
-// trade's life) plus the entry price and SL actually set on the position,
-// which is the real risk basis used to compute the closed trade's
-// R-multiple later.
-//
-// isPreExisting: true when this ticket was already open the very first
-// time this EA ever synced positions (i.e. it existed before this run
-// started -- attached to a chart with a position already open, or a
-// terminal/EA restart mid-trade). In that case "at entry" is unknowable:
-// reading the signals NOW would silently violate the "captured at entry,
-// frozen" invariant every alignment stat in this file depends on, by
-// stamping a position with a signal read from hours or days after it
-// actually opened. Rather than fabricate that, all three alignment flags
-// are forced false (== "unknown," same convention as an unavailable
-// signal) and this is logged plainly rather than done silently.
-void RecordEntryMeta(ulong ticket, bool isPreExisting)
+void AppendPosition(X15Position &p)
   {
-   if(!PositionSelectByTicket(ticket)) return;
+   int n = ArraySize(g_positions);
+   ArrayResize(g_positions, n + 1);
+   g_positions[n] = p;
+   g_stateDirty = true;
+  }
 
-   OpenPositionMeta meta;
-   meta.ticket         = ticket;
-   long posType        = PositionGetInteger(POSITION_TYPE);
-   meta.direction       = (posType == POSITION_TYPE_BUY) ? 1 : -1;
-   meta.entryPrice      = PositionGetDouble(POSITION_PRICE_OPEN);
-   meta.slPriceAtEntry  = PositionGetDouble(POSITION_SL);
-
-   if(isPreExisting)
+// Finds the live position by its immutable identifier and leaves it
+// SELECTED; ticketOut is its current (possibly changed) ticket.
+bool SelectLivePositionById(ulong positionId, ulong &ticketOut)
+  {
+   ticketOut = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
-      meta.vwapAligned = false;
-      meta.vpMacdAligned = false;
-      meta.nearValidatedNewsEvent = false;
-      meta.newsEventNameAtEntry = "";
-      PrintFormat("AUTOPSY X15: position %I64u was already open when this EA started tracking -- its true entry-time signal state is unknown, so VWAP/VP-MACD/news alignment are recorded as unknown (false) rather than read from the CURRENT signal state.", ticket);
+      ulong t = PositionGetTicket(i);
+      if(t == 0) continue;
+      if((ulong)PositionGetInteger(POSITION_IDENTIFIER) == positionId) { ticketOut = t; return(true); }
+     }
+   return(false);
+  }
+
+int OwnOpenPositionCount(void)
+  {
+   int c = 0;
+   for(int i = 0; i < ArraySize(g_positions); i++)
+      if(g_positions[i].isOwn && !g_positions[i].closed && !g_positions[i].isPendingOrder) c++;
+   return(c);
+  }
+
+//====================================================================
+// LEARNING FILTER  (spec 22)
+//--------------------------------------------------------------------
+// Only completed, valid trades this EA placed itself are learned from.
+// External positions (manual, other EAs) and rejected/incomplete records
+// are journaled for audit but never feed a gate, a bonus or the Kelly
+// bound. Legacy v1 rows could have come from any position on the symbol,
+// so they are excluded unless the operator explicitly opts in.
+//====================================================================
+bool IsLearnable(JournalEntry &e)
+  {
+   if(!e.valid) return(false);
+   if(e.source == X15_SRC_EXTERNAL) return(false);
+   if(e.source == X15_SRC_LEGACY) return(InpLearningSource == X15_LEARN_ALL_OWN);
+   if(e.source == X15_SRC_PAPER) return(InpLearningSource != X15_LEARN_LIVE_ONLY);
+   return(true); // LIVE, TESTER
+  }
+
+bool JournalHasPosition(ulong positionId, ENUM_X15_TRADE_SOURCE source)
+  {
+   if(positionId == 0) return(false);
+   for(int i = ArraySize(g_journal) - 1; i >= 0; i--)
+      if(g_journal[i].positionId == positionId && g_journal[i].source == source) return(true);
+   return(false);
+  }
+
+// Most recent close of this EA's own trades on this symbol (for cooldown and flip detection).
+bool LastOwnClose(datetime &closeTime, int &direction)
+  {
+   closeTime = 0; direction = 0;
+   ENUM_X15_TRADE_SOURCE src = OwnTradeSource();
+   for(int i = ArraySize(g_journal) - 1; i >= 0; i--)
+     {
+      if(g_journal[i].source != src || g_journal[i].symbol != _Symbol) continue;
+      closeTime = g_journal[i].closeTime;
+      direction = g_journal[i].direction;
+      return(true);
+     }
+   return(false);
+  }
+
+// Trailing streak of losing own trades. Read from the persisted journal, so
+// neither a restart nor a new day resets it -- the pause expires only with
+// time (InpConsecutiveLossPauseHours) or a winning trade.
+int ConsecutiveOwnLosses(datetime &lastLossTime)
+  {
+   lastLossTime = 0;
+   ENUM_X15_TRADE_SOURCE src = OwnTradeSource();
+   int streak = 0;
+   for(int i = ArraySize(g_journal) - 1; i >= 0; i--)
+     {
+      if(g_journal[i].source != src || g_journal[i].symbol != _Symbol || !g_journal[i].valid) continue;
+      if(g_journal[i].netProfit < 0.0)
+        {
+         streak++;
+         if(lastLossTime == 0) lastLossTime = g_journal[i].closeTime;
+        }
+      else if(g_journal[i].netProfit > 0.0) break;
+     }
+   return(streak);
+  }
+
+//====================================================================
+// ACCOUNT LOSS LIMITS  (spec 5, 17)
+//--------------------------------------------------------------------
+// Derived from deal history, not from an equity snapshot taken at EA start:
+// with a snapshot, restarting the EA after a losing morning would reset
+// the day's baseline and quietly re-open the daily loss budget.
+//====================================================================
+struct X15LossMetrics
+  {
+   bool              available;
+   double            dailyPnL;
+   double            dailyLossPct;
+   double            weeklyPnL;
+   double            weeklyLossPct;
+   string            detail;
+  };
+X15LossMetrics g_loss;
+
+datetime ServerDayStart(datetime t)
+  {
+   MqlDateTime dt;
+   TimeToStruct(t, dt);
+   return(t - (dt.hour*3600 + dt.min*60 + dt.sec));
+  }
+
+datetime ServerWeekStart(datetime t)
+  {
+   MqlDateTime dt;
+   TimeToStruct(t, dt);
+   int daysSinceMonday = (dt.day_of_week + 6) % 7;
+   return(ServerDayStart(t) - daysSinceMonday * 86400);
+  }
+
+double PaperFloatingPnL(void)
+  {
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID), ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double total = 0.0;
+   for(int i = 0; i < ArraySize(g_positions); i++)
+     {
+      if(!g_positions[i].isPaper || g_positions[i].closed || g_positions[i].isPendingOrder) continue;
+      double exitPx = (g_positions[i].direction == 1) ? bid : ask;
+      double pr = 0.0;
+      if(OrderCalcProfit(g_positions[i].direction == 1 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, _Symbol,
+                         g_positions[i].volume, g_positions[i].avgEntryPrice, exitPx, pr))
+         total += pr;
+     }
+   return(total);
+  }
+
+void ComputeLossMetrics(X15LossMetrics &m)
+  {
+   m.available = false;
+   m.dailyPnL = 0.0; m.dailyLossPct = 0.0; m.weeklyPnL = 0.0; m.weeklyLossPct = 0.0; m.detail = "";
+   datetime now = TimeCurrent();
+   datetime dayStart = ServerDayStart(now);
+   datetime weekStart = ServerWeekStart(now);
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   if(balance <= 0.0) { m.detail = "account balance unavailable"; return; }
+   double realizedDay = 0.0, realizedWeek = 0.0, floating = 0.0;
+   bool paper = (InpExecutionMode == X15_PAPER_EXECUTION);
+   if(paper)
+     {
+      for(int i = 0; i < ArraySize(g_journal); i++)
+        {
+         if(g_journal[i].source != X15_SRC_PAPER) continue;
+         if(g_journal[i].closeTime >= weekStart) realizedWeek += g_journal[i].netProfit;
+         if(g_journal[i].closeTime >= dayStart)  realizedDay  += g_journal[i].netProfit;
+        }
+      floating = PaperFloatingPnL();
      }
    else
      {
-      string symbol = PositionGetString(POSITION_SYMBOL);
-
-      string vwapClass = UseVWAPExit ? ClassifyVWAPTrend(symbol) : "NEUTRAL";
-      meta.vwapAligned = (meta.direction == 1  && vwapClass == "BULLISH")
-                      || (meta.direction == -1 && vwapClass == "BEARISH");
-      // NEUTRAL (whether genuinely flat or unavailable) never matches BULLISH/
-      // BEARISH above, so meta.vwapAligned is false in both cases -- satisfies
-      // "log as unknown/false rather than guessing" without a separate branch.
-
-      string vpMacdClass = UseVPMACDEntry ? ClassifyVPMACDSignal(symbol) : "NEUTRAL";
-      meta.vpMacdAligned = (meta.direction == 1  && vpMacdClass == "BULLISH")
-                        || (meta.direction == -1 && vpMacdClass == "BEARISH");
-
-      // Task 17 -- computed unconditionally (NOT gated behind UseNewsDefense
-      // the way the two alignment reads above are gated behind their own
-      // engine toggles): this is a pure observation for later comparison,
-      // not an action-triggering read, so it needs to keep accumulating
-      // data even while News Defense's suppression is toggled during testing.
-      NewsDefenseState newsAtEntry = CheckNewsDefense(symbol);
-      meta.nearValidatedNewsEvent = newsAtEntry.isValidatedEvent; // false unless a validated whitelist event actually matched -- never guessed true
-      // Learning-machine extension -- only captures the specific name for a
-      // VALIDATED hit (never the generic fallback's synthetic reason string),
-      // so ComputePerEventStats()'s breakdown stays scoped to the paper's
-      // actual named events rather than mixing in unrelated fallback text.
-      meta.newsEventNameAtEntry = (newsAtEntry.active && newsAtEntry.isValidatedEvent) ? SanitizeForCsv(newsAtEntry.reason) : "";
+      if(!HistorySelect(weekStart, now + 60)) { m.detail = "deal history unavailable"; return; }
+      int n = HistoryDealsTotal();
+      for(int i = 0; i < n; i++)
+        {
+         ulong d = HistoryDealGetTicket(i);
+         if(d == 0) continue;
+         long type = HistoryDealGetInteger(d, DEAL_TYPE);
+         if(type != DEAL_TYPE_BUY && type != DEAL_TYPE_SELL) continue; // deposits, withdrawals and credits are not trading results
+         double pnl = HistoryDealGetDouble(d, DEAL_PROFIT) + HistoryDealGetDouble(d, DEAL_COMMISSION)
+                      + HistoryDealGetDouble(d, DEAL_SWAP) + HistoryDealGetDouble(d, DEAL_FEE);
+         datetime t = (datetime)HistoryDealGetInteger(d, DEAL_TIME);
+         realizedWeek += pnl;
+         if(t >= dayStart) realizedDay += pnl;
+        }
+      floating = AccountInfoDouble(ACCOUNT_EQUITY) - balance;
      }
-
-   int idx = ArraySize(g_openMeta);
-   ArrayResize(g_openMeta, idx + 1);
-   g_openMeta[idx] = meta;
+   double dayBase  = paper ? balance : balance - realizedDay;
+   double weekBase = paper ? balance : balance - realizedWeek;
+   m.dailyPnL  = realizedDay + floating;
+   m.weeklyPnL = realizedWeek + floating;
+   m.dailyLossPct  = (dayBase  > 0.0) ? MathMax(0.0, -m.dailyPnL)  / dayBase  * 100.0 : 0.0;
+   m.weeklyLossPct = (weekBase > 0.0) ? MathMax(0.0, -m.weeklyPnL) / weekBase * 100.0 : 0.0;
+   m.available = true;
   }
 
 //====================================================================
-// LEARNING MACHINE -- PERSISTENCE
+// EXPOSURE  (spec 4, 5)
 //--------------------------------------------------------------------
-// The journal itself IS the model: every gate, every learned bonus, every
-// per-event stat in this file is recomputed fresh from g_journal on every
-// call, nothing is cached separately. So making the journal durable is
-// all persistence has to do -- there is no second piece of "learned
-// state" that could ever go stale against it. Written the same way
-// TradeAutopsy-style CSV logs elsewhere in this repo are: FileOpen with
-// no FILE_COMMON flag, so it stays in this terminal's own sandboxed
-// MQL5/Files folder, never a machine-wide shared one.
+// Counts THIS EA's positions and pending orders (by magic number) plus its
+// paper positions. Risk is the money lost if every one of them hit its
+// current SL, valued with the broker's own OrderCalcProfit.
 //====================================================================
-// The one field in JournalEntry that ever holds uncontrolled external text
-// is newsEventNameAtEntry (sourced from the broker's Economic Calendar,
-// which this file does not control the formatting of). Every other field
-// is either numeric or a value this file itself constructs (symbol,
-// "BULLISH"/"BEARISH"/"NEUTRAL", etc.). Sanitizing at the single point
-// that field enters the journal (RecordEntryMeta, below) means the CSV
-// round-trip never has to trust that a calendar event name is free of the
-// delimiter -- a comma or embedded newline in an event title would
-// otherwise misalign every field after it for the rest of the reloaded
-// file, corrupting closeTime/direction/rMultiple/alignment flags for every
-// later row and silently feeding garbage into ComputeLearnedBonus.
+struct X15Exposure
+  {
+   int               total;
+   int               symbolTotal;
+   int               symbolLong;
+   int               symbolShort;
+   int               pending;
+   bool              foreignOnSymbol;
+   bool              unprotected;     // an own position with no SL: undefined risk
+   double            openRiskMoney;
+  };
+
+void AddRiskToSL(X15Exposure &e, string sym, int dir, double volume, double openPrice, double sl)
+  {
+   if(sl <= 0.0) { e.unprotected = true; return; }
+   double pr = 0.0;
+   if(OrderCalcProfit(dir == 1 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, sym, volume, openPrice, sl, pr) && pr < 0.0)
+      e.openRiskMoney += -pr;
+  }
+
+void ComputeExposure(X15Exposure &e)
+  {
+   e.total = 0; e.symbolTotal = 0; e.symbolLong = 0; e.symbolShort = 0; e.pending = 0;
+   e.foreignOnSymbol = false; e.unprotected = false; e.openRiskMoney = 0.0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      if(PositionGetTicket(i) == 0) continue;
+      string sym = PositionGetString(POSITION_SYMBOL);
+      if((ulong)PositionGetInteger(POSITION_MAGIC) != InpMagicNumber)
+        {
+         if(sym == _Symbol) e.foreignOnSymbol = true;
+         continue;
+        }
+      int dir = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? 1 : -1;
+      e.total++;
+      if(sym == _Symbol) { e.symbolTotal++; if(dir == 1) e.symbolLong++; else e.symbolShort++; }
+      AddRiskToSL(e, sym, dir, PositionGetDouble(POSITION_VOLUME), PositionGetDouble(POSITION_PRICE_OPEN), PositionGetDouble(POSITION_SL));
+     }
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+     {
+      ulong t = OrderGetTicket(i);
+      if(t == 0 || (ulong)OrderGetInteger(ORDER_MAGIC) != InpMagicNumber) continue;
+      string sym = OrderGetString(ORDER_SYMBOL);
+      long type = OrderGetInteger(ORDER_TYPE);
+      int dir = (type == ORDER_TYPE_BUY || type == ORDER_TYPE_BUY_STOP || type == ORDER_TYPE_BUY_LIMIT || type == ORDER_TYPE_BUY_STOP_LIMIT) ? 1 : -1;
+      e.total++; e.pending++;
+      if(sym == _Symbol) { e.symbolTotal++; if(dir == 1) e.symbolLong++; else e.symbolShort++; }
+      AddRiskToSL(e, sym, dir, OrderGetDouble(ORDER_VOLUME_CURRENT), OrderGetDouble(ORDER_PRICE_OPEN), OrderGetDouble(ORDER_SL));
+     }
+   for(int i = 0; i < ArraySize(g_positions); i++)
+     {
+      if(!g_positions[i].isPaper || g_positions[i].closed) continue;
+      int dir = g_positions[i].direction;
+      e.total++; e.symbolTotal++;
+      if(dir == 1) e.symbolLong++; else e.symbolShort++;
+      if(g_positions[i].isPendingOrder)
+        {
+         e.pending++;
+         AddRiskToSL(e, _Symbol, dir, g_positions[i].volume, g_positions[i].pendingPrice, g_positions[i].currentSL);
+        }
+      else AddRiskToSL(e, _Symbol, dir, g_positions[i].volume, g_positions[i].avgEntryPrice, g_positions[i].currentSL);
+     }
+  }
+
+//====================================================================
+// BROKER, MARKET AND EXECUTION-QUALITY CHECKS  (spec 3, 25, 26)
+//====================================================================
+bool TradingPermitted(int dir, bool needLivePermissions, string &why)
+  {
+   why = "";
+   if(needLivePermissions)
+     {
+      if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)) { why = "terminal AutoTrading is disabled"; return(false); }
+      if(!MQLInfoInteger(MQL_TRADE_ALLOWED))           { why = "algo trading is not allowed for this EA"; return(false); }
+      if(!AccountInfoInteger(ACCOUNT_TRADE_ALLOWED))   { why = "trading is not allowed on this account"; return(false); }
+      if(!AccountInfoInteger(ACCOUNT_TRADE_EXPERT))    { why = "the broker does not allow EA trading on this account"; return(false); }
+     }
+   long mode = g_spec.tradeMode;
+   if(mode == SYMBOL_TRADE_MODE_DISABLED)                { why = "trading is disabled on this symbol"; return(false); }
+   if(mode == SYMBOL_TRADE_MODE_CLOSEONLY)               { why = "symbol is close-only"; return(false); }
+   if(mode == SYMBOL_TRADE_MODE_LONGONLY && dir == -1)   { why = "symbol is long-only"; return(false); }
+   if(mode == SYMBOL_TRADE_MODE_SHORTONLY && dir == 1)   { why = "symbol is short-only"; return(false); }
+   return(true);
+  }
+
+// Inside one of the broker's own trading sessions for the symbol today.
+bool SymbolSessionOpenNow(string &why)
+  {
+   why = "";
+   datetime now = TimeCurrent();
+   MqlDateTime dt;
+   TimeToStruct(now, dt);
+   int secOfDay = dt.hour*3600 + dt.min*60 + dt.sec;
+   bool anySession = false;
+   for(uint s = 0; s < 16; s++)
+     {
+      datetime from = 0, to = 0;
+      if(!SymbolInfoSessionTrade(_Symbol, (ENUM_DAY_OF_WEEK)dt.day_of_week, s, from, to)) break;
+      anySession = true;
+      int f = (int)from, e = (int)to;
+      if(e <= f) e += 86400;
+      if(secOfDay >= f && secOfDay < e) return(true);
+     }
+   why = anySession ? "outside the symbol's trading session" : "no trading session for the symbol today";
+   return(false);
+  }
+
+bool SpreadAcceptable(string &why)
+  {
+   why = "";
+   double sp = CurrentSpreadPoints();
+   if(sp < 0.0) { why = "spread unavailable"; return(false); }
+   if(InpMaxSpreadPoints > 0.0 && sp > InpMaxSpreadPoints)
+     { why = StringFormat("spread %.0f pts above cap %.0f", sp, InpMaxSpreadPoints); return(false); }
+   if(g_structExec.atrAvailable && g_spec.point > 0.0)
+     {
+      double atrPts = g_structExec.atr / g_spec.point;
+      if(sp > InpMaxSpreadATRFraction * atrPts)
+        { why = StringFormat("spread %.0f pts > %.2f x ATR (%.0f pts)", sp, InpMaxSpreadATRFraction, atrPts); return(false); }
+     }
+   double avg = RecentAverageSpreadPoints();
+   if(avg > 0.0 && sp > InpSpreadAbnormalMultiple * avg)
+     { why = StringFormat("spread %.0f pts abnormal (%.1fx recent average %.1f)", sp, sp / avg, avg); return(false); }
+   return(true);
+  }
+
+bool ExecutionQualityOk(string &why)
+  {
+   why = "";
+   if(!IsTester() && (g_dq.tickAgeSec < 0.0 || g_dq.tickAgeSec > InpMaxTickAgeSeconds))
+     { why = StringFormat("stale quote (%.0f s old, max %d)", g_dq.tickAgeSec, InpMaxTickAgeSeconds); return(false); }
+   if(InpMaxPingMs > 0 && !IsTester())
+     {
+      double pingMs = TerminalInfoInteger(TERMINAL_PING_LAST) / 1000.0;
+      if(pingMs > InpMaxPingMs) { why = StringFormat("terminal ping %.0f ms above %d", pingMs, InpMaxPingMs); return(false); }
+     }
+   if(!TerminalInfoInteger(TERMINAL_CONNECTED) && !IsTester()) { why = "terminal is not connected to the trade server"; return(false); }
+   return(true);
+  }
+
+//====================================================================
+// LAYER 6 -- RISK ENGINE  (spec 16, 17)
+//--------------------------------------------------------------------
+// Base risk -> evidence bonuses -> adaptive multiplier clamps -> flip cap
+// -> max risk (all inside ComputeAdaptiveRisk) -> regime REDUCTION ->
+// manual override (can only lower) -> hard cap -> volume. Nothing on this
+// path reads the loss streak, so a loss can never raise the next trade's
+// risk.
+//====================================================================
+double ComputeFinalRiskPct(int dir, bool isFlip, string &trace)
+  {
+   double r = ComputeAdaptiveRisk(_Symbol, dir, isFlip);
+   trace = StringFormat("adaptive %.3f%%", r);
+   if(g_regime.regime == X15_REGIME_HIGH_VOLATILITY)
+     {
+      double scale = MathMax(0.0, MathMin(1.0, InpHighVolRiskScale));
+      r *= scale;
+      trace += StringFormat(" x%.2f high-vol", scale);
+     }
+   if(InpMaxRiskOverridePct > 0.0 && r > InpMaxRiskOverridePct) { r = InpMaxRiskOverridePct; trace += " -> manual cap"; }
+   if(r > InpMaxRiskPct) { r = InpMaxRiskPct; trace += " -> hard cap"; }
+   trace += StringFormat(" = %.3f%%", r);
+   return(r);
+  }
+
+// Volume from risk: tick value (loss side) estimate first, then the money
+// actually at risk is VALIDATED with the broker's own OrderCalcProfit (which
+// handles contract size and account-currency conversion) and the volume is
+// stepped down until it fits the budget. If the broker cannot value it, or
+// even the minimum lot exceeds the budget: no trade.
+bool SizeForRisk(int dir, double entry, double sl, double riskPct, double &lots, double &riskMoney, string &why)
+  {
+   lots = 0.0; riskMoney = 0.0; why = "";
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(equity <= 0.0) { why = "account equity unavailable"; return(false); }
+   double budget = equity * riskPct / 100.0;
+   double dist = MathAbs(entry - sl);
+   double tv = (g_spec.tickValueLoss > 0.0) ? g_spec.tickValueLoss : g_spec.tickValue;
+   double perLot = (g_spec.tickSize > 0.0) ? dist / g_spec.tickSize * tv : 0.0;
+   if(dist <= 0.0 || perLot <= 0.0) { why = "stop distance cannot be valued"; return(false); }
+   double v = FloorLots(budget / perLot);
+   if(v <= 0.0)
+     {
+      why = StringFormat("risk budget %.2f buys %.4f lots, below the broker minimum %.2f -- not rounding up", budget, budget / perLot, g_spec.volMin);
+      return(false);
+     }
+   ENUM_ORDER_TYPE type = (dir == 1) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+   for(int guard = 0; guard < 1000; guard++)
+     {
+      double profit = 0.0;
+      if(!OrderCalcProfit(type, _Symbol, v, entry, sl, profit)) { why = "OrderCalcProfit failed -- monetary risk cannot be validated"; return(false); }
+      double loss = -profit;
+      if(loss <= 0.0) { why = "stop is not on the losing side of entry"; return(false); }
+      if(loss <= budget * 1.0001)
+        {
+         lots = v;
+         riskMoney = loss;
+         return(true);
+        }
+      v = FloorLots(v - g_spec.volStep);
+      if(v <= 0.0) { why = "validated risk exceeds the budget even at the minimum volume"; return(false); }
+     }
+   why = "volume sizing did not converge";
+   return(false);
+  }
+
+bool MarginAcceptable(int dir, double lots, double price, string &why)
+  {
+   why = "";
+   double margin = 0.0;
+   if(!OrderCalcMargin(dir == 1 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, _Symbol, lots, price, margin))
+     { why = "OrderCalcMargin failed -- margin cannot be validated"; return(false); }
+   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   double usedMargin = AccountInfoDouble(ACCOUNT_MARGIN);
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(margin > freeMargin) { why = StringFormat("insufficient free margin (%.2f needed, %.2f free)", margin, freeMargin); return(false); }
+   if(equity <= 0.0 || (usedMargin + margin) / equity * 100.0 > InpMaxMarginUsagePct)
+     { why = StringFormat("margin usage would reach %.1f%% of equity (max %.1f%%)", (equity > 0.0 ? (usedMargin + margin) / equity * 100.0 : 0.0), InpMaxMarginUsagePct); return(false); }
+   return(true);
+  }
+
+//====================================================================
+// SETUP STORE -- duplicate-order protection  (spec 4)
+//--------------------------------------------------------------------
+// Every setup ID this EA has ever acted on (sent, filled, rejected, or
+// UNCERTAIN) is recorded here BEFORE the order is sent and persisted to
+// disk. A setup ID present in the store is never traded again: not on the
+// next tick, not after a restart, not after a reconnect. The store is also
+// rebuilt from the broker's own orders/positions/history on start-up, so
+// even a lost file cannot re-open an executed setup.
+//====================================================================
+#define X15_MAX_SETUP_RECORDS 500
+
+struct X15SetupRecord
+  {
+   string            setupId;
+   datetime          time;
+   int               direction;
+   string            status;   // SENDING, FILLED, PENDING, PAPER, REJECTED, UNCERTAIN, CANCELLED, FROM_BROKER, ...
+   ulong             ticket;
+  };
+X15SetupRecord g_setups[];
+
+string SetupStoreFileName(void)
+  {
+   return(StringFormat("AutopsyX15_Setups_%s_%I64u%s.csv", _Symbol, InpMagicNumber, IsTester() ? "_TESTER" : ""));
+  }
+
+int FindSetupRecord(string setupId)
+  {
+   if(setupId == "") return(-1);
+   for(int i = ArraySize(g_setups) - 1; i >= 0; i--)
+      if(g_setups[i].setupId == setupId) return(i);
+   return(-1);
+  }
+
+bool IsSetupConsumed(string setupId)
+  {
+   return(FindSetupRecord(setupId) >= 0);
+  }
+
+void SaveSetupStore(void)
+  {
+   string fname = SetupStoreFileName();
+   string tmp = fname + ".tmp";
+   int h = FileOpen(tmp, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ, ',');
+   if(h == INVALID_HANDLE) { X15Error("JOURNAL", StringFormat("cannot write setup store '%s' (error %d)", tmp, GetLastError())); return; }
+   for(int i = 0; i < ArraySize(g_setups); i++)
+      FileWrite(h, g_setups[i].setupId, (long)g_setups[i].time, g_setups[i].direction, g_setups[i].status, (long)g_setups[i].ticket);
+   FileClose(h);
+   if(!FileMove(tmp, 0, fname, FILE_REWRITE))
+      X15Error("JOURNAL", StringFormat("cannot move setup store into place (error %d)", GetLastError()));
+  }
+
+void RecordSetupStatus(string setupId, int direction, string status, ulong ticket)
+  {
+   if(setupId == "") return;
+   int idx = FindSetupRecord(setupId);
+   if(idx < 0)
+     {
+      int n = ArraySize(g_setups);
+      if(n >= X15_MAX_SETUP_RECORDS)
+        {
+         for(int i = 0; i < n - 1; i++) g_setups[i] = g_setups[i+1];
+         n--;
+        }
+      ArrayResize(g_setups, n + 1);
+      idx = n;
+      g_setups[idx].setupId = setupId;
+      g_setups[idx].direction = direction;
+     }
+   g_setups[idx].time = TimeCurrent();
+   g_setups[idx].status = status;
+   if(ticket != 0) g_setups[idx].ticket = ticket;
+   SaveSetupStore();
+  }
+
+// The tester never loads a previous run's store: its file sandbox persists
+// between runs, and a re-run of the same period would otherwise see its
+// own "future" executions as already consumed.
+void LoadSetupStore(void)
+  {
+   ArrayResize(g_setups, 0);
+   if(IsTester()) return;
+   string fname = SetupStoreFileName();
+   if(!FileIsExist(fname)) return;
+   int h = FileOpen(fname, FILE_READ|FILE_CSV|FILE_ANSI|FILE_SHARE_READ, ',');
+   if(h == INVALID_HANDLE) { X15Error("JOURNAL", StringFormat("cannot read setup store '%s' (error %d)", fname, GetLastError())); return; }
+   while(!FileIsEnding(h))
+     {
+      string id = FileReadString(h);
+      if(FileIsEnding(h) && id == "") break;
+      X15SetupRecord r;
+      r.setupId = id;
+      r.time = (datetime)StringToInteger(FileReadString(h));
+      r.direction = (int)StringToInteger(FileReadString(h));
+      r.status = FileReadString(h);
+      r.ticket = (ulong)StringToInteger(FileReadString(h));
+      if(r.setupId == "") continue;
+      int n = ArraySize(g_setups);
+      ArrayResize(g_setups, n + 1);
+      g_setups[n] = r;
+     }
+   FileClose(h);
+  }
+
+// "AX15|L|9F3A2C1B|XAUUSD": the setup ID sits BEFORE the symbol, so if a
+// broker truncates the comment (31 chars) it loses the symbol, never the ID.
+string BuildOrderComment(string kind, string setupId)
+  {
+   string c = "AX15|" + kind + "|" + setupId + "|" + _Symbol;
+   if(StringLen(c) > 31) c = StringSubstr(c, 0, 31);
+   return(c);
+  }
+
+string ExtractSetupIdFromComment(string comment)
+  {
+   string parts[];
+   int n = StringSplit(comment, StringGetCharacter("|", 0), parts);
+   if(n >= 3 && parts[0] == "AX15" && StringLen(parts[2]) == 8) return(parts[2]);
+   return("");
+  }
+
+// True if any live position or pending order of this EA carries the ID.
+bool BrokerHasSetup(string setupId)
+  {
+   if(setupId == "") return(false);
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      if(PositionGetTicket(i) == 0) continue;
+      if((ulong)PositionGetInteger(POSITION_MAGIC) != InpMagicNumber) continue;
+      if(ExtractSetupIdFromComment(PositionGetString(POSITION_COMMENT)) == setupId) return(true);
+     }
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+     {
+      ulong t = OrderGetTicket(i);
+      if(t == 0 || (ulong)OrderGetInteger(ORDER_MAGIC) != InpMagicNumber) continue;
+      if(ExtractSetupIdFromComment(OrderGetString(ORDER_COMMENT)) == setupId) return(true);
+     }
+   return(false);
+  }
+
+// Restart safety (spec 37.4): every setup ID found on this EA's open
+// orders, open positions and last 14 days of order history is marked
+// consumed, whatever the local file says.
+void RebuildSetupStoreFromBroker(void)
+  {
+   if(IsTester()) return;
+   int added = 0;
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+     {
+      ulong t = OrderGetTicket(i);
+      if(t == 0 || (ulong)OrderGetInteger(ORDER_MAGIC) != InpMagicNumber) continue;
+      string id = ExtractSetupIdFromComment(OrderGetString(ORDER_COMMENT));
+      if(id != "" && !IsSetupConsumed(id)) { RecordSetupStatus(id, 0, "FROM_BROKER_ORDER", t); added++; }
+     }
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      ulong t = PositionGetTicket(i);
+      if(t == 0 || (ulong)PositionGetInteger(POSITION_MAGIC) != InpMagicNumber) continue;
+      string id = ExtractSetupIdFromComment(PositionGetString(POSITION_COMMENT));
+      if(id != "" && !IsSetupConsumed(id)) { RecordSetupStatus(id, 0, "FROM_BROKER_POSITION", t); added++; }
+     }
+   datetime now = TimeCurrent();
+   if(HistorySelect(now - 14 * 86400, now + 60))
+     {
+      int n = HistoryOrdersTotal();
+      for(int i = 0; i < n; i++)
+        {
+         ulong t = HistoryOrderGetTicket(i);
+         if(t == 0 || (ulong)HistoryOrderGetInteger(t, ORDER_MAGIC) != InpMagicNumber) continue;
+         string id = ExtractSetupIdFromComment(HistoryOrderGetString(t, ORDER_COMMENT));
+         if(id != "" && !IsSetupConsumed(id)) { RecordSetupStatus(id, 0, "FROM_BROKER_HISTORY", t); added++; }
+        }
+     }
+   if(added > 0) X15Log("JOURNAL", StringFormat("restart safety: %d executed setup ID(s) recovered from the broker's own records", added));
+  }
+
+//====================================================================
+// LAYER 5 -- EXECUTION ELIGIBILITY  (spec 11)
+//--------------------------------------------------------------------
+// Fail closed, in a fixed order. The first failing gate decides the state
+// and its reason is kept verbatim for the dashboard and the log -- a NO
+// TRADE always says exactly why. No score, bonus or override can move a
+// gate from FAIL to PASS.
+//====================================================================
+struct X15ExecDecision
+  {
+   datetime          barTime;
+   bool              computed;
+   ENUM_X15_ELIGIBILITY state;
+   int               direction;
+   string            blockingGate;
+   string            reason;
+   string            passedGates;
+   bool              isFlip;
+   double            entryPrice;
+   double            sl;
+   double            tp;
+   double            rr;
+   double            riskPct;
+   string            riskTrace;
+   double            lots;
+   double            riskMoney;
+   string            executionResult;
+  };
+X15ExecDecision g_exec;
+
+void ResetExecDecision(X15ExecDecision &ed)
+  {
+   ed.barTime = 0; ed.computed = false; ed.state = X15_NOT_ELIGIBLE; ed.direction = 0;
+   ed.blockingGate = ""; ed.reason = ""; ed.passedGates = ""; ed.isFlip = false;
+   ed.entryPrice = 0.0; ed.sl = 0.0; ed.tp = 0.0; ed.rr = 0.0;
+   ed.riskPct = 0.0; ed.riskTrace = ""; ed.lots = 0.0; ed.riskMoney = 0.0;
+   ed.executionResult = "";
+  }
+
+void GateFail(X15ExecDecision &ed, ENUM_X15_ELIGIBILITY st, string gate, string why)
+  {
+   ed.state = st;
+   ed.blockingGate = gate;
+   ed.reason = why;
+  }
+
+void GatePass(X15ExecDecision &ed, string gate)
+  {
+   ed.passedGates += (ed.passedGates == "" ? "" : " ") + gate;
+  }
+
+double IntendedEntryPrice(X15Setup &s)
+  {
+   if(InpEntryOrderType == X15_ENTRY_STOP && g_execGot > 0 && g_structExec.atrAvailable)
+     {
+      int b = g_execGot - 1;
+      double buf = InpStopEntryBufferATR * g_structExec.atr;
+      return(NormalizePriceToTick(s.direction == 1 ? g_execRates[b].high + buf : g_execRates[b].low - buf));
+     }
+   return(s.direction == 1 ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID));
+  }
+
+X15ExecDecision CheckExecutionEligibility(X15Decision &d)
+  {
+   X15ExecDecision ed;
+   ResetExecDecision(ed);
+   ed.computed = true;
+   ed.barTime = d.barTime;
+   ed.direction = d.setup.direction;
+   string why = "";
+
+   if(InpEmergencyStop)            { GateFail(ed, X15_BLOCKED, "EMERGENCY_STOP", "emergency stop is active"); return(ed); }
+   if(InpCloseAllManagedPositions) { GateFail(ed, X15_BLOCKED, "CLOSE_ALL", "close-all is active"); return(ed); }
+   if(!InpEnableTrading)           { GateFail(ed, X15_BLOCKED, "ENABLE_TRADING", "new entries disabled (InpEnableTrading=false)"); return(ed); }
+   GatePass(ed, "OVERRIDES");
+
+   if(!g_dq.ok) { GateFail(ed, X15_ELIG_DATA_UNAVAILABLE, "DATA", g_dq.reason); return(ed); }
+   GatePass(ed, "DATA");
+
+   if(d.state == X15_DIR_DATA_UNAVAILABLE)      { GateFail(ed, X15_ELIG_DATA_UNAVAILABLE, "COMPOSITE", d.stateReason); return(ed); }
+   if(d.state == X15_DIR_BLOCKED)               { GateFail(ed, X15_BLOCKED, "COMPOSITE", d.stateReason); return(ed); }
+   if(d.state == X15_DIR_INSUFFICIENT_EVIDENCE) { GateFail(ed, X15_ELIG_INSUFFICIENT_EVIDENCE, "COMPOSITE", d.stateReason); return(ed); }
+   if(d.state != X15_DIR_LONG && d.state != X15_DIR_SHORT) { GateFail(ed, X15_NOT_ELIGIBLE, "COMPOSITE", d.stateReason); return(ed); }
+   int dir = d.setup.direction;
+   GatePass(ed, "COMPOSITE");
+
+   if(dir == 1 && !InpEnableLong)   { GateFail(ed, X15_BLOCKED, "DIRECTION", "long entries disabled"); return(ed); }
+   if(dir == -1 && !InpEnableShort) { GateFail(ed, X15_BLOCKED, "DIRECTION", "short entries disabled"); return(ed); }
+   GatePass(ed, "DIRECTION");
+
+   if(!TradingPermitted(dir, InpExecutionMode == X15_LIVE_EXECUTION, why)) { GateFail(ed, X15_BLOCKED, "PERMISSIONS", why); return(ed); }
+   GatePass(ed, "PERMISSIONS");
+   if(!SymbolSessionOpenNow(why)) { GateFail(ed, X15_NOT_ELIGIBLE, "MARKET_OPEN", why); return(ed); }
+   GatePass(ed, "MARKET_OPEN");
+   if(!ExecutionQualityOk(why)) { GateFail(ed, X15_BLOCKED, "EXECUTION_QUALITY", why); return(ed); }
+   GatePass(ed, "EXECUTION_QUALITY");
+   if(!SessionTradable(g_session, why)) { GateFail(ed, X15_NOT_ELIGIBLE, "SESSION", why); return(ed); }
+   GatePass(ed, "SESSION");
+   if(g_newsGate.blocks) { GateFail(ed, X15_BLOCKED, "NEWS", g_newsGate.state + " " + g_newsGate.detail); return(ed); }
+   GatePass(ed, "NEWS");
+   if(!SpreadAcceptable(why)) { GateFail(ed, X15_BLOCKED, "SPREAD", why); return(ed); }
+   GatePass(ed, "SPREAD");
+   if(RegimeBlocked(g_regime.regime, why)) { GateFail(ed, X15_NOT_ELIGIBLE, "REGIME", why); return(ed); }
+   GatePass(ed, "REGIME");
+
+   if(g_execGot == 0 || d.setup.triggerBarTime != g_execRates[g_execGot-1].time)
+     { GateFail(ed, X15_NOT_ELIGIBLE, "FRESHNESS", "decision does not belong to the last closed bar"); return(ed); }
+   if(IsSetupConsumed(d.setup.setupId) || BrokerHasSetup(d.setup.setupId))
+     { GateFail(ed, X15_NOT_ELIGIBLE, "DUPLICATE", "setup " + d.setup.setupId + " was already executed"); return(ed); }
+   GatePass(ed, "NOT_DUPLICATE");
+
+   datetime lastClose = 0;
+   int lastDir = 0;
+   if(LastOwnClose(lastClose, lastDir))
+     {
+      int period = PeriodSeconds(InpExecTF);
+      int barsSince = (period > 0) ? (int)((TimeCurrent() - lastClose) / period) : 0;
+      if(barsSince < InpCooldownBarsAfterClose)
+        { GateFail(ed, X15_NOT_ELIGIBLE, "COOLDOWN", StringFormat("%d bar(s) since the last close, cooldown %d", barsSince, InpCooldownBarsAfterClose)); return(ed); }
+      if(lastDir == -dir && barsSince < InpFlipWindowBars)
+        {
+         if(!InpAllowFlip) { GateFail(ed, X15_NOT_ELIGIBLE, "FLIP", "opposite entry this soon after a close is a flip, and flips are disabled"); return(ed); }
+         if(d.setup.structureTime <= lastClose)
+           { GateFail(ed, X15_NOT_ELIGIBLE, "FLIP", "a flip needs structure that formed AFTER the previous close"); return(ed); }
+         ed.isFlip = true;
+        }
+     }
+   GatePass(ed, "COOLDOWN_FLIP");
+
+   X15Exposure ex;
+   ComputeExposure(ex);
+   if(ex.unprotected) { GateFail(ed, X15_BLOCKED, "EXPOSURE", "an open position of this EA has no stop loss"); return(ed); }
+   if(ex.total >= InpMaxPositionsTotal) { GateFail(ed, X15_NOT_ELIGIBLE, "EXPOSURE", StringFormat("%d/%d positions+orders open", ex.total, InpMaxPositionsTotal)); return(ed); }
+   if(ex.symbolTotal >= InpMaxPositionsPerSymbol) { GateFail(ed, X15_NOT_ELIGIBLE, "EXPOSURE", StringFormat("%d/%d on this symbol", ex.symbolTotal, InpMaxPositionsPerSymbol)); return(ed); }
+   if((dir == 1 ? ex.symbolLong : ex.symbolShort) >= InpMaxPositionsPerDirection)
+     { GateFail(ed, X15_NOT_ELIGIBLE, "EXPOSURE", "max positions in this direction reached"); return(ed); }
+   if(InpExecutionMode != X15_PAPER_EXECUTION && IsNettingAccount() && (ex.symbolTotal > 0 || ex.foreignOnSymbol))
+     { GateFail(ed, X15_NOT_ELIGIBLE, "EXPOSURE", "netting account: a position already exists on this symbol and would be merged/reduced"); return(ed); }
+   GatePass(ed, "EXPOSURE");
+
+   ComputeLossMetrics(g_loss);
+   if(!g_loss.available) { GateFail(ed, X15_BLOCKED, "LOSS_LIMITS", "loss metrics unavailable: " + g_loss.detail); return(ed); }
+   if(g_loss.dailyLossPct >= InpMaxDailyLossPct)
+     { GateFail(ed, X15_BLOCKED, "DAILY_LOSS", StringFormat("daily loss %.2f%% >= limit %.2f%%", g_loss.dailyLossPct, InpMaxDailyLossPct)); return(ed); }
+   if(g_loss.weeklyLossPct >= InpMaxWeeklyLossPct)
+     { GateFail(ed, X15_BLOCKED, "WEEKLY_LOSS", StringFormat("weekly loss %.2f%% >= limit %.2f%%", g_loss.weeklyLossPct, InpMaxWeeklyLossPct)); return(ed); }
+   datetime lastLoss = 0;
+   int streak = ConsecutiveOwnLosses(lastLoss);
+   if(InpMaxConsecutiveLosses > 0 && streak >= InpMaxConsecutiveLosses && TimeCurrent() - lastLoss < InpConsecutiveLossPauseHours * 3600)
+     { GateFail(ed, X15_BLOCKED, "LOSS_STREAK", StringFormat("%d consecutive losses: paused until %s", streak, TimeToString(lastLoss + InpConsecutiveLossPauseHours * 3600, TIME_DATE|TIME_MINUTES))); return(ed); }
+   GatePass(ed, "LOSS_LIMITS");
+
+   ed.entryPrice = IntendedEntryPrice(d.setup);
+   ed.sl = NormalizePriceToTick(d.setup.sl);
+   ed.tp = NormalizePriceToTick(d.setup.tp);
+   double risk = (dir == 1) ? ed.entryPrice - ed.sl : ed.sl - ed.entryPrice;
+   if(ed.entryPrice <= 0.0 || risk <= 0.0) { GateFail(ed, X15_NOT_ELIGIBLE, "STOP_LOSS", "entry price is at or beyond the stop"); return(ed); }
+   double spreadPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK) - SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   if(risk < MinStopDistancePrice() + spreadPrice)
+     { GateFail(ed, X15_NOT_ELIGIBLE, "STOP_LOSS", "SL closer than the broker stops/freeze level plus spread"); return(ed); }
+   if(g_structExec.atrAvailable && risk > InpMaxSLATR * g_structExec.atr)
+     { GateFail(ed, X15_NOT_ELIGIBLE, "STOP_LOSS", StringFormat("SL %.2f x ATR exceeds the %.2f maximum", risk / g_structExec.atr, InpMaxSLATR)); return(ed); }
+   if(InpMaxSLPoints > 0.0 && risk / g_spec.point > InpMaxSLPoints)
+     { GateFail(ed, X15_NOT_ELIGIBLE, "STOP_LOSS", StringFormat("SL %.0f pts exceeds the %.0f maximum", risk / g_spec.point, InpMaxSLPoints)); return(ed); }
+   GatePass(ed, "STOP_LOSS");
+
+   double reward = (dir == 1) ? ed.tp - ed.entryPrice : ed.entryPrice - ed.tp;
+   ed.rr = reward / risk;
+   if(ed.rr < InpMinRR) { GateFail(ed, X15_NOT_ELIGIBLE, "REWARD_RISK", StringFormat("R:R %.2f at the actual entry is below %.2f", ed.rr, InpMinRR)); return(ed); }
+   GatePass(ed, "REWARD_RISK");
+
+   ed.riskPct = ComputeFinalRiskPct(dir, ed.isFlip, ed.riskTrace);
+   if(ed.riskPct <= 0.0) { GateFail(ed, X15_NOT_ELIGIBLE, "RISK", "final risk is zero"); return(ed); }
+   if(!SizeForRisk(dir, ed.entryPrice, ed.sl, ed.riskPct, ed.lots, ed.riskMoney, why)) { GateFail(ed, X15_NOT_ELIGIBLE, "VOLUME", why); return(ed); }
+   GatePass(ed, "VOLUME");
+
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(ex.openRiskMoney + ed.riskMoney > equity * InpMaxTotalOpenRiskPct / 100.0)
+     {
+      GateFail(ed, X15_NOT_ELIGIBLE, "TOTAL_RISK", StringFormat("open risk %.2f + new %.2f exceeds %.2f%% of equity", ex.openRiskMoney, ed.riskMoney, InpMaxTotalOpenRiskPct));
+      return(ed);
+     }
+   GatePass(ed, "TOTAL_RISK");
+   if(!MarginAcceptable(dir, ed.lots, ed.entryPrice, why)) { GateFail(ed, X15_NOT_ELIGIBLE, "MARGIN", why); return(ed); }
+   GatePass(ed, "MARGIN");
+
+   ed.state = (dir == 1) ? X15_ELIGIBLE_LONG : X15_ELIGIBLE_SHORT;
+   ed.reason = StringFormat("%s %.2f lots, risk %.2f (%.2f%%), R:R %.2f%s", DirLabel(dir), ed.lots, ed.riskMoney, ed.riskPct, ed.rr, ed.isFlip ? ", FLIP" : "");
+   return(ed);
+  }
+
+//====================================================================
+// ENTRY CONTEXTS
+//--------------------------------------------------------------------
+// The decision snapshot (setup, evidence, signal states) is captured the
+// moment an order is sent and held here, keyed by setup ID, until the
+// resulting position appears -- then it is attached to that position.
+// Contexts are persisted with the position state, so a crash between send
+// and fill still ends with a correctly-attributed position.
+//====================================================================
+X15Position g_entryContexts[];
+
+int FindEntryContext(string setupId)
+  {
+   if(setupId == "") return(-1);
+   for(int i = 0; i < ArraySize(g_entryContexts); i++)
+      if(g_entryContexts[i].setupId == setupId) return(i);
+   return(-1);
+  }
+
+void AddEntryContext(X15Position &ctx)
+  {
+   int idx = FindEntryContext(ctx.setupId);
+   if(idx < 0)
+     {
+      idx = ArraySize(g_entryContexts);
+      ArrayResize(g_entryContexts, idx + 1);
+     }
+   g_entryContexts[idx] = ctx;
+   g_stateDirty = true;
+  }
+
+void RemoveEntryContext(string setupId)
+  {
+   int idx = FindEntryContext(setupId);
+   if(idx < 0) return;
+   int n = ArraySize(g_entryContexts);
+   for(int i = idx; i < n - 1; i++) g_entryContexts[i] = g_entryContexts[i+1];
+   ArrayResize(g_entryContexts, n - 1);
+   g_stateDirty = true;
+  }
+
+// Contexts whose order never produced a position (rejected at the broker
+// after a restart, expired pending order) are dropped after a day.
+void PruneEntryContexts(void)
+  {
+   for(int i = ArraySize(g_entryContexts) - 1; i >= 0; i--)
+      if(TimeCurrent() - g_entryContexts[i].entryBarTime > 86400 && !BrokerHasSetup(g_entryContexts[i].setupId))
+         RemoveEntryContext(g_entryContexts[i].setupId);
+  }
+
+string AlignmentState(string state, int dir)
+  {
+   if((dir == 1 && state == "BULLISH") || (dir == -1 && state == "BEARISH")) return(state + " (aligned)");
+   if(state == "UNAVAILABLE" || state == "NEUTRAL") return(state);
+   return(state + " (opposed)");
+  }
+
+void BuildEntryContext(X15Decision &d, X15ExecDecision &ed, X15Position &ctx)
+  {
+   ResetPosition(ctx);
+   ctx.isOwn = true;
+   ctx.isPaper = (InpExecutionMode == X15_PAPER_EXECUTION);
+   ctx.setupId = d.setup.setupId;
+   ctx.setupType = d.setup.type;
+   ctx.direction = d.setup.direction;
+   ctx.entryBarTime = d.setup.triggerBarTime;
+   ctx.originalSL = ed.sl;
+   ctx.originalTP = ed.tp;
+   ctx.currentSL = ed.sl;
+   ctx.currentTP = ed.tp;
+   ctx.riskPct = ed.riskPct;
+   ctx.riskMoney = ed.riskMoney;
+   ctx.volume = ed.lots;
+   ctx.invalidation = d.setup.invalidation;
+   ctx.spreadAtEntryPts = CurrentSpreadPoints();
+   ctx.isFlip = ed.isFlip;
+   ctx.evidenceScore = d.evidenceScore;
+
+   // Same reads the pre-robot RecordEntryMeta() used, so the learned VWAP /
+   // VP-MACD bonuses keep measuring exactly what they always measured.
+   int dir = ctx.direction;
+   string vwapClass = UseVWAPExit ? ClassifyVWAPTrend(_Symbol) : "NEUTRAL";
+   ctx.vwapAligned = (dir == 1 && vwapClass == "BULLISH") || (dir == -1 && vwapClass == "BEARISH");
+   string vpClass = UseVPMACDEntry ? ClassifyVPMACDSignal(_Symbol) : "NEUTRAL";
+   ctx.vpMacdAligned = (dir == 1 && vpClass == "BULLISH") || (dir == -1 && vpClass == "BEARISH");
+   if(!IsTester())
+     {
+      NewsDefenseState nd = CheckNewsDefense(_Symbol);
+      ctx.nearValidatedNewsEvent = nd.isValidatedEvent;
+      ctx.newsEventNameAtEntry = (nd.active && nd.isValidatedEvent) ? SanitizeForCsv(nd.reason) : "";
+     }
+
+   ctx.vwapState = AlignmentState(d.vwapState, dir);
+   ctx.vpmacdState = AlignmentState(d.vpmacdState, dir);
+   ctx.newsState = g_newsGate.state;
+   ctx.compositeState = EnumLabel(EnumToString(d.state), "X15_DIR_");
+   ctx.regime = EnumLabel(EnumToString(g_regime.regime), "X15_REGIME_");
+   ctx.structureState = StringFormat("%s %s; HTF %s", g_structExec.trendLabel,
+                                     EnumLabel(EnumToString(d.setup.structureEvent), "X15_EVT_"), g_htfBias.state);
+   ctx.liquidityState = (d.setup.sweepLevelName != "" ? "swept " + d.setup.sweepLevelName + "; " : "") + "target " + d.setup.tpLevelName;
+   ctx.session = EnumLabel(EnumToString(g_session), "X15_SESSION_");
+   ctx.entryReason = StringFormat("%s %s zone %s, evidence %d/%d, R:R %.2f",
+                                  EnumLabel(EnumToString(d.setup.type), "X15_SETUP_"), DirLabel(dir),
+                                  d.setup.zoneType, d.evidenceScore, d.evidenceMax, ed.rr);
+   // SanitizeForCsv on every free-text field: these go straight into CSV rows
+   ctx.structureState = SanitizeForCsv(ctx.structureState);
+   ctx.liquidityState = SanitizeForCsv(ctx.liquidityState);
+   ctx.entryReason = SanitizeForCsv(ctx.entryReason);
+  }
+
+//====================================================================
+// LAYER 7 -- ORDER ENGINE  (spec 3)
+//====================================================================
+struct X15OrderRequest
+  {
+   int               direction;
+   bool              isPending;
+   ENUM_ORDER_TYPE   type;
+   double            price;
+   double            volume;
+   double            sl;
+   double            tp;
+   ulong             magic;
+   string            comment;
+   string            setupId;      // signal identifier
+   string            strategyId;   // setup model
+   ENUM_ORDER_TYPE_TIME typeTime;
+   datetime          expiration;
+  };
+
+void BuildOrderRequest(X15Decision &d, X15ExecDecision &ed, X15OrderRequest &rq)
+  {
+   int dir = d.setup.direction;
+   rq.direction = dir;
+   rq.isPending = (InpEntryOrderType == X15_ENTRY_STOP);
+   if(rq.isPending) rq.type = (dir == 1) ? ORDER_TYPE_BUY_STOP : ORDER_TYPE_SELL_STOP;
+   else             rq.type = (dir == 1) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+   rq.price = rq.isPending ? ed.entryPrice
+                           : (dir == 1 ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID));
+   rq.volume = ed.lots;
+   rq.sl = ed.sl;
+   rq.tp = ed.tp;
+   rq.magic = InpMagicNumber;
+   rq.setupId = d.setup.setupId;
+   rq.strategyId = EnumLabel(EnumToString(d.setup.type), "X15_SETUP_");
+   rq.comment = BuildOrderComment(dir == 1 ? "L" : "S", rq.setupId);
+   rq.typeTime = ORDER_TIME_GTC;
+   rq.expiration = 0;
+   if(rq.isPending && (g_spec.expirationMode & SYMBOL_EXPIRATION_SPECIFIED) != 0)
+     {
+      rq.typeTime = ORDER_TIME_SPECIFIED;
+      rq.expiration = TimeCurrent() + InpPendingExpiryBars * PeriodSeconds(InpExecTF);
+     }
+  }
+
+// Broker-side validity: normalized prices, SL/TP on the correct sides, at
+// least the stops/freeze distance from the relevant price, volume inside
+// the broker's limits and on its step, and -- for live orders -- the
+// terminal's own OrderCheck() (margin, trade permissions, parameters).
+bool ValidateOrderRequest(X15OrderRequest &rq, bool runOrderCheck, string &why)
+  {
+   why = "";
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID), ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   if(bid <= 0.0 || ask <= 0.0) { why = "no live quote"; return(false); }
+   rq.price = NormalizePriceToTick(rq.price);
+   rq.sl = NormalizePriceToTick(rq.sl);
+   rq.tp = NormalizePriceToTick(rq.tp);
+   if(rq.volume < g_spec.volMin - 1e-12 || rq.volume > g_spec.volMax + 1e-12) { why = "volume outside the broker's limits"; return(false); }
+   double steps = rq.volume / g_spec.volStep;
+   if(MathAbs(steps - MathRound(steps)) > 1e-6) { why = "volume is not a multiple of the volume step"; return(false); }
+   if(rq.sl <= 0.0 || rq.tp <= 0.0) { why = "every order must carry both SL and TP"; return(false); }
+   double minDist = MinStopDistancePrice();
+   if(rq.direction == 1)
+     {
+      if(!(rq.sl < rq.price && rq.tp > rq.price)) { why = "SL/TP on the wrong side of entry"; return(false); }
+      if(rq.isPending)
+        {
+         if(rq.price - ask < minDist || rq.price <= ask) { why = "stop-entry price is too close to, or already through, the market"; return(false); }
+         if(rq.price - rq.sl < minDist || rq.tp - rq.price < minDist) { why = "SL/TP closer than the broker stops level"; return(false); }
+        }
+      else if(bid - rq.sl < minDist || rq.tp - bid < minDist) { why = "SL/TP closer than the broker stops/freeze level"; return(false); }
+     }
+   else
+     {
+      if(!(rq.sl > rq.price && rq.tp < rq.price)) { why = "SL/TP on the wrong side of entry"; return(false); }
+      if(rq.isPending)
+        {
+         if(bid - rq.price < minDist || rq.price >= bid) { why = "stop-entry price is too close to, or already through, the market"; return(false); }
+         if(rq.sl - rq.price < minDist || rq.price - rq.tp < minDist) { why = "SL/TP closer than the broker stops level"; return(false); }
+        }
+      else if(rq.sl - ask < minDist || ask - rq.tp < minDist) { why = "SL/TP closer than the broker stops/freeze level"; return(false); }
+     }
+   if(!runOrderCheck) return(true);
+
+   MqlTradeRequest req;
+   MqlTradeCheckResult chk;
+   ZeroMemory(req);
+   ZeroMemory(chk);
+   req.action = rq.isPending ? TRADE_ACTION_PENDING : TRADE_ACTION_DEAL;
+   req.symbol = _Symbol;
+   req.volume = rq.volume;
+   req.type = rq.type;
+   req.price = rq.price;
+   req.sl = rq.sl;
+   req.tp = rq.tp;
+   req.deviation = (ulong)InpMaxSlippagePoints;
+   req.magic = rq.magic;
+   req.comment = rq.comment;
+   req.type_filling = rq.isPending ? ORDER_FILLING_RETURN : DetectFillingMode(_Symbol);
+   req.type_time = rq.typeTime;
+   req.expiration = rq.expiration;
+   if(!OrderCheck(req, chk))
+     {
+      why = StringFormat("OrderCheck rejected: %u %s", chk.retcode, chk.comment);
+      return(false);
+     }
+   return(true);
+  }
+
+bool RetcodeSucceeded(uint rc)
+  {
+   return(rc == TRADE_RETCODE_DONE || rc == TRADE_RETCODE_PLACED || rc == TRADE_RETCODE_DONE_PARTIAL);
+  }
+
+// Definitively NOT executed -- one re-validated retry is safe.
+bool RetcodeNotExecuted(uint rc)
+  {
+   return(rc == TRADE_RETCODE_REQUOTE || rc == TRADE_RETCODE_PRICE_CHANGED || rc == TRADE_RETCODE_PRICE_OFF);
+  }
+
+// MAY have executed server-side. Never resent: resending here is exactly
+// how a timeout turns into a duplicate position. The setup is marked
+// UNCERTAIN and reconciled against the broker's records instead.
+bool RetcodeAmbiguous(uint rc)
+  {
+   return(rc == 0 || rc == TRADE_RETCODE_TIMEOUT || rc == TRADE_RETCODE_CONNECTION || rc == TRADE_RETCODE_ERROR);
+  }
+
+bool SendLiveOrder(X15OrderRequest &rq, ulong &orderTicket, double &fillPrice, bool &uncertain, string &why)
+  {
+   orderTicket = 0; fillPrice = 0.0; uncertain = false; why = "";
+   g_trade.SetExpertMagicNumber(rq.magic);
+   g_trade.SetDeviationInPoints(InpMaxSlippagePoints);
+   g_trade.SetTypeFilling(rq.isPending ? ORDER_FILLING_RETURN : DetectFillingMode(_Symbol));
+   for(int attempt = 0; attempt < 2; attempt++)
+     {
+      if(attempt > 0)
+        {
+         if(BrokerHasSetup(rq.setupId)) { why = "order found on the broker after a requote"; return(true); }
+         if(!rq.isPending) rq.price = (rq.direction == 1) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+         if(!ValidateOrderRequest(rq, true, why)) return(false);
+        }
+      bool ok;
+      if(rq.isPending)
+         ok = (rq.direction == 1)
+              ? g_trade.BuyStop(rq.volume, rq.price, _Symbol, rq.sl, rq.tp, rq.typeTime, rq.expiration, rq.comment)
+              : g_trade.SellStop(rq.volume, rq.price, _Symbol, rq.sl, rq.tp, rq.typeTime, rq.expiration, rq.comment);
+      else
+         ok = (rq.direction == 1)
+              ? g_trade.Buy(rq.volume, _Symbol, 0.0, rq.sl, rq.tp, rq.comment)
+              : g_trade.Sell(rq.volume, _Symbol, 0.0, rq.sl, rq.tp, rq.comment);
+      uint rc = g_trade.ResultRetcode();
+      if(ok && RetcodeSucceeded(rc))
+        {
+         orderTicket = g_trade.ResultOrder();
+         fillPrice = g_trade.ResultPrice();
+         return(true);
+        }
+      why = StringFormat("%u %s", rc, g_trade.ResultRetcodeDescription());
+      if(RetcodeNotExecuted(rc)) continue;
+      if(RetcodeAmbiguous(rc)) uncertain = true;
+      return(false);
+     }
+   return(false);
+  }
+
+ulong NewPaperId(void)
+  {
+   g_paperCounter++;
+   return((ulong)TimeCurrent() * 1000 + (g_paperCounter % 1000));
+  }
+
+void OpenPaperPosition(X15OrderRequest &rq, X15Position &ctx)
+  {
+   X15Position p = ctx;
+   p.positionId = NewPaperId();
+   p.isPaper = true;
+   p.volume = rq.volume;
+   p.peakVolume = rq.volume;
+   if(rq.isPending)
+     {
+      p.isPendingOrder = true;
+      p.pendingPrice = rq.price;
+      p.pendingExpiry = TimeCurrent() + InpPendingExpiryBars * PeriodSeconds(InpExecTF);
+     }
+   else
+     {
+      p.entryTime = TimeCurrent();
+      p.entryPrice = rq.price;
+      p.avgEntryPrice = rq.price;
+     }
+   AppendPosition(p);
+   X15Log("EXECUTION", StringFormat("[PAPER] %s %s %.2f lots @ %s SL %s TP %s setup %s",
+                                    rq.isPending ? "placed stop-entry" : "filled", DirLabel(rq.direction), rq.volume,
+                                    DoubleToString(rq.price, g_spec.digits), DoubleToString(rq.sl, g_spec.digits),
+                                    DoubleToString(rq.tp, g_spec.digits), rq.setupId));
+  }
+
+void ExecuteEntry(X15Decision &d, X15ExecDecision &ed)
+  {
+   if(g_sendInFlight) return;
+   string id = d.setup.setupId;
+   if(IsSetupConsumed(id) || BrokerHasSetup(id))
+     {
+      ed.executionResult = "skipped: setup already executed";
+      return;
+     }
+   X15OrderRequest rq;
+   BuildOrderRequest(d, ed, rq);
+   bool live = (InpExecutionMode == X15_LIVE_EXECUTION);
+   string why = "";
+   if(!ValidateOrderRequest(rq, live, why))
+     {
+      RecordSetupStatus(id, rq.direction, "REJECTED_LOCAL", 0);
+      ed.executionResult = "order rejected before sending: " + why;
+      X15Log("EXECUTION", ed.executionResult);
+      return;
+     }
+   X15Position ctx;
+   BuildEntryContext(d, ed, ctx);
+
+   if(!live)
+     {
+      RecordSetupStatus(id, rq.direction, "PAPER", 0);
+      OpenPaperPosition(rq, ctx);
+      ed.executionResult = "PAPER " + (rq.isPending ? "stop-entry placed" : "filled");
+      g_lastTradeTime = TimeCurrent();
+      return;
+     }
+
+   // write-ahead: the setup is consumed on disk BEFORE the order exists, so
+   // a crash mid-send can never be followed by a resend of the same setup
+   RecordSetupStatus(id, rq.direction, "SENDING", 0);
+   AddEntryContext(ctx);
+   SavePositionState();
+
+   g_sendInFlight = true;
+   ulong order = 0;
+   double fill = 0.0;
+   bool uncertain = false;
+   bool ok = SendLiveOrder(rq, order, fill, uncertain, why);
+   g_sendInFlight = false;
+
+   if(ok)
+     {
+      RecordSetupStatus(id, rq.direction, rq.isPending ? "PENDING" : "FILLED", order);
+      ed.executionResult = StringFormat("%s #%I64u %s %.2f lots @ %s", rq.isPending ? "stop-entry placed" : "filled",
+                                        order, DirLabel(rq.direction), rq.volume, DoubleToString(fill > 0.0 ? fill : rq.price, g_spec.digits));
+      g_lastTradeTime = TimeCurrent();
+      g_reconcileRequested = true;
+      X15Log("EXECUTION", "[LIVE] " + ed.executionResult + " setup " + id);
+     }
+   else if(uncertain)
+     {
+      RecordSetupStatus(id, rq.direction, "UNCERTAIN", 0);
+      ed.executionResult = "send result UNKNOWN (" + why + ") -- setup blocked, reconciling against the broker, never resent";
+      g_reconcileRequested = true;
+      X15Error("EXECUTION", ed.executionResult);
+     }
+   else
+     {
+      RecordSetupStatus(id, rq.direction, "REJECTED", 0);
+      RemoveEntryContext(id);
+      ed.executionResult = "broker rejected: " + why;
+      X15Error("EXECUTION", ed.executionResult);
+     }
+  }
+
+// Runs once per new execution bar, after analysis and position management.
+void ProcessEntryOpportunity(void)
+  {
+   g_state = X15_ST_VALIDATION;
+   g_exec = CheckExecutionEligibility(g_decision);
+   bool eligible = (g_exec.state == X15_ELIGIBLE_LONG || g_exec.state == X15_ELIGIBLE_SHORT);
+   X15Log("VALIDATION", StringFormat("%s -- %s%s", EnumLabel(EnumToString(g_exec.state), "X15_"),
+                                     g_exec.blockingGate != "" ? g_exec.blockingGate + ": " : "", g_exec.reason),
+          false, !eligible);
+   if(!eligible)
+     {
+      if(g_exec.state == X15_BLOCKED) g_state = X15_ST_BLOCKED;
+      else if(g_exec.state == X15_ELIG_DATA_UNAVAILABLE) g_state = X15_ST_DATA_UNAVAILABLE;
+      else g_state = X15_ST_WAIT;
+      return;
+     }
+   g_state = X15_ST_RISK_CHECK;
+   X15Log("RISK", g_exec.riskTrace + StringFormat(", %.2f lots, money at risk %.2f", g_exec.lots, g_exec.riskMoney));
+   if(InpExecutionMode == X15_ANALYSIS_ONLY)
+     {
+      g_exec.executionResult = "ANALYSIS_ONLY: would have entered, nothing sent";
+      g_state = X15_ST_WAIT;
+      return;
+     }
+   g_state = X15_ST_EXECUTION;
+   ExecuteEntry(g_decision, g_exec);
+   g_state = X15_ST_WAIT;
+  }
+
+//====================================================================
+// PENDING STOP-ENTRY ORDERS
+//--------------------------------------------------------------------
+// Cancelled when they expire (belt and braces over ORDER_TIME_SPECIFIED,
+// which not every broker supports) or when price reaches their SL before
+// triggering -- the setup is invalid by then.
+//====================================================================
+void ManagePendingOrders(void)
+  {
+   int period = PeriodSeconds(InpExecTF);
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID), ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+     {
+      ulong t = OrderGetTicket(i);
+      if(t == 0 || (ulong)OrderGetInteger(ORDER_MAGIC) != InpMagicNumber || OrderGetString(ORDER_SYMBOL) != _Symbol) continue;
+      long type = OrderGetInteger(ORDER_TYPE);
+      datetime setup = (datetime)OrderGetInteger(ORDER_TIME_SETUP);
+      double sl = OrderGetDouble(ORDER_SL);
+      bool expired = (TimeCurrent() - setup >= InpPendingExpiryBars * period);
+      bool invalid = (type == ORDER_TYPE_BUY_STOP && sl > 0.0 && bid <= sl) || (type == ORDER_TYPE_SELL_STOP && sl > 0.0 && ask >= sl);
+      if(!expired && !invalid && !InpCloseAllManagedPositions) continue;
+      string id = ExtractSetupIdFromComment(OrderGetString(ORDER_COMMENT));
+      if(g_trade.OrderDelete(t))
+        {
+         RecordSetupStatus(id, 0, expired ? "EXPIRED" : (invalid ? "INVALIDATED" : "CANCELLED"), t);
+         RemoveEntryContext(id);
+         X15Log("EXECUTION", StringFormat("pending order #%I64u deleted (%s)", t, expired ? "expired" : (invalid ? "price reached SL first" : "close-all")));
+        }
+      else X15Error("EXECUTION", StringFormat("could not delete pending order #%I64u: %u", t, g_trade.ResultRetcode()));
+     }
+  }
+
+// Paper stop-entries: fill when price trades through, cancel on expiry or
+// when price reaches the SL first.
+void ManagePaperPending(int idx)
+  {
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID), ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   int dir = g_positions[idx].direction;
+   bool triggered = (dir == 1) ? (ask >= g_positions[idx].pendingPrice) : (bid <= g_positions[idx].pendingPrice);
+   bool invalid = (dir == 1) ? (bid <= g_positions[idx].currentSL) : (ask >= g_positions[idx].currentSL);
+   bool expired = (TimeCurrent() >= g_positions[idx].pendingExpiry);
+   if(invalid || expired || InpCloseAllManagedPositions)
+     {
+      RecordSetupStatus(g_positions[idx].setupId, dir, expired ? "EXPIRED" : "INVALIDATED", 0);
+      X15Log("EXECUTION", "[PAPER] stop-entry cancelled for setup " + g_positions[idx].setupId);
+      g_positions[idx].closed = true;
+      return;
+     }
+   if(!triggered) return;
+   double fill = (dir == 1) ? ask : bid;
+   g_positions[idx].isPendingOrder = false;
+   g_positions[idx].entryTime = TimeCurrent();
+   g_positions[idx].entryPrice = fill;
+   g_positions[idx].avgEntryPrice = fill;
+   double pr = 0.0;
+   if(OrderCalcProfit(dir == 1 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, _Symbol, g_positions[idx].volume, fill, g_positions[idx].originalSL, pr) && pr < 0.0)
+      g_positions[idx].riskMoney = -pr; // actual fill, not the planned trigger price
+   g_stateDirty = true;
+   g_lastTradeTime = TimeCurrent();
+   X15Log("EXECUTION", StringFormat("[PAPER] stop-entry filled %s @ %s", DirLabel(dir), DoubleToString(fill, g_spec.digits)));
+  }
+
+//====================================================================
+// LAYER 8 -- POSITION MANAGEMENT  (spec 19)
+//--------------------------------------------------------------------
+// Tick-level: SL/TP hits for paper positions, break-even, partial, ATR and
+// fixed-R trailing. Bar-level (new closed exec bar only): structure and
+// VWAP trailing, invalidation and time exits. Stops only ever TIGHTEN.
+// A live close is only SENT here; the journal entry is written by
+// reconciliation once the broker's deal history shows the position closed
+// -- so the journal records what happened, not what was requested.
+//====================================================================
+void PaperClose(X15Position &p, double vol, double exitPrice);
+
+bool ModifyStops(X15Position &p, double newSL, double newTP, string tag)
+  {
+   newSL = NormalizePriceToTick(newSL);
+   newTP = NormalizePriceToTick(newTP);
+   if(p.isPaper)
+     {
+      p.currentSL = newSL; p.currentTP = newTP; p.lastModifyTime = TimeCurrent();
+      g_stateDirty = true;
+      X15Log("POSITION", StringFormat("[PAPER] %s: SL %s TP %s", tag, DoubleToString(newSL, g_spec.digits), DoubleToString(newTP, g_spec.digits)), false, true);
+      return(true);
+     }
+   if(TimeCurrent() - p.lastModifyTime < 5) return(false); // at most one modify per position per 5 s
+   if(!SelectLivePositionById(p.positionId, p.ticket)) return(false);
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID), ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double exitPx = (p.direction == 1) ? bid : ask;
+   double minDist = MinStopDistancePrice();
+   double freeze = g_spec.freezeLevelPts * g_spec.point;
+   if(freeze > 0.0)
+     {
+      if(p.currentSL > 0.0 && MathAbs(exitPx - p.currentSL) <= freeze) return(false); // inside the freeze zone: the broker would refuse
+      if(p.currentTP > 0.0 && MathAbs(exitPx - p.currentTP) <= freeze) return(false);
+     }
+   if(p.direction == 1 && (bid - newSL < minDist || (newTP > 0.0 && newTP - bid < minDist))) return(false);
+   if(p.direction == -1 && (newSL - ask < minDist || (newTP > 0.0 && ask - newTP < minDist))) return(false);
+   p.lastModifyTime = TimeCurrent();
+   if(!g_trade.PositionModify(p.ticket, newSL, newTP))
+     {
+      p.modifyFailCount++;
+      X15Error("POSITION", StringFormat("%s modify failed on #%I64u: %u %s (%d in a row)", tag, p.ticket,
+                                        g_trade.ResultRetcode(), g_trade.ResultRetcodeDescription(), p.modifyFailCount));
+      return(false);
+     }
+   p.modifyFailCount = 0;
+   p.currentSL = newSL;
+   p.currentTP = newTP;
+   g_stateDirty = true;
+   X15Log("POSITION", StringFormat("%s: #%I64u SL %s TP %s", tag, p.ticket, DoubleToString(newSL, g_spec.digits), DoubleToString(newTP, g_spec.digits)));
+   return(true);
+  }
+
+bool CloseManagedPosition(X15Position &p, ENUM_X15_EXIT_REASON reason)
+  {
+   p.pendingExitReason = reason;
+   g_stateDirty = true;
+   if(p.isPaper)
+     {
+      double exitPx = (p.direction == 1) ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      PaperClose(p, p.volume, exitPx);
+      return(true);
+     }
+   if(!SelectLivePositionById(p.positionId, p.ticket)) return(false);
+   if(!g_trade.PositionClose(p.ticket, (ulong)InpMaxSlippagePoints))
+     {
+      X15Error("POSITION", StringFormat("close (%s) failed on #%I64u: %u %s", ExitReasonLabel(reason), p.ticket,
+                                        g_trade.ResultRetcode(), g_trade.ResultRetcodeDescription()));
+      return(false);
+     }
+   g_reconcileRequested = true;
+   X15Log("POSITION", StringFormat("close sent (%s) #%I64u", ExitReasonLabel(reason), p.ticket));
+   return(true);
+  }
+
+bool PartialCloseManaged(X15Position &p, double vol)
+  {
+   if(p.isPaper)
+     {
+      double exitPx = (p.direction == 1) ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      PaperClose(p, vol, exitPx);
+      return(true);
+     }
+   if(!SelectLivePositionById(p.positionId, p.ticket)) return(false);
+   if(!g_trade.PositionClosePartial(p.ticket, vol, (ulong)InpMaxSlippagePoints))
+     {
+      X15Error("POSITION", StringFormat("partial close failed on #%I64u: %u %s", p.ticket, g_trade.ResultRetcode(), g_trade.ResultRetcodeDescription()));
+      return(false);
+     }
+   g_reconcileRequested = true;
+   X15Log("POSITION", StringFormat("partial close %.2f lots on #%I64u", vol, p.ticket));
+   return(true);
+  }
+
+// Forward look for a whitelisted (validated) event on either currency leg
+// within the lead window. Live only: the tester has no calendar.
+bool UpcomingValidatedEvent(int leadMinutes, string &nameOut)
+  {
+   nameOut = "";
+   if(IsTester() || leadMinutes <= 0) return(false);
+   string base, quote;
+   GetTradeCurrencies(_Symbol, base, quote);
+   string legs[2];
+   legs[0] = base; legs[1] = quote;
+   datetime now = TimeCurrent();
+   for(int L = 0; L < 2; L++)
+     {
+      if(legs[L] == "") continue;
+      MqlCalendarValue values[];
+      int n = GetRecentCalendarEvents(legs[L], now, now + leadMinutes * 60, values);
+      for(int i = 0; i < n; i++)
+        {
+         MqlCalendarEvent ev;
+         if(!CalendarEventById((long)values[i].event_id, ev)) continue;
+         if(IsWhitelistedEvent(ev.name, legs[L])) { nameOut = ev.name + " (" + legs[L] + ")"; return(true); }
+        }
+     }
+   return(false);
+  }
+
+// Returns true when the position is gone (closed or its close was sent).
+bool ManageOnePosition(X15Position &p, bool newBar)
+  {
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID), ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   if(bid <= 0.0 || ask <= 0.0) return(false);
+   if(!p.isPaper)
+     {
+      if(!SelectLivePositionById(p.positionId, p.ticket)) return(false); // reconciliation will journal it
+      p.currentSL = PositionGetDouble(POSITION_SL);
+      p.currentTP = PositionGetDouble(POSITION_TP);
+      p.volume = PositionGetDouble(POSITION_VOLUME);
+      p.avgEntryPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+     }
+   int dir = p.direction;
+   double exitPx = (dir == 1) ? bid : ask;
+
+   if(p.isPaper)
+     {
+      bool slHit = (p.currentSL > 0.0) && ((dir == 1) ? bid <= p.currentSL : ask >= p.currentSL);
+      bool tpHit = (p.currentTP > 0.0) && ((dir == 1) ? bid >= p.currentTP : ask <= p.currentTP);
+      if(slHit)
+        {
+         bool locked = (dir == 1) ? (p.currentSL >= p.avgEntryPrice) : (p.currentSL <= p.avgEntryPrice);
+         p.pendingExitReason = !locked ? X15_EXIT_STOP_LOSS : (p.beDone && MathAbs(p.currentSL - p.avgEntryPrice) > (InpBreakEvenLockR + 0.05) * MathAbs(p.entryPrice - p.originalSL) ? X15_EXIT_TRAIL_STOP : X15_EXIT_BREAKEVEN_STOP);
+         PaperClose(p, p.volume, exitPx); // at the market price, so a gap through the SL costs what it would really cost
+         return(true);
+        }
+      if(tpHit)
+        {
+         p.pendingExitReason = X15_EXIT_TAKE_PROFIT;
+         PaperClose(p, p.volume, p.currentTP);
+         return(true);
+        }
+     }
+
+   if(InpCloseAllManagedPositions) return(CloseManagedPosition(p, X15_EXIT_CLOSE_ALL));
+
+   double risk = MathAbs(p.entryPrice - p.originalSL);
+   if(risk <= 0.0) return(false); // no defined risk basis: nothing R-based to manage
+   double rNow = (exitPx - p.entryPrice) * dir / risk;
+
+   if(InpNewsEmergencyAction != X15_NEWS_EMERG_NONE)
+     {
+      string evName;
+      if(UpcomingValidatedEvent(InpNewsEmergencyLeadMinutes, evName))
+        {
+         if(InpNewsEmergencyAction == X15_NEWS_EMERG_CLOSE)
+           {
+            X15Log("POSITION", "news emergency close ahead of " + evName);
+            return(CloseManagedPosition(p, X15_EXIT_NEWS_EMERGENCY));
+           }
+         bool slBelowEntry = (dir == 1) ? (p.currentSL < p.avgEntryPrice) : (p.currentSL > p.avgEntryPrice || p.currentSL == 0.0);
+         if(rNow > 0.0 && slBelowEntry) ModifyStops(p, p.avgEntryPrice, p.currentTP, "news break-even ahead of " + evName);
+        }
+     }
+
+   if(newBar && g_execGot > 0)
+     {
+      double lastClose = g_execRates[g_execGot-1].close;
+      datetime lastBar = g_execRates[g_execGot-1].time;
+      if(InpUseInvalidationExit && !p.beDone && p.invalidation > 0.0 && lastBar > p.entryBarTime
+         && ((dir == 1 && lastClose < p.invalidation) || (dir == -1 && lastClose > p.invalidation)))
+        {
+         X15Log("POSITION", StringFormat("thesis invalidated: closed %s beyond %s", DoubleToString(lastClose, g_spec.digits), DoubleToString(p.invalidation, g_spec.digits)));
+         return(CloseManagedPosition(p, X15_EXIT_INVALIDATION));
+        }
+      if(InpMaxHoldBars > 0 && p.entryTime > 0 && TimeCurrent() - p.entryTime >= InpMaxHoldBars * PeriodSeconds(InpExecTF))
+         return(CloseManagedPosition(p, X15_EXIT_TIME));
+      if(InpTrailMode == X15_TRAIL_VWAP && rNow >= InpTrailStartR)
+        {
+         string v = ClassifyVWAPClosedBar();
+         if((dir == 1 && v == "BEARISH") || (dir == -1 && v == "BULLISH")) return(CloseManagedPosition(p, X15_EXIT_VWAP));
+        }
+     }
+
+   if(InpUseBreakEven && !p.beDone && rNow >= InpBreakEvenAtR)
+     {
+      double target = p.avgEntryPrice + dir * InpBreakEvenLockR * risk;
+      bool improves = (dir == 1) ? (target > p.currentSL) : (p.currentSL == 0.0 || target < p.currentSL);
+      if(!improves) p.beDone = true;
+      else if(ModifyStops(p, target, p.currentTP, "break-even")) p.beDone = true;
+     }
+
+   if(InpUsePartialClose && !p.partialDone && rNow >= InpPartialAtR)
+     {
+      double vol = FloorLots(p.volume * InpPartialClosePercent / 100.0);
+      // never close MORE than asked because the slice or the remainder would fall below the broker minimum
+      if(vol <= 0.0 || p.volume - vol < g_spec.volMin - 1e-12) p.partialDone = true;
+      else if(PartialCloseManaged(p, vol)) p.partialDone = true;
+      if(p.closed) return(true);
+     }
+
+   if(InpTrailMode != X15_TRAIL_NONE && InpTrailMode != X15_TRAIL_VWAP && rNow >= InpTrailStartR)
+     {
+      double cand = 0.0;
+      if(InpTrailMode == X15_TRAIL_ATR && g_structExec.atrAvailable) cand = exitPx - dir * InpTrailATRMultiple * g_structExec.atr;
+      if(InpTrailMode == X15_TRAIL_FIXED_R) cand = exitPx - dir * InpTrailFixedR * risk;
+      if(InpTrailMode == X15_TRAIL_STRUCTURE && newBar && g_structExec.available)
+        {
+         double buffer = g_structExec.atrAvailable ? InpSLATRBuffer * g_structExec.atr : 0.0;
+         if(dir == 1 && g_structExec.lastSwingLowTime > p.entryTime)   cand = g_structExec.lastSwingLow - buffer;
+         if(dir == -1 && g_structExec.lastSwingHighTime > p.entryTime) cand = g_structExec.lastSwingHigh + buffer;
+        }
+      if(cand > 0.0)
+        {
+         double minStep = 0.05 * risk; // ignore sub-5%-of-R nudges: they only generate broker traffic
+         bool improves = (dir == 1) ? (cand > p.currentSL + minStep) : (p.currentSL == 0.0 || cand < p.currentSL - minStep);
+         double spreadPrice = ask - bid;
+         bool roomy = (dir == 1) ? (bid - cand >= MinStopDistancePrice() + spreadPrice) : (cand - ask >= MinStopDistancePrice() + spreadPrice);
+         if(improves && roomy) ModifyStops(p, cand, p.currentTP, "trail " + EnumLabel(EnumToString(InpTrailMode), "X15_TRAIL_"));
+        }
+     }
+   return(p.closed);
+  }
+
+void ManagePositions(bool newBar)
+  {
+   if(OwnOpenPositionCount() == 0 && ArraySize(g_positions) == 0) return;
+   ENUM_X15_STATE before = g_state;
+   g_state = X15_ST_POSITION_MANAGEMENT;
+   for(int i = ArraySize(g_positions) - 1; i >= 0; i--)
+     {
+      if(!g_positions[i].isOwn || g_positions[i].closed) continue;
+      if(g_positions[i].isPaper && g_positions[i].isPendingOrder) ManagePaperPending(i);
+      else ManageOnePosition(g_positions[i], newBar);
+     }
+   // paper positions finalize themselves on close; drop them from the registry
+   for(int i = ArraySize(g_positions) - 1; i >= 0; i--)
+      if(g_positions[i].isPaper && g_positions[i].closed) RemovePositionAt(i);
+   g_state = before;
+  }
+
+//====================================================================
+// LAYER 9 -- JOURNAL  (spec 21)
+//--------------------------------------------------------------------
+// The journal itself IS the learned model: every gate, bonus and stat is
+// recomputed from g_journal, nothing is cached beside it. Files live in
+// this terminal's own sandboxed MQL5/Files folder (no FILE_COMMON) and
+// are written temp-file-then-FileMove, so a crash mid-write leaves the
+// previous complete file intact.
+//
+// v2 format: a marker row, then one row per CLOSED position. A v1 file (8
+// columns, no marker) is still read and imported as LEGACY rows.
+//
+// Strategy Tester: persisted files are never LOADED -- the tester's file
+// sandbox survives between runs, so loading would let a re-run of a period
+// learn from its own future. Tester runs write to *_TESTER files for
+// post-run inspection only.
+//====================================================================
+#define X15_JOURNAL_MARKER "AX15_JOURNAL_V2"
+
+// The only JournalEntry fields holding uncontrolled external text are the
+// calendar event name and the free-text state strings; commas and line
+// breaks in them would misalign every later field of the row on reload.
 string SanitizeForCsv(string s)
   {
    StringReplace(s, ",", ";");
@@ -3533,392 +4726,1462 @@ string SanitizeForCsv(string s)
 string GetJournalFileName(void)
   {
    if(JournalFileNameOverride != "") return(JournalFileNameOverride);
+   return("AutopsyX15_Journal_v2_" + _Symbol + (IsTester() ? "_TESTER" : "") + ".csv");
+  }
+
+string GetLegacyJournalFileName(void)
+  {
    return("AutopsyX15_Journal_" + _Symbol + ".csv");
   }
 
-// Rewrites the WHOLE file from g_journal every time it's called (rather
-// than appending), which trades a little I/O for a much simpler
-// correctness argument: g_journal in memory is always the single source
-// of truth, so the file can never drift from it or accumulate a
-// malformed trailing row from an interrupted append. Trade volume this
-// file expects (per-trade closes, not per-tick) keeps that O(n) rewrite
-// cheap in practice -- even several thousand rows is a sub-millisecond
-// write. If this journal is ever run somewhere that accumulates far
-// more history than that, this rewrite-per-close approach is the first
-// thing to revisit; it was chosen for correctness-simplicity, not scale.
-//
-// Writes to a TEMPORARY file first and only replaces the real journal via
-// FileMove once that write has fully succeeded -- writing directly to
-// the real file with FILE_WRITE would truncate it to zero bytes before a
-// single row is rewritten, so a crash or power loss mid-write (exactly
-// the "VPS reboot" scenario this feature exists to survive) would leave
-// the on-disk journal empty or partial instead of just missing the one
-// newest trade. With the temp-file approach, the real file is only ever
-// touched by one atomic-ish rename once a complete, valid replacement
-// already exists on disk -- an interruption during the write leaves the
-// previous, fully-intact journal untouched.
+void ResetJournalEntry(JournalEntry &e)
+  {
+   e.closeTime = 0; e.symbol = _Symbol; e.direction = 0; e.rMultiple = 0.0;
+   e.vwapAligned = false; e.vpMacdAligned = false; e.nearValidatedNewsEvent = false; e.newsEventNameAtEntry = "";
+   e.positionId = 0; e.source = X15_SRC_LEGACY; e.valid = true; e.invalidReason = "";
+   e.setupId = ""; e.setupType = X15_SETUP_NONE; e.entryTime = 0; e.entryPrice = 0.0; e.sl = 0.0; e.tp = 0.0;
+   e.volume = 0.0; e.riskPct = 0.0; e.riskMoney = 0.0; e.exitTimeFirst = 0; e.exitPrice = 0.0;
+   e.grossProfit = 0.0; e.commission = 0.0; e.swap = 0.0; e.netProfit = 0.0; e.spreadAtEntryPts = 0.0;
+   e.vwapState = ""; e.vpmacdState = ""; e.newsState = ""; e.compositeState = ""; e.regime = "";
+   e.structureState = ""; e.liquidityState = ""; e.session = ""; e.entryReason = "";
+   e.exitReason = X15_EXIT_UNKNOWN; e.isFlip = false; e.evidenceScore = 0;
+  }
+
+string D8(double v)
+  {
+   return(DoubleToString(v, 8));
+  }
+
 void SaveJournalToFile(void)
   {
    if(!UsePersistentJournal) return;
-   string fname    = GetJournalFileName();
+   string fname = GetJournalFileName();
    string tmpFname = fname + ".tmp";
-
    int handle = FileOpen(tmpFname, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ, ',');
    if(handle == INVALID_HANDLE)
      {
-      PrintFormat("AUTOPSY X15: could not open temp journal file '%s' for writing (error %d) -- learned state will NOT persist past this session.", tmpFname, GetLastError());
+      X15Error("JOURNAL", StringFormat("could not open temp journal '%s' (error %d) -- the newest trade will NOT persist", tmpFname, GetLastError()));
       return;
      }
+   FileWrite(handle, X15_JOURNAL_MARKER, "closeTime", "symbol", "direction", "rMultiple", "vwapAligned", "vpMacdAligned",
+             "nearValidatedNews", "newsEvent", "positionId", "source", "valid", "invalidReason", "setupId", "setupType",
+             "entryTime", "entryPrice", "sl", "tp", "volume", "riskPct", "riskMoney", "firstExitTime", "exitPrice",
+             "gross", "commission", "swap", "net", "spreadPts", "vwapState", "vpmacdState", "newsState", "composite",
+             "regime", "structure", "liquidity", "session", "entryReason", "exitReason", "isFlip", "evidence");
    int n = ArraySize(g_journal);
    for(int i = 0; i < n; i++)
-      FileWrite(handle, (long)g_journal[i].closeTime, g_journal[i].symbol, g_journal[i].direction,
-                g_journal[i].rMultiple, g_journal[i].vwapAligned?1:0, g_journal[i].vpMacdAligned?1:0,
-                g_journal[i].nearValidatedNewsEvent?1:0, g_journal[i].newsEventNameAtEntry);
+     {
+      JournalEntry e = g_journal[i];
+      FileWrite(handle, "R", (long)e.closeTime, e.symbol, e.direction, D8(e.rMultiple), e.vwapAligned ? 1 : 0, e.vpMacdAligned ? 1 : 0,
+                e.nearValidatedNewsEvent ? 1 : 0, SanitizeForCsv(e.newsEventNameAtEntry), (long)e.positionId, (int)e.source,
+                e.valid ? 1 : 0, SanitizeForCsv(e.invalidReason), e.setupId, (int)e.setupType, (long)e.entryTime,
+                D8(e.entryPrice), D8(e.sl), D8(e.tp), D8(e.volume), D8(e.riskPct), D8(e.riskMoney), (long)e.exitTimeFirst,
+                D8(e.exitPrice), D8(e.grossProfit), D8(e.commission), D8(e.swap), D8(e.netProfit), D8(e.spreadAtEntryPts),
+                SanitizeForCsv(e.vwapState), SanitizeForCsv(e.vpmacdState), SanitizeForCsv(e.newsState),
+                SanitizeForCsv(e.compositeState), SanitizeForCsv(e.regime), SanitizeForCsv(e.structureState),
+                SanitizeForCsv(e.liquidityState), SanitizeForCsv(e.session), SanitizeForCsv(e.entryReason),
+                (int)e.exitReason, e.isFlip ? 1 : 0, e.evidenceScore);
+     }
    FileClose(handle);
-
    if(!FileMove(tmpFname, 0, fname, FILE_REWRITE))
-      PrintFormat("AUTOPSY X15: wrote temp journal file '%s' but could not move it into place as '%s' (error %d) -- the previous on-disk journal is untouched, but this session's newest trade did not persist.", tmpFname, fname, GetLastError());
+      X15Error("JOURNAL", StringFormat("wrote '%s' but could not move it into place (error %d) -- the previous journal is untouched", tmpFname, GetLastError()));
   }
 
-// Called once from OnInit, before any new trade is processed this run.
-// Replaces g_journal wholesale with whatever was on disk (or leaves it
-// empty if there's nothing there yet / persistence is off) -- this always
-// runs before SyncOpenPositions' first pass, so a position that was
-// already open at startup is still correctly handled as isPreExisting
-// regardless of what history was just loaded.
-void LoadJournalFromFile(void)
+void SkipRestOfLine(int h)
   {
-   ArrayResize(g_journal, 0);
-   if(!UsePersistentJournal) return;
+   while(!FileIsLineEnding(h) && !FileIsEnding(h)) FileReadString(h);
+  }
 
-   string fname = GetJournalFileName();
-   if(!FileIsExist(fname))
+bool ReadJournalRowV2(int h, JournalEntry &e)
+  {
+   ResetJournalEntry(e);
+   e.closeTime              = (datetime)StringToInteger(FileReadString(h));
+   e.symbol                 = FileReadString(h);
+   e.direction              = (int)StringToInteger(FileReadString(h));
+   e.rMultiple              = StringToDouble(FileReadString(h));
+   e.vwapAligned            = (StringToInteger(FileReadString(h)) != 0);
+   e.vpMacdAligned          = (StringToInteger(FileReadString(h)) != 0);
+   e.nearValidatedNewsEvent = (StringToInteger(FileReadString(h)) != 0);
+   e.newsEventNameAtEntry   = FileReadString(h);
+   e.positionId             = (ulong)StringToInteger(FileReadString(h));
+   e.source                 = (ENUM_X15_TRADE_SOURCE)StringToInteger(FileReadString(h));
+   e.valid                  = (StringToInteger(FileReadString(h)) != 0);
+   e.invalidReason          = FileReadString(h);
+   e.setupId                = FileReadString(h);
+   e.setupType              = (ENUM_X15_SETUP_TYPE)StringToInteger(FileReadString(h));
+   e.entryTime              = (datetime)StringToInteger(FileReadString(h));
+   e.entryPrice             = StringToDouble(FileReadString(h));
+   e.sl                     = StringToDouble(FileReadString(h));
+   e.tp                     = StringToDouble(FileReadString(h));
+   e.volume                 = StringToDouble(FileReadString(h));
+   e.riskPct                = StringToDouble(FileReadString(h));
+   e.riskMoney              = StringToDouble(FileReadString(h));
+   e.exitTimeFirst          = (datetime)StringToInteger(FileReadString(h));
+   e.exitPrice              = StringToDouble(FileReadString(h));
+   e.grossProfit            = StringToDouble(FileReadString(h));
+   e.commission             = StringToDouble(FileReadString(h));
+   e.swap                   = StringToDouble(FileReadString(h));
+   e.netProfit              = StringToDouble(FileReadString(h));
+   e.spreadAtEntryPts       = StringToDouble(FileReadString(h));
+   e.vwapState              = FileReadString(h);
+   e.vpmacdState            = FileReadString(h);
+   e.newsState              = FileReadString(h);
+   e.compositeState         = FileReadString(h);
+   e.regime                 = FileReadString(h);
+   e.structureState         = FileReadString(h);
+   e.liquidityState         = FileReadString(h);
+   e.session                = FileReadString(h);
+   e.entryReason            = FileReadString(h);
+   e.exitReason             = (ENUM_X15_EXIT_REASON)StringToInteger(FileReadString(h));
+   e.isFlip                 = (StringToInteger(FileReadString(h)) != 0);
+   e.evidenceScore          = (int)StringToInteger(FileReadString(h));
+   bool rowComplete = FileIsLineEnding(h) || FileIsEnding(h);
+   SkipRestOfLine(h);
+   // a short row (interrupted write, hand edit) is loaded as invalid: kept for audit, never learned from
+   if(!rowComplete || e.closeTime <= 0)
      {
-      PrintFormat("AUTOPSY X15: no existing journal file '%s' -- starting with an empty learned track record.", fname);
-      return;
+      e.valid = false;
+      e.invalidReason = "malformed journal row";
      }
+   return(true);
+  }
 
+// Legacy v1: closeTime, symbol, direction, rMultiple, vwapAligned,
+// vpMacdAligned, nearValidatedNews, newsEvent -- written by any position on
+// the symbol, so it comes in as LEGACY (not learned from by default).
+int LoadJournalV1Rows(int h, string firstField)
+  {
+   int loaded = 0;
+   string first = firstField;
+   while(true)
+     {
+      if(first == "" && FileIsEnding(h)) break;
+      JournalEntry e;
+      ResetJournalEntry(e);
+      e.closeTime              = (datetime)StringToInteger(first);
+      e.symbol                 = FileReadString(h);
+      e.direction              = (int)StringToInteger(FileReadString(h));
+      e.rMultiple              = StringToDouble(FileReadString(h));
+      e.vwapAligned            = (StringToInteger(FileReadString(h)) != 0);
+      e.vpMacdAligned          = (StringToInteger(FileReadString(h)) != 0);
+      e.nearValidatedNewsEvent = (StringToInteger(FileReadString(h)) != 0);
+      e.newsEventNameAtEntry   = FileReadString(h);
+      e.source = X15_SRC_LEGACY;
+      e.entryReason = "imported from v1 journal";
+      if(e.closeTime > 0)
+        {
+         int idx = ArraySize(g_journal);
+         ArrayResize(g_journal, idx + 1);
+         g_journal[idx] = e;
+         loaded++;
+        }
+      if(FileIsEnding(h)) break;
+      first = FileReadString(h);
+     }
+   return(loaded);
+  }
+
+int LoadJournalFile(string fname)
+  {
    int handle = FileOpen(fname, FILE_READ|FILE_CSV|FILE_ANSI|FILE_SHARE_READ, ',');
    if(handle == INVALID_HANDLE)
      {
-      PrintFormat("AUTOPSY X15: found journal file '%s' but could not open it for reading (error %d) -- starting empty rather than guessing its contents.", fname, GetLastError());
-      return;
+      X15Error("JOURNAL", StringFormat("found '%s' but could not open it (error %d) -- starting empty rather than guessing", fname, GetLastError()));
+      return(-1);
      }
-
    int loaded = 0;
-   while(!FileIsEnding(handle))
+   string first = FileReadString(handle);
+   if(first == X15_JOURNAL_MARKER)
      {
-      long closeTimeRaw = (long)FileReadNumber(handle);
-      if(FileIsEnding(handle)) break; // trailing blank line at EOF -- stop cleanly rather than parse a partial row
-
-      JournalEntry entry;
-      entry.closeTime               = (datetime)closeTimeRaw;
-      entry.symbol                  = FileReadString(handle);
-      entry.direction               = (int)FileReadNumber(handle);
-      entry.rMultiple               = FileReadNumber(handle);
-      entry.vwapAligned             = (FileReadNumber(handle) != 0);
-      entry.vpMacdAligned           = (FileReadNumber(handle) != 0);
-      entry.nearValidatedNewsEvent  = (FileReadNumber(handle) != 0);
-      entry.newsEventNameAtEntry    = FileReadString(handle);
-
-      int idx = ArraySize(g_journal);
-      ArrayResize(g_journal, idx + 1);
-      g_journal[idx] = entry;
-      loaded++;
+      SkipRestOfLine(handle);
+      while(!FileIsEnding(handle))
+        {
+         string tag = FileReadString(handle);
+         if(tag != "R") { SkipRestOfLine(handle); continue; }
+         JournalEntry e;
+         ReadJournalRowV2(handle, e);
+         if(e.positionId != 0 && JournalHasPosition(e.positionId, e.source)) continue; // dedupe on load too
+         int idx = ArraySize(g_journal);
+         ArrayResize(g_journal, idx + 1);
+         g_journal[idx] = e;
+         loaded++;
+        }
      }
+   else loaded = LoadJournalV1Rows(handle, first);
    FileClose(handle);
-   PrintFormat("AUTOPSY X15: loaded %d journal entries from disk -- learned state carries over from before this run.", loaded);
+   return(loaded);
   }
 
-// Sums realized P&L for a fully-closed position via its deal history, then
-// converts to an R-multiple using the SL distance captured at entry. If no
-// SL was set at entry, the risk basis is undefined -- the trade is NOT
-// journaled for stats purposes rather than fabricating a risk basis for it.
-void AppendJournalFromClosedPosition(OpenPositionMeta &meta)
+void LoadJournalFromFile(void)
   {
-   if(meta.slPriceAtEntry == 0.0)
+   ArrayResize(g_journal, 0);
+   if(!UsePersistentJournal || IsTester()) return;
+   string fname = GetJournalFileName();
+   if(FileIsExist(fname))
      {
-      PrintFormat("AUTOPSY X15: position %I64u closed with no SL recorded at entry -- skipping journal entry (undefined risk basis, not fabricated).", meta.ticket);
+      int n = LoadJournalFile(fname);
+      if(n >= 0) X15Log("JOURNAL", StringFormat("loaded %d journal rows from '%s'", n, fname));
       return;
      }
+   string legacy = GetLegacyJournalFileName();
+   if(JournalFileNameOverride == "" && FileIsExist(legacy))
+     {
+      int n = LoadJournalFile(legacy);
+      if(n > 0)
+        {
+         X15Log("JOURNAL", StringFormat("imported %d v1 rows from '%s' as LEGACY (excluded from learning unless InpLearningSource=ALL_OWN); the v1 file is left untouched", n, legacy));
+         SaveJournalToFile();
+        }
+      return;
+     }
+   X15Log("JOURNAL", "no journal yet -- starting with an empty track record");
+  }
 
-   if(!HistorySelectByPosition((long)meta.ticket)) return;
+void AppendJournal(JournalEntry &e)
+  {
+   if(e.positionId != 0 && JournalHasPosition(e.positionId, e.source)) return;
+   int idx = ArraySize(g_journal);
+   ArrayResize(g_journal, idx + 1);
+   g_journal[idx] = e;
+   g_perfDirty = true;
+   SaveJournalToFile();
+   X15Log("JOURNAL", StringFormat("%s %s %s closed: %.2fR, net %.2f, exit %s%s", SourceLabel(e.source), DirLabel(e.direction),
+                                  e.setupId != "" ? e.setupId : IntegerToString((long)e.positionId), e.rMultiple, e.netProfit,
+                                  ExitReasonLabel(e.exitReason), e.valid ? "" : " [INVALID: " + e.invalidReason + "]"));
+  }
+
+void FillJournalFromPosition(X15Position &p, JournalEntry &e)
+  {
+   ResetJournalEntry(e);
+   e.symbol = _Symbol;
+   e.direction = p.direction;
+   e.vwapAligned = p.vwapAligned;
+   e.vpMacdAligned = p.vpMacdAligned;
+   e.nearValidatedNewsEvent = p.nearValidatedNewsEvent;
+   e.newsEventNameAtEntry = p.newsEventNameAtEntry;
+   e.positionId = p.positionId;
+   e.source = !p.isOwn ? X15_SRC_EXTERNAL : (p.isPaper ? X15_SRC_PAPER : (IsTester() ? X15_SRC_TESTER : X15_SRC_LIVE));
+   e.setupId = p.setupId;
+   e.setupType = p.setupType;
+   e.entryTime = p.entryTime;
+   e.sl = p.originalSL;
+   e.tp = p.originalTP;
+   e.volume = p.peakVolume;
+   e.riskPct = p.riskPct;
+   e.riskMoney = p.riskMoney;
+   e.spreadAtEntryPts = p.spreadAtEntryPts;
+   e.vwapState = p.vwapState;
+   e.vpmacdState = p.vpmacdState;
+   e.newsState = p.newsState;
+   e.compositeState = p.compositeState;
+   e.regime = p.regime;
+   e.structureState = p.structureState;
+   e.liquidityState = p.liquidityState;
+   e.session = p.session;
+   e.entryReason = p.entryReason;
+   e.isFlip = p.isFlip;
+   e.evidenceScore = p.evidenceScore;
+   if(p.isPreExisting && p.isOwn)
+     {
+      e.valid = false;
+      e.invalidReason = "pre-existing own position with no persisted entry context";
+     }
+  }
+
+// Own trades: R = net realized P&L / money at risk at entry, so partial
+// closes, commission and swap are all inside one number. Without a money
+// risk basis (external positions) R is price-based from the blended entry.
+void ComputeJournalR(X15Position &p, JournalEntry &e)
+  {
+   if(p.isOwn && p.riskMoney > 0.0)
+     {
+      e.rMultiple = e.netProfit / p.riskMoney;
+      return;
+     }
+   double riskDistance = (p.direction == 1) ? (e.entryPrice - p.originalSL) : (p.originalSL - e.entryPrice);
+   if(p.originalSL <= 0.0 || riskDistance <= 0.0)
+     {
+      e.rMultiple = 0.0;
+      e.valid = false;
+      e.invalidReason = "no stop loss at entry: undefined risk basis";
+      return;
+     }
+   e.rMultiple = (p.direction == 1) ? (e.exitPrice - e.entryPrice) / riskDistance : (e.entryPrice - e.exitPrice) / riskDistance;
+  }
+
+ENUM_X15_EXIT_REASON ClassifyBrokerExit(X15Position &p, long dealReason)
+  {
+   if(p.pendingExitReason != X15_EXIT_NONE) return(p.pendingExitReason);
+   if(dealReason == DEAL_REASON_TP) return(X15_EXIT_TAKE_PROFIT);
+   if(dealReason == DEAL_REASON_SO) return(X15_EXIT_STOP_OUT);
+   if(dealReason == DEAL_REASON_CLIENT || dealReason == DEAL_REASON_MOBILE || dealReason == DEAL_REASON_WEB) return(X15_EXIT_MANUAL);
+   if(dealReason == DEAL_REASON_SL)
+     {
+      double risk = MathAbs(p.entryPrice - p.originalSL);
+      bool locked = (p.direction == 1) ? (p.currentSL >= p.avgEntryPrice) : (p.currentSL > 0.0 && p.currentSL <= p.avgEntryPrice);
+      if(!locked) return(X15_EXIT_STOP_LOSS);
+      if(risk > 0.0 && MathAbs(p.currentSL - p.avgEntryPrice) > (InpBreakEvenLockR + 0.05) * risk) return(X15_EXIT_TRAIL_STOP);
+      return(X15_EXIT_BREAKEVEN_STOP);
+     }
+   return(X15_EXIT_UNKNOWN);
+  }
+
+// Idempotent: returns true once the position is journaled (or already
+// was). Returns false while the closing deals are not in history yet -- the
+// caller simply tries again on a later pass.
+bool FinalizeLivePosition(X15Position &p)
+  {
+   ENUM_X15_TRADE_SOURCE src = !p.isOwn ? X15_SRC_EXTERNAL : (IsTester() ? X15_SRC_TESTER : X15_SRC_LIVE);
+   if(JournalHasPosition(p.positionId, src)) return(true);
+   if(!HistorySelectByPosition((long)p.positionId)) return(false);
    int total = HistoryDealsTotal();
-   double sumExitPriceVolume = 0.0, sumExitVolume = 0.0;
-   datetime closeTime = 0;
-   bool found = false;
+   double inPV = 0.0, inVol = 0.0, outPV = 0.0, outVol = 0.0, gross = 0.0, comm = 0.0, swap = 0.0;
+   datetime closeTime = 0, firstExit = 0;
+   long lastReason = -1;
+   for(int i = 0; i < total; i++)
+     {
+      ulong d = HistoryDealGetTicket(i);
+      if(d == 0) continue;
+      long entry = HistoryDealGetInteger(d, DEAL_ENTRY);
+      double vol = HistoryDealGetDouble(d, DEAL_VOLUME);
+      double px = HistoryDealGetDouble(d, DEAL_PRICE);
+      comm += HistoryDealGetDouble(d, DEAL_COMMISSION) + HistoryDealGetDouble(d, DEAL_FEE);
+      swap += HistoryDealGetDouble(d, DEAL_SWAP);
+      gross += HistoryDealGetDouble(d, DEAL_PROFIT);
+      if(entry == DEAL_ENTRY_IN) { inPV += px * vol; inVol += vol; }
+      else if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_OUT_BY || entry == DEAL_ENTRY_INOUT)
+        {
+         outPV += px * vol; outVol += vol;
+         datetime t = (datetime)HistoryDealGetInteger(d, DEAL_TIME);
+         if(firstExit == 0) firstExit = t;
+         closeTime = t;
+         lastReason = HistoryDealGetInteger(d, DEAL_REASON);
+        }
+     }
+   if(outVol <= 0.0) return(false);
+
+   JournalEntry e;
+   FillJournalFromPosition(p, e);
+   e.closeTime = closeTime;
+   e.exitTimeFirst = firstExit;
+   e.entryPrice = (inVol > 0.0) ? inPV / inVol : p.avgEntryPrice;
+   e.exitPrice = outPV / outVol;
+   e.grossProfit = gross;
+   e.commission = comm;
+   e.swap = swap;
+   e.netProfit = gross + comm + swap;
+   e.exitReason = ClassifyBrokerExit(p, lastReason);
+   ComputeJournalR(p, e);
+   AppendJournal(e);
+   return(true);
+  }
+
+// Paper accounting: exits at the real bid/ask (or the TP level), P&L valued
+// by the broker's own OrderCalcProfit. No commission is modelled -- stated,
+// not hidden: paper R is optimistic by the commission a live fill pays.
+void PaperClose(X15Position &p, double vol, double exitPrice)
+  {
+   if(vol <= 0.0 || p.closed) return;
+   vol = MathMin(vol, p.volume);
+   double profit = 0.0;
+   OrderCalcProfit(p.direction == 1 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, _Symbol, vol, p.avgEntryPrice, exitPrice, profit);
+   p.paperGross += profit;
+   p.paperExitPriceVolume += exitPrice * vol;
+   p.paperExitVolume += vol;
+   if(p.firstExitTime == 0) p.firstExitTime = TimeCurrent();
+   p.volume = NormalizeDouble(p.volume - vol, VolumeDigits());
+   g_stateDirty = true;
+   if(p.volume > 1e-9)
+     {
+      X15Log("POSITION", StringFormat("[PAPER] partial %.2f lots @ %s, %.2f", vol, DoubleToString(exitPrice, g_spec.digits), profit));
+      return;
+     }
+   JournalEntry e;
+   FillJournalFromPosition(p, e);
+   e.closeTime = TimeCurrent();
+   e.exitTimeFirst = p.firstExitTime;
+   e.entryPrice = p.avgEntryPrice;
+   e.exitPrice = (p.paperExitVolume > 0.0) ? p.paperExitPriceVolume / p.paperExitVolume : exitPrice;
+   e.grossProfit = p.paperGross;
+   e.netProfit = p.paperGross;
+   e.exitReason = (p.pendingExitReason != X15_EXIT_NONE) ? p.pendingExitReason : X15_EXIT_UNKNOWN;
+   ComputeJournalR(p, e);
+   AppendJournal(e);
+   p.closed = true;
+  }
+
+//====================================================================
+// POSITION STATE PERSISTENCE  (spec 37)
+//--------------------------------------------------------------------
+// Own positions (live and paper) and pending entry contexts are saved with
+// everything management needs (original SL, break-even/partial flags, the
+// entry snapshot). After a restart they are reloaded and matched back to
+// the broker's positions by POSITION_IDENTIFIER, so management continues
+// and no alignment is fabricated for a position this EA really opened.
+//====================================================================
+string PositionStateFileName(void)
+  {
+   return(StringFormat("AutopsyX15_State_%s_%I64u%s.csv", _Symbol, InpMagicNumber, IsTester() ? "_TESTER" : ""));
+  }
+
+void WritePositionRow(int h, string kind, X15Position &p)
+  {
+   FileWrite(h, kind, (long)p.positionId, (long)p.ticket, p.isOwn ? 1 : 0, p.isPaper ? 1 : 0, p.isPreExisting ? 1 : 0,
+             p.setupId, (int)p.setupType, p.direction, (long)p.entryTime, (long)p.entryBarTime, D8(p.entryPrice), D8(p.avgEntryPrice),
+             D8(p.volume), D8(p.peakVolume), D8(p.originalSL), D8(p.originalTP), D8(p.currentSL), D8(p.currentTP), D8(p.riskPct),
+             D8(p.riskMoney), D8(p.invalidation), D8(p.spreadAtEntryPts), p.beDone ? 1 : 0, p.partialDone ? 1 : 0, p.modifyFailCount,
+             (long)p.lastModifyTime, (long)p.firstExitTime, (int)p.pendingExitReason, p.isFlip ? 1 : 0, p.evidenceScore,
+             p.vwapAligned ? 1 : 0, p.vpMacdAligned ? 1 : 0, p.nearValidatedNewsEvent ? 1 : 0, SanitizeForCsv(p.newsEventNameAtEntry),
+             SanitizeForCsv(p.vwapState), SanitizeForCsv(p.vpmacdState), SanitizeForCsv(p.newsState), SanitizeForCsv(p.compositeState),
+             SanitizeForCsv(p.regime), SanitizeForCsv(p.structureState), SanitizeForCsv(p.liquidityState), SanitizeForCsv(p.session),
+             SanitizeForCsv(p.entryReason), D8(p.paperExitPriceVolume), D8(p.paperExitVolume), D8(p.paperGross),
+             p.isPendingOrder ? 1 : 0, D8(p.pendingPrice), (long)p.pendingExpiry);
+  }
+
+void ReadPositionRow(int h, X15Position &p)
+  {
+   ResetPosition(p);
+   p.positionId = (ulong)StringToInteger(FileReadString(h));
+   p.ticket = (ulong)StringToInteger(FileReadString(h));
+   p.isOwn = (StringToInteger(FileReadString(h)) != 0);
+   p.isPaper = (StringToInteger(FileReadString(h)) != 0);
+   p.isPreExisting = (StringToInteger(FileReadString(h)) != 0);
+   p.setupId = FileReadString(h);
+   p.setupType = (ENUM_X15_SETUP_TYPE)StringToInteger(FileReadString(h));
+   p.direction = (int)StringToInteger(FileReadString(h));
+   p.entryTime = (datetime)StringToInteger(FileReadString(h));
+   p.entryBarTime = (datetime)StringToInteger(FileReadString(h));
+   p.entryPrice = StringToDouble(FileReadString(h));
+   p.avgEntryPrice = StringToDouble(FileReadString(h));
+   p.volume = StringToDouble(FileReadString(h));
+   p.peakVolume = StringToDouble(FileReadString(h));
+   p.originalSL = StringToDouble(FileReadString(h));
+   p.originalTP = StringToDouble(FileReadString(h));
+   p.currentSL = StringToDouble(FileReadString(h));
+   p.currentTP = StringToDouble(FileReadString(h));
+   p.riskPct = StringToDouble(FileReadString(h));
+   p.riskMoney = StringToDouble(FileReadString(h));
+   p.invalidation = StringToDouble(FileReadString(h));
+   p.spreadAtEntryPts = StringToDouble(FileReadString(h));
+   p.beDone = (StringToInteger(FileReadString(h)) != 0);
+   p.partialDone = (StringToInteger(FileReadString(h)) != 0);
+   p.modifyFailCount = (int)StringToInteger(FileReadString(h));
+   p.lastModifyTime = (datetime)StringToInteger(FileReadString(h));
+   p.firstExitTime = (datetime)StringToInteger(FileReadString(h));
+   p.pendingExitReason = (ENUM_X15_EXIT_REASON)StringToInteger(FileReadString(h));
+   p.isFlip = (StringToInteger(FileReadString(h)) != 0);
+   p.evidenceScore = (int)StringToInteger(FileReadString(h));
+   p.vwapAligned = (StringToInteger(FileReadString(h)) != 0);
+   p.vpMacdAligned = (StringToInteger(FileReadString(h)) != 0);
+   p.nearValidatedNewsEvent = (StringToInteger(FileReadString(h)) != 0);
+   p.newsEventNameAtEntry = FileReadString(h);
+   p.vwapState = FileReadString(h);
+   p.vpmacdState = FileReadString(h);
+   p.newsState = FileReadString(h);
+   p.compositeState = FileReadString(h);
+   p.regime = FileReadString(h);
+   p.structureState = FileReadString(h);
+   p.liquidityState = FileReadString(h);
+   p.session = FileReadString(h);
+   p.entryReason = FileReadString(h);
+   p.paperExitPriceVolume = StringToDouble(FileReadString(h));
+   p.paperExitVolume = StringToDouble(FileReadString(h));
+   p.paperGross = StringToDouble(FileReadString(h));
+   p.isPendingOrder = (StringToInteger(FileReadString(h)) != 0);
+   p.pendingPrice = StringToDouble(FileReadString(h));
+   p.pendingExpiry = (datetime)StringToInteger(FileReadString(h));
+   SkipRestOfLine(h);
+  }
+
+void SavePositionState(void)
+  {
+   g_stateDirty = false;
+   string fname = PositionStateFileName();
+   string tmp = fname + ".tmp";
+   int h = FileOpen(tmp, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ, ',');
+   if(h == INVALID_HANDLE) { X15Error("JOURNAL", StringFormat("cannot write position state '%s' (error %d)", tmp, GetLastError())); return; }
+   for(int i = 0; i < ArraySize(g_positions); i++)
+      if(g_positions[i].isOwn && !g_positions[i].closed) WritePositionRow(h, "POS", g_positions[i]);
+   for(int i = 0; i < ArraySize(g_entryContexts); i++) WritePositionRow(h, "CTX", g_entryContexts[i]);
+   FileClose(h);
+   if(!FileMove(tmp, 0, fname, FILE_REWRITE))
+      X15Error("JOURNAL", StringFormat("cannot move position state into place (error %d)", GetLastError()));
+  }
+
+void LoadPositionState(void)
+  {
+   ArrayResize(g_positions, 0);
+   ArrayResize(g_entryContexts, 0);
+   if(IsTester()) return;
+   string fname = PositionStateFileName();
+   if(!FileIsExist(fname)) return;
+   int h = FileOpen(fname, FILE_READ|FILE_CSV|FILE_ANSI|FILE_SHARE_READ, ',');
+   if(h == INVALID_HANDLE) { X15Error("JOURNAL", StringFormat("cannot read position state '%s' (error %d)", fname, GetLastError())); return; }
+   int pos = 0, ctx = 0;
+   while(!FileIsEnding(h))
+     {
+      string kind = FileReadString(h);
+      if(kind != "POS" && kind != "CTX") { SkipRestOfLine(h); continue; }
+      X15Position p;
+      ReadPositionRow(h, p);
+      if(kind == "POS")
+        {
+         // a paper position only exists in this mode; a live one only while not in paper mode
+         if(p.isPaper != (InpExecutionMode == X15_PAPER_EXECUTION)) continue;
+         AppendPosition(p); pos++;
+        }
+      else { AddEntryContext(p); ctx++; }
+     }
+   FileClose(h);
+   if(pos + ctx > 0) X15Log("JOURNAL", StringFormat("restart: restored %d managed position(s) and %d pending entry context(s)", pos, ctx));
+  }
+
+//====================================================================
+// RECONCILIATION  (spec 20, 37)
+//--------------------------------------------------------------------
+// Idempotent comparison of the registry against the broker. Runs on every
+// OnTradeTransaction wake-up AND on every tick/timer as a backstop, so
+// neither a missed transaction event nor a missed tick can lose a close.
+//====================================================================
+void RegisterLivePosition(ulong ticket, ulong positionId, bool own, bool initialPass)
+  {
+   if(!PositionSelectByTicket(ticket)) return;
+   X15Position p;
+   ResetPosition(p);
+   p.positionId = positionId;
+   p.ticket = ticket;
+   p.isOwn = own;
+   p.direction = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? 1 : -1;
+   p.entryTime = (datetime)PositionGetInteger(POSITION_TIME);
+   p.entryBarTime = p.entryTime;
+   p.entryPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+   p.avgEntryPrice = p.entryPrice;
+   p.volume = PositionGetDouble(POSITION_VOLUME);
+   p.peakVolume = p.volume;
+   p.currentSL = PositionGetDouble(POSITION_SL);
+   p.currentTP = PositionGetDouble(POSITION_TP);
+   string posComment = PositionGetString(POSITION_COMMENT);
+
+   // The broker's record of the OPENING order holds the SL/TP as originally
+   // placed -- it survives restarts and any later break-even/trailing move.
+   double orderSL = 0.0, orderTP = 0.0;
+   string orderComment = "";
+   if(HistorySelectByPosition((long)positionId) && HistoryOrderSelect(positionId))
+     {
+      orderSL = HistoryOrderGetDouble(positionId, ORDER_SL);
+      orderTP = HistoryOrderGetDouble(positionId, ORDER_TP);
+      orderComment = HistoryOrderGetString(positionId, ORDER_COMMENT);
+     }
+   p.originalSL = (orderSL > 0.0) ? orderSL : p.currentSL;
+   p.originalTP = (orderTP > 0.0) ? orderTP : p.currentTP;
+   if(!PositionSelectByTicket(ticket)) return; // history calls do not deselect, but re-select to be certain
+
+   if(own)
+     {
+      string sid = ExtractSetupIdFromComment(orderComment != "" ? orderComment : posComment);
+      int ci = FindEntryContext(sid);
+      if(ci >= 0)
+        {
+         X15Position ctx = g_entryContexts[ci];
+         ctx.positionId = p.positionId; ctx.ticket = p.ticket; ctx.isPaper = false;
+         ctx.entryTime = p.entryTime; ctx.entryPrice = p.entryPrice; ctx.avgEntryPrice = p.avgEntryPrice;
+         ctx.volume = p.volume; ctx.peakVolume = p.volume;
+         ctx.currentSL = p.currentSL; ctx.currentTP = p.currentTP;
+         ctx.originalSL = p.originalSL; ctx.originalTP = p.originalTP;
+         p = ctx;
+         RemoveEntryContext(sid);
+        }
+      else
+        {
+         p.isPreExisting = true;
+         p.setupId = sid;
+         p.entryReason = "reconstructed: no persisted entry context";
+         X15Log("POSITION", StringFormat("own position %I64u has no persisted context -- entry-time signals recorded as UNKNOWN, not re-read from current data", positionId));
+        }
+      // actual money at risk from the real fill to the original SL
+      double pr = 0.0;
+      if(p.originalSL > 0.0 && OrderCalcProfit(p.direction == 1 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, _Symbol, p.volume, p.entryPrice, p.originalSL, pr) && pr < 0.0)
+         p.riskMoney = -pr;
+     }
+   else
+     {
+      p.isPreExisting = initialPass;
+      if(!initialPass)
+        {
+         // external position first seen now, i.e. at (or within a tick of) its entry: the
+         // same entry-time reads the pre-robot journal used for every position
+         string vwapClass = UseVWAPExit ? ClassifyVWAPTrend(_Symbol) : "NEUTRAL";
+         p.vwapAligned = (p.direction == 1 && vwapClass == "BULLISH") || (p.direction == -1 && vwapClass == "BEARISH");
+         string vpClass = UseVPMACDEntry ? ClassifyVPMACDSignal(_Symbol) : "NEUTRAL";
+         p.vpMacdAligned = (p.direction == 1 && vpClass == "BULLISH") || (p.direction == -1 && vpClass == "BEARISH");
+         if(!IsTester())
+           {
+            NewsDefenseState nd = CheckNewsDefense(_Symbol);
+            p.nearValidatedNewsEvent = nd.isValidatedEvent;
+            p.newsEventNameAtEntry = (nd.active && nd.isValidatedEvent) ? SanitizeForCsv(nd.reason) : "";
+           }
+        }
+      p.entryReason = "external position";
+     }
+   AppendPosition(p);
+   X15Log("POSITION", StringFormat("tracking %s position %I64u %s %.2f lots @ %s%s", own ? "own" : "external", positionId,
+                                   DirLabel(p.direction), p.volume, DoubleToString(p.entryPrice, g_spec.digits),
+                                   p.setupId != "" ? " setup " + p.setupId : ""));
+  }
+
+void ReconcilePositions(void)
+  {
+   bool initial = !g_firstSyncDone;
+   g_reconcileRequested = false;
+   int total = PositionsTotal();
+   ulong seen[];
+   ArrayResize(seen, total);
+   int seenCount = 0;
+   for(int i = 0; i < total; i++)
+     {
+      ulong t = PositionGetTicket(i);
+      if(t == 0 || PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      ulong magic = (ulong)PositionGetInteger(POSITION_MAGIC);
+      bool own = (magic == InpMagicNumber);
+      if(!own && InpMagicNumberFilter != 0 && magic != InpMagicNumberFilter) continue;
+      ulong id = (ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      seen[seenCount] = id;
+      seenCount++;
+      int idx = FindPositionIndex(id, false);
+      if(idx < 0) { RegisterLivePosition(t, id, own, initial); continue; }
+      if(!PositionSelectByTicket(t)) continue;
+      double vol = PositionGetDouble(POSITION_VOLUME);
+      if(g_positions[idx].ticket != t || MathAbs(g_positions[idx].volume - vol) > 1e-9) g_stateDirty = true;
+      g_positions[idx].ticket = t;
+      g_positions[idx].volume = vol;
+      g_positions[idx].peakVolume = MathMax(g_positions[idx].peakVolume, vol);
+      g_positions[idx].avgEntryPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+      g_positions[idx].currentSL = PositionGetDouble(POSITION_SL);
+      g_positions[idx].currentTP = PositionGetDouble(POSITION_TP);
+     }
+
+   for(int i = ArraySize(g_positions) - 1; i >= 0; i--)
+     {
+      if(g_positions[i].isPaper) continue;
+      bool stillOpen = false;
+      for(int j = 0; j < seenCount; j++) if(seen[j] == g_positions[i].positionId) { stillOpen = true; break; }
+      if(stillOpen) continue;
+      if(FinalizeLivePosition(g_positions[i])) { RemovePositionAt(i); continue; }
+      g_positions[i].finalizeAttempts++;
+      if(g_positions[i].finalizeAttempts >= 200)
+        {
+         // closing deals never appeared in history: record the gap honestly rather than drop it silently
+         JournalEntry e;
+         FillJournalFromPosition(g_positions[i], e);
+         e.closeTime = TimeCurrent();
+         e.valid = false;
+         e.invalidReason = "position closed but its deal history was never available";
+         AppendJournal(e);
+         RemovePositionAt(i);
+        }
+     }
+
+   // UNCERTAIN sends: resolved to FILLED as soon as the broker shows the setup
+   for(int i = 0; i < ArraySize(g_setups); i++)
+     {
+      if(g_setups[i].status != "UNCERTAIN") continue;
+      if(BrokerHasSetup(g_setups[i].setupId)) RecordSetupStatus(g_setups[i].setupId, g_setups[i].direction, "FILLED_AFTER_UNCERTAIN", 0);
+     }
+   g_firstSyncDone = true;
+   if(g_stateDirty) SavePositionState();
+  }
+
+//====================================================================
+// PYRAMIDING ENGINE  (section 21 of the original design spec)
+//--------------------------------------------------------------------
+// Adds to this EA's OWN already-open, already-PROFITABLE positions only --
+// structurally the opposite of martingale/averaging-down, which adds to
+// LOSING positions to lower the average entry. A position that is not at
+// least MinProfitRMultipleToAdd in profit can never receive an add; there
+// is no code path below that reads a negative or small-positive R and
+// proceeds anyway. Manual and other-EA positions are never added to.
+//
+// No layer is bypassed: every add passes the same hard safety gates as a
+// new entry (overrides, permissions, market/session/news, spread, loss
+// limits, total open risk, margin), then is sized FRESH against CURRENT
+// equity through the same risk -> volume path as any trade. An add can
+// therefore come out smaller than the original entry -- that is correct
+// behaviour, and exactly what stops an ever-growing unhedged position.
+//
+// Aggregate risk across ALL legs (to the shared SL) is capped at
+// InpMaxRiskPct: an add that would push the whole position over it is
+// shrunk to fit, and refused when even the broker minimum would not fit.
+//
+// Fresh confirmation (RequireFreshConfirmation) uses the VP-MACD crossover
+// EVENT, which is true only on the bar the crossover happens -- never a
+// state that stays true bar after bar.
+//
+// Netting accounts only: there MT5 merges a same-direction add into one
+// position with one blended entry and one SL. On a hedging account an add
+// would be a separate position, a different feature not implemented here.
+//
+// Modes: LIVE sends real orders; PAPER and ANALYSIS_ONLY only log what
+// would have been sent (paper positions are not blended here).
+//====================================================================
+double NormalizeVolumeForSymbol(string symbol, double rawLots)
+  {
+   double volMin  = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+   double volMax  = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+   double volStep = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+   if(volStep <= 0.0) volStep = 0.01;
+   double vol = MathFloor(rawLots/volStep) * volStep;
+   vol = MathMax(volMin, MathMin(volMax, vol));
+   int stepDigits = 0;
+   double s = volStep;
+   while(MathAbs(s - MathRound(s)) > 1e-8 && stepDigits < 8) { s *= 10; stepDigits++; }
+   return(NormalizeDouble(vol, stepDigits));
+  }
+
+// Risk-percent sizing; returns 0 (refuse) rather than rounding a sub-minimum
+// size UP to the broker minimum.
+double CalculateLotSizeFromRisk(string symbol, double riskPercent, double stopDistancePrice)
+  {
+   if(riskPercent <= 0.0 || stopDistancePrice <= 0.0) return(0.0);
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   double riskAmount = equity * (riskPercent/100.0);
+   double tickSize  = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
+   double tickValue = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE_LOSS);
+   if(tickValue <= 0.0) tickValue = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
+   if(tickSize <= 0.0 || tickValue <= 0.0) return(0.0);
+   double valuePerLot = (stopDistancePrice/tickSize) * tickValue;
+   if(valuePerLot <= 0.0) return(0.0);
+   double lots = riskAmount / valuePerLot;
+   double volMin  = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+   double volStep = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+   if(volStep <= 0.0) volStep = 0.01;
+   if(MathFloor(lots/volStep + 1e-9) * volStep < volMin - 1e-12) return(0.0);
+   return(NormalizeVolumeForSymbol(symbol, lots));
+  }
+
+// Authoritative add count from the broker's deal history: every
+// DEAL_ENTRY_IN on the position identifier is the original entry or an add.
+int CountPositionEntryDeals(ulong positionIdentifier)
+  {
+   if(!HistorySelectByPosition((long)positionIdentifier)) return(0);
+   int total = HistoryDealsTotal();
+   int count = 0;
    for(int i = 0; i < total; i++)
      {
       ulong dealTicket = HistoryDealGetTicket(i);
       if(dealTicket == 0) continue;
-      long entryType = HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
-      // OUT / OUT_BY covers ordinary and closed-by-opposite-order closes;
-      // INOUT covers a netting-account flip (close old direction + open new
-      // one in the same deal) -- all three are "this deal closed some or all
-      // of the position we're journaling," and are volume-weighted together
-      // below so a scaled-out close (multiple OUT deals at different prices)
-      // doesn't get reduced to just its last exit price.
-      if(entryType != DEAL_ENTRY_OUT && entryType != DEAL_ENTRY_OUT_BY && entryType != DEAL_ENTRY_INOUT) continue;
-      double dealVolume = HistoryDealGetDouble(dealTicket, DEAL_VOLUME);
-      double dealPrice  = HistoryDealGetDouble(dealTicket, DEAL_PRICE);
-      sumExitPriceVolume += dealPrice * dealVolume;
-      sumExitVolume       += dealVolume;
-      closeTime = (datetime)HistoryDealGetInteger(dealTicket, DEAL_TIME); // last matching deal's time -- the moment the position actually reached flat
-      found = true;
+      if(HistoryDealGetInteger(dealTicket, DEAL_ENTRY) == DEAL_ENTRY_IN) count++;
      }
-   if(!found || sumExitVolume <= 0.0) return;
-   double closePrice = sumExitPriceVolume / sumExitVolume; // volume-weighted across every exit/flip deal, not just the last one
+   return(count);
+  }
 
-   // AGGREGATE entry basis, not just the original leg: if this position
-   // received pyramid adds, meta.entryPrice is only the FIRST leg's price.
-   // ComputeBlendedEntryPrice() volume-weights across every DEAL_ENTRY_IN
-   // deal (original entry + every add), so a position that was pyramided
-   // gets journaled against its true blended entry -- the R-multiple this
-   // file logs (and every stat/bonus computed from the journal downstream)
-   // reflects the whole aggregate position, not an artifact of only ever
-   // looking at where it first opened. Falls back to meta.entryPrice if
-   // deal history is unavailable (e.g. very old closed history pruned by
-   // the terminal) rather than skipping the journal entry outright.
-   double entryPriceForR = ComputeBlendedEntryPrice(meta.ticket);
-   if(entryPriceForR <= 0.0) entryPriceForR = meta.entryPrice;
-
-   double riskDistance = (meta.direction == 1)
-                          ? (entryPriceForR - meta.slPriceAtEntry)
-                          : (meta.slPriceAtEntry - entryPriceForR);
-   if(riskDistance <= 0.0)
+// Volume-weighted price across every DEAL_ENTRY_IN deal of the position.
+// Returns -1.0 without usable history -- never "entry price zero".
+double ComputeBlendedEntryPrice(ulong positionIdentifier)
+  {
+   if(!HistorySelectByPosition((long)positionIdentifier)) return(-1.0);
+   int total = HistoryDealsTotal();
+   double sumPriceVolume = 0.0, sumVolume = 0.0;
+   for(int i = 0; i < total; i++)
      {
-      PrintFormat("AUTOPSY X15: position %I64u had a non-positive risk distance (SL on the wrong side of entry?) -- skipping journal entry.", meta.ticket);
+      ulong dealTicket = HistoryDealGetTicket(i);
+      if(dealTicket == 0) continue;
+      if(HistoryDealGetInteger(dealTicket, DEAL_ENTRY) != DEAL_ENTRY_IN) continue;
+      double dealVolume = HistoryDealGetDouble(dealTicket, DEAL_VOLUME);
+      sumPriceVolume += HistoryDealGetDouble(dealTicket, DEAL_PRICE) * dealVolume;
+      sumVolume      += dealVolume;
+     }
+   if(sumVolume <= 0.0) return(-1.0);
+   return(sumPriceVolume / sumVolume);
+  }
+
+struct AggregatePyramidRisk
+  {
+   double            totalLots;
+   double            blendedEntryPrice;
+   double            totalRiskAmount;          // money lost if the whole position hit its current SL
+   double            totalRiskPercentOfEquity;
+  };
+
+// Expects the position already selected.
+void ComputeAggregatePyramidRisk(AggregatePyramidRisk &agg)
+  {
+   agg.totalLots = PositionGetDouble(POSITION_VOLUME);
+   agg.blendedEntryPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+   agg.totalRiskAmount = 0.0;
+   agg.totalRiskPercentOfEquity = 0.0;
+   double slPrice = PositionGetDouble(POSITION_SL);
+   if(slPrice <= 0.0) return;
+   int direction = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? 1 : -1;
+   double pr = 0.0;
+   if(OrderCalcProfit(direction == 1 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, _Symbol, agg.totalLots, agg.blendedEntryPrice, slPrice, pr) && pr < 0.0)
+      agg.totalRiskAmount = -pr;
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(equity > 0.0) agg.totalRiskPercentOfEquity = agg.totalRiskAmount / equity * 100.0;
+  }
+
+// Account- and market-level gates shared with new entries.
+bool CheckAddSafetyGates(int dir, string &why)
+  {
+   why = "";
+   if(InpEmergencyStop) { why = "emergency stop is active"; return(false); }
+   if(InpCloseAllManagedPositions) { why = "close-all is active"; return(false); }
+   if(!InpEnableTrading) { why = "trading disabled"; return(false); }
+   if((dir == 1 && !InpEnableLong) || (dir == -1 && !InpEnableShort)) { why = "direction disabled"; return(false); }
+   if(!g_dq.ok) { why = "data unavailable: " + g_dq.reason; return(false); }
+   if(!TradingPermitted(dir, InpExecutionMode == X15_LIVE_EXECUTION, why)) return(false);
+   if(!SymbolSessionOpenNow(why)) return(false);
+   if(!ExecutionQualityOk(why)) return(false);
+   if(!SessionTradable(g_session, why)) return(false);
+   if(g_newsGate.blocks) { why = "News Defense: " + g_newsGate.state; return(false); }
+   if(!SpreadAcceptable(why)) return(false);
+   ComputeLossMetrics(g_loss);
+   if(!g_loss.available) { why = "loss metrics unavailable"; return(false); }
+   if(g_loss.dailyLossPct >= InpMaxDailyLossPct) { why = StringFormat("daily loss %.2f%% at limit", g_loss.dailyLossPct); return(false); }
+   if(g_loss.weeklyLossPct >= InpMaxWeeklyLossPct) { why = StringFormat("weekly loss %.2f%% at limit", g_loss.weeklyLossPct); return(false); }
+   datetime lastLoss = 0;
+   int streak = ConsecutiveOwnLosses(lastLoss);
+   if(InpMaxConsecutiveLosses > 0 && streak >= InpMaxConsecutiveLosses && TimeCurrent() - lastLoss < InpConsecutiveLossPauseHours * 3600)
+     { why = "consecutive-loss pause"; return(false); }
+   return(true);
+  }
+
+// Duplicate-protection key for one add; falls back to the position id so two
+// reconstructed positions without a setup ID can never share a key.
+string PyramidAddKey(int idx, int addNumber)
+  {
+   string base = (g_positions[idx].setupId != "") ? g_positions[idx].setupId : "POS" + IntegerToString((long)g_positions[idx].positionId);
+   return(base + "+" + IntegerToString(addNumber));
+  }
+
+struct PyramidEligibility
+  {
+   bool              eligible;
+   string            reason;
+  };
+
+// `idx` is the registry row of an own, live position.
+PyramidEligibility CheckPyramidEligibility(int idx)
+  {
+   PyramidEligibility result;
+   result.eligible = false;
+   result.reason = "";
+   if(!AllowPyramiding) { result.reason = "AllowPyramiding is OFF"; return(result); }
+   ulong ticket = 0;
+   if(!SelectLivePositionById(g_positions[idx].positionId, ticket)) { result.reason = "position not found"; return(result); }
+   int direction = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? 1 : -1;
+   double currentPrice = PositionGetDouble(POSITION_PRICE_CURRENT);
+   double slPrice = PositionGetDouble(POSITION_SL);
+   if(slPrice <= 0.0) { result.reason = "no SL on this position -- undefined risk"; return(result); }
+
+   // profit in R against the ORIGINAL entry and ORIGINAL stop, like every R in this file
+   double entry = g_positions[idx].entryPrice, origSL = g_positions[idx].originalSL;
+   double riskDistance = (direction == 1) ? (entry - origSL) : (origSL - entry);
+   if(riskDistance <= 0.0) { result.reason = "original SL on the wrong side of entry -- undefined risk basis"; return(result); }
+   double currentR = (direction == 1) ? (currentPrice - entry) / riskDistance : (entry - currentPrice) / riskDistance;
+   if(currentR < MinProfitRMultipleToAdd)
+     {
+      result.reason = StringFormat("position at %.2fR, needs >= %.2fR to add", currentR, MinProfitRMultipleToAdd);
+      return(result);
+     }
+
+   int addsSoFar = MathMax(0, CountPositionEntryDeals(g_positions[idx].positionId) - 1);
+   if(addsSoFar >= MaxPyramidAdds) { result.reason = StringFormat("already at max adds (%d/%d)", addsSoFar, MaxPyramidAdds); return(result); }
+   if(IsSetupConsumed(PyramidAddKey(idx, addsSoFar + 1)))
+     { result.reason = "this add was already attempted"; return(result); }
+
+   string why;
+   if(!CheckAddSafetyGates(direction, why)) { result.reason = why; return(result); }
+
+   if(RequireFreshConfirmation)
+     {
+      if(!UseVPMACDEntry) { result.reason = "RequireFreshConfirmation needs UseVPMACDEntry: no other event-based confirmation exists"; return(result); }
+      bool fresh = (direction == 1) ? CheckVPMACDBuySignal(_Symbol) : CheckVPMACDSellSignal(_Symbol);
+      if(!fresh) { result.reason = "no fresh VP-MACD crossover in the position's direction on this bar"; return(result); }
+     }
+   result.eligible = true;
+   result.reason = "eligible";
+   return(result);
+  }
+
+// Sized like a fresh trade: current equity, fresh ComputeFinalRiskPct(), and
+// the add's OWN stop distance (current price to the existing SL). Then two
+// caps shrink it: the position's aggregate risk <= InpMaxRiskPct, and this
+// EA's total open risk <= InpMaxTotalOpenRiskPct.
+double SizePyramidAdd(int idx, int direction, double &addRiskMoneyOut, string &why)
+  {
+   addRiskMoneyOut = 0.0; why = "";
+   ulong ticket = 0;
+   if(!SelectLivePositionById(g_positions[idx].positionId, ticket)) { why = "position not found"; return(0.0); }
+   double slPrice = PositionGetDouble(POSITION_SL);
+   double price = SymbolInfoDouble(_Symbol, direction == 1 ? SYMBOL_ASK : SYMBOL_BID);
+   double stopDistance = (direction == 1) ? (price - slPrice) : (slPrice - price);
+   if(slPrice <= 0.0 || price <= 0.0 || stopDistance <= 0.0) { why = "price is at or through the existing SL"; return(0.0); }
+   AggregatePyramidRisk agg;
+   ComputeAggregatePyramidRisk(agg);
+
+   string trace;
+   double riskPct = ComputeFinalRiskPct(direction, false, trace);
+   double lots = 0.0, riskMoney = 0.0;
+   if(!SizeForRisk(direction, price, slPrice, riskPct, lots, riskMoney, why)) return(0.0);
+
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   double positionCap = equity * InpMaxRiskPct / 100.0 - agg.totalRiskAmount;
+   X15Exposure ex;
+   ComputeExposure(ex);
+   double accountCap = equity * InpMaxTotalOpenRiskPct / 100.0 - ex.openRiskMoney;
+   double allowed = MathMin(positionCap, accountCap);
+   if(allowed <= 0.0) { why = "aggregate risk cap already saturated"; return(0.0); }
+   if(riskMoney > allowed)
+     {
+      if(!SizeForRisk(direction, price, slPrice, allowed / equity * 100.0, lots, riskMoney, why))
+        { why = "add shrunk below the broker minimum by the aggregate risk cap"; return(0.0); }
+     }
+   addRiskMoneyOut = riskMoney;
+   return(lots);
+  }
+
+void SendPyramidAdd(int idx)
+  {
+   ulong ticket = 0;
+   if(!SelectLivePositionById(g_positions[idx].positionId, ticket)) return;
+   int direction = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? 1 : -1;
+   double existingSl = PositionGetDouble(POSITION_SL);
+   double existingTp = PositionGetDouble(POSITION_TP);
+   string why;
+   double addRisk = 0.0;
+   double addLots = SizePyramidAdd(idx, direction, addRisk, why);
+   if(addLots <= 0.0) { X15Log("RISK", "pyramid add refused: " + why); return; }
+   if(!MarginAcceptable(direction, addLots, SymbolInfoDouble(_Symbol, direction == 1 ? SYMBOL_ASK : SYMBOL_BID), why))
+     { X15Log("RISK", "pyramid add refused: " + why); return; }
+
+   int addNumber = MathMax(0, CountPositionEntryDeals(g_positions[idx].positionId) - 1) + 1;
+   string addId = PyramidAddKey(idx, addNumber);
+   string comment = BuildOrderComment("P" + IntegerToString(addNumber), g_positions[idx].setupId);
+
+   if(InpExecutionMode != X15_LIVE_EXECUTION)
+     {
+      X15Log("EXECUTION", StringFormat("[%s] pyramid add %d would send %.2f lots %s (risk %.2f), SL %s TP %s unchanged -- nothing sent",
+                                       InpExecutionMode == X15_PAPER_EXECUTION ? "PAPER" : "ANALYSIS", addNumber, addLots, DirLabel(direction),
+                                       addRisk, DoubleToString(existingSl, g_spec.digits), DoubleToString(existingTp, g_spec.digits)));
       return;
      }
 
-   double rMultiple = (meta.direction == 1)
-                       ? (closePrice - entryPriceForR) / riskDistance
-                       : (entryPriceForR - closePrice) / riskDistance;
-
-   JournalEntry entry;
-   entry.closeTime     = closeTime;
-   entry.symbol        = _Symbol;
-   entry.direction     = meta.direction;
-   entry.rMultiple     = rMultiple;
-   entry.vwapAligned   = meta.vwapAligned;
-   entry.vpMacdAligned = meta.vpMacdAligned;
-   entry.nearValidatedNewsEvent = meta.nearValidatedNewsEvent;
-   entry.newsEventNameAtEntry   = meta.newsEventNameAtEntry;
-
-   int idx = ArraySize(g_journal);
-   ArrayResize(g_journal, idx + 1);
-   g_journal[idx] = entry;
-
-   SaveJournalToFile(); // learning-machine persistence -- every closed trade is durable the instant it's journaled, not just for the rest of this session
+   RecordSetupStatus(addId, direction, "SENDING", 0);
+   g_trade.SetExpertMagicNumber(InpMagicNumber);
+   g_trade.SetDeviationInPoints(InpMaxSlippagePoints);
+   g_trade.SetTypeFilling(DetectFillingMode(_Symbol));
+   // existingSl/existingTp pass through UNCHANGED -- CRITICAL: on a netting
+   // account the SL/TP of an order against an open position becomes the
+   // position's SL/TP. Anything else here would silently move the stop of
+   // the WHOLE blended position.
+   bool ok = (direction == 1) ? g_trade.Buy(addLots, _Symbol, 0.0, existingSl, existingTp, comment)
+                              : g_trade.Sell(addLots, _Symbol, 0.0, existingSl, existingTp, comment);
+   uint rc = g_trade.ResultRetcode();
+   if(ok && RetcodeSucceeded(rc))
+     {
+      RecordSetupStatus(addId, direction, "FILLED", g_trade.ResultOrder());
+      g_positions[idx].riskMoney += addRisk;
+      g_stateDirty = true;
+      g_reconcileRequested = true;
+      X15Log("EXECUTION", StringFormat("[LIVE] pyramid add %d: %.2f lots %s @ ~%s, risk %.2f", addNumber, addLots, DirLabel(direction),
+                                       DoubleToString(g_trade.ResultPrice(), g_spec.digits), addRisk));
+      return;
+     }
+   RecordSetupStatus(addId, direction, RetcodeAmbiguous(rc) ? "UNCERTAIN" : "REJECTED", 0);
+   X15Error("EXECUTION", StringFormat("pyramid add %d failed: %u %s", addNumber, rc, g_trade.ResultRetcodeDescription()));
   }
 
-// Polling-based sync, called once per tick: cheap at single-symbol EA
-// scale, and avoids depending on the finer edge cases of
-// OnTradeTransaction's deal-type semantics for something this file can't
-// compile-verify. Picks up ANY open position on this symbol (filtered by
-// InpMagicNumberFilter if set) regardless of what opened it -- a human, a
-// different EA, or a future entry engine wired into GetCompositeDirection().
-void SyncOpenPositions(void)
+void ProcessPyramidOpportunities(void)
   {
-   // 1) discover currently-open tickets on this symbol/magic scope
-   ulong liveTickets[];
-   int liveCount = 0;
-   int total = PositionsTotal();
-   ArrayResize(liveTickets, total);
-   for(int i = 0; i < total; i++)
+   if(!AllowPyramiding) return;
+   if(!IsNettingAccount()) return;
+   for(int i = ArraySize(g_positions) - 1; i >= 0; i--)
      {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket == 0) continue;
-      if(!PositionSelectByTicket(ticket)) continue;
-      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
-      if(InpMagicNumberFilter != 0 && (ulong)PositionGetInteger(POSITION_MAGIC) != InpMagicNumberFilter) continue;
-      liveTickets[liveCount] = ticket;
-      liveCount++;
-     }
-
-   // 2) any live ticket not yet tracked -> capture entry meta. On the very
-   // first sync of this run, every live ticket found is by definition
-   // PRE-EXISTING (this EA hasn't been running long enough to have opened
-   // or watched anything open yet) -- RecordEntryMeta() handles that case
-   // by recording unknown/false alignment instead of reading current
-   // signal state as if it were the entry-time read. g_firstSyncDone flips
-   // once, after this pass, so every later newly-discovered ticket is
-   // treated as a genuine new entry.
-   for(int i = 0; i < liveCount; i++)
-     {
-      if(FindOpenMetaIndex(liveTickets[i]) < 0)
-         RecordEntryMeta(liveTickets[i], !g_firstSyncDone);
-     }
-   g_firstSyncDone = true;
-
-   // 3) any tracked ticket no longer live -> closed, journal it and drop it
-   for(int i = ArraySize(g_openMeta) - 1; i >= 0; i--)
-     {
-      bool stillLive = false;
-      for(int j = 0; j < liveCount; j++)
-         if(liveTickets[j] == g_openMeta[i].ticket) { stillLive = true; break; }
-      if(!stillLive)
+      if(!g_positions[i].isOwn || g_positions[i].isPaper || g_positions[i].closed) continue;
+      PyramidEligibility elig = CheckPyramidEligibility(i);
+      if(!elig.eligible)
         {
-         AppendJournalFromClosedPosition(g_openMeta[i]);
-         RemoveOpenMetaAt(i);
+         X15Log("RISK", StringFormat("pyramid: position %I64u not eligible -- %s", g_positions[i].positionId, elig.reason), false, true);
+         continue;
         }
+      SendPyramidAdd(i);
      }
   }
 
 //====================================================================
-// REPORTING  (Task 10)
+// LAYER 10 -- PERFORMANCE, EVIDENCE TIERS, MONTE CARLO  (spec 18, 22-24)
+//--------------------------------------------------------------------
+// Everything here is REPORT-ONLY. Nothing in this section feeds position
+// size: adaptive sizing reads the journal only through the existing gated
+// bonus functions, and neither the Monte Carlo nor the regime breakdown
+// nor the tiers are wired into any risk path.
 //====================================================================
-string RunDecision(void)
+#define X15_PERF_LEARNABLE 0
+#define X15_PERF_TRAINING  1
+#define X15_PERF_OOS       2
+#define X15_PERF_LIVE      3
+#define X15_PERF_PAPER     4
+#define X15_PERF_LEGACY    5
+
+struct X15Performance
   {
-   string s = "";
-   s += "AUTOPSY X FLIPDEMON X15 -- " + _Symbol + " " + EnumToString((ENUM_TIMEFRAMES)Period()) + "\n";
-   s += TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES) + "\n";
-   s += "----------------------------------------\n";
+   int               trades;
+   double            winRate;
+   double            expectancyR;
+   double            profitFactor;   // gross R won / gross R lost; -1 when nothing was lost
+   double            maxDrawdownR;
+   double            netProfit;
+  };
 
-   if(g_decision.computed)
+X15Performance g_perfLearn;
+X15Performance g_perfTraining;
+X15Performance g_perfOOS;
+X15Performance g_perfLive;
+X15Performance g_perfPaper;
+X15Performance g_perfLegacy;
+string g_regimeReport = "";
+
+bool PerfFilter(JournalEntry &e, int filter)
+  {
+   if(filter == X15_PERF_LEARNABLE) return(IsLearnable(e));
+   if(filter == X15_PERF_TRAINING)  return(IsLearnable(e) && e.closeTime < InpOutOfSampleStart);
+   if(filter == X15_PERF_OOS)       return(IsLearnable(e) && e.closeTime >= InpOutOfSampleStart);
+   if(filter == X15_PERF_LIVE)      return(e.valid && (e.source == X15_SRC_LIVE || e.source == X15_SRC_TESTER));
+   if(filter == X15_PERF_PAPER)     return(e.valid && e.source == X15_SRC_PAPER);
+   if(filter == X15_PERF_LEGACY)    return(e.valid && e.source == X15_SRC_LEGACY);
+   return(false);
+  }
+
+void ComputePerformance(X15Performance &perf, int filter)
+  {
+   perf.trades = 0; perf.winRate = 0.0; perf.expectancyR = 0.0; perf.profitFactor = -1.0; perf.maxDrawdownR = 0.0; perf.netProfit = 0.0;
+   double sumR = 0.0, wonR = 0.0, lostR = 0.0, cum = 0.0, peak = 0.0;
+   int wins = 0;
+   for(int i = 0; i < ArraySize(g_journal); i++)
      {
-      s += StringFormat("HTF: %s (%s)\n", g_htfBias.state, g_htfBias.detail);
-      s += StringFormat("Exec %s: %s, last event %s | Regime %s | Session %s\n",
-                         EnumLabel(EnumToString(InpExecTF), "PERIOD_"), g_structExec.trendLabel,
-                         EnumLabel(EnumToString(g_structExec.lastEvent), "X15_EVT_"),
-                         EnumLabel(EnumToString(g_regime.regime), "X15_REGIME_"),
-                         EnumLabel(EnumToString(g_session), "X15_SESSION_"));
-      s += StringFormat("DECISION: %s -- %s\n", EnumLabel(EnumToString(g_decision.state), "X15_DIR_"), g_decision.stateReason);
-      for(int ci = 0; ci < g_decision.componentCount; ci++)
-         s += StringFormat("  %s%s: %s (%s)\n", g_decision.comps[ci].hard ? "[HARD] " : "",
-                            g_decision.comps[ci].name, StatusLabel(g_decision.comps[ci].status), g_decision.comps[ci].detail);
-      if(g_decision.state == X15_DIR_NEUTRAL)
-         s += "  long: " + g_decision.longReject + "\n  short: " + g_decision.shortReject + "\n";
-      s += "----------------------------------------\n";
+      if(!PerfFilter(g_journal[i], filter)) continue;
+      double r = g_journal[i].rMultiple;
+      perf.trades++;
+      sumR += r;
+      perf.netProfit += g_journal[i].netProfit;
+      if(r > 0.0) { wins++; wonR += r; }
+      else lostR += -r;
+      cum += r;
+      if(cum > peak) peak = cum;
+      if(peak - cum > perf.maxDrawdownR) perf.maxDrawdownR = peak - cum;
      }
+   if(perf.trades == 0) return;
+   perf.winRate = (double)wins / perf.trades;
+   perf.expectancyR = sumR / perf.trades;
+   perf.profitFactor = (lostR > 0.0) ? wonR / lostR : -1.0;
+  }
 
+// Report-only regime-conditional expectancy: tells a human whether the
+// regime labels mean anything for THIS system -- it never changes risk.
+string BuildRegimeReport(void)
+  {
+   string labels[8];
+   for(int k = 0; k < 8; k++) labels[k] = EnumLabel(EnumToString((ENUM_X15_REGIME)k), "X15_REGIME_");
+   string out = "";
+   for(int k = 0; k < 8; k++)
+     {
+      int n = 0;
+      double sum = 0.0;
+      for(int i = 0; i < ArraySize(g_journal); i++)
+         if(IsLearnable(g_journal[i]) && g_journal[i].regime == labels[k]) { n++; sum += g_journal[i].rMultiple; }
+      if(n == 0) continue;
+      out += StringFormat("%s%s n=%d %.2fR", out == "" ? "" : ", ", labels[k], n, sum / n);
+     }
+   return(out == "" ? "no learnable trades yet" : out);
+  }
+
+struct X15MonteCarlo
+  {
+   bool              available;
+   string            reason;
+   int               sample;
+   double            retP5;
+   double            retP50;
+   double            retP95;
+   double            ddP50;
+   double            ddP95;
+   double            ddWorst;
+   double            streakP50;
+   double            streakP95;
+   int               streakWorst;
+   double            probDD1;
+   double            probDD2;
+   double            probDD3;
+   string            worstSequence;
+  };
+X15MonteCarlo g_mc;
+
+double PercentileSorted(double &v[], double q)
+  {
+   int n = ArraySize(v);
+   if(n == 0) return(0.0);
+   int idx = (int)MathFloor(q * (n - 1));
+   return(v[MathMax(0, MathMin(n - 1, idx))]);
+  }
+
+// Bootstrap resampling of this system's own learnable R-multiples, with a
+// fixed seed so the same journal always yields the same report.
+void RunMonteCarlo(X15MonteCarlo &mc)
+  {
+   mc.available = false; mc.reason = ""; mc.sample = 0;
+   mc.retP5 = 0.0; mc.retP50 = 0.0; mc.retP95 = 0.0; mc.ddP50 = 0.0; mc.ddP95 = 0.0; mc.ddWorst = 0.0;
+   mc.streakP50 = 0.0; mc.streakP95 = 0.0; mc.streakWorst = 0; mc.probDD1 = 0.0; mc.probDD2 = 0.0; mc.probDD3 = 0.0;
+   mc.worstSequence = "";
+   if(!InpMonteCarloEnabled) { mc.reason = "disabled"; return; }
+   double r[];
+   int n = 0;
+   ArrayResize(r, ArraySize(g_journal));
+   for(int i = 0; i < ArraySize(g_journal); i++)
+      if(IsLearnable(g_journal[i])) { r[n] = g_journal[i].rMultiple; n++; }
+   ArrayResize(r, n);
+   mc.sample = n;
+   if(n < MinTradesForStats || n == 0) { mc.reason = StringFormat("n=%d, need %d learnable trades", n, MinTradesForStats); return; }
+   int sims = MathMax(100, InpMonteCarloSims);
+   int len  = MathMax(10, InpMonteCarloTradesPerSim);
+   double rets[], dds[], streaks[];
+   ArrayResize(rets, sims); ArrayResize(dds, sims); ArrayResize(streaks, sims);
+   double worstSeq[];
+   ArrayResize(worstSeq, len);
+   double seq[];
+   ArrayResize(seq, len);
+   int hit1 = 0, hit2 = 0, hit3 = 0;
+   MathSrand(InpMonteCarloSeed);
+   for(int s = 0; s < sims; s++)
+     {
+      double cum = 0.0, peak = 0.0, maxdd = 0.0;
+      int streak = 0, maxStreak = 0;
+      for(int t = 0; t < len; t++)
+        {
+         int pick = (int)((double)MathRand() / 32768.0 * n);
+         if(pick >= n) pick = n - 1;
+         double x = r[pick];
+         seq[t] = x;
+         cum += x;
+         if(cum > peak) peak = cum;
+         if(peak - cum > maxdd) maxdd = peak - cum;
+         if(x < 0.0) { streak++; if(streak > maxStreak) maxStreak = streak; }
+         else streak = 0;
+        }
+      rets[s] = cum; dds[s] = maxdd; streaks[s] = maxStreak;
+      if(maxdd >= InpMonteCarloDDThreshold1R) hit1++;
+      if(maxdd >= InpMonteCarloDDThreshold2R) hit2++;
+      if(maxdd >= InpMonteCarloDDThreshold3R) hit3++;
+      if(maxdd > mc.ddWorst) { mc.ddWorst = maxdd; ArrayCopy(worstSeq, seq); }
+      if(maxStreak > mc.streakWorst) mc.streakWorst = maxStreak;
+     }
+   ArraySort(rets); ArraySort(dds); ArraySort(streaks);
+   mc.retP5 = PercentileSorted(rets, 0.05);
+   mc.retP50 = PercentileSorted(rets, 0.50);
+   mc.retP95 = PercentileSorted(rets, 0.95);
+   mc.ddP50 = PercentileSorted(dds, 0.50);
+   mc.ddP95 = PercentileSorted(dds, 0.95);
+   mc.streakP50 = PercentileSorted(streaks, 0.50);
+   mc.streakP95 = PercentileSorted(streaks, 0.95);
+   mc.probDD1 = (double)hit1 / sims;
+   mc.probDD2 = (double)hit2 / sims;
+   mc.probDD3 = (double)hit3 / sims;
+   for(int t = 0; t < MathMin(12, len); t++) mc.worstSequence += StringFormat("%s%.1f", t == 0 ? "" : " ", worstSeq[t]);
+   mc.available = true;
+  }
+
+ENUM_X15_KELLY_STATUS KellyStatus(RuinBoundResult &rb, StatsResult &s)
+  {
+   if(RuinBoundAlpha <= 0.0 || RuinBoundAlpha >= 1.0 || RuinBoundBeta <= 0.0 || RuinBoundBeta >= 1.0) return(X15_KELLY_INVALID_INPUT);
+   if(s.sampleSize < MinTradesForStats || !rb.available) return(X15_KELLY_INSUFFICIENT_SAMPLE);
+   if(rb.ruinCertain) return(X15_KELLY_RUIN_CONDITION);
+   return(rb.boundSatisfied ? X15_KELLY_VALID : X15_KELLY_BOUND_FAILED);
+  }
+
+string g_kellyLine = "";
+
+void UpdatePerformance(void)
+  {
+   ComputePerformance(g_perfLearn, X15_PERF_LEARNABLE);
+   ComputePerformance(g_perfTraining, X15_PERF_TRAINING);
+   ComputePerformance(g_perfOOS, X15_PERF_OOS);
+   ComputePerformance(g_perfLive, X15_PERF_LIVE);
+   ComputePerformance(g_perfPaper, X15_PERF_PAPER);
+   ComputePerformance(g_perfLegacy, X15_PERF_LEGACY);
+   g_regimeReport = BuildRegimeReport();
+   RunMonteCarlo(g_mc);
    StatsResult overall = ComputeStats();
-   s += StringFormat("Journal: n=%d, winRate=%.1f%%, expectancy=%.2fR -- %s\n",
-                      overall.sampleSize,
-                      (overall.sampleSize > 0 ? overall.winRate*100.0 : 0.0),
-                      (overall.sampleSize > 0 ? overall.expectancy : 0.0),
-                      EvaluateOverallGate(overall));
-
-   // Proven Kelly ruin bound (Busseti, Ryu & Boyd, arXiv:1603.06183),
-   // evaluated at the configured base risk fraction as a representative
-   // reference point -- not wired into any entry/exit decision here (see
-   // this function's header comment for why). A future entry engine
-   // should call ComputeKellyRuinBound() directly against its own
-   // ACTUAL candidate risk fraction (from ComputeAdaptiveRisk) before
-   // firing, not rely on this dashboard line, which is informational only.
-   RuinBoundResult ruinBound = ComputeKellyRuinBound(overall, InpBaseRiskPercent);
-   if(!ruinBound.available)
-      s += StringFormat("Kelly ruin bound: n=%d (need %d), or alpha/beta invalid -- UNAVAILABLE\n", overall.sampleSize, MinTradesForStats);
-   else if(ruinBound.ruinCertain)
-      s += StringFormat("Kelly ruin bound: RUIN CERTAIN AT %.2f%% RISK -- a single logged loss would exceed capital\n", InpBaseRiskPercent);
-   else if(ruinBound.boundSatisfied)
-      s += StringFormat("Kelly ruin bound: PASS (avg=%.3f, need <=1.0) at %.2f%% risk -- Prob(drawdown past %.0f%%) < %.0f%% is proven, not estimated\n",
-                         ruinBound.averageTerm, InpBaseRiskPercent, (1.0-RuinBoundAlpha)*100.0, RuinBoundBeta*100.0);
-   else
-      s += StringFormat("Kelly ruin bound: FAIL (avg=%.3f, need <=1.0) at %.2f%% risk -- bound does NOT guarantee Prob(drawdown past %.0f%%) < %.0f%%\n",
-                         ruinBound.averageTerm, InpBaseRiskPercent, (1.0-RuinBoundAlpha)*100.0, RuinBoundBeta*100.0);
-
-   s += "VWAP trend: " + (UseVWAPExit ? ClassifyVWAPTrend(_Symbol) : "DISABLED (UseVWAPExit=false)") + "\n";
-   if(UseVWAPExit)
-     {
-      StatsResult vwapStats = ComputeVWAPAlignedStats();
-      s += BuildAlignedStatsLine("VWAP-aligned trades", vwapStats, MinVWAPAlignedTradesForBonus, VWAPAlignmentBonus) + "\n";
-     }
-
-   s += "VP-MACD signal: " + (UseVPMACDEntry ? ClassifyVPMACDSignal(_Symbol) : "DISABLED (UseVPMACDEntry=false)") + "\n";
-   if(UseVPMACDEntry)
-     {
-      StatsResult vpStats = ComputeVPMACDAlignedStats();
-      s += BuildAlignedStatsLine("VP-MACD-aligned trades", vpStats, MinVPMACDAlignedTradesForBonus, VPMACDAlignmentBonus) + "\n";
-     }
-
-   if(UseNewsDefense)
-     {
-      NewsDefenseState news = CheckNewsDefense(_Symbol);
-      if(news.reason == "CALENDAR API UNAVAILABLE")
-         s += "News Defense: CALENDAR API UNAVAILABLE\n";
-      else if(news.active)
-         s += "News Defense: ACTIVE -- " + (news.isValidatedEvent ? "[VALIDATED] " : "[UNVALIDATED FALLBACK] ") + news.reason + " -- new entries suppressed, existing positions untouched\n";
-      else
-         s += "News Defense: CLEAR\n";
-     }
-   else
-     {
-      s += "News Defense: DISABLED (UseNewsDefense=false)\n";
-     }
-
-   NewsProximityStats newsProx = ComputeNewsProximityStats();
-   if(newsProx.near.sampleSize < MinTradesForStats || newsProx.away.sampleSize < MinTradesForStats)
-      s += StringFormat("Trades near validated news events: n=%d, away: n=%d -- INSUFFICIENT SAMPLE (need %d each)\n",
-                         newsProx.near.sampleSize, newsProx.away.sampleSize, MinTradesForStats);
-   else
-      s += StringFormat("Trades near validated news events: n=%d, expectancy=%.2fR vs. n=%d away from events, expectancy=%.2fR\n",
-                         newsProx.near.sampleSize, newsProx.near.expectancy,
-                         newsProx.away.sampleSize, newsProx.away.expectancy);
-
-   // Learning-machine per-event breakdown -- report-only, see
-   // ComputePerEventStats()'s header comment for why this never
-   // auto-adjusts the whitelist itself.
-   EventStatsRow eventRows[];
-   int eventRowCount = ComputePerEventStats(eventRows);
-   bool printedEventHeader = false;
-   for(int ev = 0; ev < eventRowCount; ev++)
-     {
-      if(eventRows[ev].stats.sampleSize < MinTradesPerEventForReport) continue;
-      if(!printedEventHeader) { s += "Per-event breakdown (report-only, does not auto-adjust the whitelist):\n"; printedEventHeader = true; }
-      s += StringFormat("  %s: n=%d, winRate=%.1f%%, expectancy=%.2fR\n",
-                         eventRows[ev].eventName, eventRows[ev].stats.sampleSize,
-                         eventRows[ev].stats.winRate*100.0, eventRows[ev].stats.expectancy);
-     }
-
-   s += StringFormat("Pyramiding: %s\n",
-                      !AllowPyramiding ? "DISABLED (AllowPyramiding=false)"
-                      : (ExecutionModeLive ? "ENABLED -- LIVE execution armed" : "ENABLED -- PAPER (ExecutionModeLive=false, logs only, sends nothing)"));
-   if(AllowPyramiding)
-     {
-      bool printedPyrHeader = false;
-      for(int i = 0; i < ArraySize(g_openMeta); i++)
-        {
-         ulong pTicket = g_openMeta[i].ticket;
-         int addsSoFar = CountPositionEntryDeals(pTicket) - 1;
-         if(addsSoFar <= 0) continue; // only positions that actually received an add -- an un-pyramided open position isn't "pyramided"
-         if(!PositionSelectByTicket(pTicket)) continue;
-
-         double blendedEntry = ComputeBlendedEntryPrice(pTicket);
-         if(blendedEntry <= 0.0) blendedEntry = g_openMeta[i].entryPrice; // deal history unavailable -- fall back to the original leg rather than show a bogus 0.0
-         double aggLots = PositionGetDouble(POSITION_VOLUME);
-         double currentPrice = PositionGetDouble(POSITION_PRICE_CURRENT);
-
-         double riskDistance = (g_openMeta[i].direction == 1)
-                                ? (blendedEntry - g_openMeta[i].slPriceAtEntry)
-                                : (g_openMeta[i].slPriceAtEntry - blendedEntry);
-         double currentR = 0.0;
-         if(riskDistance > 0.0)
-            currentR = (g_openMeta[i].direction == 1)
-                       ? (currentPrice - blendedEntry) / riskDistance
-                       : (blendedEntry - currentPrice) / riskDistance;
-
-         if(!printedPyrHeader)
-           {
-            s += "Pyramided positions (adds made / aggregate lots / blended entry / current aggregate R, vs. original entry's SL basis):\n";
-            printedPyrHeader = true;
-           }
-         s += StringFormat("  ticket %I64u: %d add%s, %.2f lots, blended entry %.5f, current %.2fR (original entry was %.5f)\n",
-                            pTicket, addsSoFar, addsSoFar == 1 ? "" : "s", aggLots, blendedEntry, currentR, g_openMeta[i].entryPrice);
-        }
-     }
-
-   s += "----------------------------------------\n";
-   s += StringFormat("Open positions tracked: %d\n", ArraySize(g_openMeta));
-   s += "This module gates sizing and, only via the separately-armed Pyramiding Engine above, adds volume to an already-open, already-profitable position -- it never opens a brand-new position on its own signal and never closes or otherwise modifies an existing one.\n";
-   s += "Wire GetCompositeDirection() / ComputeAdaptiveRisk() into your own entry engine.\n";
-
-   Comment(s);
-   return(s);
+   RuinBoundResult rb = ComputeKellyRuinBound(overall, InpBaseRiskPercent);
+   ENUM_X15_KELLY_STATUS ks = KellyStatus(rb, overall);
+   g_kellyLine = EnumLabel(EnumToString(ks), "X15_KELLY_") + (rb.available && !rb.ruinCertain ? StringFormat(" (avg %.3f at %.2f%%)", rb.averageTerm, InpBaseRiskPercent) : "");
+   g_perfDirty = false;
+   X15Log("JOURNAL", StringFormat("performance refreshed: learnable n=%d, exp %.2fR, PF %.2f, maxDD %.1fR; Kelly %s; MC %s",
+                                  g_perfLearn.trades, g_perfLearn.expectancyR, g_perfLearn.profitFactor, g_perfLearn.maxDrawdownR,
+                                  g_kellyLine, g_mc.available ? StringFormat("DD95 %.1fR", g_mc.ddP95) : g_mc.reason), false, true);
   }
 
 //====================================================================
-// LIFECYCLE
+// DASHBOARD  (spec 31)
+//--------------------------------------------------------------------
+// One OBJ_LABEL per line, two columns. Lines are wrapped at 60 characters
+// (chart label text is short-limited), so a long NO TRADE reason is shown
+// in full across lines rather than cut off. A leading '#' marks a section
+// header, '!' an alert, '+' a positive state.
+//====================================================================
+#define X15_DASH_PREFIX "AX15D_"
+#define X15_DASH_WIDTH  60
+
+string   g_dashLeft[];
+string   g_dashRight[];
+int      g_dashRendered[2];
+datetime g_lastDashUpdate = 0;
+datetime g_lastLossRefresh = 0;
+double   g_adaptivePreviewPct = 0.0; // refreshed once per bar: ComputeAdaptiveRisk re-reads VWAP history
+
+void DashAdd(string &lines[], string text)
+  {
+   int n = ArraySize(lines);
+   ArrayResize(lines, n + 1);
+   lines[n] = text;
+  }
+
+// Wraps on spaces at X15_DASH_WIDTH; continuation lines keep the marker and indent.
+void DashWrap(string &lines[], string text)
+  {
+   string marker = "";
+   if(StringLen(text) > 0)
+     {
+      ushort c = StringGetCharacter(text, 0);
+      if(c == '!' || c == '+' || c == '#') marker = StringSubstr(text, 0, 1);
+     }
+   string rest = text;
+   while(StringLen(rest) > X15_DASH_WIDTH)
+     {
+      int cut = X15_DASH_WIDTH;
+      bool atSpace = false;
+      for(int i = X15_DASH_WIDTH; i > 20; i--) if(StringGetCharacter(rest, i) == ' ') { cut = i; atSpace = true; break; }
+      DashAdd(lines, StringSubstr(rest, 0, cut));
+      rest = marker + "   " + StringSubstr(rest, atSpace ? cut + 1 : cut);
+     }
+   DashAdd(lines, rest);
+  }
+
+void RenderDashColumn(string &lines[], int column, int x)
+  {
+   color cText = C'210,214,222', cHead = C'232,190,90', cAlert = C'235,95,95', cGood = C'95,200,125';
+   int n = ArraySize(lines);
+   for(int i = 0; i < n; i++)
+     {
+      string name = StringFormat("%s%d_%d", X15_DASH_PREFIX, column, i);
+      if(ObjectFind(0, name) < 0)
+        {
+         ObjectCreate(0, name, OBJ_LABEL, 0, 0, 0);
+         ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+         ObjectSetInteger(0, name, OBJPROP_XDISTANCE, x);
+         ObjectSetInteger(0, name, OBJPROP_YDISTANCE, 26 + i * 13);
+         ObjectSetString(0, name, OBJPROP_FONT, "Consolas");
+         ObjectSetInteger(0, name, OBJPROP_FONTSIZE, 8);
+         ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+        }
+      string t = lines[i];
+      color c = cText;
+      if(StringLen(t) > 0)
+        {
+         ushort m = StringGetCharacter(t, 0);
+         if(m == '#') { c = cHead; t = StringSubstr(t, 1); }
+         else if(m == '!') { c = cAlert; t = StringSubstr(t, 1); }
+         else if(m == '+') { c = cGood; t = StringSubstr(t, 1); }
+        }
+      ObjectSetString(0, name, OBJPROP_TEXT, t == "" ? " " : t);
+      ObjectSetInteger(0, name, OBJPROP_COLOR, c);
+     }
+   for(int i = n; i < g_dashRendered[column]; i++) ObjectDelete(0, StringFormat("%s%d_%d", X15_DASH_PREFIX, column, i));
+   g_dashRendered[column] = n;
+  }
+
+void RenderDashBackground(int rows)
+  {
+   string name = X15_DASH_PREFIX + "bg";
+   if(ObjectFind(0, name) < 0)
+     {
+      ObjectCreate(0, name, OBJ_RECTANGLE_LABEL, 0, 0, 0);
+      ObjectSetInteger(0, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+      ObjectSetInteger(0, name, OBJPROP_XDISTANCE, 4);
+      ObjectSetInteger(0, name, OBJPROP_YDISTANCE, 20);
+      ObjectSetInteger(0, name, OBJPROP_BGCOLOR, C'16,18,24');
+      ObjectSetInteger(0, name, OBJPROP_BORDER_TYPE, BORDER_FLAT);
+      ObjectSetInteger(0, name, OBJPROP_COLOR, C'60,64,72');
+      ObjectSetInteger(0, name, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(0, name, OBJPROP_HIDDEN, true);
+      ObjectSetInteger(0, name, OBJPROP_BACK, false);
+     }
+   ObjectSetInteger(0, name, OBJPROP_XSIZE, 790);
+   ObjectSetInteger(0, name, OBJPROP_YSIZE, 14 + rows * 13);
+  }
+
+void DeleteDashboard(void)
+  {
+   ObjectsDeleteAll(0, X15_DASH_PREFIX);
+   g_dashRendered[0] = 0;
+   g_dashRendered[1] = 0;
+  }
+
+string Px(double v)
+  {
+   return(v > 0.0 ? DoubleToString(v, g_spec.digits) : "-");
+  }
+
+string ExecStateLabel(ENUM_X15_ELIGIBILITY s)
+  {
+   if(s == X15_ELIGIBLE_LONG)  return("ELIGIBLE LONG");
+   if(s == X15_ELIGIBLE_SHORT) return("ELIGIBLE SHORT");
+   if(s == X15_BLOCKED)        return("BLOCKED");
+   if(s == X15_ELIG_DATA_UNAVAILABLE) return("DATA UNAVAILABLE");
+   if(s == X15_ELIG_INSUFFICIENT_EVIDENCE) return("INSUFFICIENT EVIDENCE");
+   return("NO TRADE");
+  }
+
+void BuildDashboard(void)
+  {
+   ArrayResize(g_dashLeft, 0);
+   ArrayResize(g_dashRight, 0);
+   string mode = EnumLabel(EnumToString(InpExecutionMode), "X15_");
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY), balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   X15Exposure ex;
+   ComputeExposure(ex);
+
+   // ---------------- left column ----------------
+   DashAdd(g_dashLeft, "#AUTOPSY X FLIPDEMON X15  [" + mode + "]" + (InpEmergencyStop ? "  EMERGENCY STOP" : ""));
+   DashAdd(g_dashLeft, "#ACCOUNT");
+   DashAdd(g_dashLeft, StringFormat("Equity %.2f  Balance %.2f", equity, balance));
+   if(g_loss.available)
+     {
+      DashAdd(g_dashLeft, StringFormat("%sDaily P/L %.2f (loss %.2f%% / %.2f%%)", g_loss.dailyLossPct >= InpMaxDailyLossPct ? "!" : "", g_loss.dailyPnL, g_loss.dailyLossPct, InpMaxDailyLossPct));
+      DashAdd(g_dashLeft, StringFormat("%sWeekly P/L %.2f (loss %.2f%% / %.2f%%)", g_loss.weeklyLossPct >= InpMaxWeeklyLossPct ? "!" : "", g_loss.weeklyPnL, g_loss.weeklyLossPct, InpMaxWeeklyLossPct));
+     }
+   else DashAdd(g_dashLeft, "!Daily/Weekly P/L unavailable: " + g_loss.detail);
+   DashAdd(g_dashLeft, StringFormat("Current risk %.2f%%  Open risk %.2f (%.2f%%)", g_exec.riskPct, ex.openRiskMoney, equity > 0.0 ? ex.openRiskMoney / equity * 100.0 : 0.0));
+
+   DashAdd(g_dashLeft, "#MARKET");
+   double sp = CurrentSpreadPoints(), avgSp = RecentAverageSpreadPoints();
+   DashAdd(g_dashLeft, StringFormat("%s  exec %s  session %s", _Symbol, EnumLabel(EnumToString(InpExecTF), "PERIOD_"), EnumLabel(EnumToString(g_session), "X15_SESSION_")));
+   DashAdd(g_dashLeft, "Regime " + EnumLabel(EnumToString(g_regime.regime), "X15_REGIME_"));
+   DashWrap(g_dashLeft, "Volatility " + (g_regime.available ? g_regime.detail : "unavailable"));
+   DashAdd(g_dashLeft, StringFormat("Spread %.0f pts (recent avg %s)", sp, avgSp > 0.0 ? DoubleToString(avgSp, 1) : "n/a"));
+
+   DashAdd(g_dashLeft, "#BIAS");
+   DashWrap(g_dashLeft, "HTF " + g_htfBias.state + " -- " + g_htfBias.detail);
+   DashWrap(g_dashLeft, StringFormat("Exec %s, last %s @ %s", g_structExec.trendLabel, EnumLabel(EnumToString(g_structExec.lastEvent), "X15_EVT_"), Px(g_structExec.lastEventLevel)));
+   DashAdd(g_dashLeft, StringFormat("Draw: up %s %s / down %s %s", g_liq.drawLongName, Px(g_liq.drawLongPrice), g_liq.drawShortName, Px(g_liq.drawShortPrice)));
+   DashAdd(g_dashLeft, StringFormat("Dealing %s-%s  EQ %s", Px(g_liq.dealingLow), Px(g_liq.dealingHigh), Px(g_liq.equilibrium)));
+   DashAdd(g_dashLeft, StringFormat("PDH %s PDL %s PWH %s PWL %s", Px(g_liq.pdh), Px(g_liq.pdl), Px(g_liq.pwh), Px(g_liq.pwl)));
+
+   DashAdd(g_dashLeft, "#SIGNALS");
+   DashAdd(g_dashLeft, "VWAP " + g_decision.vwapState + "  VP-MACD " + g_decision.vpmacdState);
+   DashWrap(g_dashLeft, (g_newsGate.blocks ? "!" : "") + "News Defense " + g_newsGate.state + (g_newsGate.detail != "" ? ": " + g_newsGate.detail : ""));
+
+   DashAdd(g_dashLeft, "#SETUP");
+   X15Setup s = g_decision.setup;
+   if(s.type == X15_SETUP_NONE) DashAdd(g_dashLeft, "none on the last closed bar");
+   else
+     {
+      DashAdd(g_dashLeft, StringFormat("%s %s  id %s", EnumLabel(EnumToString(s.type), "X15_SETUP_"), DirLabel(s.direction), s.setupId));
+      DashAdd(g_dashLeft, StringFormat("Entry %s  SL %s  TP %s", Px(g_exec.entryPrice > 0.0 ? g_exec.entryPrice : s.entryRef), Px(s.sl), Px(s.tp)));
+      DashAdd(g_dashLeft, StringFormat("R:R %.2f to %s  zone %s", s.rr, s.tpLevelName, s.zoneType));
+      string ev = StringFormat("Evidence %d/%d:", g_decision.evidenceScore, g_decision.evidenceMax);
+      for(int i = 0; i < g_decision.componentCount; i++)
+        {
+         if(g_decision.comps[i].hard) continue;
+         string mark = (g_decision.comps[i].status == X15_PASS) ? "+" : ((g_decision.comps[i].status == X15_FAIL) ? "-" : "?");
+         if(g_decision.comps[i].status == X15_NA) continue;
+         ev += " " + g_decision.comps[i].name + mark;
+        }
+      DashWrap(g_dashLeft, ev);
+     }
+
+   // ---------------- right column ----------------
+   DashAdd(g_dashRight, "#DECISION");
+   bool eligible = (g_exec.state == X15_ELIGIBLE_LONG || g_exec.state == X15_ELIGIBLE_SHORT);
+   DashWrap(g_dashRight, "Composite " + EnumLabel(EnumToString(g_decision.state), "X15_DIR_") + ": " + g_decision.stateReason);
+   DashAdd(g_dashRight, (eligible ? "+" : (g_exec.state == X15_BLOCKED ? "!" : "")) + ExecStateLabel(g_exec.state));
+   if(!eligible && g_exec.computed) DashWrap(g_dashRight, (g_exec.state == X15_BLOCKED ? "!" : "") + "Why: " + g_exec.blockingGate + " -- " + g_exec.reason);
+   if(g_decision.state == X15_DIR_NEUTRAL)
+     {
+      DashWrap(g_dashRight, "long: " + g_decision.longReject);
+      DashWrap(g_dashRight, "short: " + g_decision.shortReject);
+     }
+   if(g_exec.executionResult != "") DashWrap(g_dashRight, "Last action: " + g_exec.executionResult);
+
+   DashAdd(g_dashRight, "#RISK");
+   double adaptive = (InpBaseRiskPercent > 0.0) ? g_adaptivePreviewPct / InpBaseRiskPercent : 0.0;
+   DashAdd(g_dashRight, StringFormat("Base %.2f%%  adaptive x%.2f  hard cap %.2f%%", InpBaseRiskPercent, adaptive, InpMaxRiskPct));
+   if(eligible) DashWrap(g_dashRight, StringFormat("Final %.3f%%  %.2f lots  money at risk %.2f", g_exec.riskPct, g_exec.lots, g_exec.riskMoney));
+   DashAdd(g_dashRight, StringFormat("Exposure %d/%d total, %d/%d symbol, open risk cap %.1f%%", ex.total, InpMaxPositionsTotal, ex.symbolTotal, InpMaxPositionsPerSymbol, InpMaxTotalOpenRiskPct));
+
+   DashAdd(g_dashRight, "#POSITION");
+   int own = 0;
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID), ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   for(int i = 0; i < ArraySize(g_positions); i++)
+     {
+      if(!g_positions[i].isOwn || g_positions[i].closed) continue;
+      own++;
+      if(g_positions[i].isPendingOrder)
+        {
+         DashAdd(g_dashRight, StringFormat("%s stop-entry %s @ %s (paper)", DirLabel(g_positions[i].direction), g_positions[i].setupId, Px(g_positions[i].pendingPrice)));
+         continue;
+        }
+      double risk = MathAbs(g_positions[i].entryPrice - g_positions[i].originalSL);
+      double px = (g_positions[i].direction == 1) ? bid : ask;
+      double rNow = (risk > 0.0) ? (px - g_positions[i].entryPrice) * g_positions[i].direction / risk : 0.0;
+      string slState = g_positions[i].beDone ? "BE/locked" : "original";
+      DashAdd(g_dashRight, StringFormat("%s%s %.2f lots  %+.2fR%s", rNow >= 0.0 ? "+" : "!", DirLabel(g_positions[i].direction), g_positions[i].volume, rNow, g_positions[i].isPaper ? " (paper)" : ""));
+      DashAdd(g_dashRight, StringFormat("  SL %s (%s)  TP %s", Px(g_positions[i].currentSL), slState, Px(g_positions[i].currentTP)));
+      DashAdd(g_dashRight, StringFormat("  trail %s, partial %s", EnumLabel(EnumToString(InpTrailMode), "X15_TRAIL_"), g_positions[i].partialDone ? "taken" : "pending"));
+     }
+   if(own == 0) DashAdd(g_dashRight, "no open positions");
+
+   DashAdd(g_dashRight, "#JOURNAL");
+   DashAdd(g_dashRight, StringFormat("Learnable n=%d  win %.1f%%  exp %.2fR", g_perfLearn.trades, g_perfLearn.winRate * 100.0, g_perfLearn.expectancyR));
+   DashAdd(g_dashRight, StringFormat("PF %s  avg R %.2f  max DD %.1fR", g_perfLearn.profitFactor < 0.0 ? "n/a" : DoubleToString(g_perfLearn.profitFactor, 2), g_perfLearn.expectancyR, g_perfLearn.maxDrawdownR));
+   DashAdd(g_dashRight, StringFormat("Tiers: train %d  OOS %d  live %d  paper %d  legacy %d", g_perfTraining.trades, g_perfOOS.trades, g_perfLive.trades, g_perfPaper.trades, g_perfLegacy.trades));
+   DashWrap(g_dashRight, "Kelly bound: " + g_kellyLine);
+   if(g_mc.available)
+      DashWrap(g_dashRight, StringFormat("Monte Carlo: DD50 %.1fR DD95 %.1fR, P(DD>=%.0fR) %.0f%%, streak95 %.0f", g_mc.ddP50, g_mc.ddP95, InpMonteCarloDDThreshold2R, g_mc.probDD2 * 100.0, g_mc.streakP95));
+   else DashWrap(g_dashRight, "Monte Carlo: " + g_mc.reason);
+
+   DashAdd(g_dashRight, "#SYSTEM");
+   DashAdd(g_dashRight, "State " + EnumLabel(EnumToString(g_state), "X15_ST_"));
+   DashWrap(g_dashRight, (g_dq.ok ? "+Data OK" : "!Data: " + g_dq.reason));
+   DashAdd(g_dashRight, "Last analysis " + (g_lastAnalysisTime > 0 ? TimeToString(g_lastAnalysisTime, TIME_DATE|TIME_MINUTES) : "-")
+                      + "  last trade " + (g_lastTradeTime > 0 ? TimeToString(g_lastTradeTime, TIME_DATE|TIME_MINUTES) : "-"));
+   if(g_lastError != "") DashWrap(g_dashRight, "!Last error " + TimeToString(g_lastErrorTime, TIME_MINUTES) + " " + g_lastError);
+  }
+
+void UpdateDashboard(bool force)
+  {
+   if(!InpShowDashboard) return;
+   if(IsTester() && !MQLInfoInteger(MQL_VISUAL_MODE)) return;
+   datetime now = TimeCurrent();
+   if(!force && now - g_lastDashUpdate < 1) return;
+   g_lastDashUpdate = now;
+   if(now - g_lastLossRefresh >= 5) { ComputeLossMetrics(g_loss); g_lastLossRefresh = now; }
+   if(force || g_adaptivePreviewPct <= 0.0)
+      g_adaptivePreviewPct = ComputeAdaptiveRisk(_Symbol, g_decision.setup.direction != 0 ? g_decision.setup.direction : 1, false);
+   BuildDashboard();
+   RenderDashBackground(MathMax(ArraySize(g_dashLeft), ArraySize(g_dashRight)));
+   RenderDashColumn(g_dashLeft, 0, 12);
+   RenderDashColumn(g_dashRight, 1, 402);
+   ChartRedraw(0);
+  }
+
+//====================================================================
+// LIFECYCLE  (spec 28, 29, 37)
+//--------------------------------------------------------------------
+// OnTick: cheap execution-sensitive work every tick (reconcile, SL/TP and
+// R-based management); the full market analysis, entry validation and
+// pyramiding only once per new closed execution bar. OnTradeTransaction
+// wakes reconciliation immediately; OnTimer keeps it running when no
+// ticks arrive.
 //====================================================================
 datetime g_lastBarTime = 0;
 
@@ -3934,11 +6197,8 @@ bool IsNewBar(void)
    return(false);
   }
 
-// Mirrors ExecutionEngine.mqh's own DetectFillingMode() (this repo's
-// sibling EA) -- same real broker-capability probe, ported rather than
-// re-invented, since g_trade is the same standard CTrade wrapper used
-// there. FOK preferred, IOC next, ORDER_FILLING_RETURN as the universal
-// fallback every broker accepts.
+// Same broker-capability probe as the sibling EA's ExecutionEngine.mqh:
+// FOK preferred, IOC next, RETURN as the universal fallback.
 ENUM_ORDER_TYPE_FILLING DetectFillingMode(const string symbol)
   {
    int filling = (int)SymbolInfoInteger(symbol, SYMBOL_FILLING_MODE);
@@ -3947,71 +6207,145 @@ ENUM_ORDER_TYPE_FILLING DetectFillingMode(const string symbol)
    return(ORDER_FILLING_RETURN);
   }
 
+bool ValidateInputs(string &why)
+  {
+   why = "";
+   if(InpMagicNumber == 0) why = "InpMagicNumber must be non-zero (0 is what manual trades carry)";
+   else if(InpExecTF == PERIOD_CURRENT) why = "InpExecTF must be an explicit timeframe, not PERIOD_CURRENT";
+   else if(InpBaseRiskPercent <= 0.0 || InpMaxRiskPct <= 0.0) why = "risk percentages must be positive";
+   else if(InpMinRR <= 0.0) why = "InpMinRR must be positive";
+   else if(InpMaxDailyLossPct <= 0.0 || InpMaxWeeklyLossPct <= 0.0) why = "loss limits must be positive";
+   else if(InpMaxPositionsTotal < 1 || InpMaxPositionsPerSymbol < 1 || InpMaxPositionsPerDirection < 1) why = "position limits must be at least 1";
+   else if(InpPartialClosePercent <= 0.0 || InpPartialClosePercent >= 100.0) why = "InpPartialClosePercent must be between 0 and 100";
+   else if(InpAsiaStartHour < 0 || InpAsiaStartHour > 23 || InpAsiaEndHour < 0 || InpAsiaEndHour > 23
+           || InpLondonStartHour < 0 || InpLondonStartHour > 23 || InpLondonEndHour < 0 || InpLondonEndHour > 23
+           || InpNewYorkStartHour < 0 || InpNewYorkStartHour > 23 || InpNewYorkEndHour < 0 || InpNewYorkEndHour > 23)
+      why = "session hours must be 0-23";
+   return(why == "");
+  }
+
 int OnInit(void)
   {
-   LoadJournalFromFile(); // learning machine: repopulates g_journal from disk (or leaves it empty) -- always runs before SyncOpenPositions' first pass
-   ArrayResize(g_openMeta, 0);
-   g_firstSyncDone = false;
-   g_lastBarTime = 0;
-
-   // g_trade is only ever actually called from SendPyramidAdd(), and only
-   // when AllowPyramiding && ExecutionModeLive are both true -- but it is
-   // configured unconditionally here, cheaply, so it is never left in an
-   // unconfigured state on the one code path that does need it.
-   g_trade.SetExpertMagicNumber(PyramidMagicNumber);
-   g_trade.SetDeviationInPoints(PyramidDeviationPoints);
-   g_trade.SetTypeFilling(DetectFillingMode(_Symbol));
-   g_trade.SetAsyncMode(false); // always wait for and confirm the actual send result -- never fire-and-forget on a real order
-
-   // Account safety governor: reset so a fresh EA (re)start begins a new
-   // "day" baseline immediately on the first OnTick call to
-   // UpdateDailySafetyGovernor(), rather than carrying over a stale
-   // baseline from a previous run/recompile.
-   g_dayStartEquity = 0.0;
-   g_dayStartTime   = 0;
-
-   // handles: mark all invalid first so a partial failure never releases a
-   // handle number this EA did not create
+   g_state = X15_ST_INITIALIZING;
+   string why;
+   if(!ValidateInputs(why))
+     {
+      PrintFormat("[AX15][ERROR] invalid inputs: %s", why);
+      return(INIT_PARAMETERS_INCORRECT);
+     }
    g_atrExec = INVALID_HANDLE;
    for(int i = 0; i < 3; i++) g_atrHTF[i] = INVALID_HANDLE;
+   if(!RefreshSymbolSpec(g_spec)) X15Log("DATA", "symbol properties not available yet: " + g_spec.reason);
    if(!CreateIndicatorHandles())
-      X15Log("DATA", "could not create every ATR handle -- affected analysis will report DATA_UNAVAILABLE", true);
+      X15Error("DATA", "could not create every ATR handle -- affected analysis will report DATA_UNAVAILABLE");
    ResetStructure(g_structExec, InpExecTF);
    ResetStructure(g_structHTF[0], InpHTF1);
    ResetStructure(g_structHTF[1], InpHTF2);
    ResetStructure(g_structHTF[2], InpHTF3);
    ResetStructure(g_structW1, PERIOD_W1);
    ResetDecision(g_decision);
+   ResetExecDecision(g_exec);
    g_execGot = 0;
-   g_state = X15_ST_INITIALIZING;
+   g_lastBarTime = 0;
+   g_lastError = "";
+   g_dashRendered[0] = 0;
+   g_dashRendered[1] = 0;
 
-   PrintFormat("AUTOPSY X FLIPDEMON X15: initialized on %s %s. VWAP engine %s, VP-MACD engine %s, News Defense %s, persistent journal %s, Pyramiding %s (%s).",
-               _Symbol, EnumToString((ENUM_TIMEFRAMES)Period()),
-               UseVWAPExit ? "ENABLED" : "disabled",
-               UseVPMACDEntry ? "ENABLED" : "disabled",
-               UseNewsDefense ? "ENABLED (default)" : "disabled",
-               UsePersistentJournal ? "ENABLED (default)" : "disabled",
-               AllowPyramiding ? "ENABLED" : "disabled",
-               ExecutionModeLive ? "LIVE" : "PAPER");
+   g_trade.SetExpertMagicNumber(InpMagicNumber);
+   g_trade.SetDeviationInPoints(InpMaxSlippagePoints);
+   g_trade.SetTypeFilling(DetectFillingMode(_Symbol));
+   g_trade.SetAsyncMode(false); // always wait for the server's answer -- never fire-and-forget a real order
+
+   // restart recovery (spec 37): journal -> setup store -> managed positions
+   // -> setup IDs from the broker's own records -> reconcile against live positions
+   LoadJournalFromFile();
+   LoadSetupStore();
+   LoadPositionState();
+   RebuildSetupStoreFromBroker();
+   g_firstSyncDone = false;
+   ReconcilePositions();
+   PruneEntryContexts();
+   g_perfDirty = true;
+   UpdatePerformance();
+   ComputeLossMetrics(g_loss);
+   EventSetTimer(1);
+
+   string mode = EnumLabel(EnumToString(InpExecutionMode), "X15_");
+   X15Log("INIT", StringFormat("%s on %s, exec %s, magic %I64u, journal %d rows, %d tracked position(s)",
+                               mode, _Symbol, EnumLabel(EnumToString(InpExecTF), "PERIOD_"), InpMagicNumber, ArraySize(g_journal), ArraySize(g_positions)));
+   if(InpExecutionMode == X15_LIVE_EXECUTION && !IsTester())
+      X15Log("INIT", "LIVE EXECUTION IS ARMED -- this EA will send real orders when every gate passes. It has not been compiled or tested by its author.", true);
+   g_state = X15_ST_WAIT;
    return(INIT_SUCCEEDED);
   }
 
 void OnDeinit(const int reason)
   {
+   EventKillTimer();
+   SavePositionState();
    ReleaseIndicatorHandles();
+   DeleteDashboard();
    Comment("");
   }
 
 void OnTick(void)
   {
-   UpdateDailySafetyGovernor(); // every tick, before anything else -- keeps IsAccountHalted() current for CheckPyramidEligibility()
    SampleSpread();
-   SyncOpenPositions();
-   if(IsNewBar())
+   ReconcilePositions();
+   bool newBar = IsNewBar();
+   if(newBar) RunMarketAnalysis();
+   ManagePositions(newBar);
+   if(newBar || InpCloseAllManagedPositions) ManagePendingOrders();
+   if(newBar)
      {
-      RunMarketAnalysis();
-      RunDecision();
-      ProcessPyramidOpportunities(); // once per confirmed bar close, same cadence as RunDecision() -- no reason to re-evaluate add eligibility intra-bar
+      ProcessEntryOpportunity();
+      ProcessPyramidOpportunities();
+      if(g_perfDirty)
+        {
+         ENUM_X15_STATE keep = g_state;
+         g_state = X15_ST_LEARNING;
+         UpdatePerformance();
+         g_state = keep;
+        }
+      PruneEntryContexts();
      }
+   if(g_stateDirty) SavePositionState();
+   UpdateDashboard(newBar);
+  }
+
+void OnTimer(void)
+  {
+   SampleSpread();
+   ReconcilePositions();
+   if(g_perfDirty) UpdatePerformance();
+   UpdateDashboard(false);
+  }
+
+// Lifecycle events arrive here first; the actual state change is always
+// applied by the idempotent ReconcilePositions(), so a repeated or
+// out-of-order transaction can never double-journal or double-register.
+void OnTradeTransaction(const MqlTradeTransaction &trans, const MqlTradeRequest &request, const MqlTradeResult &result)
+  {
+   if(trans.symbol != "" && trans.symbol != _Symbol) return;
+   if(trans.type == TRADE_TRANSACTION_DEAL_ADD)
+     {
+      g_reconcileRequested = true;
+      if(HistoryDealSelect(trans.deal))
+        {
+         long entry = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
+         string kind = (entry == DEAL_ENTRY_IN) ? "IN (open/add)" : ((entry == DEAL_ENTRY_OUT) ? "OUT (close/partial)" : "OUT_BY/INOUT");
+         X15Log("POSITION", StringFormat("deal #%I64u %s %.2f @ %s, position %I64u", trans.deal, kind, trans.volume,
+                                         DoubleToString(trans.price, g_spec.digits), trans.position), false, true);
+        }
+     }
+   else if(trans.type == TRADE_TRANSACTION_REQUEST)
+     {
+      if(request.magic == InpMagicNumber && !RetcodeSucceeded(result.retcode))
+         X15Error("EXECUTION", StringFormat("server answered %u %s to '%s'", result.retcode, result.comment, request.comment));
+     }
+   else if(trans.type == TRADE_TRANSACTION_POSITION || trans.type == TRADE_TRANSACTION_ORDER_DELETE
+           || trans.type == TRADE_TRANSACTION_HISTORY_ADD)
+      g_reconcileRequested = true;
+   if(g_reconcileRequested) ReconcilePositions();
   }
 //+------------------------------------------------------------------+

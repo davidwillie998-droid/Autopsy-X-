@@ -68,21 +68,56 @@ for installation, the module table, risk modes, and the five-phase
 backtest → in-sample → out-of-sample → unseen-data → demo-forward
 validation workflow it expects before anyone risks real capital on it.
 
-## AutopsyXFlipdemonX15.mq5 (native MT5 decision engine)
+## AutopsyXFlipdemonX15.mq5 (native MT5 autonomous EA)
 
 A third, separate system, also under `MQL5/Experts/AutopsyX/`: a
-journal-gated adaptive-risk *decision engine*, not a full trading EA — it
-never opens a new position on its own signal and never closes one. Its one
-order path is the Pyramiding Engine, which only adds volume to an
-already-open position that is already profitable by a set R-multiple, is
-off by default, and logs PAPER adds only until `ExecutionModeLive` is set.
-It tracks whatever
-positions already exist on its chart (yours, another EA's, or a future
-entry engine wired into its `GetCompositeDirection()` extension point) to
-build its own trade journal, and every external signal only ever earns
-influence over position sizing through that journal's own logged,
-out-of-sample track record — never through the credibility of the paper
-it's based on. Three engines:
+fail-closed autonomous EA whose layers run strictly in order.
+
+    DATA -> STRUCTURE / LIQUIDITY / REGIME / SESSION / NEWS GATE
+         -> VWAP + VP-MACD -> COMPOSITE DECISION -> EXECUTION ELIGIBILITY
+         -> RISK -> ORDER -> POSITION MANAGEMENT -> JOURNAL -> ADAPTATION
+
+**It starts in `ANALYSIS_ONLY`.** It analyses, validates and reports every
+bar, and sends nothing. `PAPER_EXECUTION` runs virtual fills through the
+same management and journal. `LIVE_EXECUTION` sends real orders via
+`CTrade`.
+
+**It has not been compiled or run in the Strategy Tester by its author.**
+No MetaEditor was reachable from the environment it was written in, so it
+was verified with static checks and Python ports of its core logic
+instead. Compile it, backtest it, and run it on PAPER and demo before ever
+selecting LIVE.
+
+What it does:
+
+- **Setups.** Two models: sweep reversal (liquidity sweep, displacement,
+  MSS, retrace into an FVG/OB, confirmation) and HTF continuation. Both
+  run on closed bars only and may fire only on the most recent one.
+- **Decisions.** Every decision is a named list of PASS / FAIL /
+  UNAVAILABLE evidence, and every NO TRADE shows its blocking gate on the
+  chart.
+- **Duplicate protection.** A deterministic setup ID is written to disk
+  *before* sending. An ambiguous send result (timeout, lost connection)
+  blocks the setup and is never resent. On restart, executed setups are
+  recovered from the broker's own order history.
+- **Hard limits no bonus can pass.** Position counts, total open risk,
+  daily and weekly loss (from deal history, so a restart can't reset
+  them), a consecutive-loss pause, spread, margin, tick age and broker
+  permissions.
+- **Risk.** Volume is sized from equity and validated with the broker's
+  `OrderCalcProfit`. A size below the broker minimum is refused, never
+  rounded up.
+- **Management.** Break-even, partial close, structure/ATR/fixed-R/VWAP
+  trailing, and invalidation and time exits.
+- **Journal.** One row per closed position, deduplicated by position ID.
+  Learning uses only this EA's own completed trades.
+- **Reports only.** Monte Carlo and the Kelly ruin bound are shown on the
+  dashboard and never touch position size.
+
+It still keeps every external signal on probation: VWAP and VP-MACD only
+ever earn a sizing bonus through the journal's own logged, out-of-sample
+track record, never through the credibility of the paper they're based
+on. The three signal engines:
 
 - **VWAP trend** (Zarattini & Aziz, SSRN 4631351 — the same paper behind
   the browser VWAP Flip Bot above), gated on its own ≥20-trade aligned
@@ -100,11 +135,10 @@ it's based on. Three engines:
   fallback for every other currency. The one engine here that defaults ON
   rather than off, since it can only ever suppress risk, never add it.
 
-Every input defaults to inert (VWAP and VP-MACD off, no bonus without a
-real track record) except News Defense, which defaults on for the reason
-above. Not machine-compiled, same caveat as FLIPDEMON EXTREME — compile
-and verify in MetaEditor before use. Full detail, citations, and caveats
-are in the file's own header comments rather than duplicated here.
+Sizing bonuses default to inert (no bonus without a real track record),
+News Defense defaults on for the reason above, and the whole EA defaults to
+`ANALYSIS_ONLY`. Full detail, citations and caveats live in the file's own
+header and section comments rather than being duplicated here.
 
 ## Everything else
 
