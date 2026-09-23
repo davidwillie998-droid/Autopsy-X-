@@ -323,7 +323,7 @@ input bool    InpNewsUnavailableBlocksLive   = true;  // live/demo: calendar dat
 input bool    InpNewsUnavailableBlocksTester = false; // Strategy Tester has no economic calendar at all; true would make backtesting impossible. Trades journal the state as BACKTEST_UNAVAILABLE -- nothing is fabricated
 
 input group "=== LEARNING MACHINE ===";
-input bool    UsePersistentJournal        = true;  // load/save the trade journal to a CSV in this terminal's sandboxed MQL5/Files folder, so earned track record survives an EA reattach or terminal restart instead of resetting to zero
+input bool    UsePersistentJournal        = true;  // true: earned track record carries across restarts. false: the journal file is STILL kept (the loss-streak pause, cooldown and paper loss limits must survive a restart) but learning ignores trades closed before this run started
 input string  JournalFileNameOverride     = "";    // leave blank to auto-name as AutopsyX15_Journal_<SYMBOL>.csv
 input double  BonusLearningRate           = 0.10;  // how much measured expectancy (in R) translates into bonus size once a gate clears -- e.g. 0.10 means 1R of measured edge adds +10% to position size, still capped at VWAPAlignmentBonus/VPMACDAlignmentBonus below. This rate itself is an arbitrary starting point, not derived from anything -- same "unproven until logged" status as every other number in this file
 input int     MinTradesPerEventForReport  = 5;     // smallest per-event sample worth showing in the News Defense per-event breakdown -- reporting only, never feeds back into suppression (see the LEARNING MACHINE note above)
@@ -593,6 +593,7 @@ struct X15Position
    double            pendingPrice;
    datetime          pendingExpiry;
    int               finalizeAttempts;
+   bool              valuationFailed; // paper P&L could not be valued by OrderCalcProfit: journaled as invalid
   };
 X15Position g_positions[];
 bool g_firstSyncDone = false; // flips true after the first reconcile pass -- positions found on that pass pre-date this run
@@ -2582,14 +2583,18 @@ uint Fnv1a32(string s)
    return(h);
   }
 
-// Deterministic: the same symbol, direction, model, trigger bar and anchor
-// level always produce the same ID -- across ticks, restarts and chart
-// timeframe changes. That determinism IS the duplicate-trade protection.
+// Deterministic identity of the SETUP, not of the bar that triggered it:
+// symbol, direction, model, the sweep and the structure break that define
+// it, and its anchor level. A later bar retesting the same zone after the
+// first entry was stopped out yields the SAME ID, so one setup can be
+// executed once -- ever -- across ticks, bars, restarts and chart changes.
+// (A retest that was blocked by a gate was never executed, so a later
+// retest of that setup is still allowed.)
 string BuildSetupId(X15Setup &s)
   {
    double anchor = (s.type == X15_SETUP_SWEEP_REVERSAL) ? s.sweepLevel : s.structureLevel;
-   string raw = StringFormat("%s|%d|%d|%I64d|%s", _Symbol, s.direction, (int)s.type,
-                             (long)s.triggerBarTime, DoubleToString(anchor, g_spec.digits));
+   string raw = StringFormat("%s|%d|%d|%I64d|%I64d|%s", _Symbol, s.direction, (int)s.type,
+                             (long)s.sweepTime, (long)s.structureTime, DoubleToString(anchor, g_spec.digits));
    return(StringFormat("%08X", Fnv1a32(raw)));
   }
 
@@ -3081,6 +3086,7 @@ datetime g_lastTradeTime = 0;
 string   g_lastError = "";
 datetime g_lastErrorTime = 0;
 ulong    g_paperCounter = 0;
+datetime g_runStartTime = 0;
 
 void X15Error(string category, string message)
   {
@@ -3170,6 +3176,7 @@ void ResetPosition(X15Position &p)
    p.paperExitPriceVolume = 0.0; p.paperExitVolume = 0.0; p.paperGross = 0.0;
    p.closed = false; p.isPendingOrder = false; p.pendingPrice = 0.0; p.pendingExpiry = 0;
    p.finalizeAttempts = 0;
+   p.valuationFailed = false;
   }
 
 int FindPositionIndex(ulong positionId, bool isPaper)
@@ -3230,6 +3237,7 @@ int OwnOpenPositionCount(void)
 bool IsLearnable(JournalEntry &e)
   {
    if(!e.valid) return(false);
+   if(!UsePersistentJournal && e.closeTime < g_runStartTime) return(false); // learning starts fresh; the file is kept for the hard limits
    if(e.source == X15_SRC_EXTERNAL) return(false);
    if(e.source == X15_SRC_LEGACY) return(InpLearningSource == X15_LEARN_ALL_OWN);
    if(e.source == X15_SRC_PAPER) return(InpLearningSource != X15_LEARN_LIVE_ONLY);
@@ -3658,7 +3666,7 @@ void SaveSetupStore(void)
       X15Error("JOURNAL", StringFormat("cannot move setup store into place (error %d)", GetLastError()));
   }
 
-void RecordSetupStatus(string setupId, int direction, string status, ulong ticket)
+void RecordSetupStatus(string setupId, int direction, string status, ulong ticket, bool persist = true)
   {
    if(setupId == "") return;
    int idx = FindSetupRecord(setupId);
@@ -3678,7 +3686,7 @@ void RecordSetupStatus(string setupId, int direction, string status, ulong ticke
    g_setups[idx].time = TimeCurrent();
    g_setups[idx].status = status;
    if(ticket != 0) g_setups[idx].ticket = ticket;
-   SaveSetupStore();
+   if(persist) SaveSetupStore();
   }
 
 // The tester never loads a previous run's store: its file sandbox persists
@@ -3758,14 +3766,14 @@ void RebuildSetupStoreFromBroker(void)
       ulong t = OrderGetTicket(i);
       if(t == 0 || (ulong)OrderGetInteger(ORDER_MAGIC) != InpMagicNumber) continue;
       string id = ExtractSetupIdFromComment(OrderGetString(ORDER_COMMENT));
-      if(id != "" && !IsSetupConsumed(id)) { RecordSetupStatus(id, 0, "FROM_BROKER_ORDER", t); added++; }
+      if(id != "" && !IsSetupConsumed(id)) { RecordSetupStatus(id, 0, "FROM_BROKER_ORDER", t, false); added++; }
      }
    for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
       ulong t = PositionGetTicket(i);
       if(t == 0 || (ulong)PositionGetInteger(POSITION_MAGIC) != InpMagicNumber) continue;
       string id = ExtractSetupIdFromComment(PositionGetString(POSITION_COMMENT));
-      if(id != "" && !IsSetupConsumed(id)) { RecordSetupStatus(id, 0, "FROM_BROKER_POSITION", t); added++; }
+      if(id != "" && !IsSetupConsumed(id)) { RecordSetupStatus(id, 0, "FROM_BROKER_POSITION", t, false); added++; }
      }
    datetime now = TimeCurrent();
    if(HistorySelect(now - 14 * 86400, now + 60))
@@ -3776,10 +3784,14 @@ void RebuildSetupStoreFromBroker(void)
          ulong t = HistoryOrderGetTicket(i);
          if(t == 0 || (ulong)HistoryOrderGetInteger(t, ORDER_MAGIC) != InpMagicNumber) continue;
          string id = ExtractSetupIdFromComment(HistoryOrderGetString(t, ORDER_COMMENT));
-         if(id != "" && !IsSetupConsumed(id)) { RecordSetupStatus(id, 0, "FROM_BROKER_HISTORY", t); added++; }
+         if(id != "" && !IsSetupConsumed(id)) { RecordSetupStatus(id, 0, "FROM_BROKER_HISTORY", t, false); added++; }
         }
      }
-   if(added > 0) X15Log("JOURNAL", StringFormat("restart safety: %d executed setup ID(s) recovered from the broker's own records", added));
+   if(added > 0)
+     {
+      SaveSetupStore();
+      X15Log("JOURNAL", StringFormat("restart safety: %d executed setup ID(s) recovered from the broker's own records", added));
+     }
   }
 
 //====================================================================
@@ -3983,6 +3995,7 @@ X15ExecDecision CheckExecutionEligibility(X15Decision &d)
 // and fill still ends with a correctly-attributed position.
 //====================================================================
 X15Position g_entryContexts[];
+X15Position g_dormantPaper[]; // paper positions persisted by a PAPER session, kept untouched while another mode runs
 
 int FindEntryContext(string setupId)
   {
@@ -4496,17 +4509,19 @@ bool ModifyStops(X15Position &p, double newSL, double newTP, string tag)
 
 bool CloseManagedPosition(X15Position &p, ENUM_X15_EXIT_REASON reason)
   {
-   p.pendingExitReason = reason;
    g_stateDirty = true;
    if(p.isPaper)
      {
+      p.pendingExitReason = reason;
       double exitPx = (p.direction == 1) ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
       PaperClose(p, p.volume, exitPx);
       return(true);
      }
    if(!SelectLivePositionById(p.positionId, p.ticket)) return(false);
+   p.pendingExitReason = reason;
    if(!g_trade.PositionClose(p.ticket, (ulong)InpMaxSlippagePoints))
      {
+      p.pendingExitReason = X15_EXIT_NONE; // the close did not happen: a later broker-side SL/TP must be journaled as what it is
       X15Error("POSITION", StringFormat("close (%s) failed on #%I64u: %u %s", ExitReasonLabel(reason), p.ticket,
                                         g_trade.ResultRetcode(), g_trade.ResultRetcodeDescription()));
       return(false);
@@ -4537,10 +4552,26 @@ bool PartialCloseManaged(X15Position &p, double vol)
 
 // Forward look for a whitelisted (validated) event on either currency leg
 // within the lead window. Live only: the tester has no calendar.
+datetime g_newsAheadCheckedAt = 0;
+bool     g_newsAheadHit = false;
+string   g_newsAheadName = "";
+
+// Cached for 60 s: it is consulted per tick per position, and each refresh
+// costs two calendar queries plus one lookup per event.
 bool UpcomingValidatedEvent(int leadMinutes, string &nameOut)
   {
    nameOut = "";
    if(IsTester() || leadMinutes <= 0) return(false);
+   if(TimeCurrent() - g_newsAheadCheckedAt < 60) { nameOut = g_newsAheadName; return(g_newsAheadHit); }
+   g_newsAheadCheckedAt = TimeCurrent();
+   g_newsAheadHit = RefreshUpcomingValidatedEvent(leadMinutes, g_newsAheadName);
+   nameOut = g_newsAheadName;
+   return(g_newsAheadHit);
+  }
+
+bool RefreshUpcomingValidatedEvent(int leadMinutes, string &nameOut)
+  {
+   nameOut = "";
    string base, quote;
    GetTradeCurrencies(_Symbol, base, quote);
    string legs[2];
@@ -4684,6 +4715,15 @@ void ManagePositions(bool newBar)
    for(int i = ArraySize(g_positions) - 1; i >= 0; i--)
      {
       if(!g_positions[i].isOwn || g_positions[i].closed) continue;
+      // ANALYSIS_ONLY sends nothing and PAPER sends nothing real: a live position left over from a
+      // LIVE session is tracked and journaled, but never modified or closed outside LIVE mode.
+      // Its broker-side SL/TP keep protecting it.
+      if(!g_positions[i].isPaper && InpExecutionMode != X15_LIVE_EXECUTION)
+        {
+         X15Log("POSITION", StringFormat("live position %I64u is tracked but NOT managed in %s mode -- its broker-side SL/TP still apply",
+                                         g_positions[i].positionId, EnumLabel(EnumToString(InpExecutionMode), "X15_")));
+         continue;
+        }
       if(g_positions[i].isPaper && g_positions[i].isPendingOrder) ManagePaperPending(i);
       else ManageOnePosition(g_positions[i], newBar);
      }
@@ -4754,7 +4794,6 @@ string D8(double v)
 
 void SaveJournalToFile(void)
   {
-   if(!UsePersistentJournal) return;
    string fname = GetJournalFileName();
    string tmpFname = fname + ".tmp";
    int handle = FileOpen(tmpFname, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ, ',');
@@ -4915,7 +4954,7 @@ int LoadJournalFile(string fname)
 void LoadJournalFromFile(void)
   {
    ArrayResize(g_journal, 0);
-   if(!UsePersistentJournal || IsTester()) return;
+   if(IsTester()) return;
    string fname = GetJournalFileName();
    if(FileIsExist(fname))
      {
@@ -4985,6 +5024,11 @@ void FillJournalFromPosition(X15Position &p, JournalEntry &e)
      {
       e.valid = false;
       e.invalidReason = "pre-existing own position with no persisted entry context";
+     }
+   if(p.valuationFailed)
+     {
+      e.valid = false;
+      e.invalidReason = "paper P&L could not be valued by the broker (OrderCalcProfit failed)";
      }
   }
 
@@ -5084,7 +5128,14 @@ void PaperClose(X15Position &p, double vol, double exitPrice)
    if(vol <= 0.0 || p.closed) return;
    vol = MathMin(vol, p.volume);
    double profit = 0.0;
-   OrderCalcProfit(p.direction == 1 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, _Symbol, vol, p.avgEntryPrice, exitPrice, profit);
+   if(!OrderCalcProfit(p.direction == 1 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, _Symbol, vol, p.avgEntryPrice, exitPrice, profit))
+     {
+      bool losing = (p.direction * (exitPrice - p.avgEntryPrice) < 0.0);
+      double tv = (losing && g_spec.tickValueLoss > 0.0) ? g_spec.tickValueLoss : g_spec.tickValue;
+      profit =(g_spec.tickSize > 0.0) ? p.direction * (exitPrice - p.avgEntryPrice) / g_spec.tickSize * tv * vol : 0.0;
+      p.valuationFailed = true;
+      X15Error("POSITION", "[PAPER] OrderCalcProfit failed -- P&L estimated from tick value; this trade will be journaled as INVALID");
+     }
    p.paperGross += profit;
    p.paperExitPriceVolume += exitPrice * vol;
    p.paperExitVolume += vol;
@@ -5135,7 +5186,7 @@ void WritePositionRow(int h, string kind, X15Position &p)
              SanitizeForCsv(p.vwapState), SanitizeForCsv(p.vpmacdState), SanitizeForCsv(p.newsState), SanitizeForCsv(p.compositeState),
              SanitizeForCsv(p.regime), SanitizeForCsv(p.structureState), SanitizeForCsv(p.liquidityState), SanitizeForCsv(p.session),
              SanitizeForCsv(p.entryReason), D8(p.paperExitPriceVolume), D8(p.paperExitVolume), D8(p.paperGross),
-             p.isPendingOrder ? 1 : 0, D8(p.pendingPrice), (long)p.pendingExpiry);
+             p.isPendingOrder ? 1 : 0, D8(p.pendingPrice), (long)p.pendingExpiry, p.valuationFailed ? 1 : 0);
   }
 
 void ReadPositionRow(int h, X15Position &p)
@@ -5190,6 +5241,7 @@ void ReadPositionRow(int h, X15Position &p)
    p.isPendingOrder = (StringToInteger(FileReadString(h)) != 0);
    p.pendingPrice = StringToDouble(FileReadString(h));
    p.pendingExpiry = (datetime)StringToInteger(FileReadString(h));
+   if(!FileIsLineEnding(h) && !FileIsEnding(h)) p.valuationFailed = (StringToInteger(FileReadString(h)) != 0); // absent in older state files
    SkipRestOfLine(h);
   }
 
@@ -5202,6 +5254,7 @@ void SavePositionState(void)
    if(h == INVALID_HANDLE) { X15Error("JOURNAL", StringFormat("cannot write position state '%s' (error %d)", tmp, GetLastError())); return; }
    for(int i = 0; i < ArraySize(g_positions); i++)
       if(g_positions[i].isOwn && !g_positions[i].closed) WritePositionRow(h, "POS", g_positions[i]);
+   for(int i = 0; i < ArraySize(g_dormantPaper); i++) WritePositionRow(h, "POS", g_dormantPaper[i]);
    for(int i = 0; i < ArraySize(g_entryContexts); i++) WritePositionRow(h, "CTX", g_entryContexts[i]);
    FileClose(h);
    if(!FileMove(tmp, 0, fname, FILE_REWRITE))
@@ -5212,6 +5265,7 @@ void LoadPositionState(void)
   {
    ArrayResize(g_positions, 0);
    ArrayResize(g_entryContexts, 0);
+   ArrayResize(g_dormantPaper, 0);
    if(IsTester()) return;
    string fname = PositionStateFileName();
    if(!FileIsExist(fname)) return;
@@ -5226,8 +5280,15 @@ void LoadPositionState(void)
       ReadPositionRow(h, p);
       if(kind == "POS")
         {
-         // a paper position only exists in this mode; a live one only while not in paper mode
-         if(p.isPaper != (InpExecutionMode == X15_PAPER_EXECUTION)) continue;
+         // live rows always load (reconciliation decides whether the position still exists);
+         // paper rows only run in PAPER mode and are otherwise carried through unchanged
+         if(p.isPaper && InpExecutionMode != X15_PAPER_EXECUTION)
+           {
+            int d = ArraySize(g_dormantPaper);
+            ArrayResize(g_dormantPaper, d + 1);
+            g_dormantPaper[d] = p;
+            continue;
+           }
          AppendPosition(p); pos++;
         }
       else { AddEntryContext(p); ctx++; }
@@ -5391,73 +5452,6 @@ void ReconcilePositions(void)
    if(g_stateDirty) SavePositionState();
   }
 
-//====================================================================
-// PYRAMIDING ENGINE  (section 21 of the original design spec)
-//--------------------------------------------------------------------
-// Adds to this EA's OWN already-open, already-PROFITABLE positions only --
-// structurally the opposite of martingale/averaging-down, which adds to
-// LOSING positions to lower the average entry. A position that is not at
-// least MinProfitRMultipleToAdd in profit can never receive an add; there
-// is no code path below that reads a negative or small-positive R and
-// proceeds anyway. Manual and other-EA positions are never added to.
-//
-// No layer is bypassed: every add passes the same hard safety gates as a
-// new entry (overrides, permissions, market/session/news, spread, loss
-// limits, total open risk, margin), then is sized FRESH against CURRENT
-// equity through the same risk -> volume path as any trade. An add can
-// therefore come out smaller than the original entry -- that is correct
-// behaviour, and exactly what stops an ever-growing unhedged position.
-//
-// Aggregate risk across ALL legs (to the shared SL) is capped at
-// InpMaxRiskPct: an add that would push the whole position over it is
-// shrunk to fit, and refused when even the broker minimum would not fit.
-//
-// Fresh confirmation (RequireFreshConfirmation) uses the VP-MACD crossover
-// EVENT, which is true only on the bar the crossover happens -- never a
-// state that stays true bar after bar.
-//
-// Netting accounts only: there MT5 merges a same-direction add into one
-// position with one blended entry and one SL. On a hedging account an add
-// would be a separate position, a different feature not implemented here.
-//
-// Modes: LIVE sends real orders; PAPER and ANALYSIS_ONLY only log what
-// would have been sent (paper positions are not blended here).
-//====================================================================
-double NormalizeVolumeForSymbol(string symbol, double rawLots)
-  {
-   double volMin  = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
-   double volMax  = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
-   double volStep = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
-   if(volStep <= 0.0) volStep = 0.01;
-   double vol = MathFloor(rawLots/volStep) * volStep;
-   vol = MathMax(volMin, MathMin(volMax, vol));
-   int stepDigits = 0;
-   double s = volStep;
-   while(MathAbs(s - MathRound(s)) > 1e-8 && stepDigits < 8) { s *= 10; stepDigits++; }
-   return(NormalizeDouble(vol, stepDigits));
-  }
-
-// Risk-percent sizing; returns 0 (refuse) rather than rounding a sub-minimum
-// size UP to the broker minimum.
-double CalculateLotSizeFromRisk(string symbol, double riskPercent, double stopDistancePrice)
-  {
-   if(riskPercent <= 0.0 || stopDistancePrice <= 0.0) return(0.0);
-   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-   double riskAmount = equity * (riskPercent/100.0);
-   double tickSize  = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
-   double tickValue = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE_LOSS);
-   if(tickValue <= 0.0) tickValue = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
-   if(tickSize <= 0.0 || tickValue <= 0.0) return(0.0);
-   double valuePerLot = (stopDistancePrice/tickSize) * tickValue;
-   if(valuePerLot <= 0.0) return(0.0);
-   double lots = riskAmount / valuePerLot;
-   double volMin  = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
-   double volStep = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
-   if(volStep <= 0.0) volStep = 0.01;
-   if(MathFloor(lots/volStep + 1e-9) * volStep < volMin - 1e-12) return(0.0);
-   return(NormalizeVolumeForSymbol(symbol, lots));
-  }
-
 // Authoritative add count from the broker's deal history: every
 // DEAL_ENTRY_IN on the position identifier is the original entry or an add.
 int CountPositionEntryDeals(ulong positionIdentifier)
@@ -5472,26 +5466,6 @@ int CountPositionEntryDeals(ulong positionIdentifier)
       if(HistoryDealGetInteger(dealTicket, DEAL_ENTRY) == DEAL_ENTRY_IN) count++;
      }
    return(count);
-  }
-
-// Volume-weighted price across every DEAL_ENTRY_IN deal of the position.
-// Returns -1.0 without usable history -- never "entry price zero".
-double ComputeBlendedEntryPrice(ulong positionIdentifier)
-  {
-   if(!HistorySelectByPosition((long)positionIdentifier)) return(-1.0);
-   int total = HistoryDealsTotal();
-   double sumPriceVolume = 0.0, sumVolume = 0.0;
-   for(int i = 0; i < total; i++)
-     {
-      ulong dealTicket = HistoryDealGetTicket(i);
-      if(dealTicket == 0) continue;
-      if(HistoryDealGetInteger(dealTicket, DEAL_ENTRY) != DEAL_ENTRY_IN) continue;
-      double dealVolume = HistoryDealGetDouble(dealTicket, DEAL_VOLUME);
-      sumPriceVolume += HistoryDealGetDouble(dealTicket, DEAL_PRICE) * dealVolume;
-      sumVolume      += dealVolume;
-     }
-   if(sumVolume <= 0.0) return(-1.0);
-   return(sumPriceVolume / sumVolume);
   }
 
 struct AggregatePyramidRisk
@@ -6227,6 +6201,7 @@ bool ValidateInputs(string &why)
 int OnInit(void)
   {
    g_state = X15_ST_INITIALIZING;
+   g_runStartTime = TimeCurrent();
    string why;
    if(!ValidateInputs(why))
      {
@@ -6295,7 +6270,7 @@ void OnTick(void)
    bool newBar = IsNewBar();
    if(newBar) RunMarketAnalysis();
    ManagePositions(newBar);
-   if(newBar || InpCloseAllManagedPositions) ManagePendingOrders();
+   if(InpExecutionMode == X15_LIVE_EXECUTION) ManagePendingOrders(); // every tick: an invalidated stop-entry must die before it can trigger
    if(newBar)
      {
       ProcessEntryOpportunity();
