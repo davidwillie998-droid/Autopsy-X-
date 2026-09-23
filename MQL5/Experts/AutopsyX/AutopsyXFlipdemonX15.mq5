@@ -857,7 +857,15 @@ double ComputeLearnedBonus(StatsResult &stats, int minTrades, double bonusCeilin
   {
    if(stats.sampleSize < minTrades || stats.expectancy <= 0.0) return(1.0); // gate not cleared -- no bonus, full stop
    double maxBonusAboveOne = MathMax(0.0, bonusCeiling - 1.0);
-   double learnedBonusAboveOne = MathMin(maxBonusAboveOne, stats.expectancy * BonusLearningRate);
+   // Floored at 0 as well as capped at the ceiling: a misconfigured negative
+   // BonusLearningRate combined with a cleared, POSITIVE-expectancy gate
+   // would otherwise produce a NEGATIVE learnedBonusAboveOne here, returning
+   // a multiplier below 1.0 -- silently shrinking risk on a signal that just
+   // cleared its edge gate. That would violate this file's own invariant
+   // (every engine except News Defense can only ever INCREASE risk, never
+   // decrease it), so both directions are clamped explicitly rather than
+   // trusting BonusLearningRate's sign.
+   double learnedBonusAboveOne = MathMax(0.0, MathMin(maxBonusAboveOne, stats.expectancy * BonusLearningRate));
    return(1.0 + learnedBonusAboveOne);
   }
 
@@ -1062,7 +1070,7 @@ void RecordEntryMeta(ulong ticket, bool isPreExisting)
       // VALIDATED hit (never the generic fallback's synthetic reason string),
       // so ComputePerEventStats()'s breakdown stays scoped to the paper's
       // actual named events rather than mixing in unrelated fallback text.
-      meta.newsEventNameAtEntry = (newsAtEntry.active && newsAtEntry.isValidatedEvent) ? newsAtEntry.reason : "";
+      meta.newsEventNameAtEntry = (newsAtEntry.active && newsAtEntry.isValidatedEvent) ? SanitizeForCsv(newsAtEntry.reason) : "";
      }
 
    int idx = ArraySize(g_openMeta);
@@ -1082,6 +1090,25 @@ void RecordEntryMeta(ulong ticket, bool isPreExisting)
 // no FILE_COMMON flag, so it stays in this terminal's own sandboxed
 // MQL5/Files folder, never a machine-wide shared one.
 //====================================================================
+// The one field in JournalEntry that ever holds uncontrolled external text
+// is newsEventNameAtEntry (sourced from the broker's Economic Calendar,
+// which this file does not control the formatting of). Every other field
+// is either numeric or a value this file itself constructs (symbol,
+// "BULLISH"/"BEARISH"/"NEUTRAL", etc.). Sanitizing at the single point
+// that field enters the journal (RecordEntryMeta, below) means the CSV
+// round-trip never has to trust that a calendar event name is free of the
+// delimiter -- a comma or embedded newline in an event title would
+// otherwise misalign every field after it for the rest of the reloaded
+// file, corrupting closeTime/direction/rMultiple/alignment flags for every
+// later row and silently feeding garbage into ComputeLearnedBonus.
+string SanitizeForCsv(string s)
+  {
+   StringReplace(s, ",", ";");
+   StringReplace(s, "\n", " ");
+   StringReplace(s, "\r", " ");
+   return(s);
+  }
+
 string GetJournalFileName(void)
   {
    if(JournalFileNameOverride != "") return(JournalFileNameOverride);
@@ -1092,15 +1119,33 @@ string GetJournalFileName(void)
 // than appending), which trades a little I/O for a much simpler
 // correctness argument: g_journal in memory is always the single source
 // of truth, so the file can never drift from it or accumulate a
-// malformed trailing row from an interrupted append.
+// malformed trailing row from an interrupted append. Trade volume this
+// file expects (per-trade closes, not per-tick) keeps that O(n) rewrite
+// cheap in practice -- even several thousand rows is a sub-millisecond
+// write. If this journal is ever run somewhere that accumulates far
+// more history than that, this rewrite-per-close approach is the first
+// thing to revisit; it was chosen for correctness-simplicity, not scale.
+//
+// Writes to a TEMPORARY file first and only replaces the real journal via
+// FileMove once that write has fully succeeded -- writing directly to
+// the real file with FILE_WRITE would truncate it to zero bytes before a
+// single row is rewritten, so a crash or power loss mid-write (exactly
+// the "VPS reboot" scenario this feature exists to survive) would leave
+// the on-disk journal empty or partial instead of just missing the one
+// newest trade. With the temp-file approach, the real file is only ever
+// touched by one atomic-ish rename once a complete, valid replacement
+// already exists on disk -- an interruption during the write leaves the
+// previous, fully-intact journal untouched.
 void SaveJournalToFile(void)
   {
    if(!UsePersistentJournal) return;
-   string fname = GetJournalFileName();
-   int handle = FileOpen(fname, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ, ',');
+   string fname    = GetJournalFileName();
+   string tmpFname = fname + ".tmp";
+
+   int handle = FileOpen(tmpFname, FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ, ',');
    if(handle == INVALID_HANDLE)
      {
-      PrintFormat("AUTOPSY X15: could not open journal file '%s' for writing (error %d) -- learned state will NOT persist past this session.", fname, GetLastError());
+      PrintFormat("AUTOPSY X15: could not open temp journal file '%s' for writing (error %d) -- learned state will NOT persist past this session.", tmpFname, GetLastError());
       return;
      }
    int n = ArraySize(g_journal);
@@ -1109,6 +1154,9 @@ void SaveJournalToFile(void)
                 g_journal[i].rMultiple, g_journal[i].vwapAligned?1:0, g_journal[i].vpMacdAligned?1:0,
                 g_journal[i].nearValidatedNewsEvent?1:0, g_journal[i].newsEventNameAtEntry);
    FileClose(handle);
+
+   if(!FileMove(tmpFname, 0, fname, FILE_REWRITE))
+      PrintFormat("AUTOPSY X15: wrote temp journal file '%s' but could not move it into place as '%s' (error %d) -- the previous on-disk journal is untouched, but this session's newest trade did not persist.", tmpFname, fname, GetLastError());
   }
 
 // Called once from OnInit, before any new trade is processed this run.
