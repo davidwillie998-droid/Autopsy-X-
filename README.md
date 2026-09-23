@@ -72,7 +72,11 @@ validation workflow it expects before anyone risks real capital on it.
 
 A third, separate system, also under `MQL5/Experts/AutopsyX/`: a
 journal-gated adaptive-risk *decision engine*, not a full trading EA — it
-never calls `OrderSend` and closes no positions itself. It tracks whatever
+never opens a new position on its own signal and never closes one. Its one
+order path is the Pyramiding Engine, which only adds volume to an
+already-open position that is already profitable by a set R-multiple, is
+off by default, and logs PAPER adds only until `ExecutionModeLive` is set.
+It tracks whatever
 positions already exist on its chart (yours, another EA's, or a future
 entry engine wired into its `GetCompositeDirection()` extension point) to
 build its own trade journal, and every external signal only ever earns

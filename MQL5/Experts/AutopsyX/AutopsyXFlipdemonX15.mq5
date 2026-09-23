@@ -25,11 +25,22 @@
 //|  it over a version you may have elsewhere.                        |
 //|                                                                    |
 //|  SCOPE: this file is a signal/decision/gating engine, not a full  |
-//|  execution EA -- it never calls OrderSend. It tracks whatever     |
-//|  positions already exist on its symbol (from a human, from        |
-//|  another EA, or from a future entry engine wired in at the        |
-//|  GetCompositeDirection() extension point below) purely to build   |
-//|  its own trade journal and gate its own risk multiplier off it.   |
+//|  execution EA -- it never opens a NEW position on its own signal  |
+//|  (GetCompositeDirection() is a stub returning 0) and never closes |
+//|  or modifies an existing one. It tracks whatever positions        |
+//|  already exist on its symbol (from a human, from another EA, or   |
+//|  from a future entry engine wired in at the GetCompositeDirection |
+//|  extension point below) purely to build its own trade journal and |
+//|  gate its own risk multiplier off it.                             |
+//|                                                                    |
+//|  EXCEPTION (Pyramiding Engine, section 21): this file's ONE real   |
+//|  order-placement path. It ONLY ever sends a same-direction         |
+//|  volume-ADD to a position that is already open and already        |
+//|  profitable by MinProfitRMultipleToAdd -- never a new position,    |
+//|  never a close, never an SL/TP change beyond passing the existing  |
+//|  SL/TP through unchanged. OFF by default (AllowPyramiding=false)   |
+//|  and inert even when on until ExecutionModeLive=true. See the      |
+//|  PYRAMIDING ENGINE section below for the full gate chain.          |
 //|                                                                    |
 //|  ASYMMETRY: News Defense (Tasks 13-18) is the one engine in this  |
 //|  file that defaults ON. Every other engine here defaults OFF      |
@@ -65,6 +76,16 @@
 #property link      ""
 #property version   "1.00"
 #property strict
+
+// <Trade/Trade.mqh> is a standard MQL5 library shipped with every terminal
+// install -- this is not a dependency on this repo's other project files
+// (this file still includes none of MQL5/Include/AutopsyX/*.mqh, preserving
+// its single-file design), it's the same standard trade wrapper this
+// repo's OWN sibling EA (AutopsyX_FlipDemon_Extreme.mq5's ExecutionEngine.mqh)
+// already uses, ported here for the same reason: never assume an order
+// filled, always confirm actual position state afterward.
+#include <Trade/Trade.mqh>
+CTrade g_trade;
 
 //====================================================================
 // SENTINEL / CLASSIFICATION CONVENTIONS (used throughout this file)
@@ -124,6 +145,20 @@ input int     MinTradesPerEventForReport  = 5;     // smallest per-event sample 
 input group "=== PROVEN RUIN BOUND (Kelly) ===";
 input double  RuinBoundAlpha              = 0.8;   // DRAWDOWN THRESHOLD this bound protects against, as a fraction of starting capital: 0.8 = "protect against wealth falling to 80% of where it started" (a 20% drawdown). Must be strictly between 0 and 1. Closer to 1.0 = guarding against a SMALLER drawdown (stricter).
 input double  RuinBoundBeta               = 0.1;   // PROBABILITY TOLERANCE for that drawdown: 0.1 = "want less than a 10% chance of it happening." Must be strictly between 0 and 1. Smaller = wanting MORE confidence it won't happen (stricter).
+
+input group "=== EXECUTION (new: pyramid adds are this file's first real order placement) ===";
+input bool    ExecutionModeLive           = false; // false = PAPER (log what would have been sent, never call a real order function); true = LIVE (real orders via CTrade). Independent of AllowPyramiding below -- both must be true before anything real is sent, matching this file's "prove it before it's armed" pattern for every other engine.
+input ulong   PyramidMagicNumber          = 1500001; // magic number tag for orders this file places
+input int     PyramidDeviationPoints      = 20;      // max acceptable slippage in points before a live add is rejected by the broker
+
+input group "=== ACCOUNT SAFETY GOVERNOR (new: required for any live execution) ===";
+input double  DailyLossLimitPercent       = 5.0;   // circuit breaker: no pyramid adds once today's equity drawdown from day-start equity reaches this. This is a MINIMAL governor scoped to what pyramiding needs (daily loss only) -- the sibling AutopsyX_FlipDemon_Extreme.mq5's RiskEngine.mqh has a more complete one (consecutive-loss limits, rolling trade-rate limits, spread/margin checks) that was NOT ported here; only what this feature explicitly required.
+
+input group "=== PYRAMIDING ENGINE (section 21) ===";
+input bool    AllowPyramiding             = false; // OFF by default -- this is a new way to increase aggregate exposure, so like every other engine in this file, it earns activation explicitly rather than starting on
+input int     MaxPyramidAdds              = 3;     // NOT specified in the originating task -- conservative default, flagged here explicitly, trivial to change
+input double  MinProfitRMultipleToAdd     = 1.0;   // position must be at least this many R in profit (using the ORIGINAL entry's risk distance, the same yardstick as every other R-multiple in this file) before an add is even considered
+input bool    RequireFreshConfirmation    = true;  // see CheckPyramidEligibility() -- adds require a NEW signal event, not just "price moved favorably since the last add"
 
 //====================================================================
 // CORE DATA TYPES
@@ -189,6 +224,12 @@ struct OpenPositionMeta
   };
 OpenPositionMeta g_openMeta[];
 bool g_firstSyncDone = false; // flips true after SyncOpenPositions' first pass -- see RecordEntryMeta's isPreExisting handling
+
+// Account safety governor state (ported/minimized from this repo's own
+// RiskEngine.mqh daily-lockout pattern) -- see UpdateDailySafetyGovernor()
+// and IsAccountHalted() near the pyramiding engine below.
+double g_dayStartEquity = 0.0;
+datetime g_dayStartTime = 0;
 
 //====================================================================
 // STATS
@@ -716,13 +757,15 @@ string ClassifyVPMACDSignal(string symbol)
 //
 // ASYMMETRY / WHY THIS ENGINE DEFAULTS ON (see also the file header):
 // every other engine added to this file defaults OFF because it can only
-// ever INCREASE aggression -- unlocking a sizing bonus -- and must earn
-// that trust with its own track record first. News Defense is the
-// opposite: it can only ever SUPPRESS a new entry, it never adds risk,
-// and it never touches an existing position (see GetGatedEntryDirection()
-// and CheckNewsDefense() below -- there is no code path anywhere in this
-// file that force-closes a position; this file places no orders and
-// manages no positions at all, existing or otherwise). If the underlying
+// ever INCREASE aggression -- unlocking a sizing bonus, or (Pyramiding)
+// adding volume to a position -- and must earn that trust with its own
+// track record first. News Defense is the opposite: it can only ever
+// SUPPRESS a new entry, it never adds risk, and it never touches an
+// existing position (see GetGatedEntryDirection() and CheckNewsDefense()
+// below -- there is no code path anywhere in News Defense that force-
+// closes or resizes a position; the only place this file ever sends a
+// real order at all is the separately-gated Pyramiding Engine below,
+// which News Defense has no interaction with). If the underlying
 // research turns out to be wrong, the failure mode is "skipped a trade
 // that would have been fine," not "took on risk it shouldn't have." That
 // asymmetric downside is the deliberate, specific reason this one engine
@@ -1111,6 +1154,482 @@ RuinBoundResult ComputeKellyRuinBound(StatsResult &stats, double riskFractionPct
   }
 
 //====================================================================
+// ACCOUNT SAFETY GOVERNOR
+//--------------------------------------------------------------------
+// Minimal, real daily-loss circuit breaker -- ported and scoped down from
+// this repo's own AutopsyX_FlipDemon_Extreme.mq5 / RiskEngine.mqh, which
+// has a fuller version (consecutive-loss limits, rolling trade-rate caps,
+// spread/margin checks) not duplicated here. This file never had any
+// execution path before the pyramiding engine below, so it never needed
+// an account-level halt state until now; this is the minimum real one
+// that requirement needs, not a claim of parity with the sibling file's
+// more complete governor.
+//====================================================================
+void UpdateDailySafetyGovernor(void)
+  {
+   MqlDateTime dt;
+   TimeToStruct(TimeCurrent(), dt);
+   datetime dayStart = TimeCurrent() - (dt.hour*3600 + dt.min*60 + dt.sec);
+   if(dayStart != g_dayStartTime)
+     {
+      g_dayStartTime = dayStart;
+      g_dayStartEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+     }
+   if(g_dayStartEquity <= 0.0) g_dayStartEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+  }
+
+bool IsAccountHalted(string &reasonOut)
+  {
+   reasonOut = "";
+   // g_dayStartEquity is only <=0 before UpdateDailySafetyGovernor() has
+   // ever run once (e.g. OnInit hasn't ticked yet) -- fail OPEN only in
+   // that specific startup instant, never as an ongoing state; OnTick
+   // calls UpdateDailySafetyGovernor() before anything else every tick,
+   // so this window is at most the first tick of a run.
+   if(g_dayStartEquity <= 0.0) return(false);
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   double lossPct = (g_dayStartEquity - equity) / g_dayStartEquity * 100.0;
+   if(lossPct >= DailyLossLimitPercent)
+     {
+      reasonOut = StringFormat("Daily loss limit reached: -%.2f%% (limit %.2f%%) -- pyramid adds halted for the rest of the day", lossPct, DailyLossLimitPercent);
+      return(true);
+     }
+   return(false);
+  }
+
+//====================================================================
+// PYRAMIDING ENGINE  (section 21)
+//--------------------------------------------------------------------
+// Adds to already-open, already-PROFITABLE positions only -- structurally
+// the opposite of martingale/averaging-down, which adds to LOSING
+// positions to lower the average entry. A position that has never been
+// profitable by MinProfitRMultipleToAdd can never receive an add here;
+// there is no code path in CheckPyramidEligibility() that reads a
+// negative or small-positive R and proceeds anyway.
+//
+// Every add is sized the SAME way a fresh trade would be sized: fresh
+// call to ComputeAdaptiveRisk() against CURRENT account equity at the
+// moment of the add, through the same real risk-to-lots math
+// (CalculateLotSizeFromRisk, ported from this repo's own already-audited
+// RiskEngine.CalculateLotSize) used everywhere else. There is no separate,
+// looser, "it's just adding to a winner" sizing path. If the account
+// already has more capital at risk elsewhere, or ComputeAdaptiveRisk's
+// earned bonuses have since changed, an add can come out SMALLER than
+// the original entry was -- that is correct behavior, not a bug, and is
+// exactly the mechanism that keeps this from becoming an ever-growing,
+// unhedged position the way an unconstrained pyramiding rule would.
+//
+// Aggregate risk across ALL legs of a pyramided position (not just the
+// newest one) is recalculated and capped against InpMaxRiskPct before
+// every single add, via ComputeAggregatePyramidRisk() + the cap inside
+// SizePyramidAdd() -- an add that would push the WHOLE position's risk
+// over that ceiling is shrunk to fit, the same reduce-not-reject
+// convention RiskEngine.mqh's own CalculateLotSize() already uses for
+// its max-exposure cap.
+//
+// Adds require FRESH structural confirmation, not merely "price moved
+// favorably since the last add" -- but this file does not yet have the
+// market-structure/BOS engine (design spec section 5) that language was
+// originally written against; that engine has not been built in this
+// file as of this writing. What DOES already exist as a genuine,
+// discrete, non-persistent EVENT in this file is a VP-MACD crossover
+// (CheckVPMACDBuySignal/SellSignal are true only on the bar the
+// crossover happens, never on later bars where it's merely still true) --
+// so RequireFreshConfirmation uses THAT as the fresh-event source, and
+// says so honestly rather than silently treating "structure still
+// agrees" as if it were a new signal. If UseVPMACDEntry is off, there is
+// currently no other discrete/event-based signal in this file to satisfy
+// RequireFreshConfirmation with, and eligibility is refused with a
+// specific reason rather than silently falling back to something weaker.
+//
+// Pyramiding is scoped to NETTING accounts only (checked explicitly
+// below) -- it relies on MT5 merging same-direction adds into one
+// position with one blended volume/entry/SL, which is netting-account
+// behavior. On a hedging account an "add" would open a SEPARATE
+// position/ticket instead of merging, which is a materially different
+// feature this file does not implement; this matches the sibling
+// AutopsyX_FlipDemon_Extreme.mq5's own explicit netting-only design for
+// the same underlying reason.
+//====================================================================
+
+// Ported from RiskEngine.mqh's NormalizeVolume -- floors to the broker's
+// volume step, clamps to [min,max], rounds to the step's own decimal
+// precision so the result is a clean, broker-acceptable lot value.
+double NormalizeVolumeForSymbol(string symbol, double rawLots)
+  {
+   double volMin  = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+   double volMax  = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+   double volStep = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+   if(volStep <= 0.0) volStep = 0.01;
+
+   double vol = MathFloor(rawLots/volStep) * volStep;
+   vol = MathMax(volMin, MathMin(volMax, vol));
+
+   int stepDigits = 0;
+   double s = volStep;
+   while(MathAbs(s - MathRound(s)) > 1e-8 && stepDigits < 8) { s *= 10; stepDigits++; }
+   return(NormalizeDouble(vol, stepDigits));
+  }
+
+// Ported from RiskEngine.mqh's CalculateLotSize -- risk-percent based,
+// real symbol tick size/tick value, never a fixed or martingale-scaled
+// formula. stopDistancePrice is a raw PRICE distance (not points); the
+// caller is responsible for passing the right one (see SizePyramidAdd's
+// comment on which distance is "the add's own stop").
+double CalculateLotSizeFromRisk(string symbol, double riskPercent, double stopDistancePrice)
+  {
+   if(riskPercent <= 0.0 || stopDistancePrice <= 0.0) return(0.0);
+
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   double riskAmount = equity * (riskPercent/100.0);
+
+   double tickSize  = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
+   double tickValue = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
+   if(tickSize <= 0.0 || tickValue <= 0.0) return(0.0);
+
+   double valuePerLot = (stopDistancePrice/tickSize) * tickValue;
+   if(valuePerLot <= 0.0) return(0.0);
+
+   double lots = riskAmount / valuePerLot;
+   // Refuse rather than round UP: NormalizeVolumeForSymbol clamps to the
+   // broker's SYMBOL_VOLUME_MIN, so a risk-derived size below that minimum
+   // would otherwise silently become a LARGER position than the risk budget
+   // allows. (The sibling RiskEngine.mqh's NormalizeVolume has that same
+   // clamp-up; it is deliberately not inherited here.)
+   double volMin  = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+   double volStep = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+   if(volStep <= 0.0) volStep = 0.01;
+   if(MathFloor(lots/volStep + 1e-9) * volStep < volMin - 1e-12) return(0.0);
+   return(NormalizeVolumeForSymbol(symbol, lots));
+  }
+
+// Authoritative pyramid-add count for a position, derived from real MT5
+// deal history rather than a broker comment string. DEAL_ENTRY_IN counts
+// every volume-increasing deal on this position's identifier -- the
+// original entry plus every same-direction add -- so add count = this - 1.
+// (A human-readable "PYR:N" tag is still written into each order's
+// comment via BuildPyramidComment() below, for visibility in the
+// terminal's own position list -- but it is NOT what this file trusts as
+// the count, since whether a broker/terminal reliably surfaces an
+// UPDATED comment on a merged netting position across multiple orders is
+// not something verifiable without a live MT5 terminal, which this
+// environment does not have. Deriving the count from deal history instead
+// sidesteps that uncertainty entirely and survives an EA/terminal restart
+// natively, since deal history is the broker's own permanent record.)
+int CountPositionEntryDeals(ulong positionIdentifier)
+  {
+   if(!HistorySelectByPosition((long)positionIdentifier)) return(0);
+   int total = HistoryDealsTotal();
+   int count = 0;
+   for(int i = 0; i < total; i++)
+     {
+      ulong dealTicket = HistoryDealGetTicket(i);
+      if(dealTicket == 0) continue;
+      long entryType = HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
+      if(entryType == DEAL_ENTRY_IN) count++;
+     }
+   return(count);
+  }
+
+string BuildPyramidComment(int addNumber)
+  {
+   return(StringFormat("X15 PYR:%d", addNumber));
+  }
+
+// Volume-weighted average price across every DEAL_ENTRY_IN deal on this
+// position's identifier -- the original entry plus every same-direction
+// add, each weighted by its own volume. This IS the aggregate position's
+// true entry basis on a netting account (MT5 computes POSITION_PRICE_OPEN
+// the same way for the still-open case; this recomputes it from deal
+// history so it's also available for a position that has already closed,
+// which is what AppendJournalFromClosedPosition below needs it for).
+// Returns -1.0 if there is no usable deal history -- callers must not
+// treat that as "entry price zero."
+double ComputeBlendedEntryPrice(ulong positionIdentifier)
+  {
+   if(!HistorySelectByPosition((long)positionIdentifier)) return(-1.0);
+   int total = HistoryDealsTotal();
+   double sumPriceVolume = 0.0, sumVolume = 0.0;
+   for(int i = 0; i < total; i++)
+     {
+      ulong dealTicket = HistoryDealGetTicket(i);
+      if(dealTicket == 0) continue;
+      long entryType = HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
+      if(entryType != DEAL_ENTRY_IN) continue; // original entry + adds only -- never an OUT/OUT_BY/INOUT (closing/reversal) deal
+      double dealVolume = HistoryDealGetDouble(dealTicket, DEAL_VOLUME);
+      double dealPrice  = HistoryDealGetDouble(dealTicket, DEAL_PRICE);
+      sumPriceVolume += dealPrice * dealVolume;
+      sumVolume      += dealVolume;
+     }
+   if(sumVolume <= 0.0) return(-1.0);
+   return(sumPriceVolume / sumVolume);
+  }
+
+// Best-effort, NOT authoritative (see CountPositionEntryDeals's comment
+// above) -- provided for symmetry with the task's original comment-
+// tagging request and for display purposes only.
+int ExtractPyramidCountFromComment(string comment)
+  {
+   int pos = StringFind(comment, "PYR:");
+   if(pos < 0) return(-1);
+   string tail = StringSubstr(comment, pos + 4);
+   return((int)StringToInteger(tail));
+  }
+
+struct AggregatePyramidRisk
+  {
+   double totalLots;
+   double blendedEntryPrice;
+   double totalRiskAmount;         // account-currency $ at risk to the position's CURRENT SL, across its full current volume
+   double totalRiskPercentOfEquity;
+  };
+
+// On a netting account MT5 already merges every same-direction add into
+// ONE position record with one blended volume and one blended entry
+// price -- PositionGetDouble() returns that aggregate directly. This
+// function does not need to re-derive it deal-by-deal; it exists to turn
+// that already-aggregate state into the risk-percent figure the pre-add
+// cap check (inside SizePyramidAdd) needs.
+AggregatePyramidRisk ComputeAggregatePyramidRisk(ulong positionTicket)
+  {
+   AggregatePyramidRisk agg;
+   agg.totalLots = 0.0; agg.blendedEntryPrice = 0.0;
+   agg.totalRiskAmount = 0.0; agg.totalRiskPercentOfEquity = 0.0;
+
+   if(!PositionSelectByTicket(positionTicket)) return(agg);
+   agg.totalLots = PositionGetDouble(POSITION_VOLUME);
+   agg.blendedEntryPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+
+   double slPrice = PositionGetDouble(POSITION_SL);
+   if(slPrice == 0.0) return(agg); // no SL -- risk undefined, leave totals at 0 rather than guess
+
+   long posType = PositionGetInteger(POSITION_TYPE);
+   int direction = (posType == POSITION_TYPE_BUY) ? 1 : -1;
+   double riskDistancePrice = (direction == 1) ? (agg.blendedEntryPrice - slPrice) : (slPrice - agg.blendedEntryPrice);
+   if(riskDistancePrice <= 0.0) return(agg);
+
+   string symbol = PositionGetString(POSITION_SYMBOL);
+   double tickSize  = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
+   double tickValue = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
+   if(tickSize <= 0.0 || tickValue <= 0.0) return(agg);
+
+   agg.totalRiskAmount = (riskDistancePrice/tickSize) * tickValue * agg.totalLots;
+
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(equity > 0.0) agg.totalRiskPercentOfEquity = (agg.totalRiskAmount/equity) * 100.0;
+
+   return(agg);
+  }
+
+struct PyramidEligibility
+  {
+   bool   eligible;
+   string reason;
+  };
+
+PyramidEligibility CheckPyramidEligibility(ulong positionTicket)
+  {
+   PyramidEligibility result;
+   result.eligible = false;
+   result.reason = "";
+
+   if(!AllowPyramiding) { result.reason = "AllowPyramiding is OFF"; return(result); }
+
+   string haltReason;
+   if(IsAccountHalted(haltReason)) { result.reason = haltReason; return(result); }
+
+   if(!PositionSelectByTicket(positionTicket)) { result.reason = "position not found"; return(result); }
+
+   string symbol = PositionGetString(POSITION_SYMBOL);
+   long posType = PositionGetInteger(POSITION_TYPE);
+   int direction = (posType == POSITION_TYPE_BUY) ? 1 : -1;
+   double entryPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+   double slPrice = PositionGetDouble(POSITION_SL);
+   double currentPrice = PositionGetDouble(POSITION_PRICE_CURRENT);
+
+   if(slPrice == 0.0) { result.reason = "no SL on this position -- undefined risk basis, cannot evaluate profit in R"; return(result); }
+
+   double riskDistance = (direction == 1) ? (entryPrice - slPrice) : (slPrice - entryPrice);
+   if(riskDistance <= 0.0) { result.reason = "SL on the wrong side of entry -- undefined risk basis"; return(result); }
+
+   double currentR = (direction == 1) ? (currentPrice - entryPrice)/riskDistance : (entryPrice - currentPrice)/riskDistance;
+   if(currentR < MinProfitRMultipleToAdd)
+     {
+      result.reason = StringFormat("position at %.2fR, needs >= %.2fR to add", currentR, MinProfitRMultipleToAdd);
+      return(result);
+     }
+
+   int addsSoFar = CountPositionEntryDeals((ulong)PositionGetInteger(POSITION_IDENTIFIER)) - 1; // identifier, not ticket: they diverge after a netting reversal
+   if(addsSoFar < 0) addsSoFar = 0;
+   if(addsSoFar >= MaxPyramidAdds)
+     {
+      result.reason = StringFormat("already at max adds (%d/%d)", addsSoFar, MaxPyramidAdds);
+      return(result);
+     }
+
+   if(RequireFreshConfirmation)
+     {
+      if(!UseVPMACDEntry)
+        {
+         result.reason = "RequireFreshConfirmation needs UseVPMACDEntry enabled -- no other discrete, event-based confirmation signal exists in this file yet";
+         return(result);
+        }
+      bool freshBuy  = CheckVPMACDBuySignal(symbol);
+      bool freshSell = CheckVPMACDSellSignal(symbol);
+      bool freshConfirmed = (direction == 1 && freshBuy) || (direction == -1 && freshSell);
+      if(!freshConfirmed)
+        {
+         result.reason = "no fresh VP-MACD crossover confirmation in the position's direction on this bar";
+         return(result);
+        }
+     }
+
+   result.eligible = true;
+   result.reason = "eligible";
+   return(result);
+  }
+
+// Sizes one add exactly like a fresh trade would be sized -- see the
+// engine header comment above for why. The stop distance used here is
+// CURRENT PRICE to the position's EXISTING SL, not the original entry's
+// distance: this reflects what the NEW lot itself would actually lose if
+// stopped out from where it's about to fill, which is the risk this
+// specific add introduces, not the risk the position as a whole has
+// already proven it can absorb.
+double SizePyramidAdd(ulong positionTicket, string symbol, int direction)
+  {
+   if(!PositionSelectByTicket(positionTicket)) return(0.0);
+   double slPrice = PositionGetDouble(POSITION_SL);
+   if(slPrice == 0.0) return(0.0);
+
+   double currentPrice = SymbolInfoDouble(symbol, direction == 1 ? SYMBOL_ASK : SYMBOL_BID);
+   if(currentPrice <= 0.0) return(0.0);
+
+   double stopDistancePrice = (direction == 1) ? (currentPrice - slPrice) : (slPrice - currentPrice);
+   if(stopDistancePrice <= 0.0) return(0.0); // current price is already through the existing SL -- do not add
+
+   double riskPct = ComputeAdaptiveRisk(symbol, direction, false); // false: an add is not a flip re-entry
+   double rawLots = CalculateLotSizeFromRisk(symbol, riskPct, stopDistancePrice);
+   if(rawLots <= 0.0) return(0.0);
+
+   // Aggregate-risk cap: if adding rawLots would push the WHOLE position's
+   // risk-to-current-SL over InpMaxRiskPct, shrink the add to fit rather
+   // than reject it outright -- the same reduce-not-reject convention
+   // RiskEngine.mqh's own CalculateLotSize() already uses for its max-
+   // exposure cap (MathMin(lots, m_maxExposureLots)).
+   AggregatePyramidRisk aggBefore = ComputeAggregatePyramidRisk(positionTicket);
+   double tickSize  = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_SIZE);
+   double tickValue = SymbolInfoDouble(symbol, SYMBOL_TRADE_TICK_VALUE);
+   if(tickSize <= 0.0 || tickValue <= 0.0) return(0.0);
+
+   double addRiskAmount = (stopDistancePrice/tickSize) * tickValue * rawLots;
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   if(equity <= 0.0) return(0.0);
+
+   double projectedTotalRiskPct = ((aggBefore.totalRiskAmount + addRiskAmount) / equity) * 100.0;
+   if(projectedTotalRiskPct > InpMaxRiskPct)
+     {
+      double allowedAddRiskAmount = MathMax(0.0, equity*(InpMaxRiskPct/100.0) - aggBefore.totalRiskAmount);
+      double allowedAddRiskPct = (allowedAddRiskAmount/equity) * 100.0;
+      rawLots = CalculateLotSizeFromRisk(symbol, allowedAddRiskPct, stopDistancePrice);
+     }
+
+   return(rawLots);
+  }
+
+struct PyramidAddResult
+  {
+   bool   sent;         // true only if a LIVE order was actually confirmed placed
+   bool   isPaper;
+   double lots;
+   double price;
+   string errorReason;
+  };
+
+PyramidAddResult SendPyramidAdd(ulong positionTicket)
+  {
+   PyramidAddResult result;
+   result.sent = false; result.isPaper = !ExecutionModeLive;
+   result.lots = 0.0; result.price = 0.0; result.errorReason = "";
+
+   if(!PositionSelectByTicket(positionTicket)) { result.errorReason = "position not found"; return(result); }
+   string symbol = PositionGetString(POSITION_SYMBOL);
+   long posType = PositionGetInteger(POSITION_TYPE);
+   int direction = (posType == POSITION_TYPE_BUY) ? 1 : -1;
+   double existingSl = PositionGetDouble(POSITION_SL);
+   double existingTp = PositionGetDouble(POSITION_TP);
+
+   double addLots = SizePyramidAdd(positionTicket, symbol, direction);
+   if(addLots <= 0.0)
+     {
+      result.errorReason = "sized add rounds to zero lots (risk too small relative to the volume step, or the aggregate risk cap is already saturated)";
+      return(result);
+     }
+
+   int addsSoFar = CountPositionEntryDeals((ulong)PositionGetInteger(POSITION_IDENTIFIER)) - 1; // identifier, not ticket: they diverge after a netting reversal
+   if(addsSoFar < 0) addsSoFar = 0;
+   string comment = BuildPyramidComment(addsSoFar + 1);
+   result.lots = addLots;
+
+   if(!ExecutionModeLive)
+     {
+      PrintFormat("AUTOPSY X15 [PAPER]: would add %.2f lots to %s position %I64u (%s), preserving SL=%.5f TP=%.5f, comment='%s'. Nothing sent -- ExecutionModeLive=false.",
+                  addLots, symbol, positionTicket, direction == 1 ? "BUY" : "SELL", existingSl, existingTp, comment);
+      return(result);
+     }
+
+   // LIVE: a real order. existingSl/existingTp are passed through EXACTLY
+   // as read above, unchanged -- CRITICAL, not cosmetic. On a netting
+   // account, the SL/TP carried on ANY order against a symbol with an
+   // already-open position typically becomes that position's new SL/TP.
+   // Passing anything other than the position's own current values here
+   // would be a real, silent way to lose stop-loss protection on the
+   // WHOLE blended position because of an add meant to only add volume.
+   bool ok = (direction == 1)
+             ? g_trade.Buy(addLots, symbol, 0.0, existingSl, existingTp, comment)
+             : g_trade.Sell(addLots, symbol, 0.0, existingSl, existingTp, comment);
+
+   if(!ok)
+     {
+      result.errorReason = StringFormat("OrderSend failed: %u %s", g_trade.ResultRetcode(), g_trade.ResultRetcodeDescription());
+      PrintFormat("AUTOPSY X15 [LIVE]: pyramid add FAILED for position %I64u: %s", positionTicket, result.errorReason);
+      return(result);
+     }
+
+   result.sent = true;
+   result.price = g_trade.ResultPrice();
+   PrintFormat("AUTOPSY X15 [LIVE]: pyramid add SENT for position %I64u: %.2f lots %s %s @ ~%.5f, SL=%.5f TP=%.5f, comment='%s'.",
+               positionTicket, addLots, symbol, direction == 1 ? "BUY" : "SELL", result.price, existingSl, existingTp, comment);
+   return(result);
+  }
+
+// Called once per new bar from OnTick (see LIFECYCLE below) -- scans this
+// symbol's currently open positions, checks eligibility, and sends any
+// eligible add. Netting-account-only (see engine header comment).
+void ProcessPyramidOpportunities(void)
+  {
+   if(!AllowPyramiding) return;
+
+   long marginMode = AccountInfoInteger(ACCOUNT_MARGIN_MODE);
+   if(marginMode != ACCOUNT_MARGIN_MODE_RETAIL_NETTING) return;
+
+   int total = PositionsTotal();
+   for(int i = 0; i < total; i++)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      if(InpMagicNumberFilter != 0 && (ulong)PositionGetInteger(POSITION_MAGIC) != InpMagicNumberFilter) continue;
+
+      PyramidEligibility elig = CheckPyramidEligibility(ticket);
+      if(!elig.eligible) continue;
+
+      SendPyramidAdd(ticket);
+     }
+  }
+
+//====================================================================
 // EXTENSION POINT -- wire your own entry/regime/structure signal here.
 // This file provides the adaptive-risk gating layer, not full signal
 // generation or order placement (see the file header). Returns 1/-1 for
@@ -1125,10 +1644,14 @@ int GetCompositeDirection(string symbol)
 // the ONLY place News Defense ever touches trade direction, and it only
 // ever turns a signal INTO 0 (no new trade) -- it can never manufacture a
 // direction of its own. It has no code path anywhere that references,
-// manages, or closes an existing position: this file never calls
-// OrderSend or any position-closing function for ANY reason, so the
-// "existing positions must still be managed safely" requirement holds by
-// construction, not by an extra check that could be silently omitted.
+// manages, or closes an existing position, and GetCompositeDirection()
+// itself is a stub that never fires a real new-position order (see its
+// own comment above) -- so this function's own "existing positions must
+// still be managed safely" requirement holds by construction. The one
+// place in this file that DOES send a real order is the Pyramiding
+// Engine below, which is a completely separate code path (its own
+// eligibility gate, its own execution function) that this function never
+// calls into and has no influence over.
 int GetGatedEntryDirection(string symbol)
   {
    int rawDirection = GetCompositeDirection(symbol);
@@ -1397,9 +1920,22 @@ void AppendJournalFromClosedPosition(OpenPositionMeta &meta)
    if(!found || sumExitVolume <= 0.0) return;
    double closePrice = sumExitPriceVolume / sumExitVolume; // volume-weighted across every exit/flip deal, not just the last one
 
+   // AGGREGATE entry basis, not just the original leg: if this position
+   // received pyramid adds, meta.entryPrice is only the FIRST leg's price.
+   // ComputeBlendedEntryPrice() volume-weights across every DEAL_ENTRY_IN
+   // deal (original entry + every add), so a position that was pyramided
+   // gets journaled against its true blended entry -- the R-multiple this
+   // file logs (and every stat/bonus computed from the journal downstream)
+   // reflects the whole aggregate position, not an artifact of only ever
+   // looking at where it first opened. Falls back to meta.entryPrice if
+   // deal history is unavailable (e.g. very old closed history pruned by
+   // the terminal) rather than skipping the journal entry outright.
+   double entryPriceForR = ComputeBlendedEntryPrice(meta.ticket);
+   if(entryPriceForR <= 0.0) entryPriceForR = meta.entryPrice;
+
    double riskDistance = (meta.direction == 1)
-                          ? (meta.entryPrice - meta.slPriceAtEntry)
-                          : (meta.slPriceAtEntry - meta.entryPrice);
+                          ? (entryPriceForR - meta.slPriceAtEntry)
+                          : (meta.slPriceAtEntry - entryPriceForR);
    if(riskDistance <= 0.0)
      {
       PrintFormat("AUTOPSY X15: position %I64u had a non-positive risk distance (SL on the wrong side of entry?) -- skipping journal entry.", meta.ticket);
@@ -1407,8 +1943,8 @@ void AppendJournalFromClosedPosition(OpenPositionMeta &meta)
      }
 
    double rMultiple = (meta.direction == 1)
-                       ? (closePrice - meta.entryPrice) / riskDistance
-                       : (meta.entryPrice - closePrice) / riskDistance;
+                       ? (closePrice - entryPriceForR) / riskDistance
+                       : (entryPriceForR - closePrice) / riskDistance;
 
    JournalEntry entry;
    entry.closeTime     = closeTime;
@@ -1569,9 +2105,46 @@ string RunDecision(void)
                          eventRows[ev].stats.winRate*100.0, eventRows[ev].stats.expectancy);
      }
 
+   s += StringFormat("Pyramiding: %s\n",
+                      !AllowPyramiding ? "DISABLED (AllowPyramiding=false)"
+                      : (ExecutionModeLive ? "ENABLED -- LIVE execution armed" : "ENABLED -- PAPER (ExecutionModeLive=false, logs only, sends nothing)"));
+   if(AllowPyramiding)
+     {
+      bool printedPyrHeader = false;
+      for(int i = 0; i < ArraySize(g_openMeta); i++)
+        {
+         ulong pTicket = g_openMeta[i].ticket;
+         int addsSoFar = CountPositionEntryDeals(pTicket) - 1;
+         if(addsSoFar <= 0) continue; // only positions that actually received an add -- an un-pyramided open position isn't "pyramided"
+         if(!PositionSelectByTicket(pTicket)) continue;
+
+         double blendedEntry = ComputeBlendedEntryPrice(pTicket);
+         if(blendedEntry <= 0.0) blendedEntry = g_openMeta[i].entryPrice; // deal history unavailable -- fall back to the original leg rather than show a bogus 0.0
+         double aggLots = PositionGetDouble(POSITION_VOLUME);
+         double currentPrice = PositionGetDouble(POSITION_PRICE_CURRENT);
+
+         double riskDistance = (g_openMeta[i].direction == 1)
+                                ? (blendedEntry - g_openMeta[i].slPriceAtEntry)
+                                : (g_openMeta[i].slPriceAtEntry - blendedEntry);
+         double currentR = 0.0;
+         if(riskDistance > 0.0)
+            currentR = (g_openMeta[i].direction == 1)
+                       ? (currentPrice - blendedEntry) / riskDistance
+                       : (blendedEntry - currentPrice) / riskDistance;
+
+         if(!printedPyrHeader)
+           {
+            s += "Pyramided positions (adds made / aggregate lots / blended entry / current aggregate R, vs. original entry's SL basis):\n";
+            printedPyrHeader = true;
+           }
+         s += StringFormat("  ticket %I64u: %d add%s, %.2f lots, blended entry %.5f, current %.2fR (original entry was %.5f)\n",
+                            pTicket, addsSoFar, addsSoFar == 1 ? "" : "s", aggLots, blendedEntry, currentR, g_openMeta[i].entryPrice);
+        }
+     }
+
    s += "----------------------------------------\n";
    s += StringFormat("Open positions tracked: %d\n", ArraySize(g_openMeta));
-   s += "This module reports and gates sizing only -- it never calls OrderSend.\n";
+   s += "This module gates sizing and, only via the separately-armed Pyramiding Engine above, adds volume to an already-open, already-profitable position -- it never opens a brand-new position on its own signal and never closes or otherwise modifies an existing one.\n";
    s += "Wire GetCompositeDirection() / ComputeAdaptiveRisk() into your own entry engine.\n";
 
    Comment(s);
@@ -1594,18 +2167,50 @@ bool IsNewBar(void)
    return(false);
   }
 
+// Mirrors ExecutionEngine.mqh's own DetectFillingMode() (this repo's
+// sibling EA) -- same real broker-capability probe, ported rather than
+// re-invented, since g_trade is the same standard CTrade wrapper used
+// there. FOK preferred, IOC next, ORDER_FILLING_RETURN as the universal
+// fallback every broker accepts.
+ENUM_ORDER_TYPE_FILLING DetectFillingMode(const string symbol)
+  {
+   int filling = (int)SymbolInfoInteger(symbol, SYMBOL_FILLING_MODE);
+   if((filling & SYMBOL_FILLING_FOK) != 0) return(ORDER_FILLING_FOK);
+   if((filling & SYMBOL_FILLING_IOC) != 0) return(ORDER_FILLING_IOC);
+   return(ORDER_FILLING_RETURN);
+  }
+
 int OnInit(void)
   {
    LoadJournalFromFile(); // learning machine: repopulates g_journal from disk (or leaves it empty) -- always runs before SyncOpenPositions' first pass
    ArrayResize(g_openMeta, 0);
    g_firstSyncDone = false;
    g_lastBarTime = 0;
-   PrintFormat("AUTOPSY X FLIPDEMON X15: initialized on %s %s. VWAP engine %s, VP-MACD engine %s, News Defense %s, persistent journal %s.",
+
+   // g_trade is only ever actually called from SendPyramidAdd(), and only
+   // when AllowPyramiding && ExecutionModeLive are both true -- but it is
+   // configured unconditionally here, cheaply, so it is never left in an
+   // unconfigured state on the one code path that does need it.
+   g_trade.SetExpertMagicNumber(PyramidMagicNumber);
+   g_trade.SetDeviationInPoints(PyramidDeviationPoints);
+   g_trade.SetTypeFilling(DetectFillingMode(_Symbol));
+   g_trade.SetAsyncMode(false); // always wait for and confirm the actual send result -- never fire-and-forget on a real order
+
+   // Account safety governor: reset so a fresh EA (re)start begins a new
+   // "day" baseline immediately on the first OnTick call to
+   // UpdateDailySafetyGovernor(), rather than carrying over a stale
+   // baseline from a previous run/recompile.
+   g_dayStartEquity = 0.0;
+   g_dayStartTime   = 0;
+
+   PrintFormat("AUTOPSY X FLIPDEMON X15: initialized on %s %s. VWAP engine %s, VP-MACD engine %s, News Defense %s, persistent journal %s, Pyramiding %s (%s).",
                _Symbol, EnumToString((ENUM_TIMEFRAMES)Period()),
                UseVWAPExit ? "ENABLED" : "disabled",
                UseVPMACDEntry ? "ENABLED" : "disabled",
                UseNewsDefense ? "ENABLED (default)" : "disabled",
-               UsePersistentJournal ? "ENABLED (default)" : "disabled");
+               UsePersistentJournal ? "ENABLED (default)" : "disabled",
+               AllowPyramiding ? "ENABLED" : "disabled",
+               ExecutionModeLive ? "LIVE" : "PAPER");
    return(INIT_SUCCEEDED);
   }
 
@@ -1616,8 +2221,12 @@ void OnDeinit(const int reason)
 
 void OnTick(void)
   {
+   UpdateDailySafetyGovernor(); // every tick, before anything else -- keeps IsAccountHalted() current for CheckPyramidEligibility()
    SyncOpenPositions();
    if(IsNewBar())
+     {
       RunDecision();
+      ProcessPyramidOpportunities(); // once per confirmed bar close, same cadence as RunDecision() -- no reason to re-evaluate add eligibility intra-bar
+     }
   }
 //+------------------------------------------------------------------+
