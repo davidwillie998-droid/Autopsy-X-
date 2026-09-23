@@ -103,6 +103,186 @@ CTrade g_trade;
 //   direction in this file.
 
 //====================================================================
+// ENUMERATIONS  (autonomous-robot layers)
+//====================================================================
+enum ENUM_X15_EXEC_MODE
+  {
+   X15_ANALYSIS_ONLY   = 0, // ANALYSIS_ONLY: analyse and report, never place anything
+   X15_PAPER_EXECUTION = 1, // PAPER_EXECUTION: virtual fills, managed and journaled like real ones
+   X15_LIVE_EXECUTION  = 2  // LIVE_EXECUTION: real MT5 orders via CTrade
+  };
+
+enum ENUM_X15_DIR_STATE
+  {
+   X15_DIR_LONG,
+   X15_DIR_SHORT,
+   X15_DIR_NEUTRAL,
+   X15_DIR_BLOCKED,
+   X15_DIR_DATA_UNAVAILABLE,
+   X15_DIR_INSUFFICIENT_EVIDENCE
+  };
+
+enum ENUM_X15_ELIGIBILITY
+  {
+   X15_ELIGIBLE_LONG,
+   X15_ELIGIBLE_SHORT,
+   X15_NOT_ELIGIBLE,
+   X15_BLOCKED,
+   X15_ELIG_DATA_UNAVAILABLE,
+   X15_ELIG_INSUFFICIENT_EVIDENCE
+  };
+
+enum ENUM_X15_REGIME
+  {
+   X15_REGIME_TRENDING,
+   X15_REGIME_RANGING,
+   X15_REGIME_COMPRESSED,
+   X15_REGIME_EXPANDING,
+   X15_REGIME_HIGH_VOLATILITY,
+   X15_REGIME_LOW_VOLATILITY,
+   X15_REGIME_EVENT_DRIVEN,
+   X15_REGIME_UNKNOWN
+  };
+
+enum ENUM_X15_STATE
+  {
+   X15_ST_INITIALIZING,
+   X15_ST_DATA_CHECK,
+   X15_ST_MARKET_ANALYSIS,
+   X15_ST_SETUP_SEARCH,
+   X15_ST_VALIDATION,
+   X15_ST_RISK_CHECK,
+   X15_ST_EXECUTION,
+   X15_ST_POSITION_MANAGEMENT,
+   X15_ST_JOURNAL_UPDATE,
+   X15_ST_LEARNING,
+   X15_ST_WAIT,
+   X15_ST_ERROR,
+   X15_ST_BLOCKED,
+   X15_ST_DATA_UNAVAILABLE
+  };
+
+enum ENUM_X15_SESSION
+  {
+   X15_SESSION_OFF,
+   X15_SESSION_ASIAN,
+   X15_SESSION_LONDON,
+   X15_SESSION_NEWYORK,
+   X15_SESSION_OVERLAP
+  };
+
+enum ENUM_X15_STRUCT_EVENT
+  {
+   X15_EVT_NONE,
+   X15_EVT_BOS_UP,
+   X15_EVT_BOS_DOWN,
+   X15_EVT_MSS_UP,
+   X15_EVT_MSS_DOWN
+  };
+
+enum ENUM_X15_SETUP_TYPE
+  {
+   X15_SETUP_NONE,
+   X15_SETUP_SWEEP_REVERSAL,
+   X15_SETUP_CONTINUATION
+  };
+
+enum ENUM_X15_LIQ_TYPE
+  {
+   X15_LIQ_PDH,
+   X15_LIQ_PDL,
+   X15_LIQ_PWH,
+   X15_LIQ_PWL,
+   X15_LIQ_ASIA_HIGH,
+   X15_LIQ_ASIA_LOW,
+   X15_LIQ_LONDON_HIGH,
+   X15_LIQ_LONDON_LOW,
+   X15_LIQ_EQUAL_HIGHS,
+   X15_LIQ_EQUAL_LOWS,
+   X15_LIQ_SWING_HIGH,
+   X15_LIQ_SWING_LOW,
+   X15_LIQ_HTF_SWING_HIGH,
+   X15_LIQ_HTF_SWING_LOW
+  };
+
+enum ENUM_X15_ENTRY_ORDER
+  {
+   X15_ENTRY_MARKET, // market order on the bar after confirmation
+   X15_ENTRY_STOP    // BUY STOP / SELL STOP beyond the confirmation bar
+  };
+
+enum ENUM_X15_TP_MODE
+  {
+   X15_TP_NEAREST_LIQUIDITY, // nearest unswept opposing liquidity; no trade if its R:R is too small
+   X15_TP_FIXED_R            // fixed R multiple
+  };
+
+enum ENUM_X15_TRAIL_MODE
+  {
+   X15_TRAIL_NONE,
+   X15_TRAIL_STRUCTURE,
+   X15_TRAIL_ATR,
+   X15_TRAIL_FIXED_R,
+   X15_TRAIL_VWAP
+  };
+
+enum ENUM_X15_NEWS_EMERGENCY
+  {
+   X15_NEWS_EMERG_NONE,
+   X15_NEWS_EMERG_MOVE_TO_BE,
+   X15_NEWS_EMERG_CLOSE
+  };
+
+enum ENUM_X15_LEARN_SOURCE
+  {
+   X15_LEARN_LIVE_ONLY,      // only real-money (or Strategy Tester) trades placed by this EA
+   X15_LEARN_LIVE_AND_PAPER, // plus this EA's paper trades
+   X15_LEARN_ALL_OWN         // plus imported legacy journal rows (not recommended: source unverifiable)
+  };
+
+enum ENUM_X15_KELLY_STATUS
+  {
+   X15_KELLY_VALID,
+   X15_KELLY_INSUFFICIENT_SAMPLE,
+   X15_KELLY_BOUND_FAILED,
+   X15_KELLY_INVALID_INPUT,
+   X15_KELLY_RUIN_CONDITION
+  };
+
+enum ENUM_X15_LOG_LEVEL
+  {
+   X15_LOG_ERRORS_ONLY,
+   X15_LOG_NORMAL,
+   X15_LOG_VERBOSE
+  };
+
+enum ENUM_X15_TRADE_SOURCE
+  {
+   X15_SRC_LIVE,
+   X15_SRC_PAPER,
+   X15_SRC_TESTER,
+   X15_SRC_EXTERNAL,
+   X15_SRC_LEGACY
+  };
+
+enum ENUM_X15_EXIT_REASON
+  {
+   X15_EXIT_NONE,
+   X15_EXIT_STOP_LOSS,
+   X15_EXIT_TAKE_PROFIT,
+   X15_EXIT_BREAKEVEN_STOP,
+   X15_EXIT_TRAIL_STOP,
+   X15_EXIT_INVALIDATION,
+   X15_EXIT_TIME,
+   X15_EXIT_NEWS_EMERGENCY,
+   X15_EXIT_CLOSE_ALL,
+   X15_EXIT_VWAP,
+   X15_EXIT_STOP_OUT,
+   X15_EXIT_MANUAL,
+   X15_EXIT_UNKNOWN
+  };
+
+//====================================================================
 // INPUTS
 //====================================================================
 input group "=== SCOPE ===";
@@ -135,6 +315,8 @@ input group "=== NEWS DEFENSE (Tasks 13-18) ===";
 input bool    UseNewsDefense              = true;  // defaults ON -- see the ASYMMETRY note in the file header and the engine header comment below for why this one engine breaks the "default off" pattern
 input int     NewsDefenseWindowMinutes    = 30;    // one-sided post-event window, per the paper's own finding (see engine header)
 input bool    NewsDefenseFallbackForUnvalidatedCurrencies = true; // generic CALENDAR_IMPORTANCE_HIGH filter for GBP/EUR/JPY/CAD/CHF/NZD legs, which the paper does not validate -- set false to run the validated USD/AUD filter only
+input bool    InpNewsUnavailableBlocksLive   = true;  // live/demo: calendar data unavailable -> block new entries (fail closed)
+input bool    InpNewsUnavailableBlocksTester = false; // Strategy Tester has no economic calendar at all; true would make backtesting impossible. Trades journal the state as BACKTEST_UNAVAILABLE -- nothing is fabricated
 
 input group "=== LEARNING MACHINE ===";
 input bool    UsePersistentJournal        = true;  // load/save the trade journal to a CSV in this terminal's sandboxed MQL5/Files folder, so earned track record survives an EA reattach or terminal restart instead of resetting to zero
@@ -159,6 +341,66 @@ input bool    AllowPyramiding             = false; // OFF by default -- this is 
 input int     MaxPyramidAdds              = 3;     // NOT specified in the originating task -- conservative default, flagged here explicitly, trivial to change
 input double  MinProfitRMultipleToAdd     = 1.0;   // position must be at least this many R in profit (using the ORIGINAL entry's risk distance, the same yardstick as every other R-multiple in this file) before an add is even considered
 input bool    RequireFreshConfirmation    = true;  // see CheckPyramidEligibility() -- adds require a NEW signal event, not just "price moved favorably since the last add"
+
+input group "=== TIMEFRAMES & MARKET STRUCTURE ===";
+input ENUM_TIMEFRAMES InpExecTF           = PERIOD_M15; // execution/setup timeframe -- deliberately NOT the chart's timeframe, so switching the chart never changes a decision
+input ENUM_TIMEFRAMES InpHTF1             = PERIOD_D1;  // higher-timeframe bias voter 1 (weekly is shown and feeds PWH/PWL but never votes)
+input ENUM_TIMEFRAMES InpHTF2             = PERIOD_H4;  // bias voter 2
+input ENUM_TIMEFRAMES InpHTF3             = PERIOD_H1;  // bias voter 3 (also supplies external HTF swing liquidity)
+input int     InpStructureBars            = 300;   // closed bars analysed per timeframe
+input int     InpSwingStrengthExec        = 2;     // fractal wing on the execution TF: a swing needs this many CLOSED bars on each side before it exists
+input int     InpSwingStrengthHTF         = 2;
+input int     InpATRPeriod                = 14;
+input double  InpDisplacementBodyATR      = 1.2;   // displacement candle: body >= this x ATR at that bar ...
+input double  InpDisplacementBodyRatio    = 0.6;   // ... and body >= this fraction of the candle's full range
+input double  InpConsolidationRangeATR    = 3.0;   // total range of the last 20 closed bars <= this x ATR -> consolidating
+
+input group "=== LIQUIDITY ===";
+input double  InpEqualLevelTolATR         = 0.10;  // two swings within this x ATR of each other form equal highs/lows
+input int     InpSweepLookbackBars        = 20;    // a sweep older than this many closed exec bars cannot anchor a setup
+input double  InpTargetMinDistanceATR     = 0.25;  // an opposing level closer than this x ATR to entry is treated as at-price noise, not the target -- explicit and visible, not a way to stretch TP
+
+input group "=== SETUP / ENTRY MODEL ===";
+input bool    InpUseSweepReversal         = true;  // primary: liquidity sweep -> displacement -> MSS -> retrace into FVG/OB -> confirmation -> entry
+input bool    InpUseContinuation          = true;  // optional: aligned HTF trend -> BOS -> pullback into FVG/OB/discount -> confirmation -> entry
+input bool    InpRequireZoneRetest        = true;  // entry only after a CLOSED bar retraces into the zone and closes back out in the trade direction
+input int     InpSetupMaxAgeBars          = 12;    // the structure break anchoring a setup must be at most this many closed exec bars old
+input int     InpMinEvidenceScore         = 4;     // soft-evidence components that must PASS (of up to 8). Never overrides a hard gate
+input bool    InpRequireHTFAlignment      = true;  // hard gate: no trade against, or amid conflicting, higher-timeframe structure
+input bool    InpAllowRangeHTFReversal    = true;  // sweep-reversal setups may trade when HTF has no clear bias (never when it is CONFLICTING or OPPOSED)
+input bool    InpVWAPCountsAsEvidence     = true;  // VWAP state is one soft-evidence component (it can never raise risk from here)
+input bool    InpVPMACDCountsAsEvidence   = true;  // VP-MACD state is one soft-evidence component
+
+input group "=== STOP LOSS / TAKE PROFIT ===";
+input double  InpSLATRBuffer              = 0.25;  // ATR fraction placed beyond the structural SL reference (swept extreme / zone edge)
+input double  InpMaxSLATR                 = 3.0;   // SL distance above this x ATR -> no trade (never shrunk to fit)
+input double  InpMaxSLPoints              = 0;     // optional absolute SL cap in points, 0 = off
+input ENUM_X15_TP_MODE InpTPMode          = X15_TP_NEAREST_LIQUIDITY;
+input double  InpFixedTPR                 = 2.0;   // used only when InpTPMode = FIXED_R
+input double  InpMinRR                    = 1.5;   // the nearest realistic target must give at least this R:R, or no trade
+
+input group "=== REGIME ===";
+input bool    InpBlockHighVolatility      = true;
+input bool    InpBlockEventDriven         = true;
+input bool    InpBlockUnknownRegime       = true;
+input bool    InpBlockCompressed          = false;
+input double  InpHighVolRiskScale         = 0.5;   // risk multiplier in HIGH_VOLATILITY when not blocked -- clamped to <= 1.0, so regime can only ever REDUCE risk
+
+input group "=== SESSIONS (broker SERVER hours 0-23, end exclusive -- defaults assume a GMT+2/+3 server) ===";
+input int     InpAsiaStartHour            = 1;
+input int     InpAsiaEndHour              = 9;
+input int     InpLondonStartHour          = 10;
+input int     InpLondonEndHour            = 19;
+input int     InpNewYorkStartHour         = 15;
+input int     InpNewYorkEndHour           = 23;
+input bool    InpTradeAsia                = false; // XAUUSD: Asia is typically thin -- off by default
+input bool    InpTradeLondon              = true;
+input bool    InpTradeNewYork             = true;
+input bool    InpTradeOverlapOnly         = false; // restrict to the London/New York overlap
+
+input group "=== DIAGNOSTICS ===";
+input ENUM_X15_LOG_LEVEL InpLogLevel      = X15_LOG_NORMAL;
+input bool    InpShowDashboard            = true;
 
 //====================================================================
 // CORE DATA TYPES
@@ -417,6 +659,9 @@ string EvaluateOverallGate(StatsResult &s)
 // more, until this engine's own gate (below, and in ComputeAdaptiveRisk)
 // says otherwise on this EA's actual instrument.
 //====================================================================
+// Timeframe: InpExecTF, not PERIOD_CURRENT. Tied to the chart, a chart
+// timeframe switch would silently change every VWAP read (and the
+// alignment flags journaled from it).
 double GetVWAP(string symbol)
   {
    // Recomputed fresh on every call (no persistent running state) so it is
@@ -424,9 +669,17 @@ double GetVWAP(string symbol)
    // ticks. Cost is O(bars-since-anchor) per call -- cheap at single-symbol
    // EA scale.
    MqlRates rates[];
-   int barsAvailable = CopyRates(symbol, PERIOD_CURRENT, 0, VWAPMaxBars, rates);
+   int barsAvailable = CopyRates(symbol, InpExecTF, 0, VWAPMaxBars, rates);
    if(barsAvailable <= 1) return(-1.0); // not enough history to compute anything meaningful
+   return(ComputeSessionVWAP(rates, barsAvailable));
+  }
 
+// Session (or continuous) VWAP over an oldest-first rates array. Shared by
+// the live read above (includes the forming bar) and the closed-bar
+// decision read (ClassifyVWAPClosedBar), so both use one formula.
+double ComputeSessionVWAP(MqlRates &rates[], int barsAvailable)
+  {
+   if(barsAvailable <= 1) return(-1.0);
    // CopyRates(symbol, period, start_pos, count, rates) returns bars oldest-
    // first: rates[0] is the oldest bar requested, rates[barsAvailable-1] is
    // the most recent -- the cumulative sum below assumes that ordering.
@@ -589,7 +842,7 @@ double GetVPAdjustedPrice(string symbol, int shift, int lookbackN)
    if(lookbackN <= 0 || shift < 0) return(-1.0);
    MqlRates rates[];
    int need = lookbackN + 1; // the N-bar window (i=t-N..t-1) plus bar t itself, which we fetch but exclude from the sum
-   int got = CopyRates(symbol, PERIOD_CURRENT, shift, need, rates);
+   int got = CopyRates(symbol, InpExecTF, shift, need, rates);
    if(got < need) return(-1.0);
    return(ComputeVPAdjustedPriceFromRates(rates, got, 0, lookbackN));
   }
@@ -617,7 +870,7 @@ VPMACDResult GetVPMACD(string symbol, int shift)
    int seriesLen = emaSlowPeriod + emaSignalPeriod - 1; // 34 P*_t values minimum
 
    int barsNeeded = shift + (seriesLen - 1) + VPMACDLookbackN + 1;
-   int barsAvailable = Bars(symbol, PERIOD_CURRENT);
+   int barsAvailable = Bars(symbol, InpExecTF);
    if(barsAvailable < barsNeeded) return(result); // insufficient history -- unavailable, not a guess
 
    // One bulk fetch covering the whole range this call needs, instead of one
@@ -625,7 +878,7 @@ VPMACDResult GetVPMACD(string symbol, int shift)
    // overlaps almost entirely with its neighbors', so this replaces ~34
    // redundant terminal-history round trips with one.
    MqlRates allRates[];
-   int gotAll = CopyRates(symbol, PERIOD_CURRENT, 0, barsNeeded, allRates);
+   int gotAll = CopyRates(symbol, InpExecTF, 0, barsNeeded, allRates);
    if(gotAll < barsNeeded) return(result);
 
    double pStar[];
@@ -1630,39 +1883,1535 @@ void ProcessPyramidOpportunities(void)
   }
 
 //====================================================================
-// EXTENSION POINT -- wire your own entry/regime/structure signal here.
-// This file provides the adaptive-risk gating layer, not full signal
-// generation or order placement (see the file header). Returns 1/-1 for
-// a directional call, 0 for no signal.
+// DIAGNOSTIC LOGGING  (spec 35)
+//--------------------------------------------------------------------
+// [AX15][CATEGORY] lines. An identical category+message pair is printed at
+// most once per 5 minutes of server time, so a condition that persists
+// across thousands of ticks (spread too wide, data unavailable) produces
+// one line, not a flood.
 //====================================================================
-int GetCompositeDirection(string symbol)
+#define X15_LOG_THROTTLE_SLOTS 64
+string   g_logKeys[X15_LOG_THROTTLE_SLOTS];
+datetime g_logTimes[X15_LOG_THROTTLE_SLOTS];
+int      g_logNext = 0;
+
+void X15Log(string category, string message, bool isError = false, bool verboseOnly = false)
   {
-   return(0); // stub -- deliberately no opinion. Wire real entry logic here.
+   if(!isError && InpLogLevel == X15_LOG_ERRORS_ONLY) return;
+   if(verboseOnly && InpLogLevel != X15_LOG_VERBOSE) return;
+   string key = category + "|" + message;
+   datetime now = TimeCurrent();
+   for(int i = 0; i < X15_LOG_THROTTLE_SLOTS; i++)
+      if(g_logKeys[i] == key && now - g_logTimes[i] < 300) return;
+   g_logKeys[g_logNext]  = key;
+   g_logTimes[g_logNext] = now;
+   g_logNext = (g_logNext + 1) % X15_LOG_THROTTLE_SLOTS;
+   PrintFormat("[AX15][%s] %s", category, message);
   }
 
-// Task 16 -- suppression layer, wrapping GetCompositeDirection(). This is
-// the ONLY place News Defense ever touches trade direction, and it only
-// ever turns a signal INTO 0 (no new trade) -- it can never manufacture a
-// direction of its own. It has no code path anywhere that references,
-// manages, or closes an existing position, and GetCompositeDirection()
-// itself is a stub that never fires a real new-position order (see its
-// own comment above) -- so this function's own "existing positions must
-// still be managed safely" requirement holds by construction. The one
-// place in this file that DOES send a real order is the Pyramiding
-// Engine below, which is a completely separate code path (its own
-// eligibility gate, its own execution function) that this function never
-// calls into and has no influence over.
-int GetGatedEntryDirection(string symbol)
+string EnumLabel(string raw, string prefix)
   {
-   int rawDirection = GetCompositeDirection(symbol);
-   if(rawDirection == 0) return(0);
+   StringReplace(raw, prefix, "");
+   return(raw);
+  }
 
-   if(UseNewsDefense)
+string DirLabel(int direction)
+  {
+   if(direction == 1)  return("LONG");
+   if(direction == -1) return("SHORT");
+   return("NONE");
+  }
+
+//====================================================================
+// LAYER 1 -- DATA
+//--------------------------------------------------------------------
+// Every symbol property is read live from the broker (spec 27): nothing in
+// sizing, stops or spread logic assumes a gold, FX or index contract.
+//====================================================================
+struct X15SymbolSpec
+  {
+   bool              valid;
+   string            reason;
+   int               digits;
+   double            point;
+   double            tickSize;
+   double            tickValue;
+   double            tickValueLoss;
+   double            contractSize;
+   double            volMin;
+   double            volMax;
+   double            volStep;
+   int               stopsLevelPts;
+   int               freezeLevelPts;
+   long              tradeMode;
+   long              fillingMode;
+   long              expirationMode;
+  };
+X15SymbolSpec g_spec;
+
+bool RefreshSymbolSpec(X15SymbolSpec &s)
+  {
+   s.valid          = false;
+   s.reason         = "";
+   s.digits         = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+   s.point          = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   s.tickSize       = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   s.tickValue      = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   s.tickValueLoss  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE_LOSS);
+   s.contractSize   = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_CONTRACT_SIZE);
+   s.volMin         = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   s.volMax         = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   s.volStep        = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   s.stopsLevelPts  = (int)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   s.freezeLevelPts = (int)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
+   s.tradeMode      = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_MODE);
+   s.fillingMode    = SymbolInfoInteger(_Symbol, SYMBOL_FILLING_MODE);
+   s.expirationMode = SymbolInfoInteger(_Symbol, SYMBOL_EXPIRATION_MODE);
+   if(s.point <= 0.0 || s.tickSize <= 0.0 || s.tickValue <= 0.0)
      {
-      NewsDefenseState news = CheckNewsDefense(symbol);
-      if(news.active) return(0); // suppress the NEW entry only
+      s.reason = "symbol point / tick size / tick value unavailable";
+      return(false);
      }
-   return(rawDirection);
+   if(s.volStep <= 0.0 || s.volMin <= 0.0 || s.volMax < s.volMin)
+     {
+      s.reason = "symbol volume limits unavailable";
+      return(false);
+     }
+   s.valid = true;
+   return(true);
+  }
+
+#define X15_SPREAD_SAMPLES 300
+double   g_spreadSamples[X15_SPREAD_SAMPLES];
+int      g_spreadCount = 0;
+int      g_spreadHead  = 0;
+datetime g_lastSpreadSample = 0;
+
+double CurrentSpreadPoints(void)
+  {
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   if(bid <= 0.0 || ask <= 0.0 || g_spec.point <= 0.0) return(-1.0);
+   return((ask - bid) / g_spec.point);
+  }
+
+// At most one sample per server second, so a burst of ticks cannot drown
+// out the rest of the window.
+void SampleSpread(void)
+  {
+   datetime now = TimeCurrent();
+   if(now == g_lastSpreadSample) return;
+   double sp = CurrentSpreadPoints();
+   if(sp < 0.0) return;
+   g_lastSpreadSample = now;
+   g_spreadSamples[g_spreadHead] = sp;
+   g_spreadHead = (g_spreadHead + 1) % X15_SPREAD_SAMPLES;
+   if(g_spreadCount < X15_SPREAD_SAMPLES) g_spreadCount++;
+  }
+
+double RecentAverageSpreadPoints(void)
+  {
+   if(g_spreadCount < 20) return(-1.0);
+   double sum = 0.0;
+   for(int i = 0; i < g_spreadCount; i++) sum += g_spreadSamples[i];
+   return(sum / g_spreadCount);
+  }
+
+// Indicator handles are created once in OnInit and released in OnDeinit
+// (spec 28) -- never per tick.
+int g_atrExec = INVALID_HANDLE;
+int g_atrHTF[3];
+
+bool CreateIndicatorHandles(void)
+  {
+   g_atrExec = iATR(_Symbol, InpExecTF, InpATRPeriod);
+   g_atrHTF[0] = iATR(_Symbol, InpHTF1, InpATRPeriod);
+   g_atrHTF[1] = iATR(_Symbol, InpHTF2, InpATRPeriod);
+   g_atrHTF[2] = iATR(_Symbol, InpHTF3, InpATRPeriod);
+   return(g_atrExec != INVALID_HANDLE && g_atrHTF[0] != INVALID_HANDLE
+          && g_atrHTF[1] != INVALID_HANDLE && g_atrHTF[2] != INVALID_HANDLE);
+  }
+
+void ReleaseIndicatorHandles(void)
+  {
+   if(g_atrExec != INVALID_HANDLE) IndicatorRelease(g_atrExec);
+   g_atrExec = INVALID_HANDLE;
+   for(int i = 0; i < 3; i++)
+     {
+      if(g_atrHTF[i] != INVALID_HANDLE) IndicatorRelease(g_atrHTF[i]);
+      g_atrHTF[i] = INVALID_HANDLE;
+     }
+  }
+
+struct X15DataQuality
+  {
+   bool              ok;
+   string            reason;
+   double            tickAgeSec;
+  };
+X15DataQuality g_dq;
+
+void EvaluateDataQuality(X15DataQuality &dq)
+  {
+   dq.ok = false;
+   dq.reason = "";
+   dq.tickAgeSec = -1.0;
+   if(!RefreshSymbolSpec(g_spec)) { dq.reason = g_spec.reason; return; }
+
+   MqlTick t;
+   if(!SymbolInfoTick(_Symbol, t) || t.bid <= 0.0 || t.ask <= 0.0) { dq.reason = "no valid tick"; return; }
+   if(t.ask < t.bid) { dq.reason = "crossed quote (ask below bid)"; return; }
+   dq.tickAgeSec = (double)(TimeCurrent() - t.time);
+
+   ENUM_TIMEFRAMES tfs[4];
+   tfs[0] = InpExecTF; tfs[1] = InpHTF1; tfs[2] = InpHTF2; tfs[3] = InpHTF3;
+   for(int i = 0; i < 4; i++)
+     {
+      if(!SeriesInfoInteger(_Symbol, tfs[i], SERIES_SYNCHRONIZED))
+        { dq.reason = EnumToString(tfs[i]) + " history not synchronized"; return; }
+      if(Bars(_Symbol, tfs[i]) < 60)
+        { dq.reason = EnumToString(tfs[i]) + " has fewer than 60 bars"; return; }
+     }
+   dq.ok = true;
+  }
+
+//====================================================================
+// LAYER 2 -- MARKET INTELLIGENCE: STRUCTURE  (spec 6)
+//--------------------------------------------------------------------
+// Closed bars only: every CopyRates here starts at shift 1, so the forming
+// bar never enters a swing, a break or a displacement read.
+//
+// Swings are fractals needing `k` closed bars on each side. A swing is
+// therefore only KNOWN k bars after it prints, and the BOS/MSS walk below
+// honours that: at bar j it only uses swings confirmed by bar j. That is
+// what keeps the break history free of lookahead -- a naive version that
+// labels breaks against the final swing list would "know" swings before
+// they existed.
+//
+// BOS = close beyond the latest confirmed swing in the direction of the
+// current break bias; MSS (a.k.a. CHoCH) = the same close when the prior
+// bias was the OTHER way. The very first break has no prior bias and is
+// labelled BOS.
+//====================================================================
+#define X15_MAX_SWINGS 40
+
+struct X15Swing
+  {
+   datetime          time;
+   double            price;
+   bool              isHigh;
+   int               label;   // +2 HH, +1 HL, -1 LH, -2 LL, 0 first/equal
+  };
+
+struct X15Structure
+  {
+   ENUM_TIMEFRAMES   tf;
+   bool              available;
+   string            unavailableReason;
+   datetime          lastClosedBarTime;
+   bool              atrAvailable;
+   double            atr;
+   int               trend;           // 1 HH+HL, -1 LH+LL, 0 mixed/undetermined
+   int               bias;            // direction of the most recent break
+   string            trendLabel;
+   int               swingCount;
+   X15Swing          swings[X15_MAX_SWINGS]; // oldest first, alternating high/low
+   double            lastSwingHigh;
+   datetime          lastSwingHighTime;
+   double            lastSwingLow;
+   datetime          lastSwingLowTime;
+   ENUM_X15_STRUCT_EVENT lastEvent;
+   datetime          lastEventTime;
+   double            lastEventLevel;
+   ENUM_X15_STRUCT_EVENT lastUpEvent;
+   datetime          lastUpEventTime;
+   double            lastUpEventLevel;
+   ENUM_X15_STRUCT_EVENT lastDownEvent;
+   datetime          lastDownEventTime;
+   double            lastDownEventLevel;
+   datetime          lastBullDisplacementTime;
+   datetime          lastBearDisplacementTime;
+   double            compressionRatio; // avg range of last 10 closed bars / last 50
+   bool              compressed;
+   bool              expanding;
+   bool              consolidating;
+  };
+
+void ResetStructure(X15Structure &st, ENUM_TIMEFRAMES tf)
+  {
+   st.tf = tf;
+   st.available = false;
+   st.unavailableReason = "";
+   st.lastClosedBarTime = 0;
+   st.atrAvailable = false;
+   st.atr = 0.0;
+   st.trend = 0;
+   st.bias = 0;
+   st.trendLabel = "UNKNOWN";
+   st.swingCount = 0;
+   st.lastSwingHigh = 0.0; st.lastSwingHighTime = 0;
+   st.lastSwingLow  = 0.0; st.lastSwingLowTime  = 0;
+   st.lastEvent = X15_EVT_NONE;     st.lastEventTime = 0;     st.lastEventLevel = 0.0;
+   st.lastUpEvent = X15_EVT_NONE;   st.lastUpEventTime = 0;   st.lastUpEventLevel = 0.0;
+   st.lastDownEvent = X15_EVT_NONE; st.lastDownEventTime = 0; st.lastDownEventLevel = 0.0;
+   st.lastBullDisplacementTime = 0;
+   st.lastBearDisplacementTime = 0;
+   st.compressionRatio = 0.0;
+   st.compressed = false;
+   st.expanding = false;
+   st.consolidating = false;
+  }
+
+bool IsDisplacementBar(MqlRates &r[], double &atr[], int j, int dir)
+  {
+   if(j < 0 || j >= ArraySize(atr) || atr[j] <= 0.0) return(false);
+   double body  = r[j].close - r[j].open;
+   double range = r[j].high - r[j].low;
+   if(range <= 0.0) return(false);
+   if(dir == 1 && body <= 0.0) return(false);
+   if(dir == -1 && body >= 0.0) return(false);
+   double absBody = MathAbs(body);
+   return(absBody >= InpDisplacementBodyATR * atr[j] && absBody / range >= InpDisplacementBodyRatio);
+  }
+
+// Keeps the compressed swing list alternating: two highs in a row keep the
+// higher one, two lows the lower one. Used for LABELLING only; the break
+// walk uses the raw list so it stays causal.
+void X15PushCompressedSwing(int &idx[], bool &isHigh[], double &price[], int &count, int barIdx, bool high, double p)
+  {
+   if(count > 0 && isHigh[count-1] == high)
+     {
+      bool moreExtreme = high ? (p >= price[count-1]) : (p <= price[count-1]);
+      if(moreExtreme) { idx[count-1] = barIdx; price[count-1] = p; }
+      return;
+     }
+   idx[count] = barIdx; isHigh[count] = high; price[count] = p;
+   count++;
+  }
+
+bool AnalyzeStructure(ENUM_TIMEFRAMES tf, int atrHandle, int k, X15Structure &st, MqlRates &r[], double &atr[])
+  {
+   ResetStructure(st, tf);
+   if(k < 1) k = 1;
+   ArraySetAsSeries(r, false);
+   int want = MathMax(InpStructureBars, 60);
+   int got = CopyRates(_Symbol, tf, 1, want, r);
+   if(got < 4*k + 50)
+     {
+      st.unavailableReason = StringFormat("%s: only %d closed bars", EnumLabel(EnumToString(tf), "PERIOD_"), got);
+      ArrayResize(r, 0);
+      ArrayResize(atr, 0);
+      return(false);
+     }
+   st.lastClosedBarTime = r[got-1].time;
+
+   ArrayResize(atr, got);
+   ArrayInitialize(atr, 0.0);
+   if(atrHandle != INVALID_HANDLE)
+     {
+      double tmp[];
+      ArraySetAsSeries(tmp, false);
+      if(CopyBuffer(atrHandle, 0, 1, got, tmp) == got)
+        {
+         ArrayCopy(atr, tmp);
+         if(atr[got-1] > 0.0 && atr[got-1] != EMPTY_VALUE)
+           {
+            st.atrAvailable = true;
+            st.atr = atr[got-1];
+           }
+        }
+     }
+
+   // raw fractal swings, oldest first
+   int    rIdx[];   bool rHigh[];   double rPrice[];   int rc = 0;
+   ArrayResize(rIdx, 2*got); ArrayResize(rHigh, 2*got); ArrayResize(rPrice, 2*got);
+   for(int i = k; i < got - k; i++)
+     {
+      bool isH = true, isL = true;
+      for(int w = 1; w <= k; w++)
+        {
+         if(!(r[i].high >  r[i-w].high && r[i].high >= r[i+w].high)) isH = false;
+         if(!(r[i].low  <  r[i-w].low  && r[i].low  <= r[i+w].low))  isL = false;
+        }
+      if(isH) { rIdx[rc] = i; rHigh[rc] = true;  rPrice[rc] = r[i].high; rc++; }
+      if(isL) { rIdx[rc] = i; rHigh[rc] = false; rPrice[rc] = r[i].low;  rc++; }
+     }
+
+   // compressed alternating list for labels and display
+   int    cIdx[];   bool cHigh[];   double cPrice[];   int cc = 0;
+   ArrayResize(cIdx, rc + 1); ArrayResize(cHigh, rc + 1); ArrayResize(cPrice, rc + 1);
+   for(int i = 0; i < rc; i++) X15PushCompressedSwing(cIdx, cHigh, cPrice, cc, rIdx[i], rHigh[i], rPrice[i]);
+
+   int first = MathMax(0, cc - X15_MAX_SWINGS);
+   double prevHigh = 0.0, prevLow = 0.0;
+   int lastHighLabel = 0, lastLowLabel = 0;
+   for(int i = 0; i < cc; i++)
+     {
+      int label = 0;
+      if(cHigh[i])
+        {
+         if(prevHigh > 0.0) label = (cPrice[i] > prevHigh) ? 2 : ((cPrice[i] < prevHigh) ? -1 : 0);
+         prevHigh = cPrice[i];
+         lastHighLabel = label;
+         st.lastSwingHigh = cPrice[i];
+         st.lastSwingHighTime = r[cIdx[i]].time;
+        }
+      else
+        {
+         if(prevLow > 0.0) label = (cPrice[i] > prevLow) ? 1 : ((cPrice[i] < prevLow) ? -2 : 0);
+         prevLow = cPrice[i];
+         lastLowLabel = label;
+         st.lastSwingLow = cPrice[i];
+         st.lastSwingLowTime = r[cIdx[i]].time;
+        }
+      if(i >= first)
+        {
+         int s = st.swingCount;
+         st.swings[s].time   = r[cIdx[i]].time;
+         st.swings[s].price  = cPrice[i];
+         st.swings[s].isHigh = cHigh[i];
+         st.swings[s].label  = label;
+         st.swingCount++;
+        }
+     }
+   if(lastHighLabel == 2 && lastLowLabel == 1)        { st.trend = 1;  st.trendLabel = "BULLISH (HH/HL)"; }
+   else if(lastHighLabel == -1 && lastLowLabel == -2) { st.trend = -1; st.trendLabel = "BEARISH (LH/LL)"; }
+   else                                               { st.trend = 0;  st.trendLabel = "RANGE/MIXED"; }
+
+   // causal BOS/MSS walk: at bar j only swings confirmed by bar j exist
+   int nextSwing = 0;
+   double refHigh = 0.0, refLow = 0.0;
+   bool refHighLive = false, refLowLive = false;
+   int bias = 0;
+   for(int j = 0; j < got; j++)
+     {
+      while(nextSwing < rc && rIdx[nextSwing] + k <= j)
+        {
+         if(rHigh[nextSwing]) { refHigh = rPrice[nextSwing]; refHighLive = true; }
+         else                 { refLow  = rPrice[nextSwing]; refLowLive  = true; }
+         nextSwing++;
+        }
+      if(refHighLive && r[j].close > refHigh)
+        {
+         ENUM_X15_STRUCT_EVENT ev = (bias < 0) ? X15_EVT_MSS_UP : X15_EVT_BOS_UP;
+         st.lastUpEvent = ev; st.lastUpEventTime = r[j].time; st.lastUpEventLevel = refHigh;
+         st.lastEvent   = ev; st.lastEventTime   = r[j].time; st.lastEventLevel   = refHigh;
+         bias = 1;
+         refHighLive = false;
+        }
+      if(refLowLive && r[j].close < refLow)
+        {
+         ENUM_X15_STRUCT_EVENT ev = (bias > 0) ? X15_EVT_MSS_DOWN : X15_EVT_BOS_DOWN;
+         st.lastDownEvent = ev; st.lastDownEventTime = r[j].time; st.lastDownEventLevel = refLow;
+         st.lastEvent     = ev; st.lastEventTime     = r[j].time; st.lastEventLevel     = refLow;
+         bias = -1;
+         refLowLive = false;
+        }
+      if(IsDisplacementBar(r, atr, j, 1))  st.lastBullDisplacementTime = r[j].time;
+      if(IsDisplacementBar(r, atr, j, -1)) st.lastBearDisplacementTime = r[j].time;
+     }
+   st.bias = bias;
+
+   double sum10 = 0.0, sum50 = 0.0;
+   for(int j = got - 10; j < got; j++) sum10 += r[j].high - r[j].low;
+   for(int j = got - 50; j < got; j++) sum50 += r[j].high - r[j].low;
+   st.compressionRatio = (sum50 > 0.0) ? (sum10 / 10.0) / (sum50 / 50.0) : 0.0;
+   st.compressed = (st.compressionRatio > 0.0 && st.compressionRatio <= 0.6);
+   st.expanding  = (st.compressionRatio >= 1.5);
+   double hi20 = r[got-20].high, lo20 = r[got-20].low;
+   for(int j = got - 20; j < got; j++) { hi20 = MathMax(hi20, r[j].high); lo20 = MathMin(lo20, r[j].low); }
+   st.consolidating = (st.atrAvailable && (hi20 - lo20) <= InpConsolidationRangeATR * st.atr);
+
+   st.available = true;
+   return(true);
+  }
+
+//--------------------------------------------------------------------
+// HIGHER-TIMEFRAME BIAS
+// Three voters (InpHTF1..3). Any two voters with OPPOSITE trends is a
+// CONFLICT, which is a no-trade condition (spec 30), not something to
+// average away. Two or more agreeing voters with no opposition is ALIGNED.
+//--------------------------------------------------------------------
+struct X15HTFBias
+  {
+   bool              available;
+   int               bias;     // 1 / -1 when aligned, else 0
+   bool              conflict;
+   string            state;    // ALIGNED_LONG / ALIGNED_SHORT / CONFLICT / RANGE / UNAVAILABLE
+   string            detail;
+  };
+
+void EvaluateHTFBias(X15Structure &h1, X15Structure &h2, X15Structure &h3, X15HTFBias &b)
+  {
+   b.available = false; b.bias = 0; b.conflict = false; b.state = "UNAVAILABLE"; b.detail = "";
+   if(!h1.available || !h2.available || !h3.available)
+     {
+      b.detail = "higher-timeframe structure unavailable";
+      return;
+     }
+   int t[3];
+   t[0] = h1.trend; t[1] = h2.trend; t[2] = h3.trend;
+   int ups = 0, downs = 0;
+   for(int i = 0; i < 3; i++) { if(t[i] == 1) ups++; if(t[i] == -1) downs++; }
+   b.available = true;
+   b.detail = StringFormat("%s %s | %s %s | %s %s",
+                           EnumLabel(EnumToString(h1.tf), "PERIOD_"), DirLabel(t[0]),
+                           EnumLabel(EnumToString(h2.tf), "PERIOD_"), DirLabel(t[1]),
+                           EnumLabel(EnumToString(h3.tf), "PERIOD_"), DirLabel(t[2]));
+   if(ups > 0 && downs > 0) { b.conflict = true; b.state = "CONFLICT"; return; }
+   if(ups >= 2)   { b.bias = 1;  b.state = "ALIGNED_LONG";  return; }
+   if(downs >= 2) { b.bias = -1; b.state = "ALIGNED_SHORT"; return; }
+   b.state = "RANGE";
+  }
+
+//====================================================================
+// LAYER 2 -- MARKET INTELLIGENCE: LIQUIDITY  (spec 7)
+//--------------------------------------------------------------------
+// A level is a CANDIDATE, never a promise of a reaction. Every level
+// carries the time it became knowable; its first later breach on a closed
+// exec bar decides its fate: wick through and close back = SWEEP (a real
+// liquidity event); close beyond = TAKEN (broken, no longer a target).
+// Levels whose source data is unavailable are simply absent -- a missing
+// PDH is never replaced by a guess.
+//====================================================================
+#define X15_MAX_LEVELS 48
+
+struct X15LiqLevel
+  {
+   double            price;
+   ENUM_X15_LIQ_TYPE type;
+   bool              buySide;     // above price: stops of shorts / breakout buyers
+   bool              external;    // dealing-range / daily / weekly / HTF level
+   datetime          formed;
+   bool              taken;
+   bool              sweptEvent;  // first breach closed back inside
+   datetime          takenTime;
+   double            takenExtreme;
+  };
+
+struct X15Liquidity
+  {
+   bool              available;
+   string            reason;
+   int               count;
+   X15LiqLevel       levels[X15_MAX_LEVELS];
+   double            pdh, pdl, pwh, pwl;
+   double            asiaHigh, asiaLow, londonHigh, londonLow;
+   double            dealingHigh, dealingLow, equilibrium;
+   bool              bullSweep;   // sell-side swept -> bullish reversal candidate
+   datetime          bullSweepTime;
+   double            bullSweepLevel;
+   double            bullSweepExtreme;
+   string            bullSweepName;
+   bool              bearSweep;
+   datetime          bearSweepTime;
+   double            bearSweepLevel;
+   double            bearSweepExtreme;
+   string            bearSweepName;
+   double            drawLongPrice;
+   string            drawLongName;
+   double            drawShortPrice;
+   string            drawShortName;
+  };
+
+void ResetLiquidity(X15Liquidity &L)
+  {
+   L.available = false; L.reason = ""; L.count = 0;
+   L.pdh = 0.0; L.pdl = 0.0; L.pwh = 0.0; L.pwl = 0.0;
+   L.asiaHigh = 0.0; L.asiaLow = 0.0; L.londonHigh = 0.0; L.londonLow = 0.0;
+   L.dealingHigh = 0.0; L.dealingLow = 0.0; L.equilibrium = 0.0;
+   L.bullSweep = false; L.bullSweepTime = 0; L.bullSweepLevel = 0.0; L.bullSweepExtreme = 0.0; L.bullSweepName = "";
+   L.bearSweep = false; L.bearSweepTime = 0; L.bearSweepLevel = 0.0; L.bearSweepExtreme = 0.0; L.bearSweepName = "";
+   L.drawLongPrice = 0.0; L.drawLongName = ""; L.drawShortPrice = 0.0; L.drawShortName = "";
+  }
+
+void AddLiqLevel(X15Liquidity &L, double price, ENUM_X15_LIQ_TYPE type, bool buySide, bool external, datetime formed)
+  {
+   if(price <= 0.0 || L.count >= X15_MAX_LEVELS) return;
+   int i = L.count;
+   L.levels[i].price = price;
+   L.levels[i].type = type;
+   L.levels[i].buySide = buySide;
+   L.levels[i].external = external;
+   L.levels[i].formed = formed;
+   L.levels[i].taken = false;
+   L.levels[i].sweptEvent = false;
+   L.levels[i].takenTime = 0;
+   L.levels[i].takenExtreme = 0.0;
+   L.count++;
+  }
+
+string LiqName(ENUM_X15_LIQ_TYPE t)
+  {
+   return(EnumLabel(EnumToString(t), "X15_LIQ_"));
+  }
+
+bool HourInWindow(int h, int startH, int endH)
+  {
+   if(startH == endH) return(false);
+   if(startH < endH) return(h >= startH && h < endH);
+   return(h >= startH || h < endH); // window crosses midnight
+  }
+
+MqlRates g_execRates[];
+double   g_execAtr[];
+int      g_execGot = 0;
+X15Structure g_structExec;
+X15Structure g_structHTF[3];
+X15Structure g_structW1;
+X15HTFBias   g_htfBias;
+X15Liquidity g_liq;
+
+void BuildLiquidity(X15Liquidity &L)
+  {
+   ResetLiquidity(L);
+   int got = g_execGot;
+   if(got < 50 || !g_structExec.available) { L.reason = "execution structure unavailable"; return; }
+   int period = PeriodSeconds(InpExecTF);
+   datetime todayStart = iTime(_Symbol, PERIOD_D1, 0);
+   datetime weekStart  = iTime(_Symbol, PERIOD_W1, 0);
+
+   MqlRates d1[];
+   if(CopyRates(_Symbol, PERIOD_D1, 1, 1, d1) == 1) { L.pdh = d1[0].high; L.pdl = d1[0].low; }
+   MqlRates w1[];
+   if(CopyRates(_Symbol, PERIOD_W1, 1, 1, w1) == 1) { L.pwh = w1[0].high; L.pwl = w1[0].low; }
+   AddLiqLevel(L, L.pdh, X15_LIQ_PDH, true,  true, todayStart);
+   AddLiqLevel(L, L.pdl, X15_LIQ_PDL, false, true, todayStart);
+   AddLiqLevel(L, L.pwh, X15_LIQ_PWH, true,  true, weekStart);
+   AddLiqLevel(L, L.pwl, X15_LIQ_PWL, false, true, weekStart);
+
+   // today's Asian / London ranges -- only once the session has finished,
+   // since an unfinished session's high is just the current high
+   MqlDateTime nowDt;
+   TimeToStruct(TimeCurrent(), nowDt);
+   datetime asiaLast = 0, londonLast = 0;
+   for(int j = 0; j < got; j++)
+     {
+      if(g_execRates[j].time < todayStart) continue;
+      MqlDateTime dt;
+      TimeToStruct(g_execRates[j].time, dt);
+      if(HourInWindow(dt.hour, InpAsiaStartHour, InpAsiaEndHour))
+        {
+         L.asiaHigh = (L.asiaHigh == 0.0) ? g_execRates[j].high : MathMax(L.asiaHigh, g_execRates[j].high);
+         L.asiaLow  = (L.asiaLow  == 0.0) ? g_execRates[j].low  : MathMin(L.asiaLow,  g_execRates[j].low);
+         asiaLast = g_execRates[j].time;
+        }
+      if(HourInWindow(dt.hour, InpLondonStartHour, InpLondonEndHour))
+        {
+         L.londonHigh = (L.londonHigh == 0.0) ? g_execRates[j].high : MathMax(L.londonHigh, g_execRates[j].high);
+         L.londonLow  = (L.londonLow  == 0.0) ? g_execRates[j].low  : MathMin(L.londonLow,  g_execRates[j].low);
+         londonLast = g_execRates[j].time;
+        }
+     }
+   if(asiaLast > 0 && !HourInWindow(nowDt.hour, InpAsiaStartHour, InpAsiaEndHour))
+     {
+      AddLiqLevel(L, L.asiaHigh, X15_LIQ_ASIA_HIGH, true,  false, asiaLast + period);
+      AddLiqLevel(L, L.asiaLow,  X15_LIQ_ASIA_LOW,  false, false, asiaLast + period);
+     }
+   else { L.asiaHigh = 0.0; L.asiaLow = 0.0; }
+   if(londonLast > 0 && !HourInWindow(nowDt.hour, InpLondonStartHour, InpLondonEndHour))
+     {
+      AddLiqLevel(L, L.londonHigh, X15_LIQ_LONDON_HIGH, true,  false, londonLast + period);
+      AddLiqLevel(L, L.londonLow,  X15_LIQ_LONDON_LOW,  false, false, londonLast + period);
+     }
+   else { L.londonHigh = 0.0; L.londonLow = 0.0; }
+
+   // execution-TF swings: most recent 10, plus equal highs/lows among them
+   int confirmSec = InpSwingStrengthExec * period;
+   int firstSwing = MathMax(0, g_structExec.swingCount - 10);
+   double tol = g_structExec.atrAvailable ? InpEqualLevelTolATR * g_structExec.atr : 0.0;
+   for(int i = firstSwing; i < g_structExec.swingCount; i++)
+     {
+      X15Swing sw = g_structExec.swings[i];
+      AddLiqLevel(L, sw.price, sw.isHigh ? X15_LIQ_SWING_HIGH : X15_LIQ_SWING_LOW, sw.isHigh, false, sw.time + confirmSec);
+      if(tol <= 0.0) continue;
+      for(int j = i + 1; j < g_structExec.swingCount; j++)
+        {
+         X15Swing sw2 = g_structExec.swings[j];
+         if(sw2.isHigh != sw.isHigh || MathAbs(sw2.price - sw.price) > tol) continue;
+         double eqPrice = sw.isHigh ? MathMax(sw.price, sw2.price) : MathMin(sw.price, sw2.price);
+         AddLiqLevel(L, eqPrice, sw.isHigh ? X15_LIQ_EQUAL_HIGHS : X15_LIQ_EQUAL_LOWS, sw.isHigh, false, sw2.time + confirmSec);
+        }
+     }
+
+   // external HTF swings from the lowest bias voter
+   if(g_structHTF[2].available)
+     {
+      int htfConfirm = InpSwingStrengthHTF * PeriodSeconds(g_structHTF[2].tf);
+      for(int i = MathMax(0, g_structHTF[2].swingCount - 4); i < g_structHTF[2].swingCount; i++)
+         AddLiqLevel(L, g_structHTF[2].swings[i].price,
+                     g_structHTF[2].swings[i].isHigh ? X15_LIQ_HTF_SWING_HIGH : X15_LIQ_HTF_SWING_LOW,
+                     g_structHTF[2].swings[i].isHigh, true, g_structHTF[2].swings[i].time + htfConfirm);
+     }
+
+   // dealing range and equilibrium (premium / discount)
+   L.dealingHigh = g_structExec.lastSwingHigh;
+   L.dealingLow  = g_structExec.lastSwingLow;
+   double lastClose = g_execRates[got-1].close;
+   if(L.dealingHigh > 0.0 && L.dealingLow > 0.0 && (lastClose > L.dealingHigh || lastClose < L.dealingLow))
+     {
+      for(int i = MathMax(0, g_structExec.swingCount - 6); i < g_structExec.swingCount; i++)
+        {
+         if(g_structExec.swings[i].isHigh) L.dealingHigh = MathMax(L.dealingHigh, g_structExec.swings[i].price);
+         else                              L.dealingLow  = MathMin(L.dealingLow,  g_structExec.swings[i].price);
+        }
+     }
+   if(L.dealingHigh > L.dealingLow && L.dealingLow > 0.0) L.equilibrium = (L.dealingHigh + L.dealingLow) / 2.0;
+
+   // resolve each level against later closed bars
+   for(int i = 0; i < L.count; i++)
+     {
+      for(int j = 0; j < got; j++)
+        {
+         if(g_execRates[j].time < L.levels[i].formed) continue;
+         bool breach = L.levels[i].buySide ? (g_execRates[j].high > L.levels[i].price) : (g_execRates[j].low < L.levels[i].price);
+         if(!breach) continue;
+         L.levels[i].taken = true;
+         L.levels[i].takenTime = g_execRates[j].time;
+         L.levels[i].takenExtreme = L.levels[i].buySide ? g_execRates[j].high : g_execRates[j].low;
+         L.levels[i].sweptEvent = L.levels[i].buySide ? (g_execRates[j].close < L.levels[i].price)
+                                                      : (g_execRates[j].close > L.levels[i].price);
+         break;
+        }
+     }
+
+   // most recent sweep on each side within the lookback
+   datetime lookbackStart = g_execRates[MathMax(0, got - InpSweepLookbackBars)].time;
+   for(int i = 0; i < L.count; i++)
+     {
+      if(!L.levels[i].sweptEvent || L.levels[i].takenTime < lookbackStart) continue;
+      if(L.levels[i].buySide)
+        {
+         if(!L.bearSweep || L.levels[i].takenTime > L.bearSweepTime)
+           {
+            L.bearSweep = true; L.bearSweepTime = L.levels[i].takenTime;
+            L.bearSweepLevel = L.levels[i].price; L.bearSweepExtreme = L.levels[i].takenExtreme;
+            L.bearSweepName = LiqName(L.levels[i].type);
+           }
+        }
+      else
+        {
+         if(!L.bullSweep || L.levels[i].takenTime > L.bullSweepTime)
+           {
+            L.bullSweep = true; L.bullSweepTime = L.levels[i].takenTime;
+            L.bullSweepLevel = L.levels[i].price; L.bullSweepExtreme = L.levels[i].takenExtreme;
+            L.bullSweepName = LiqName(L.levels[i].type);
+           }
+        }
+     }
+
+   // current draw on liquidity each way, for display
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   for(int i = 0; i < L.count; i++)
+     {
+      if(L.levels[i].taken) continue;
+      if(L.levels[i].buySide && L.levels[i].price > bid && (L.drawLongPrice == 0.0 || L.levels[i].price < L.drawLongPrice))
+        { L.drawLongPrice = L.levels[i].price; L.drawLongName = LiqName(L.levels[i].type); }
+      if(!L.levels[i].buySide && L.levels[i].price < bid && (L.drawShortPrice == 0.0 || L.levels[i].price > L.drawShortPrice))
+        { L.drawShortPrice = L.levels[i].price; L.drawShortName = LiqName(L.levels[i].type); }
+     }
+   L.available = true;
+  }
+
+// Nearest untaken opposing level beyond `fromPrice` by at least minDist.
+bool FindNearestTarget(X15Liquidity &L, int dir, double fromPrice, double minDist, double &priceOut, string &nameOut)
+  {
+   priceOut = 0.0; nameOut = "";
+   for(int i = 0; i < L.count; i++)
+     {
+      if(L.levels[i].taken) continue;
+      if(dir == 1)
+        {
+         if(!L.levels[i].buySide || L.levels[i].price <= fromPrice + minDist) continue;
+         if(priceOut == 0.0 || L.levels[i].price < priceOut) { priceOut = L.levels[i].price; nameOut = LiqName(L.levels[i].type); }
+        }
+      else
+        {
+         if(L.levels[i].buySide || L.levels[i].price >= fromPrice - minDist) continue;
+         if(priceOut == 0.0 || L.levels[i].price > priceOut) { priceOut = L.levels[i].price; nameOut = LiqName(L.levels[i].type); }
+        }
+     }
+   return(priceOut > 0.0);
+  }
+
+//====================================================================
+// LAYER 2 -- MARKET INTELLIGENCE: NEWS GATE, REGIME, SESSION
+//====================================================================
+// News Defense's ONLY outputs are ALLOW or BLOCK (spec 9). This struct has
+// no direction field by design -- there is nothing here that could ever be
+// read as BUY or SELL.
+struct X15NewsGate
+  {
+   bool              blocks;
+   bool              eventActive;
+   bool              validated;
+   string            state;   // ALLOW / BLOCK / DISABLED / UNAVAILABLE / BACKTEST_UNAVAILABLE
+   string            detail;
+  };
+X15NewsGate g_newsGate;
+
+void EvaluateNewsGate(X15NewsGate &g)
+  {
+   g.blocks = false; g.eventActive = false; g.validated = false; g.state = "ALLOW"; g.detail = "";
+   if(!UseNewsDefense) { g.state = "DISABLED"; return; }
+   if(MQLInfoInteger(MQL_TESTER))
+     {
+      g.state  = "BACKTEST_UNAVAILABLE";
+      g.detail = "no economic calendar in the Strategy Tester -- nothing is fabricated";
+      g.blocks = InpNewsUnavailableBlocksTester;
+      return;
+     }
+   NewsDefenseState nd = CheckNewsDefense(_Symbol);
+   if(nd.active)
+     {
+      g.state = "BLOCK"; g.blocks = true; g.eventActive = true;
+      g.validated = nd.isValidatedEvent; g.detail = nd.reason;
+      return;
+     }
+   if(nd.reason != "")
+     {
+      g.state  = "UNAVAILABLE";
+      g.detail = nd.reason;
+      g.blocks = InpNewsUnavailableBlocksLive;
+      return;
+     }
+   g.state = "ALLOW";
+  }
+
+// Regime thresholds below are fixed, UNVALIDATED defaults. That is exactly
+// why regime may only block a setup or REDUCE risk -- never raise it
+// (spec 10).
+struct X15RegimeInfo
+  {
+   bool              available;
+   ENUM_X15_REGIME   regime;
+   double            volRatio;
+   double            efficiency;
+   double            compressionRatio;
+   string            detail;
+  };
+X15RegimeInfo g_regime;
+
+void ClassifyRegime(X15RegimeInfo &ri, bool eventActive)
+  {
+   ri.available = false;
+   ri.regime = X15_REGIME_UNKNOWN;
+   ri.volRatio = 0.0;
+   ri.efficiency = 0.0;
+   ri.compressionRatio = g_structExec.compressionRatio;
+   ri.detail = "";
+   int got = g_execGot;
+   if(!g_structExec.available || !g_structExec.atrAvailable || got < 120)
+     {
+      ri.detail = "insufficient execution data or ATR";
+      return;
+     }
+   double sum = 0.0;
+   int cnt = 0;
+   for(int j = got - 100; j < got; j++)
+      if(g_execAtr[j] > 0.0 && g_execAtr[j] != EMPTY_VALUE) { sum += g_execAtr[j]; cnt++; }
+   if(cnt < 50) { ri.detail = "ATR history too short"; return; }
+   ri.volRatio = g_execAtr[got-1] / (sum / cnt);
+   double path = 0.0;
+   for(int j = got - 20; j < got; j++) path += MathAbs(g_execRates[j].close - g_execRates[j-1].close);
+   ri.efficiency = (path > 0.0) ? MathAbs(g_execRates[got-1].close - g_execRates[got-21].close) / path : 0.0;
+   ri.available = true;
+
+   if(eventActive)                                         ri.regime = X15_REGIME_EVENT_DRIVEN;
+   else if(ri.volRatio >= 1.8)                             ri.regime = X15_REGIME_HIGH_VOLATILITY;
+   else if(ri.volRatio <= 0.5)                             ri.regime = X15_REGIME_LOW_VOLATILITY;
+   else if(g_structExec.compressed)                        ri.regime = X15_REGIME_COMPRESSED;
+   else if(g_structExec.expanding)                         ri.regime = X15_REGIME_EXPANDING;
+   else if(ri.efficiency >= 0.35 && g_structExec.trend != 0) ri.regime = X15_REGIME_TRENDING;
+   else                                                    ri.regime = X15_REGIME_RANGING;
+   ri.detail = StringFormat("ATR %.2fx avg, efficiency %.2f, range ratio %.2f", ri.volRatio, ri.efficiency, ri.compressionRatio);
+  }
+
+// A regime that is blocked outright makes the whole opportunity ineligible;
+// this answers the narrower "does this setup TYPE fit this regime" question
+// used as one soft-evidence component.
+bool RegimeFitsSetup(ENUM_X15_REGIME r, ENUM_X15_SETUP_TYPE t)
+  {
+   if(r == X15_REGIME_HIGH_VOLATILITY || r == X15_REGIME_EVENT_DRIVEN || r == X15_REGIME_UNKNOWN) return(false);
+   if(t == X15_SETUP_CONTINUATION) return(r == X15_REGIME_TRENDING || r == X15_REGIME_EXPANDING);
+   return(true);
+  }
+
+bool RegimeBlocked(ENUM_X15_REGIME r, string &why)
+  {
+   why = "";
+   if(r == X15_REGIME_HIGH_VOLATILITY && InpBlockHighVolatility) why = "regime HIGH_VOLATILITY is blocked";
+   if(r == X15_REGIME_EVENT_DRIVEN && InpBlockEventDriven)       why = "regime EVENT_DRIVEN is blocked";
+   if(r == X15_REGIME_UNKNOWN && InpBlockUnknownRegime)          why = "regime UNKNOWN is blocked";
+   if(r == X15_REGIME_COMPRESSED && InpBlockCompressed)          why = "regime COMPRESSED is blocked";
+   return(why != "");
+  }
+
+ENUM_X15_SESSION SessionAt(datetime t)
+  {
+   MqlDateTime dt;
+   TimeToStruct(t, dt);
+   bool london  = HourInWindow(dt.hour, InpLondonStartHour, InpLondonEndHour);
+   bool newYork = HourInWindow(dt.hour, InpNewYorkStartHour, InpNewYorkEndHour);
+   if(london && newYork) return(X15_SESSION_OVERLAP);
+   if(london)  return(X15_SESSION_LONDON);
+   if(newYork) return(X15_SESSION_NEWYORK);
+   if(HourInWindow(dt.hour, InpAsiaStartHour, InpAsiaEndHour)) return(X15_SESSION_ASIAN);
+   return(X15_SESSION_OFF);
+  }
+
+// "The market is open" is not the same as "this session is tradable"
+// (spec 25): off-session hours are never tradable here.
+bool SessionTradable(ENUM_X15_SESSION s, string &why)
+  {
+   why = "";
+   if(InpTradeOverlapOnly)
+     {
+      if(s == X15_SESSION_OVERLAP) return(true);
+      why = "outside the London/New York overlap (overlap-only mode)";
+      return(false);
+     }
+   if(s == X15_SESSION_OVERLAP && (InpTradeLondon || InpTradeNewYork)) return(true);
+   if(s == X15_SESSION_LONDON  && InpTradeLondon)  return(true);
+   if(s == X15_SESSION_NEWYORK && InpTradeNewYork) return(true);
+   if(s == X15_SESSION_ASIAN   && InpTradeAsia)    return(true);
+   why = "session " + EnumLabel(EnumToString(s), "X15_SESSION_") + " is not enabled for trading";
+   return(false);
+  }
+
+//====================================================================
+// LAYER 3 -- SIGNAL STATES AT DECISION TIME
+//--------------------------------------------------------------------
+// Decisions use closed-bar reads only. VP-MACD's P*_t already sums bars
+// t-N..t-1, so GetVPMACD(shift 0) touches no forming-bar data.
+//====================================================================
+string ClassifyVWAPClosedBar(void)
+  {
+   MqlRates rates[];
+   int n = CopyRates(_Symbol, InpExecTF, 1, VWAPMaxBars, rates);
+   if(n <= 1) return("UNAVAILABLE");
+   double vwap = ComputeSessionVWAP(rates, n);
+   if(vwap < 0.0) return("UNAVAILABLE");
+   double c = rates[n-1].close;
+   if(c > vwap) return("BULLISH");
+   if(c < vwap) return("BEARISH");
+   return("NEUTRAL");
+  }
+
+string ClassifyVPMACDState(void)
+  {
+   VPMACDResult cur = GetVPMACD(_Symbol, 0);
+   if(!cur.available) return("UNAVAILABLE");
+   if(cur.macd > cur.signal) return("BULLISH");
+   if(cur.macd < cur.signal) return("BEARISH");
+   return("NEUTRAL");
+  }
+
+//====================================================================
+// LAYER 4 -- SETUP ENGINE  (spec 8, 13, 14, 15)
+//--------------------------------------------------------------------
+// A setup may only TRIGGER on the most recent closed exec bar. A setup that
+// was valid three bars ago and was not taken is gone -- that single rule is
+// what keeps stale signals from firing late, and (with the setup ID below)
+// what makes "the same signal is still true on the next tick" harmless.
+//====================================================================
+struct X15Setup
+  {
+   bool              valid;
+   ENUM_X15_SETUP_TYPE type;
+   int               direction;
+   string            rejectReason;
+   datetime          triggerBarTime;
+   datetime          sweepTime;
+   double            sweepLevel;
+   double            sweepExtreme;
+   string            sweepLevelName;
+   datetime          structureTime;
+   ENUM_X15_STRUCT_EVENT structureEvent;
+   double            structureLevel;
+   bool              displacement;
+   datetime          displacementTime;
+   string            zoneType;      // FVG / OB / DISCOUNT / PREMIUM / NONE
+   double            zoneTop;
+   double            zoneBottom;
+   datetime          zoneFormedTime;
+   double            entryRef;
+   double            sl;
+   double            tp;
+   double            rr;
+   string            tpLevelName;
+   double            invalidation;
+   string            setupId;
+  };
+
+void ResetSetup(X15Setup &s)
+  {
+   s.valid = false; s.type = X15_SETUP_NONE; s.direction = 0; s.rejectReason = "";
+   s.triggerBarTime = 0;
+   s.sweepTime = 0; s.sweepLevel = 0.0; s.sweepExtreme = 0.0; s.sweepLevelName = "";
+   s.structureTime = 0; s.structureEvent = X15_EVT_NONE; s.structureLevel = 0.0;
+   s.displacement = false; s.displacementTime = 0;
+   s.zoneType = "NONE"; s.zoneTop = 0.0; s.zoneBottom = 0.0; s.zoneFormedTime = 0;
+   s.entryRef = 0.0; s.sl = 0.0; s.tp = 0.0; s.rr = 0.0; s.tpLevelName = ""; s.invalidation = 0.0;
+   s.setupId = "";
+  }
+
+int IndexOfBarTime(MqlRates &r[], int got, datetime t)
+  {
+   for(int i = got - 1; i >= 0; i--) if(r[i].time == t) return(i);
+   return(-1);
+  }
+
+bool FindDisplacement(MqlRates &r[], double &atr[], int got, int dir, datetime fromTime, datetime toTime, datetime &timeOut)
+  {
+   timeOut = 0;
+   for(int j = got - 1; j >= 0; j--)
+     {
+      if(r[j].time > toTime) continue;
+      if(r[j].time < fromTime) break;
+      if(IsDisplacementBar(r, atr, j, dir)) { timeOut = r[j].time; return(true); }
+     }
+   return(false);
+  }
+
+// Most recent fair value gap whose middle candle lies in [fromTime,toTime]
+// and that no later close has invalidated (closed through its far edge).
+bool FindFVG(MqlRates &r[], int got, int dir, datetime fromTime, datetime toTime, double &top, double &bottom, datetime &formedTime)
+  {
+   for(int i = got - 1; i >= 2; i--)
+     {
+      datetime mid = r[i-1].time;
+      if(mid > toTime) continue;
+      if(mid < fromTime) break;
+      bool gap = (dir == 1) ? (r[i].low > r[i-2].high) : (r[i].high < r[i-2].low);
+      if(!gap) continue;
+      double t = (dir == 1) ? r[i].low    : r[i-2].low;
+      double b = (dir == 1) ? r[i-2].high : r[i].high;
+      bool invalid = false;
+      for(int k = i + 1; k < got; k++)
+         if((dir == 1 && r[k].close < b) || (dir == -1 && r[k].close > t)) { invalid = true; break; }
+      if(invalid) continue;
+      top = t; bottom = b; formedTime = r[i].time;
+      return(true);
+     }
+   return(false);
+  }
+
+// Last opposite-colour candle within 5 bars before the displacement bar.
+bool FindOrderBlock(MqlRates &r[], int got, int dir, datetime displacementTime, double &top, double &bottom, datetime &formedTime)
+  {
+   int d = IndexOfBarTime(r, got, displacementTime);
+   if(d < 1) return(false);
+   for(int j = d - 1; j >= MathMax(0, d - 5); j--)
+     {
+      bool opposite = (dir == 1) ? (r[j].close < r[j].open) : (r[j].close > r[j].open);
+      if(!opposite) continue;
+      for(int k = j + 1; k < got; k++)
+         if((dir == 1 && r[k].close < r[j].low) || (dir == -1 && r[k].close > r[j].high)) return(false);
+      top = r[j].high; bottom = r[j].low; formedTime = displacementTime;
+      return(true);
+     }
+   return(false);
+  }
+
+uint Fnv1a32(string s)
+  {
+   uint h = (uint)2166136261;
+   int n = StringLen(s);
+   for(int i = 0; i < n; i++)
+     {
+      h ^= (uint)StringGetCharacter(s, i);
+      h *= (uint)16777619;
+     }
+   return(h);
+  }
+
+// Deterministic: the same symbol, direction, model, trigger bar and anchor
+// level always produce the same ID -- across ticks, restarts and chart
+// timeframe changes. That determinism IS the duplicate-trade protection.
+string BuildSetupId(X15Setup &s)
+  {
+   double anchor = (s.type == X15_SETUP_SWEEP_REVERSAL) ? s.sweepLevel : s.structureLevel;
+   string raw = StringFormat("%s|%d|%d|%I64d|%s", _Symbol, s.direction, (int)s.type,
+                             (long)s.triggerBarTime, DoubleToString(anchor, g_spec.digits));
+   return(StringFormat("%08X", Fnv1a32(raw)));
+  }
+
+// Entry reference, target and R:R. The target is the NEAREST realistic
+// opposing liquidity; if that gives too little R:R the answer is no trade --
+// the code never walks out to a farther level to manufacture R:R (spec 15).
+bool CompleteSetupTargets(X15Setup &s)
+  {
+   int dir = s.direction;
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   if(bid <= 0.0 || ask <= 0.0) { s.rejectReason = "no live quote"; return(false); }
+   s.entryRef = (dir == 1) ? ask : bid;
+   double risk = (dir == 1) ? s.entryRef - s.sl : s.sl - s.entryRef;
+   if(risk <= 0.0) { s.rejectReason = "price is already beyond the structural stop"; return(false); }
+   double spreadPrice = ask - bid;
+   if(InpTPMode == X15_TP_FIXED_R)
+     {
+      s.tp = (dir == 1) ? s.entryRef + InpFixedTPR * risk : s.entryRef - InpFixedTPR * risk;
+      s.tpLevelName = StringFormat("FIXED_%.1fR", InpFixedTPR);
+     }
+   else
+     {
+      double level = 0.0;
+      string name = "";
+      if(!FindNearestTarget(g_liq, dir, s.entryRef, InpTargetMinDistanceATR * g_structExec.atr, level, name))
+        { s.rejectReason = "no unswept opposing liquidity to target"; return(false); }
+      // TP fills on the far side of the spread, so it sits one spread short of the level
+      s.tp = (dir == 1) ? level - spreadPrice : level + spreadPrice;
+      s.tpLevelName = name;
+     }
+   double reward = (dir == 1) ? s.tp - s.entryRef : s.entryRef - s.tp;
+   s.rr = reward / risk;
+   if(s.rr < InpMinRR)
+     {
+      s.rejectReason = StringFormat("R:R %.2f to %s is below the %.2f minimum", s.rr, s.tpLevelName, InpMinRR);
+      return(false);
+     }
+   s.setupId = BuildSetupId(s);
+   s.valid = true;
+   return(true);
+  }
+
+// Retest-and-confirm on the last closed bar: it traded into the zone and
+// closed back out of it in the trade direction, as a directional candle.
+bool ZoneRetestConfirmed(int dir, double zoneTop, double zoneBottom)
+  {
+   int b = g_execGot - 1;
+   if(b < 0) return(false);
+   if(dir == 1)
+      return(g_execRates[b].low <= zoneTop && g_execRates[b].close > zoneBottom && g_execRates[b].close > g_execRates[b].open);
+   return(g_execRates[b].high >= zoneBottom && g_execRates[b].close < zoneTop && g_execRates[b].close < g_execRates[b].open);
+  }
+
+// PRIMARY MODEL: sweep -> displacement -> MSS/BOS -> retrace into FVG/OB -> confirmation.
+bool EvaluateSweepReversal(int dir, X15Setup &s)
+  {
+   ResetSetup(s);
+   s.type = X15_SETUP_SWEEP_REVERSAL;
+   s.direction = dir;
+   int got = g_execGot;
+   if(got < 50) { s.rejectReason = "execution data unavailable"; return(false); }
+   if(!g_structExec.atrAvailable) { s.rejectReason = "ATR unavailable"; return(false); }
+
+   bool swept = (dir == 1) ? g_liq.bullSweep : g_liq.bearSweep;
+   if(!swept)
+     {
+      s.rejectReason = (dir == 1) ? "no sell-side liquidity sweep in lookback" : "no buy-side liquidity sweep in lookback";
+      return(false);
+     }
+   s.sweepTime      = (dir == 1) ? g_liq.bullSweepTime    : g_liq.bearSweepTime;
+   s.sweepLevel     = (dir == 1) ? g_liq.bullSweepLevel   : g_liq.bearSweepLevel;
+   s.sweepExtreme   = (dir == 1) ? g_liq.bullSweepExtreme : g_liq.bearSweepExtreme;
+   s.sweepLevelName = (dir == 1) ? g_liq.bullSweepName    : g_liq.bearSweepName;
+
+   ENUM_X15_STRUCT_EVENT ev = (dir == 1) ? g_structExec.lastUpEvent : g_structExec.lastDownEvent;
+   datetime te = (dir == 1) ? g_structExec.lastUpEventTime : g_structExec.lastDownEventTime;
+   if(ev == X15_EVT_NONE || te < s.sweepTime) { s.rejectReason = "no structure break after the sweep"; return(false); }
+   int teIdx = IndexOfBarTime(g_execRates, got, te);
+   int age = (teIdx < 0) ? -1 : got - 1 - teIdx;
+   if(age < 0 || age > InpSetupMaxAgeBars)
+     {
+      s.rejectReason = StringFormat("structure break is %d bars old (max %d)", age, InpSetupMaxAgeBars);
+      return(false);
+     }
+   s.structureTime  = te;
+   s.structureEvent = ev;
+   s.structureLevel = (dir == 1) ? g_structExec.lastUpEventLevel : g_structExec.lastDownEventLevel;
+   s.displacement   = FindDisplacement(g_execRates, g_execAtr, got, dir, s.sweepTime, te, s.displacementTime);
+
+   double zt = 0.0, zb = 0.0;
+   datetime zf = 0;
+   if(FindFVG(g_execRates, got, dir, s.sweepTime, te, zt, zb, zf))
+     { s.zoneType = "FVG"; s.zoneTop = zt; s.zoneBottom = zb; s.zoneFormedTime = zf; }
+   else if(s.displacement && FindOrderBlock(g_execRates, got, dir, s.displacementTime, zt, zb, zf))
+     { s.zoneType = "OB"; s.zoneTop = zt; s.zoneBottom = zb; s.zoneFormedTime = zf; }
+
+   int b = got - 1;
+   if(InpRequireZoneRetest)
+     {
+      if(s.zoneType == "NONE") { s.rejectReason = "no FVG/OB zone in the displacement leg"; return(false); }
+      if(g_execRates[b].time <= te || g_execRates[b].time <= s.zoneFormedTime)
+        { s.rejectReason = "awaiting retracement into the zone"; return(false); }
+      if(!ZoneRetestConfirmed(dir, s.zoneTop, s.zoneBottom))
+        { s.rejectReason = "last closed bar did not retest the zone with a confirming close"; return(false); }
+     }
+   else if(g_execRates[b].time != te)
+     {
+      s.rejectReason = "structure break is not the last closed bar (entry would be stale)";
+      return(false);
+     }
+   s.triggerBarTime = g_execRates[b].time;
+
+   double ref = s.sweepExtreme;
+   if(s.zoneType != "NONE") ref = (dir == 1) ? MathMin(ref, s.zoneBottom) : MathMax(ref, s.zoneTop);
+   double buffer = InpSLATRBuffer * g_structExec.atr;
+   s.sl = (dir == 1) ? ref - buffer : ref + buffer;
+   s.invalidation = (s.zoneType != "NONE") ? ((dir == 1) ? s.zoneBottom : s.zoneTop) : s.sweepExtreme;
+   return(CompleteSetupTargets(s));
+  }
+
+// OPTIONAL MODEL: aligned HTF trend -> BOS with displacement -> pullback
+// into FVG/OB, or into the discount/premium half of the break leg ->
+// confirmation. A pullback is inherent to this model, so it always needs
+// the retest, whatever InpRequireZoneRetest says.
+bool EvaluateContinuation(int dir, X15Setup &s)
+  {
+   ResetSetup(s);
+   s.type = X15_SETUP_CONTINUATION;
+   s.direction = dir;
+   int got = g_execGot;
+   if(got < 50) { s.rejectReason = "execution data unavailable"; return(false); }
+   if(!g_structExec.atrAvailable) { s.rejectReason = "ATR unavailable"; return(false); }
+   if(g_htfBias.bias != dir) { s.rejectReason = "continuation needs HTF bias aligned with the trade"; return(false); }
+
+   ENUM_X15_STRUCT_EVENT ev = (dir == 1) ? g_structExec.lastUpEvent : g_structExec.lastDownEvent;
+   datetime te = (dir == 1) ? g_structExec.lastUpEventTime : g_structExec.lastDownEventTime;
+   if(ev == X15_EVT_NONE) { s.rejectReason = "no structure break in the trend direction"; return(false); }
+   int teIdx = IndexOfBarTime(g_execRates, got, te);
+   int age = (teIdx < 0) ? -1 : got - 1 - teIdx;
+   if(age < 1 || age > InpSetupMaxAgeBars)
+     {
+      s.rejectReason = (age == 0) ? "break is the last closed bar -- awaiting a pullback"
+                                  : StringFormat("structure break is %d bars old (max %d)", age, InpSetupMaxAgeBars);
+      return(false);
+     }
+   s.structureTime  = te;
+   s.structureEvent = ev;
+   s.structureLevel = (dir == 1) ? g_structExec.lastUpEventLevel : g_structExec.lastDownEventLevel;
+   datetime dispFrom = g_execRates[MathMax(0, teIdx - 3)].time;
+   s.displacement = FindDisplacement(g_execRates, g_execAtr, got, dir, dispFrom, te, s.displacementTime);
+
+   int b = got - 1;
+   double legLow = g_execRates[teIdx].low, legHigh = g_execRates[teIdx].high;
+   for(int j = MathMax(0, teIdx - 10); j <= teIdx; j++)
+     {
+      legLow  = MathMin(legLow,  g_execRates[j].low);
+      legHigh = MathMax(legHigh, g_execRates[j].high);
+     }
+   double pullbackExtreme = (dir == 1) ? g_execRates[b].low : g_execRates[b].high;
+   for(int j = teIdx + 1; j <= b; j++)
+     {
+      if(dir == 1) { legHigh = MathMax(legHigh, g_execRates[j].high); pullbackExtreme = MathMin(pullbackExtreme, g_execRates[j].low); }
+      else         { legLow  = MathMin(legLow,  g_execRates[j].low);  pullbackExtreme = MathMax(pullbackExtreme, g_execRates[j].high); }
+     }
+
+   double zt = 0.0, zb = 0.0;
+   datetime zf = 0;
+   if(FindFVG(g_execRates, got, dir, dispFrom, te, zt, zb, zf))
+     { s.zoneType = "FVG"; s.zoneTop = zt; s.zoneBottom = zb; s.zoneFormedTime = zf; }
+   else if(s.displacement && FindOrderBlock(g_execRates, got, dir, s.displacementTime, zt, zb, zf))
+     { s.zoneType = "OB"; s.zoneTop = zt; s.zoneBottom = zb; s.zoneFormedTime = zf; }
+   else
+     {
+      double mid = (legHigh + legLow) / 2.0;
+      s.zoneType = (dir == 1) ? "DISCOUNT" : "PREMIUM";
+      s.zoneTop    = (dir == 1) ? mid : legHigh;
+      s.zoneBottom = (dir == 1) ? legLow : mid;
+      s.zoneFormedTime = te;
+     }
+   if(g_execRates[b].time <= s.zoneFormedTime) { s.rejectReason = "awaiting pullback into the zone"; return(false); }
+   if(!ZoneRetestConfirmed(dir, s.zoneTop, s.zoneBottom))
+     { s.rejectReason = "last closed bar did not retest the pullback zone with a confirming close"; return(false); }
+   s.triggerBarTime = g_execRates[b].time;
+
+   double ref = (dir == 1) ? MathMin(pullbackExtreme, s.zoneBottom) : MathMax(pullbackExtreme, s.zoneTop);
+   double buffer = InpSLATRBuffer * g_structExec.atr;
+   s.sl = (dir == 1) ? ref - buffer : ref + buffer;
+   s.invalidation = (dir == 1) ? s.zoneBottom : s.zoneTop;
+   return(CompleteSetupTargets(s));
+  }
+
+//====================================================================
+// LAYER 4 -- COMPOSITE DECISION ENGINE  (spec 6, 9, 12)
+//--------------------------------------------------------------------
+// Transparent evidence, not an "AI confidence": every component is a named
+// PASS / FAIL / UNAVAILABLE / N/A with the reason attached. UNAVAILABLE is
+// never counted as a pass (spec 39: unavailable data is never
+// confirmation). Hard components veto regardless of the soft score.
+//====================================================================
+#define X15_MAX_COMPONENTS 16
+#define X15_PASS         1
+#define X15_FAIL         0
+#define X15_UNAVAILABLE -1
+#define X15_NA           2
+
+struct X15Component
+  {
+   string            name;
+   int               status;
+   string            detail;
+   bool              hard;
+  };
+
+struct X15Decision
+  {
+   datetime          barTime;
+   bool              computed;
+   ENUM_X15_DIR_STATE state;
+   string            stateReason;
+   X15Setup          setup;
+   string            longReject;
+   string            shortReject;
+   int               componentCount;
+   X15Component      comps[X15_MAX_COMPONENTS];
+   int               evidenceScore;
+   int               evidenceMax;
+   string            vwapState;
+   string            vpmacdState;
+  };
+X15Decision g_decision;
+
+void ResetDecision(X15Decision &d)
+  {
+   d.barTime = 0; d.computed = false;
+   d.state = X15_DIR_NEUTRAL; d.stateReason = "";
+   ResetSetup(d.setup);
+   d.longReject = ""; d.shortReject = "";
+   d.componentCount = 0;
+   d.evidenceScore = 0; d.evidenceMax = 0;
+   d.vwapState = "UNAVAILABLE"; d.vpmacdState = "UNAVAILABLE";
+  }
+
+void AddComponent(X15Decision &d, string name, int status, string detail, bool hard)
+  {
+   if(d.componentCount >= X15_MAX_COMPONENTS) return;
+   int i = d.componentCount;
+   d.comps[i].name = name;
+   d.comps[i].status = status;
+   d.comps[i].detail = detail;
+   d.comps[i].hard = hard;
+   d.componentCount++;
+   if(!hard && status != X15_NA)
+     {
+      d.evidenceMax++;
+      if(status == X15_PASS) d.evidenceScore++;
+     }
+  }
+
+string StatusLabel(int status)
+  {
+   if(status == X15_PASS) return("PASS");
+   if(status == X15_FAIL) return("FAIL");
+   if(status == X15_UNAVAILABLE) return("UNAVAILABLE");
+   return("N/A");
+  }
+
+// HTF hard gate for one candidate setup; empty string = passes.
+string HTFGateFailure(X15Setup &s)
+  {
+   if(!InpRequireHTFAlignment) return("");
+   if(!g_htfBias.available) return("higher-timeframe structure unavailable");
+   if(g_htfBias.conflict) return("conflicting higher-timeframe structure (" + g_htfBias.detail + ")");
+   if(g_htfBias.bias == -s.direction) return("setup opposes the higher-timeframe bias");
+   if(g_htfBias.bias == 0)
+     {
+      if(s.type == X15_SETUP_SWEEP_REVERSAL && InpAllowRangeHTFReversal) return("");
+      return("higher timeframe has no clear bias");
+     }
+   return("");
+  }
+
+int SignalAgreement(string state, int dir)
+  {
+   if(state == "UNAVAILABLE") return(X15_UNAVAILABLE);
+   if((dir == 1 && state == "BULLISH") || (dir == -1 && state == "BEARISH")) return(X15_PASS);
+   return(X15_FAIL);
+  }
+
+void BuildEvidence(X15Decision &d, X15Setup &s)
+  {
+   d.componentCount = 0; d.evidenceScore = 0; d.evidenceMax = 0;
+   int dir = s.direction;
+   string structTxt = EnumLabel(EnumToString(s.structureEvent), "X15_EVT_") + " @ " + DoubleToString(s.structureLevel, g_spec.digits);
+
+   // hard components
+   AddComponent(d, "STRUCTURE", (s.structureEvent != X15_EVT_NONE) ? X15_PASS : X15_FAIL, structTxt, true);
+   string htfFail = HTFGateFailure(s);
+   AddComponent(d, "HTF_GATE", (htfFail == "") ? X15_PASS : X15_FAIL, (htfFail == "") ? g_htfBias.state : htfFail, true);
+   AddComponent(d, "NEWS", g_newsGate.blocks ? X15_FAIL : X15_PASS, g_newsGate.state + (g_newsGate.detail != "" ? " " + g_newsGate.detail : ""), true);
+   AddComponent(d, "R:R", (s.rr >= InpMinRR) ? X15_PASS : X15_FAIL, StringFormat("%.2f to %s (min %.2f)", s.rr, s.tpLevelName, InpMinRR), true);
+
+   // soft evidence
+   AddComponent(d, "HTF_ALIGNED", (g_htfBias.bias == dir) ? X15_PASS : X15_FAIL, g_htfBias.state, false);
+   if(s.type == X15_SETUP_SWEEP_REVERSAL)
+      AddComponent(d, "LIQUIDITY_SWEEP", X15_PASS, s.sweepLevelName + " @ " + DoubleToString(s.sweepLevel, g_spec.digits), false);
+   else
+     {
+      bool sweptToo = (dir == 1) ? g_liq.bullSweep : g_liq.bearSweep;
+      AddComponent(d, "LIQUIDITY_SWEEP", sweptToo ? X15_PASS : X15_FAIL, sweptToo ? "recent sweep supports the move" : "no recent sweep", false);
+     }
+   AddComponent(d, "DISPLACEMENT", !g_structExec.atrAvailable ? X15_UNAVAILABLE : (s.displacement ? X15_PASS : X15_FAIL),
+                s.displacement ? TimeToString(s.displacementTime, TIME_DATE|TIME_MINUTES) : "none in leg", false);
+   bool zoneReal = (s.zoneType == "FVG" || s.zoneType == "OB");
+   AddComponent(d, "FVG_OB_ZONE", zoneReal ? X15_PASS : X15_FAIL,
+                s.zoneType + " " + DoubleToString(s.zoneBottom, g_spec.digits) + "-" + DoubleToString(s.zoneTop, g_spec.digits), false);
+   if(g_liq.equilibrium <= 0.0)
+      AddComponent(d, "PREMIUM_DISCOUNT", X15_UNAVAILABLE, "dealing range unavailable", false);
+   else
+     {
+      bool ok = (dir == 1) ? (s.entryRef < g_liq.equilibrium) : (s.entryRef > g_liq.equilibrium);
+      AddComponent(d, "PREMIUM_DISCOUNT", ok ? X15_PASS : X15_FAIL,
+                   StringFormat("entry %s equilibrium %s", (s.entryRef < g_liq.equilibrium) ? "below" : "above",
+                                DoubleToString(g_liq.equilibrium, g_spec.digits)), false);
+     }
+   AddComponent(d, "VWAP", InpVWAPCountsAsEvidence ? SignalAgreement(d.vwapState, dir) : X15_NA, d.vwapState, false);
+   AddComponent(d, "VP_MACD", InpVPMACDCountsAsEvidence ? SignalAgreement(d.vpmacdState, dir) : X15_NA, d.vpmacdState, false);
+   AddComponent(d, "REGIME", !g_regime.available ? X15_UNAVAILABLE : (RegimeFitsSetup(g_regime.regime, s.type) ? X15_PASS : X15_FAIL),
+                EnumLabel(EnumToString(g_regime.regime), "X15_REGIME_"), false);
+  }
+
+// The previously stubbed extension point, now a real decision engine.
+// Returns one of LONG / SHORT / NEUTRAL / BLOCKED / DATA_UNAVAILABLE /
+// INSUFFICIENT_EVIDENCE and fills `d` with the setup and every reason.
+ENUM_X15_DIR_STATE GetCompositeDirection(X15Decision &d)
+  {
+   ResetDecision(d);
+   d.barTime = (g_execGot > 0) ? g_execRates[g_execGot-1].time : 0;
+   d.computed = true;
+   if(!g_dq.ok) { d.state = X15_DIR_DATA_UNAVAILABLE; d.stateReason = g_dq.reason; return(d.state); }
+   if(!g_structExec.available) { d.state = X15_DIR_DATA_UNAVAILABLE; d.stateReason = g_structExec.unavailableReason; return(d.state); }
+   if(!g_htfBias.available) { d.state = X15_DIR_DATA_UNAVAILABLE; d.stateReason = g_htfBias.detail; return(d.state); }
+   if(!g_liq.available) { d.state = X15_DIR_DATA_UNAVAILABLE; d.stateReason = g_liq.reason; return(d.state); }
+
+   d.vwapState   = ClassifyVWAPClosedBar();
+   d.vpmacdState = ClassifyVPMACDState();
+
+   // every model x direction; a candidate survives only if it also clears the HTF hard gate
+   X15Setup cands[4];
+   int nValid = 0;
+   int dirs[2];
+   dirs[0] = 1; dirs[1] = -1;
+   for(int di = 0; di < 2; di++)
+     {
+      int dir = dirs[di];
+      string rejects = "";
+      X15Setup a, c;
+      if(InpUseSweepReversal)
+        {
+         if(EvaluateSweepReversal(dir, a))
+           {
+            string htf = HTFGateFailure(a);
+            if(htf == "") { cands[nValid] = a; nValid++; }
+            else rejects += "reversal: " + htf + "; ";
+           }
+         else rejects += "reversal: " + a.rejectReason + "; ";
+        }
+      if(InpUseContinuation)
+        {
+         if(EvaluateContinuation(dir, c))
+           {
+            string htf = HTFGateFailure(c);
+            if(htf == "") { cands[nValid] = c; nValid++; }
+            else rejects += "continuation: " + htf + "; ";
+           }
+         else rejects += "continuation: " + c.rejectReason + "; ";
+        }
+      if(dir == 1) d.longReject = rejects; else d.shortReject = rejects;
+     }
+
+   if(nValid == 0)
+     {
+      d.state = X15_DIR_NEUTRAL;
+      d.stateReason = "no valid setup";
+      return(d.state);
+     }
+   bool anyLong = false, anyShort = false;
+   for(int i = 0; i < nValid; i++) { if(cands[i].direction == 1) anyLong = true; else anyShort = true; }
+   if(anyLong && anyShort)
+     {
+      d.state = X15_DIR_NEUTRAL;
+      d.stateReason = "valid long AND short setups on the same bar -- conflicting, no trade";
+      return(d.state);
+     }
+
+   // same direction from both models: keep the one with more evidence (ties -> the primary model)
+   int best = 0, bestScore = -1;
+   for(int i = 0; i < nValid; i++)
+     {
+      BuildEvidence(d, cands[i]);
+      if(d.evidenceScore > bestScore) { bestScore = d.evidenceScore; best = i; }
+     }
+   d.setup = cands[best];
+   BuildEvidence(d, d.setup);
+
+   if(g_newsGate.blocks)
+     {
+      d.state = X15_DIR_BLOCKED;
+      d.stateReason = "News Defense: " + g_newsGate.state + (g_newsGate.detail != "" ? " -- " + g_newsGate.detail : "");
+      return(d.state);
+     }
+   if(d.evidenceScore < InpMinEvidenceScore)
+     {
+      d.state = X15_DIR_INSUFFICIENT_EVIDENCE;
+      d.stateReason = StringFormat("evidence %d/%d below minimum %d", d.evidenceScore, d.evidenceMax, InpMinEvidenceScore);
+      return(d.state);
+     }
+   d.state = (d.setup.direction == 1) ? X15_DIR_LONG : X15_DIR_SHORT;
+   d.stateReason = StringFormat("%s %s, evidence %d/%d, R:R %.2f",
+                                EnumLabel(EnumToString(d.setup.type), "X15_SETUP_"), DirLabel(d.setup.direction),
+                                d.evidenceScore, d.evidenceMax, d.setup.rr);
+   return(d.state);
+  }
+
+//====================================================================
+// MARKET ANALYSIS ORCHESTRATION -- once per new closed execution bar
+//====================================================================
+ENUM_X15_STATE   g_state   = X15_ST_INITIALIZING;
+ENUM_X15_SESSION g_session = X15_SESSION_OFF;
+datetime         g_lastAnalysisTime = 0;
+
+void RefreshHTFStructure(int slot, ENUM_TIMEFRAMES tf)
+  {
+   datetime lastClosed = iTime(_Symbol, tf, 1);
+   if(g_structHTF[slot].available && g_structHTF[slot].lastClosedBarTime == lastClosed) return; // nothing new closed on this TF
+   MqlRates r[];
+   double a[];
+   AnalyzeStructure(tf, g_atrHTF[slot], InpSwingStrengthHTF, g_structHTF[slot], r, a);
+  }
+
+void RunMarketAnalysis(void)
+  {
+   g_state = X15_ST_DATA_CHECK;
+   EvaluateDataQuality(g_dq);
+   g_session = SessionAt(TimeCurrent());
+   if(!g_dq.ok)
+     {
+      g_state = X15_ST_DATA_UNAVAILABLE;
+      ResetDecision(g_decision);
+      g_decision.computed = true;
+      g_decision.state = X15_DIR_DATA_UNAVAILABLE;
+      g_decision.stateReason = g_dq.reason;
+      X15Log("DATA", "data unavailable: " + g_dq.reason);
+      return;
+     }
+
+   g_state = X15_ST_MARKET_ANALYSIS;
+   if(!AnalyzeStructure(InpExecTF, g_atrExec, InpSwingStrengthExec, g_structExec, g_execRates, g_execAtr))
+      X15Log("STRUCTURE", "execution structure unavailable: " + g_structExec.unavailableReason);
+   g_execGot = ArraySize(g_execRates);
+   RefreshHTFStructure(0, InpHTF1);
+   RefreshHTFStructure(1, InpHTF2);
+   RefreshHTFStructure(2, InpHTF3);
+   if(!g_structW1.available || g_structW1.lastClosedBarTime != iTime(_Symbol, PERIOD_W1, 1))
+     {
+      MqlRates r[];
+      double a[];
+      AnalyzeStructure(PERIOD_W1, INVALID_HANDLE, 2, g_structW1, r, a);
+     }
+   EvaluateHTFBias(g_structHTF[0], g_structHTF[1], g_structHTF[2], g_htfBias);
+   BuildLiquidity(g_liq);
+   EvaluateNewsGate(g_newsGate);
+   ClassifyRegime(g_regime, g_newsGate.eventActive);
+
+   g_state = X15_ST_SETUP_SEARCH;
+   GetCompositeDirection(g_decision);
+   g_lastAnalysisTime = TimeCurrent();
+   X15Log("SIGNAL", StringFormat("%s -- %s", EnumLabel(EnumToString(g_decision.state), "X15_DIR_"), g_decision.stateReason), false, true);
   }
 
 //====================================================================
@@ -2026,6 +3775,23 @@ string RunDecision(void)
    s += TimeToString(TimeCurrent(), TIME_DATE|TIME_MINUTES) + "\n";
    s += "----------------------------------------\n";
 
+   if(g_decision.computed)
+     {
+      s += StringFormat("HTF: %s (%s)\n", g_htfBias.state, g_htfBias.detail);
+      s += StringFormat("Exec %s: %s, last event %s | Regime %s | Session %s\n",
+                         EnumLabel(EnumToString(InpExecTF), "PERIOD_"), g_structExec.trendLabel,
+                         EnumLabel(EnumToString(g_structExec.lastEvent), "X15_EVT_"),
+                         EnumLabel(EnumToString(g_regime.regime), "X15_REGIME_"),
+                         EnumLabel(EnumToString(g_session), "X15_SESSION_"));
+      s += StringFormat("DECISION: %s -- %s\n", EnumLabel(EnumToString(g_decision.state), "X15_DIR_"), g_decision.stateReason);
+      for(int ci = 0; ci < g_decision.componentCount; ci++)
+         s += StringFormat("  %s%s: %s (%s)\n", g_decision.comps[ci].hard ? "[HARD] " : "",
+                            g_decision.comps[ci].name, StatusLabel(g_decision.comps[ci].status), g_decision.comps[ci].detail);
+      if(g_decision.state == X15_DIR_NEUTRAL)
+         s += "  long: " + g_decision.longReject + "\n  short: " + g_decision.shortReject + "\n";
+      s += "----------------------------------------\n";
+     }
+
    StatsResult overall = ComputeStats();
    s += StringFormat("Journal: n=%d, winRate=%.1f%%, expectancy=%.2fR -- %s\n",
                       overall.sampleSize,
@@ -2158,7 +3924,8 @@ datetime g_lastBarTime = 0;
 
 bool IsNewBar(void)
   {
-   datetime t = iTime(_Symbol, PERIOD_CURRENT, 0);
+   datetime t = iTime(_Symbol, InpExecTF, 0); // execution TF, not the chart's: a chart TF change must not re-trigger or skip a decision
+   if(t == 0) return(false);                  // history not loaded yet -- not a new bar
    if(t != g_lastBarTime)
      {
       g_lastBarTime = t;
@@ -2203,6 +3970,21 @@ int OnInit(void)
    g_dayStartEquity = 0.0;
    g_dayStartTime   = 0;
 
+   // handles: mark all invalid first so a partial failure never releases a
+   // handle number this EA did not create
+   g_atrExec = INVALID_HANDLE;
+   for(int i = 0; i < 3; i++) g_atrHTF[i] = INVALID_HANDLE;
+   if(!CreateIndicatorHandles())
+      X15Log("DATA", "could not create every ATR handle -- affected analysis will report DATA_UNAVAILABLE", true);
+   ResetStructure(g_structExec, InpExecTF);
+   ResetStructure(g_structHTF[0], InpHTF1);
+   ResetStructure(g_structHTF[1], InpHTF2);
+   ResetStructure(g_structHTF[2], InpHTF3);
+   ResetStructure(g_structW1, PERIOD_W1);
+   ResetDecision(g_decision);
+   g_execGot = 0;
+   g_state = X15_ST_INITIALIZING;
+
    PrintFormat("AUTOPSY X FLIPDEMON X15: initialized on %s %s. VWAP engine %s, VP-MACD engine %s, News Defense %s, persistent journal %s, Pyramiding %s (%s).",
                _Symbol, EnumToString((ENUM_TIMEFRAMES)Period()),
                UseVWAPExit ? "ENABLED" : "disabled",
@@ -2216,15 +3998,18 @@ int OnInit(void)
 
 void OnDeinit(const int reason)
   {
+   ReleaseIndicatorHandles();
    Comment("");
   }
 
 void OnTick(void)
   {
    UpdateDailySafetyGovernor(); // every tick, before anything else -- keeps IsAccountHalted() current for CheckPyramidEligibility()
+   SampleSpread();
    SyncOpenPositions();
    if(IsNewBar())
      {
+      RunMarketAnalysis();
       RunDecision();
       ProcessPyramidOpportunities(); // once per confirmed bar close, same cadence as RunDecision() -- no reason to re-evaluate add eligibility intra-bar
      }
