@@ -158,6 +158,24 @@ struct StatsResult
 
 // OpenPositionMeta: bookkeeping for positions that are still open, captured
 // once at entry and consumed once at close. Never persisted beyond that.
+//
+// CORRECTNESS-CRITICAL, audited: `ticket` is captured ONCE, in
+// RecordEntryMeta, from PositionGetTicket() at the position's true open.
+// MQL5 distinguishes POSITION_TICKET (can CHANGE -- on a netting account,
+// a position reversal changes it to the ticket of the reversing order)
+// from POSITION_IDENTIFIER (fixed for the position's entire lifetime,
+// defined as the ticket of the order that originally opened it). Because
+// this field is captured once at true entry and never refreshed from a
+// later poll, its value permanently equals that position's
+// POSITION_IDENTIFIER -- which is what HistorySelectByPosition() actually
+// needs to retrieve the position's full deal history, including a later
+// DEAL_ENTRY_INOUT reversal deal. Do NOT "simplify" this by refreshing
+// `ticket` to the current PositionGetTicket() value on each
+// SyncOpenPositions poll -- that would silently break history lookups
+// for any position that gets reversed on a netting account. (Verified
+// against MQL5 documentation and community reference during a full-file
+// audit; not verified against a live hedging/netting account in this
+// environment, since no MT5 terminal is available here.)
 struct OpenPositionMeta
   {
    ulong             ticket;
@@ -334,6 +352,14 @@ int ComputePerEventStats(EventStatsRow &rows[])
 
 string EvaluateOverallGate(StatsResult &s)
   {
+   // sampleSize==0 checked explicitly and first, independent of
+   // MinTradesForStats: with that input misconfigured to <=0 the gate
+   // below would silently pass on an empty journal (0 < 0 is false), and
+   // s.expectancy is the -1.0 "no data" sentinel at sampleSize==0 (see
+   // ComputeStatsResultFromRArray), which would otherwise print as "FAIL
+   // -- non-positive expectancy" -- a real, misleading label for "no
+   // trades logged yet," not an actual failing track record.
+   if(s.sampleSize == 0) return("INSUFFICIENT SAMPLE -- no trades logged yet");
    if(s.sampleSize < MinTradesForStats) return("INSUFFICIENT SAMPLE");
    if(s.expectancy <= 0.0) return("FAIL -- non-positive expectancy over " + IntegerToString(s.sampleSize) + " trades");
    return("TRACKING -- positive expectancy over " + IntegerToString(s.sampleSize) + " trades");
@@ -1030,6 +1056,18 @@ RuinBoundResult ComputeKellyRuinBound(StatsResult &stats, double riskFractionPct
    // never compute a "proven bound" from an inadequate sample and call it
    // real just because the math is real.
    if(stats.sampleSize < MinTradesForStats) return(result);
+
+   // Self-defending guard, independent of MinTradesForStats: that input is
+   // user-configurable with no lower bound enforced anywhere, so a
+   // misconfigured MinTradesForStats<=0 would let the check above pass
+   // with an EMPTY journal (0 < 0 is false). Without this, the sum/n
+   // average below divides by n=0 -- IEEE754 gives NaN, which then
+   // compares false against every threshold and silently renders as
+   // "FAIL" with a meaningless average instead of the honest
+   // "unavailable" this represents. Audited and fixed as part of the
+   // full-file correctness audit (see the file's engineering log/commit
+   // history) -- this is the one confirmed division-by-zero path found.
+   if(ArraySize(g_journal) <= 0) return(result);
 
    // MathLog(RuinBoundAlpha) is undefined at alpha<=0 and MathLog(0) is
    // -inf; either input at or outside the (0,1) boundary makes lambda
