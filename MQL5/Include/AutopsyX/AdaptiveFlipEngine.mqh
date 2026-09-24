@@ -20,6 +20,15 @@
 //|  protection has no flip-shaped exemption. It has nothing to do    |
 //|  with entry TIMING (that's CSniperEngine's job) and never delays  |
 //|  a decision - Evaluate() is a single read-only pass, no waiting.  |
+//|                                                                    |
+//|  Expected-value cost model (CalculateExpectedCost): this EA trades|
+//|  0.01 to a few lots on XAUUSD and major FX pairs - sizes that are |
+//|  price-TAKERS, not price-movers, on those instruments. Its price- |
+//|  impact term is therefore gated OFF by default and only computes  |
+//|  a nonzero cost above an explicitly "institutional-scale" size    |
+//|  threshold this EA's own sizing is never expected to reach. Every |
+//|  other cost term (spread, commission, swap, slippage) is live or  |
+//|  user-configured, never fabricated - see the method for detail.   |
 //+------------------------------------------------------------------+
 #property strict
 #ifndef AX_ADAPTIVEFLIPENGINE_MQH
@@ -47,6 +56,18 @@ private:
                                               // used as the risk-of-ruin risk-fraction estimate before enough
                                               // trade history exists to derive it empirically from realized losses
 
+   //--- expected-value cost model configuration (see CalculateExpectedCost) ---
+   double            m_commissionPerLot;         // user-configured, from the broker's real published schedule
+   double            m_slippageToleranceBufferPts; // worst-case slippage buffer, points - a configurable
+                                                    // assumption, not a fabricated percentage of price
+   double            m_impactCoefficientK;       // square-root impact model coefficient (Bouchaud et al.)
+   double            m_impactRelevanceThresholdLots; // size (lots) above which price impact is even computed -
+                                                       // "institutional-scale", never expected to be reached
+                                                       // by this EA's own retail-size position sizing
+   double            m_vwapAlignmentBonus;   // see Evaluate() - claws the multiplier back toward 1.0,
+                                              // never above it; only when the VWAP mechanical exit is
+                                              // actually armed AND this signal agrees with VWAP trend
+
    //--- live state ---
    string            m_persistKey;           // GlobalVariable name peak equity survives EA/terminal restarts under
    double            m_peakEquity;
@@ -54,6 +75,7 @@ private:
    double            m_ddFromPeakPct;
    double            m_lastWinProbability;
    double            m_lastExpectedValueR;
+   double            m_lastCostR;            // the cost component subtracted out of m_lastExpectedValueR, in R
    double            m_lastRiskOfRuinPct;
    double            m_lastAccountHealth;
    double            m_lastRiskMultiplier;
@@ -67,8 +89,11 @@ public:
       m_maxRiskOfRuinPct=5.0; m_ruinThresholdPct=50.0;
       m_minExpectedValueR=0.0; m_minAccountHealth=25.0;
       m_minTradesForStats=20; m_assumedRewardRiskRatio=1.5; m_configuredRiskFrac=0.01;
+      m_commissionPerLot=0.0; m_slippageToleranceBufferPts=0.0;
+      m_impactCoefficientK=1.0; m_impactRelevanceThresholdLots=50.0;
+      m_vwapAlignmentBonus=1.0;
       m_persistKey=""; m_peakEquity=0; m_state=AX_CAPITAL_NORMAL; m_ddFromPeakPct=0;
-      m_lastWinProbability=0.5; m_lastExpectedValueR=0; m_lastRiskOfRuinPct=0;
+      m_lastWinProbability=0.5; m_lastExpectedValueR=0; m_lastCostR=0; m_lastRiskOfRuinPct=0;
       m_lastAccountHealth=100.0; m_lastRiskMultiplier=1.0;
      }
 
@@ -78,7 +103,10 @@ public:
                                 const double maxRiskOfRuinPct,const double ruinThresholdPct,
                                 const double minExpectedValueR,const double minAccountHealth,
                                 const int minTradesForStats,const double assumedRewardRiskRatio,
-                                const double configuredRiskPercent)
+                                const double configuredRiskPercent,
+                                const double commissionPerLot=0.0,const double slippageToleranceBufferPts=0.0,
+                                const double impactCoefficientK=1.0,const double impactRelevanceThresholdLots=50.0,
+                                const double vwapAlignmentBonus=1.0)
      {
       m_enabled = enabled;
       m_configuredRiskFrac = AxClampD(configuredRiskPercent/100.0,0.0001,0.20);
@@ -95,6 +123,19 @@ public:
       m_minAccountHealth  = AxClampD(minAccountHealth,0.0,100.0);
       m_minTradesForStats = MathMax(5,minTradesForStats);
       m_assumedRewardRiskRatio = MathMax(0.1,assumedRewardRiskRatio);
+
+      // expected-value cost model (see CalculateExpectedCost) - commission is taken as-configured,
+      // never clamped to >=0, since a genuine rebate structure is a real (if unusual) broker term
+      // and this class must never silently override a value the user explicitly provided
+      m_commissionPerLot = commissionPerLot;
+      m_slippageToleranceBufferPts   = MathMax(0.0,slippageToleranceBufferPts);
+      m_impactCoefficientK           = MathMax(0.0,impactCoefficientK);
+      m_impactRelevanceThresholdLots = MathMax(0.01,impactRelevanceThresholdLots);
+      // clamped to >=1.0 here at the source: this value only ever MULTIPLIES a sub-1.0 state/exq
+      // scaler and the result is re-clamped to <=1.0 in Evaluate() regardless, so a value below 1.0
+      // would be a silent no-op anyway - floored here so misconfiguration reads as "no bonus", not
+      // as an unexplained extra de-risking on top of what CAUTION/DEFENSIVE already apply
+      m_vwapAlignmentBonus = MathMax(1.0,vwapAlignmentBonus);
      }
 
    //--- call once from OnInit, before the first OnTickHousekeeping() - seeds peak equity from a   ---
@@ -135,12 +176,96 @@ public:
       else                                         m_state = AX_CAPITAL_NORMAL;
      }
 
+   //--- Expected-value cost model. Every term is either a live MQL5 API read, a user-configured    ---
+   //--- input taken from the broker's real published schedule, or a reuse of an already-computed   ---
+   //--- value the caller passes in (ATR-based volatility - see CRegimeEngine::CurrentAtr, never     ---
+   //--- duplicated here) - nothing in this method is a guessed constant. Returns cost in ACCOUNT    ---
+   //--- CURRENCY for the full round-trip of `lots`; Evaluate() converts it to R-multiples.           ---
+   //---                                                                                              ---
+   //--- Price impact is the one term worth reading carefully: this EA trades 0.01-a few lots on      ---
+   //--- XAUUSD/major FX - sizes that are price-TAKERS, not price-movers, on those instruments. A     ---
+   //--- market-impact model built for institutional order flow would misrepresent that cost          ---
+   //--- structure entirely, so the term is GATED OFF by default and only activates above             ---
+   //--- m_impactRelevanceThresholdLots (an explicitly "institutional-scale" size this EA's own       ---
+   //--- sizing is never expected to reach). Even then it's a rough square-root PROPAGATOR            ---
+   //--- approximation - the empirical square-root law popularized by Bouchaud et al.,                ---
+   //--- cost ~ sigma * sqrt(size/ADV) - not the older linear Almgren-Chriss impact model. Average     ---
+   //--- daily volume is read from SYMBOL_SESSION_VOLUME, a real MT5 API field that is often zero on  ---
+   //--- OTC forex/CFD symbols with no consolidated tape; when it's zero the impact term is left at   ---
+   //--- zero rather than backed into from a fabricated ADV number. ---
+   double            CalculateExpectedCost(const string symbol,const ENUM_AX_DIR dir,const double lots,
+                                            const double point,const double tickSize,const double tickValue,
+                                            const double volatilityPts,const int projectedHoldSeconds,
+                                            const double sessionVolumeLots) const
+     {
+      if(lots<=0 || point<=0 || tickSize<=0 || tickValue<=0) return(0.0);
+
+      double ptsToCurrency = point/tickSize*tickValue*lots; // currency value of 1 point of move, at this size
+
+      //--- spread: the LIVE current spread, not a hardcoded constant ---
+      long spreadPts = SymbolInfoInteger(symbol,SYMBOL_SPREAD);
+      double spreadCost = (double)spreadPts*ptsToCurrency;
+
+      //--- commission: user-configured from the broker's real schedule. MT5 exposes no universal   ---
+      //--- API for actual charged commission, so this is never guessed - an unconfigured 0 simply   ---
+      //--- reads as zero cost rather than the EA inventing a number the user never provided. ---
+      double commissionCost = m_commissionPerLot*lots;
+
+      //--- swap: only charged if the position is actually projected to cross a broker rollover.     ---
+      //--- True hold time is unknowable before a trade closes, so projectedHoldSeconds is the EA's   ---
+      //--- OWN configured maximum hold time (a real, already-existing setting, not a fabricated      ---
+      //--- guess) - this can overstate swap cost for trades that exit early, which is the safe       ---
+      //--- direction to be wrong in for a cost estimate. Broker-local midnight approximates the      ---
+      //--- rollover instant, consistent with how this EA's session/day-boundary logic already        ---
+      //--- treats "the daily boundary" elsewhere (CRiskEngine, CAntiChopEngine). ---
+      double swapCost = 0.0;
+      if(projectedHoldSeconds>0)
+        {
+         MqlDateTime dtNow;
+         TimeToStruct(TimeCurrent(),dtNow);
+         int secToMidnight = 86400-(dtNow.hour*3600+dtNow.min*60+dtNow.sec);
+         if(projectedHoldSeconds>=secToMidnight)
+           {
+            double swapPts = (dir==AX_DIR_BUY) ? SymbolInfoDouble(symbol,SYMBOL_SWAP_LONG)
+                                                : SymbolInfoDouble(symbol,SYMBOL_SWAP_SHORT);
+            int rolloversCrossed = 1+(int)MathMax(0.0,(double)(projectedHoldSeconds-secToMidnight)/86400.0);
+            swapCost = MathAbs(swapPts)*ptsToCurrency*(double)rolloversCrossed;
+           }
+        }
+
+      //--- slippage: a configurable worst-case buffer, not a fabricated percentage of price ---
+      double slippageCost = m_slippageToleranceBufferPts*ptsToCurrency;
+
+      //--- price impact: see the method-level comment above - gated off by default, see there for   ---
+      //--- the model and its honest limitations. ---
+      double impactCost = 0.0;
+      if(lots>=m_impactRelevanceThresholdLots && sessionVolumeLots>0 && volatilityPts>0)
+        {
+         double sizeRatio  = lots/sessionVolumeLots;
+         double impactPts  = m_impactCoefficientK*volatilityPts*MathSqrt(MathMax(0.0,sizeRatio));
+         impactCost = impactPts*ptsToCurrency;
+        }
+
+      return(spreadCost+commissionCost+swapCost+slippageCost+impactCost);
+     }
+
    //--- the core decision: read-only, no side effects beyond updating the cached "last" readings ---
    //--- used by the dashboard. Returns false (with reasonOut) if any hard gate blocks the trade; ---
    //--- otherwise riskMultiplierOut is the factor CRiskEngine's own sized lots should be scaled  ---
    //--- by - always in [0,1], so this can only ever reduce risk, never increase it. ---
+   //--- symbol/dir/lots and the market-data readings (point/tickSize/tickValue/volatilityPts/      ---
+   //--- sessionVolumeLots) feed CalculateExpectedCost() - lots must already reflect RiskEngine's   ---
+   //--- own base sizing (computed by the caller BEFORE calling Evaluate()), since a real per-trade  ---
+   //--- cost figure cannot exist before a real lot size does. ---
+   //--- vwapExitActive/vwapAligned: see the VWAP alignment bonus note in the continuous scaler below. ---
    bool              Evaluate(const SAxScore &score,const SAxStatsSnapshot &stats,
-                               const int consecutivePoorFills,double &riskMultiplierOut,string &reasonOut)
+                               const int consecutivePoorFills,
+                               const string symbol,const ENUM_AX_DIR dir,const double lots,
+                               const double point,const double tickSize,const double tickValue,
+                               const double volatilityPts,const int projectedHoldSeconds,
+                               const double sessionVolumeLots,
+                               const bool vwapExitActive,const bool vwapAligned,
+                               double &riskMultiplierOut,string &reasonOut)
      {
       riskMultiplierOut = 0.0;
       if(!m_enabled) { riskMultiplierOut=1.0; reasonOut=""; return(true); }
@@ -160,7 +285,19 @@ public:
       //--- realized avgWin/avgLoss ratio replaces the cold-start assumed reward:risk ratio. ---
       double rr = (haveStats && MathAbs(stats.avgLoss)>1e-8) ? (stats.avgWin/MathAbs(stats.avgLoss))
                                                               : m_assumedRewardRiskRatio;
-      double evR = p*rr - (1.0-p)*1.0;
+
+      //--- real trading costs, converted from account currency into the same R-multiple units as   ---
+      //--- the rest of this calculation (dividing by the estimated currency amount actually risked  ---
+      //--- per trade - see stats_RiskFractionEstimate) and subtracted before the EV gate is checked. ---
+      //--- This was previously absent entirely - not an outdated cost assumption, but no cost term  ---
+      //--- at all - so a trade with a real, positive probability edge could still pass the EV floor  ---
+      //--- while being a net loser after spread/commission/swap/slippage eat it alive. ---
+      double costCurrency = CalculateExpectedCost(symbol,dir,lots,point,tickSize,tickValue,
+                                                    volatilityPts,projectedHoldSeconds,sessionVolumeLots);
+      double costR = CostInR(costCurrency,stats);
+      m_lastCostR = costR;
+
+      double evR = p*rr - (1.0-p)*1.0 - costR;
       m_lastExpectedValueR = evR;
 
       //--- risk of ruin: a classic closed-form gambler's-ruin approximation adapted to fixed-      ---
@@ -229,7 +366,25 @@ public:
       if(consecutivePoorFills>=2) exq = 0.40;
       else if(consecutivePoorFills>=1) exq = 0.70;
 
-      m_lastRiskMultiplier = AxClampD(stateMult*exq,0.0,1.0);
+      double baseMult = stateMult*exq;
+
+      //--- VWAP alignment bonus (Zarattini & Aziz 2023, adapted - see VWAPEngine.mqh and             ---
+      //--- CExitEngine's mechanical VWAP exit). IMPORTANT: this class's own documented invariant      ---
+      //--- (see the file header) is that it only ever scales DOWN from CRiskEngine's already hard-    ---
+      //--- capped 2% max risk-per-trade ceiling, never up - a true above-1.0x multiplier here would   ---
+      //--- silently push effective risk past that ceiling, which is exactly the "just this once, a    ---
+      //--- bit more" reasoning this whole engine exists to refuse. So the bonus is implemented as a    ---
+      //--- CLAW-BACK: it can pull baseMult back TOWARD 1.0 (partially offsetting how much CAUTION/     ---
+      //--- DEFENSIVE/poor-fill state already de-risked this trade) but the result is re-clamped to     ---
+      //--- <=1.0 immediately after, so it can never exceed what RiskEngine's own sizing already        ---
+      //--- computed. Gated on BOTH vwapExitActive (the mechanical exit must actually be armed for      ---
+      //--- this specific trade - not just the input toggle, but a real agreement at entry) AND         ---
+      //--- vwapAligned (this signal's direction agrees with the current VWAP trend); either being      ---
+      //--- false makes this an exact no-op, regardless of how good anything else about the setup looks.---
+      if(vwapExitActive && vwapAligned && baseMult<1.0)
+         baseMult = MathMin(1.0,baseMult*m_vwapAlignmentBonus);
+
+      m_lastRiskMultiplier = AxClampD(baseMult,0.0,1.0);
       riskMultiplierOut = m_lastRiskMultiplier;
       reasonOut = "";
       return(true);
@@ -240,12 +395,26 @@ public:
    double                DrawdownFromPeakPct(void) const { return(m_ddFromPeakPct); }
    double                WinProbability(void)  const { return(m_lastWinProbability); }
    double                ExpectedValueR(void)  const { return(m_lastExpectedValueR); }
+   double                CostR(void)           const { return(m_lastCostR); }
    double                RiskOfRuinPct(void)   const { return(m_lastRiskOfRuinPct); }
    double                AccountHealth(void)   const { return(m_lastAccountHealth); }
    double                LastRiskMultiplier(void) const { return(m_lastRiskMultiplier); }
    bool                  IsEnabled(void)       const { return(m_enabled); }
 
 private:
+   //--- converts a currency cost figure into the same R-multiple units the rest of the EV math     ---
+   //--- uses, dividing by the estimated currency amount actually risked per trade (reusing          ---
+   //--- stats_RiskFractionEstimate rather than a second, competing notion of "risk per trade"). ---
+   double            CostInR(const double costCurrency,const SAxStatsSnapshot &stats) const
+     {
+      if(costCurrency<=0) return(0.0);
+      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      if(equity<=0) return(0.0);
+      double riskAmountCurrency = equity*stats_RiskFractionEstimate(stats);
+      if(riskAmountCurrency<=0) return(0.0);
+      return(costCurrency/riskAmountCurrency);
+     }
+
    //--- estimates the fraction of equity actually risked per trade, for the risk-of-ruin "loss-   ---
    //--- equivalents to reach ruin" calculation. Falls back to a conservative 1% assumption before  ---
    //--- there's a real risk-percent reading available to this class (it deliberately doesn't take  ---

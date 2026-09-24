@@ -58,6 +58,7 @@ struct SAxDashboardExtras
    double         afeDrawdownFromPeakPct;
    double         afeRiskOfRuinPct;
    double         afeExpectedValueR;
+   double         afeCostR;               // cost component already subtracted out of afeExpectedValueR
    double         afeWinProbability;      // 0..1
    double         afeAccountHealth;       // 0..100
    double         afeRiskMultiplier;      // 0..1, last applied
@@ -65,6 +66,11 @@ struct SAxDashboardExtras
    //--- order-book impact-cost sizing ---
    bool           impactCostEnabled;
    double         impactCostPct;          // last measured, for the originally-intended size
+
+   //--- VWAP Trend Engine ---
+   string         vwapTrend;              // "BULLISH"/"BEARISH"/"NEUTRAL"
+   double         vwapValue;              // -1 when unavailable
+   bool           vwapExitEnabled;
   };
 
 class CDashboard
@@ -141,7 +147,7 @@ public:
          ObjectCreate(m_chartId,full,OBJ_BUTTON,0,0,0);
          ObjectSetInteger(m_chartId,full,OBJPROP_CORNER,CORNER_LEFT_UPPER);
          ObjectSetInteger(m_chartId,full,OBJPROP_XDISTANCE,m_x);
-         ObjectSetInteger(m_chartId,full,OBJPROP_YDISTANCE,m_y+837);
+         ObjectSetInteger(m_chartId,full,OBJPROP_YDISTANCE,m_y+856);
          ObjectSetInteger(m_chartId,full,OBJPROP_XSIZE,m_width);
          ObjectSetInteger(m_chartId,full,OBJPROP_YSIZE,26);
          ObjectSetString(m_chartId,full,OBJPROP_TEXT,"KILL ENGINE");
@@ -173,7 +179,7 @@ public:
                              const ENUM_AX_ENGINE_STATE engineState,const ENUM_AX_GATE gate,
                              const SAxDashboardExtras &extras)
      {
-      MakeRect("BG",m_x-6,m_y-6,m_width,907,C'12,12,14');
+      MakeRect("BG",m_x-6,m_y-6,m_width,926,C'12,12,14');
 
       int y=m_y; int x=m_x+4;
       MakeLabel("T1",x,y,"AUTOPSY X",clrGold,12); y+=18;
@@ -314,8 +320,8 @@ public:
                    AxCapitalStateToString(extras.afeState),extras.afeDrawdownFromPeakPct),stateClr2); y+=m_lineH;
 
          color rorClr = (extras.afeRiskOfRuinPct>=10.0) ? clrTomato : clrWhite;
-         MakeLabel("AFE_ROR",x,y,StringFormat("RISK OF RUIN: %.1f%%   EV: %.2fR",
-                   extras.afeRiskOfRuinPct,extras.afeExpectedValueR),rorClr); y+=m_lineH;
+         MakeLabel("AFE_ROR",x,y,StringFormat("RISK OF RUIN: %.1f%%   EV: %.2fR (cost %.2fR)",
+                   extras.afeRiskOfRuinPct,extras.afeExpectedValueR,extras.afeCostR),rorClr); y+=m_lineH;
 
          MakeLabel("AFE_PROB",x,y,StringFormat("WIN PROB: %.0f%%   HEALTH: %.0f",
                    extras.afeWinProbability*100.0,extras.afeAccountHealth),clrWhite); y+=m_lineH;
@@ -323,6 +329,15 @@ public:
          color multClr = (extras.afeRiskMultiplier<1.0) ? clrGold : clrSilver;
          MakeLabel("AFE_MULT",x,y,StringFormat("RISK MULTIPLIER: x%.2f",extras.afeRiskMultiplier),multClr); y+=m_lineH+4;
         }
+
+      //--- VWAP Trend Engine - one line, always rendered so the panel height/kill-button offset ---
+      //--- never goes stale (same reasoning as the AFE/SNIPER sections above) ---
+      string vwapStr = (extras.vwapValue<=0) ? "N/A" :
+                        StringFormat("%s @ %s",extras.vwapTrend,DoubleToString(extras.vwapValue,_Digits));
+      if(extras.vwapExitEnabled) vwapStr += " [EXIT ARMED]";
+      color vwapClr = (extras.vwapTrend=="BULLISH") ? clrLime :
+                       (extras.vwapTrend=="BEARISH") ? clrTomato : clrSilver;
+      MakeLabel("VWAP",x,y,"VWAP: "+vwapStr,vwapClr); y+=m_lineH+4;
 
       color engClr = (engineState==AX_ENGINE_ATTACKING)?clrLime:(engineState==AX_ENGINE_KILLED)?clrRed:clrSilver;
       MakeLabel("ENGINE",x,y,"ENGINE: "+stateStr,engClr); y+=m_lineH;

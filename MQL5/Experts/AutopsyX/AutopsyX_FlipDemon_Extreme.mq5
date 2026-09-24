@@ -36,6 +36,7 @@
 #include <AutopsyX/TradeAutopsy.mqh>
 #include <AutopsyX/Statistics.mqh>
 #include <AutopsyX/AdaptiveFlipEngine.mqh>
+#include <AutopsyX/VWAPEngine.mqh>
 #include <AutopsyX/Dashboard.mqh>
 
 //====================================================================
@@ -81,6 +82,21 @@ input double          InpAfeMinExpectedValueR     = 0.0;    // Block entries who
 input double          InpAfeMinAccountHealth      = 25.0;   // Block entries when the blended 0-100 account-health score is below this
 input int             InpAfeMinTradesForStats     = 20;     // Trades required before trailing stats blend into the probability/EV estimate
 input double          InpAfeAssumedRewardRisk     = 1.5;    // Cold-start reward:risk assumption before enough trade history exists
+input double          InpCommissionPerLot         = 0.0;    // Broker's real commission per lot, round trip, account currency - get this from your broker, never guessed
+input double          InpSlippageToleranceBufferPts = 0.0;  // Worst-case slippage buffer folded into the EV cost estimate, points
+input double          InpImpactCoefficientK       = 1.0;    // Square-root price-impact model coefficient (Bouchaud et al.) - only used above InpImpactRelevanceThresholdLots
+input double          InpImpactRelevanceThresholdLots = 50.0; // Institutional-scale size threshold before price impact is even computed - this EA's own sizing is never expected to reach it
+
+input group "=== VWAP TREND ENGINE (Zarattini & Aziz, SSRN 4631351, 2023) ===";
+input ENUM_AX_VWAP_MODE InpVWAPMode          = AX_VWAP_ROLLING; // Rolling trailing window, or anchored to the most recent FX session open
+input int             InpVWAPRollingBars     = 240;    // Rolling VWAP window, bars (240 = 4 hours on M1 - adjust proportionally on other timeframes)
+input int             InpVWAPSydneyHour      = 22;     // Sydney session open, broker SERVER time hour (0-23) - verify against your broker, not a universal clock
+input int             InpVWAPTokyoHour       = 0;      // Tokyo session open, broker server time hour
+input int             InpVWAPLondonHour      = 8;      // London session open, broker server time hour
+input int             InpVWAPNewYorkHour     = 13;      // New York session open, broker server time hour
+input double          InpVWAPDeadbandATRMult = 0.1;    // Deadband around VWAP, as a multiple of ATR, before a trend read is BULLISH/BEARISH rather than NEUTRAL
+input bool            InpUseVWAPExit         = false;  // Opt-in mechanical exit: close if a bar closes on the wrong side of VWAP from the position's direction. Unconditional once armed - see ExitEngine.mqh
+input double          InpVWAPAlignmentBonus  = 1.15;   // Sizing bonus applied ONLY when InpUseVWAPExit is on and this signal agrees with VWAP trend - see AdaptiveFlipEngine.mqh for how this is bounded
 
 input group "=== RISK ENGINE ===";
 input double         InpDailyLossLimitPercent   = 8.0;    // Daily loss limit (%) - stops session when hit
@@ -190,6 +206,7 @@ CFootprintEngine      g_footprint;
 CPulseEngine          g_pulse;
 CHeatmapEngine        g_heatmap;
 CAdaptiveFlipEngine   g_afe;
+CVWAPEngine           g_vwap;
 CTradeAutopsy         g_autopsy;
 CStatistics           g_stats;
 CAccuracyEngine       g_accuracy;
@@ -206,6 +223,12 @@ double                g_adaptiveConfMultiplier = 1.0;
 // only ever holds the PRE-bonus reading, so the dashboard reads this instead to show what really
 // drove the decision rather than a stale, lower-confidence number that silently diverges from it
 SAxScore              g_lastScore;
+
+// VWAP Trend Engine readings, refreshed once per new bar (same cadence as regime/liquidity) -
+// g_vwapValue is -1 when unavailable, g_vwapTrend is "NEUTRAL" in that case (never fabricated)
+double                g_vwapValue = -1.0;
+string                g_vwapTrend = "NEUTRAL";
+double                g_lastClosedBarClose = 0.0;
 
 //--- live execution-quality tracking: a demo feed rarely shows meaningful slippage or fill    ---
 //--- latency, so these only really start to matter once running on a live account. Tracked    ---
@@ -279,8 +302,10 @@ string AxBuildEntryReason(const SAxScore &score,const ENUM_AX_DIR dir)
                                        : g_liq.BearishAttackReady(g_mom.DisplacementPts());
    if(liqReady) tags+="LIQUIDITY_SWEEP ";
    tags+="MOMENTUM";
-   return(StringFormat("%s | %s | B=%.0f S=%.0f C=%.0f",
-          AxRegimeToString(score.regime),tags,score.buyScore,score.sellScore,score.confidence));
+   // VWAP trend read reported alongside the other engines here - advisory evidence only, never an
+   // override of the regime/structure engines that already decided this trade (Task 2)
+   return(StringFormat("%s | %s | VWAP=%s | B=%.0f S=%.0f C=%.0f",
+          AxRegimeToString(score.regime),tags,g_vwapTrend,score.buyScore,score.sellScore,score.confidence));
   }
 
 //--- builds a trade record from the current position state; does NOT touch g_posState or file it ---
@@ -576,23 +601,6 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       return(false);
      }
 
-   // Adaptive Flip Engine: capital-protection gate + position-size scaler, applied unconditionally
-   // like every other gate above - a flip re-entry gets no exemption from risk-of-ruin/drawdown
-   // protection just because it's defensive in nature. Computing the stats snapshot here (rather
-   // than reusing OnTimer's cached one) keeps this function a pure read of current state; it's only
-   // ever called at an actual entry attempt, far rarer than the tick loop, so this cost is fine.
-   double afeRiskMultiplier = 1.0;
-   if(InpUseAdaptiveFlipEngine)
-     {
-      SAxStatsSnapshot afeStats = g_stats.Compute(g_autopsy,g_risk.DayStartEquity()>0?g_risk.DayStartEquity():AccountInfoDouble(ACCOUNT_EQUITY));
-      string afeReason;
-      if(!g_afe.Evaluate(score,afeStats,g_consecutivePoorFills,afeRiskMultiplier,afeReason))
-        {
-         if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked by Adaptive Flip Engine (%s)",afeReason);
-         return(false);
-        }
-     }
-
    double intendedPrice = (dir==AX_DIR_BUY) ? g_md.CurrentAsk() : g_md.CurrentBid();
    double point = g_md.Point();
    double slPrice,tpPrice;
@@ -634,6 +642,44 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    double actualSlDistPts = (point>0) ? MathAbs(intendedPrice-slPrice)/point : InpEmergencySlPoints;
 
    double lots = g_risk.CalculateLotSize(g_md,actualSlDistPts);
+
+   // Adaptive Flip Engine: capital-protection gate + position-size scaler, applied unconditionally
+   // like every other gate above - a flip re-entry gets no exemption from risk-of-ruin/drawdown
+   // protection just because it's defensive in nature. Runs here (AFTER stops/base lot size are
+   // known) rather than before, because CalculateExpectedCost() needs a real lot size to convert
+   // spread/commission/swap/slippage into a real currency figure - it can't run against nothing.
+   // Computing the stats snapshot here (rather than reusing OnTimer's cached one) keeps this
+   // function a pure read of current state; it's only ever called at an actual entry attempt, far
+   // rarer than the tick loop, so this cost is fine.
+   double afeRiskMultiplier = 1.0;
+   // this signal's own direction vs the current VWAP trend read - feeds both AFE's VWAP alignment
+   // bonus (Task 4) below AND g_posState.vwapAlignedAtEntry further down, so it's computed once
+   // here, outside the AFE toggle, rather than being unreachable when InpUseAdaptiveFlipEngine is
+   // off. Deliberately does NOT check g_posState: this is evaluated before any position exists for
+   // this specific attempt, at the moment of a fresh entry/flip decision.
+   bool vwapAlignedForThisEntry = (dir==AX_DIR_BUY && g_vwapTrend=="BULLISH") ||
+                                   (dir==AX_DIR_SELL && g_vwapTrend=="BEARISH");
+   if(InpUseAdaptiveFlipEngine)
+     {
+      SAxStatsSnapshot afeStats = g_stats.Compute(g_autopsy,g_risk.DayStartEquity()>0?g_risk.DayStartEquity():AccountInfoDouble(ACCOUNT_EQUITY));
+      // volatility reused from CRegimeEngine's own ATR (never duplicated here), converted to points
+      // to match CalculateExpectedCost's point-based cost math. Session volume is a real MT5 API
+      // field, often 0/unavailable on OTC forex-CFD symbols with no consolidated tape - the impact
+      // term inside CalculateExpectedCost treats that honestly as "cannot compute", not zero cost.
+      double afeVolatilityPts = (point>0) ? g_regime.CurrentAtr()/point : 0.0;
+      double afeSessionVolumeLots = SymbolInfoDouble(_Symbol,SYMBOL_SESSION_VOLUME);
+      string afeReason;
+      if(!g_afe.Evaluate(score,afeStats,g_consecutivePoorFills,
+                          _Symbol,dir,lots,point,g_md.TickSize(),g_md.TickValue(),
+                          afeVolatilityPts,InpMaxHoldSeconds,afeSessionVolumeLots,
+                          InpUseVWAPExit,vwapAlignedForThisEntry,
+                          afeRiskMultiplier,afeReason))
+        {
+         if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked by Adaptive Flip Engine (%s)",afeReason);
+         return(false);
+        }
+     }
+
    // AFE only ever SCALES DOWN from RiskEngine's already-configured, already-capped risk percent -
    // afeRiskMultiplier is clamped to [0,1] inside CAdaptiveFlipEngine, so this can never push size
    // past what RiskEngine itself already decided was the maximum acceptable for this stop distance.
@@ -700,6 +746,9 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    g_posState.afeWinProbability = g_afe.WinProbability();
    g_posState.afeRiskMultiplier = afeRiskMultiplier;
    g_posState.impactCostPct     = impactCostPct;
+   // arms CExitEngine's mechanical VWAP exit for THIS position only - reuses vwapAlignedForThisEntry
+   // (already computed above, same dir/g_vwapTrend comparison) rather than re-deriving it
+   g_posState.vwapAlignedAtEntry = InpUseVWAPExit && vwapAlignedForThisEntry;
    AxRegisterFillQuality(g_posState.entrySlippagePts,fillLatencyMs);
 
    if(dir==AX_DIR_BUY && g_liq.BullishAttackReady(g_mom.DisplacementPts())) g_liq.ConsumeBullishAttack();
@@ -778,6 +827,9 @@ void AxReconcileExistingPosition(void)
    g_posState.afeWinProbability = 0.5;
    g_posState.afeRiskMultiplier = 1.0;
    g_posState.impactCostPct     = 0.0;
+   // no real "VWAP trend at entry" reading exists for a position from before this EA session
+   // started - never arm the mechanical exit off a fabricated alignment, default to unarmed
+   g_posState.vwapAlignedAtEntry = false;
 
    // baseline to any OUT deals that already happened on this position before this EA session
    // started (e.g. a partial close from before a restart), so they are never re-reported -
@@ -867,8 +919,14 @@ int OnInit(void)
    g_afe.Configure(InpUseAdaptiveFlipEngine,InpAfeCautionDdPct,InpAfeDefensiveDdPct,InpAfeLockedDdPct,
                     InpAfeCautionMultiplier,InpAfeDefensiveMultiplier,InpAfeMaxRiskOfRuinPct,
                     InpAfeRuinThresholdPct,InpAfeMinExpectedValueR,InpAfeMinAccountHealth,
-                    InpAfeMinTradesForStats,InpAfeAssumedRewardRisk,g_risk.RiskPercent());
+                    InpAfeMinTradesForStats,InpAfeAssumedRewardRisk,g_risk.RiskPercent(),
+                    InpCommissionPerLot,InpSlippageToleranceBufferPts,
+                    InpImpactCoefficientK,InpImpactRelevanceThresholdLots,
+                    InpVWAPAlignmentBonus);
    g_afe.Init(_Symbol,InpMagicNumber);
+
+   g_vwap.Configure(InpVWAPMode,InpVWAPRollingBars,InpVWAPSydneyHour,InpVWAPTokyoHour,
+                     InpVWAPLondonHour,InpVWAPNewYorkHour,InpVWAPDeadbandATRMult);
 
    if(!g_autopsy.Init("AutopsyX_FlipDemon_Extreme",_Symbol))
       Print("AUTOPSY X: warning - could not open trade autopsy CSV log");
@@ -939,15 +997,41 @@ void OnTick(void)
    g_pulse.Update(g_mom,g_micro,g_regime,g_orderFlow);
 
    //--- refresh structural regime/liquidity/volume-profile levels only on a new bar - not every tick ---
+   bool isNewBarThisTick = false;
    datetime barTime = iTime(_Symbol,InpRegimeTimeframe,0);
    if(barTime!=g_lastBarTime && barTime>0)
      {
+      isNewBarThisTick = true;
       g_lastBarTime = barTime;
       g_regime.Update();
       g_liq.RefreshLevels();
       g_volProfile.Refresh();
       g_adaptiveConfMultiplier = AxAdaptiveConfidenceMultiplier();
       g_entryEngine.Configure(InpMinConfidenceToEnter*g_adaptiveConfMultiplier);
+
+      // VWAP Trend Engine (Zarattini & Aziz 2023) - refreshed at the same once-per-bar cadence as
+      // regime/liquidity above, reusing the ATR CRegimeEngine just updated rather than computing a
+      // second volatility read. g_vwapValue stays -1 (unavailable) rather than 0 when the engine
+      // can't compute a real reading - AxBuildEntryReason/the dashboard/g_vwapTrend all treat that
+      // as "no read", never as a price of zero.
+      double closedBarCloseCandidate = iClose(_Symbol,InpRegimeTimeframe,1);
+      if(closedBarCloseCandidate>0)
+        {
+         g_lastClosedBarClose = closedBarCloseCandidate;
+         g_vwapValue = g_vwap.GetVWAP(_Symbol,InpRegimeTimeframe);
+         g_vwapTrend = g_vwap.ClassifyVWAPTrend(g_lastClosedBarClose,g_vwapValue,g_regime.CurrentAtr());
+        }
+      else
+        {
+         // iClose() returning 0 means the closed bar's price genuinely isn't available yet (a
+         // fresh history cache right after EA start, a brief feed/history gap) - MQL5 documents
+         // this as a real, non-error return value, not an exception. A zero price is never a real
+         // market price, so it must never be trusted as one: force everything downstream that
+         // depends on it back to "unavailable" rather than let a spurious 0 corrupt the trend
+         // classification or arm/fire the mechanical VWAP exit off bad data.
+         g_vwapValue = -1.0;
+         g_vwapTrend = "NEUTRAL";
+        }
      }
    //--- HTF confluence structure refreshes on its own, slower bar clock ---
    datetime htfBarTime = iTime(_Symbol,InpHtfTimeframe,0);
@@ -1028,7 +1112,8 @@ void OnTick(void)
       else
         {
          g_exit.UpdateExcursion(g_posState,g_md.CurrentBid(),g_md.CurrentAsk(),g_md.TickValue(),g_md.TickSize());
-         SAxExitDecision dec = g_exit.Evaluate(g_posState,g_md,g_mom,g_micro,score,InpMaxSpreadPoints);
+         SAxExitDecision dec = g_exit.Evaluate(g_posState,g_md,g_mom,g_micro,score,InpMaxSpreadPoints,
+                                                InpUseVWAPExit && isNewBarThisTick,g_vwapValue,g_lastClosedBarClose);
          if(dec.shouldExit)
            {
             AxCloseAndRecord(dec.reason);
@@ -1243,12 +1328,17 @@ void OnTimer(void)
    extras.afeDrawdownFromPeakPct  = g_afe.DrawdownFromPeakPct();
    extras.afeRiskOfRuinPct        = g_afe.RiskOfRuinPct();
    extras.afeExpectedValueR       = g_afe.ExpectedValueR();
+   extras.afeCostR                 = g_afe.CostR();
    extras.afeWinProbability       = g_afe.WinProbability();
    extras.afeAccountHealth        = g_afe.AccountHealth();
    extras.afeRiskMultiplier       = g_afe.LastRiskMultiplier();
 
    extras.impactCostEnabled       = InpUseImpactCostSizing;
    extras.impactCostPct           = g_posState.impactCostPct;
+
+   extras.vwapTrend               = g_vwapTrend;
+   extras.vwapValue               = g_vwapValue;
+   extras.vwapExitEnabled         = InpUseVWAPExit;
 
    g_dash.Render(InpMode,g_regime.Regime(),g_lastScore,g_mom.VelocityLabel(),
                  (g_mom.PersistentBull()?"BULLISH":g_mom.PersistentBear()?"BEARISH":"NEUTRAL"),

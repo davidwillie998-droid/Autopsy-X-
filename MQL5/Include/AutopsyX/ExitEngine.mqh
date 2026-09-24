@@ -177,11 +177,37 @@ public:
      }
 
    //--- fast defensive exits: profit-management stage 4 + spec section 9 ---
+   //--- vwapExitCheckDue/vwapValueAtCheck/lastClosedBarClose: passed by the caller only once per new ---
+   //--- bar close (see main.mq5) - this is the ONE input to this whole function that, when it fires, ---
+   //--- is never skippable by anything else in here. See the check itself for why that matters. ---
    SAxExitDecision   Evaluate(const SAxPositionState &st,const CMarketData &md,const CMomentumEngine &mom,
                                const CMicrostructureEngine &micro,const SAxScore &score,
-                               const double maxSpreadPts) const
+                               const double maxSpreadPts,
+                               const bool vwapExitCheckDue,const double vwapValueAtCheck,
+                               const double lastClosedBarClose) const
      {
       SAxExitDecision d; d.shouldExit=false; d.reason=AX_EXIT_NONE;
+
+      //--- VWAP mechanical exit (Zarattini & Aziz 2023, adapted for 24-hour markets - see           ---
+      //--- VWAPEngine.mqh). This is deliberately the FIRST check in this function and returns        ---
+      //--- immediately: no other condition below it, and no caller-side flag (not "unless a flip is  ---
+      //--- also confirming", not "unless the setup score is high"), may skip it once it fires. That's ---
+      //--- not stylistic - it's the entire basis for CAdaptiveFlipEngine's VWAP alignment sizing      ---
+      //--- bonus being legitimate at all: aggressive sizing is only defensible because this exit is   ---
+      //--- real and always-honored, exactly the source paper's own finding. st.vwapAlignedAtEntry     ---
+      //--- being true already encodes that InpUseVWAPExit was on and this position agreed with VWAP   ---
+      //--- at entry, so no separate enabled-flag is needed here beyond that. ---
+      //--- One honest interaction worth naming: if a full FLIP confirmation fires on the very same    ---
+      //--- tick, main.mq5's flip branch closes the position under AX_EXIT_FLIP before this function   ---
+      //--- is even called that tick - the position is still always closed either way, just possibly   ---
+      //--- labeled FLIP instead of VWAP_TREND_FLIP on that one tick. That is flip's own unconditional ---
+      //--- closure acting first, not a bypass of this rule. ---
+      if(st.vwapAlignedAtEntry && vwapExitCheckDue && vwapValueAtCheck>0)
+        {
+         bool closedWrongSide = (st.dir==AX_DIR_BUY) ? (lastClosedBarClose<vwapValueAtCheck)
+                                                       : (lastClosedBarClose>vwapValueAtCheck);
+         if(closedWrongSide) { d.shouldExit=true; d.reason=AX_EXIT_VWAP_TREND_FLIP; return(d); }
+        }
 
       //--- maximum holding time - Patnaik & Thomas (2004) find momentum profits RISE with holding ---
       //--- period once formation is short (their Table 6: profits at a 250-day hold run 3-4x those ---

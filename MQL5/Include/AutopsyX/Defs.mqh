@@ -63,7 +63,17 @@ enum ENUM_AX_EXIT_REASON
    AX_EXIT_FLIP,
    AX_EXIT_MANUAL_KILL,
    AX_EXIT_BREAKEVEN_STOP,
-   AX_EXIT_TRAIL_STOP
+   AX_EXIT_TRAIL_STOP,
+   AX_EXIT_VWAP_TREND_FLIP    // mechanical VWAP exit (Zarattini & Aziz 2023) - a bar closed on the
+                               // wrong side of VWAP from the position's own direction; only armed
+                               // when InpUseVWAPExit is on AND the position agreed with VWAP at entry
+  };
+
+//--- VWAP Trend Engine anchoring mode - see VWAPEngine.mqh ---------------------
+enum ENUM_AX_VWAP_MODE
+  {
+   AX_VWAP_ROLLING = 0,        // trailing window, no session-boundary assumption
+   AX_VWAP_SESSION_ANCHORED    // resets at the most recent of 4 configurable FX session opens
   };
 
 //--- Trade autopsy classification ------------------------------------------
@@ -102,6 +112,35 @@ enum ENUM_AX_CAPITAL_STATE
    AX_CAPITAL_CAUTION,        // scaled-down risk, drawdown-from-peak is building
    AX_CAPITAL_DEFENSIVE,      // heavily scaled-down risk, drawdown-from-peak is serious
    AX_CAPITAL_LOCKED          // AFE hard-blocks new risk entirely until conditions recover
+  };
+
+//--- Composite direction state (FLIPDEMON EXTREME upgrade, spec section 4) - the output of
+//--- weighing every directional engine (HTF, regime, liquidity, momentum, microstructure,
+//--- order flow, VWAP, VP-MACD) against each other. Deliberately NOT a binary BUY/SELL - a
+//--- reduced vote count would hide exactly the "not enough evidence" and "something is actively
+//--- wrong" cases the rest of the pipeline needs to tell apart. ---
+enum ENUM_AX_COMPOSITE_DIRECTION
+  {
+   AX_COMPOSITE_BULLISH = 0,
+   AX_COMPOSITE_BEARISH,
+   AX_COMPOSITE_NEUTRAL,              // evidence was evaluated and genuinely doesn't favor a side
+   AX_COMPOSITE_BLOCKED,              // a hard defensive condition overrides any directional read
+   AX_COMPOSITE_DATA_UNAVAILABLE,     // a required input couldn't be computed (e.g. regime has
+                                       // insufficient ATR history) - distinct from NEUTRAL, which
+                                       // means the data WAS available and said "no edge"
+   AX_COMPOSITE_INSUFFICIENT_EVIDENCE // data was available but too few engines produced a usable
+                                       // directional read to justify acting on any of them
+  };
+
+//--- Execution eligibility state (spec section 13) - CheckExecutionEligibility()'s verdict. ---
+enum ENUM_AX_ELIGIBILITY
+  {
+   AX_ELIGIBLE_LONG = 0,
+   AX_ELIGIBLE_SHORT,
+   AX_NOT_ELIGIBLE,          // evaluated, conditions simply don't clear the bar (EV/R:R/etc.)
+   AX_ELIGIBILITY_BLOCKED,   // a hard defensive/risk condition vetoes entry outright
+   AX_ELIGIBILITY_DATA_UNAVAILABLE,
+   AX_ELIGIBILITY_INSUFFICIENT_EVIDENCE
   };
 
 //--- One microstructure/momentum tick sample ---------------------------------
@@ -183,6 +222,62 @@ struct SAxTradeRecord
    double                impactCostPct;
   };
 
+//--- Formal Trade Thesis (FLIPDEMON EXTREME upgrade, spec section 3) - the frozen, auditable
+//--- record of WHY a specific setup was (or wasn't) taken. "Frozen at entry" means: every field
+//--- below is set exactly once, at thesis-creation time, from what was actually known at that
+//--- moment - never rewritten afterward using information that only became available later.
+//--- The one exception is invalidationReason, which starts empty and is populated exactly once,
+//--- if and when the thesis is later judged invalid - that population event itself is a real,
+//--- timestamped fact (ExitEngine/management logic reacting to new information), not a rewrite
+//--- of what the thesis originally claimed at entry.
+struct SAxTradeThesis
+  {
+   string                     setupId;
+   string                     symbol;
+   ENUM_AX_DIR                direction;
+   datetime                   timestamp;
+
+   ENUM_AX_COMPOSITE_DIRECTION htfBias;          // higher-timeframe structural bias at thesis time
+   ENUM_AX_COMPOSITE_DIRECTION executionBias;     // execution-timeframe composite direction
+   ENUM_AX_REGIME             marketRegime;
+
+   double                     liquidityTargetPrice; // 0 if no specific target identified - never
+                                                     // fabricated just to fill the field
+   string                     liquidityCondition;   // free-text description of the liquidity
+                                                     // hypothesis this setup is trading against
+   string                     structureState;       // BOS/MSS/CHoCH label from the structure
+                                                     // engine, or "UNAVAILABLE" until Phase 3 wires it
+   string                     entryModel;
+
+   string                     vwapState;            // "BULLISH"/"BEARISH"/"NEUTRAL"/"DATA_UNAVAILABLE"
+   string                     vpMacdState;          // same convention; "DATA_UNAVAILABLE" until built
+   string                     orderFlowState;
+   string                     momentumState;
+
+   SAxScore                   signalScore;          // the full buy/sell/confidence bundle at entry
+
+   double                     expectedEntry;
+   double                     stopLoss;
+   double                     takeProfit;
+   double                     initialRR;
+   double                     spreadPts;
+   double                     estimatedImpactCostPct;
+   double                     expectedValueR;
+
+   string                     newsState;            // "ALLOW"/"BLOCK"/"DATA_UNAVAILABLE"
+   string                     session;
+   string                     volatilityState;
+
+   double                     riskPercent;
+   double                     riskMultiplier;
+
+   int                        flipSeq;              // 0 = not a flip result
+   string                     eligibilityStatus;     // string form of ENUM_AX_ELIGIBILITY at the
+                                                      // moment execution eligibility was checked
+   string                     entryReason;
+   string                     invalidationReason;    // empty until/unless the thesis is invalidated
+  };
+
 //--- helpers -----------------------------------------------------------------
 string AxDirToString(const ENUM_AX_DIR d)
   {
@@ -225,6 +320,7 @@ string AxExitReasonToString(const ENUM_AX_EXIT_REASON r)
       case AX_EXIT_MANUAL_KILL:             return("MANUAL_KILL");
       case AX_EXIT_BREAKEVEN_STOP:          return("BREAKEVEN_STOP");
       case AX_EXIT_TRAIL_STOP:              return("TRAIL_STOP");
+      case AX_EXIT_VWAP_TREND_FLIP:         return("VWAP_TREND_FLIP");
      }
    return("NONE");
   }
@@ -275,6 +371,48 @@ string AxGateToString(const ENUM_AX_GATE g)
    return("UNKNOWN");
   }
 
+string AxCompositeDirectionToString(const ENUM_AX_COMPOSITE_DIRECTION d)
+  {
+   switch(d)
+     {
+      case AX_COMPOSITE_BULLISH:               return("BULLISH");
+      case AX_COMPOSITE_BEARISH:               return("BEARISH");
+      case AX_COMPOSITE_NEUTRAL:               return("NEUTRAL");
+      case AX_COMPOSITE_BLOCKED:               return("BLOCKED");
+      case AX_COMPOSITE_DATA_UNAVAILABLE:      return("DATA_UNAVAILABLE");
+      case AX_COMPOSITE_INSUFFICIENT_EVIDENCE: return("INSUFFICIENT_EVIDENCE");
+     }
+   return("UNKNOWN");
+  }
+
+string AxEligibilityToString(const ENUM_AX_ELIGIBILITY e)
+  {
+   switch(e)
+     {
+      case AX_ELIGIBLE_LONG:                     return("ELIGIBLE_LONG");
+      case AX_ELIGIBLE_SHORT:                    return("ELIGIBLE_SHORT");
+      case AX_NOT_ELIGIBLE:                      return("NOT_ELIGIBLE");
+      case AX_ELIGIBILITY_BLOCKED:               return("BLOCKED");
+      case AX_ELIGIBILITY_DATA_UNAVAILABLE:      return("DATA_UNAVAILABLE");
+      case AX_ELIGIBILITY_INSUFFICIENT_EVIDENCE: return("INSUFFICIENT_EVIDENCE");
+     }
+   return("UNKNOWN");
+  }
+
+//--- generates a SetupID with enough entropy to be practically unique across ticks, restarts and
+//--- reconnects. NOTE: uniqueness of this string alone is NOT the EA's duplicate-order protection -
+//--- that also requires checking existing positions/pending orders/magic number (spec section 20,
+//--- phase 5). This function only guarantees the thesis gets a real, traceable identifier. ---
+string AxGenerateSetupId(const string symbol,const ENUM_AX_DIR dir)
+  {
+   // (int) cast of TimeCurrent() is deliberate, not a precision cut corner - a unix timestamp fits
+   // an int until year 2038, and this string only needs to be a traceable, practically-unique tag,
+   // not a precise 64-bit epoch value. %I64d avoided here since its MQL5 StringFormat support is
+   // not something this environment can verify without a compiler - %d on an (int) cast is not in doubt.
+   return(StringFormat("%s-%s-%d-%u-%d",symbol,AxDirToString(dir),(int)TimeCurrent(),
+                        GetTickCount(),MathRand()));
+  }
+
 //--- live per-position management state (used by ExitEngine + main EA) -------
 struct SAxPositionState
   {
@@ -319,6 +457,12 @@ struct SAxPositionState
    double                afeRiskMultiplier;
 
    double                impactCostPct;
+
+   //--- true only if InpUseVWAPExit was on AND this position's own direction agreed with the VWAP  ---
+   //--- trend classification at the moment of entry - arms CExitEngine's mechanical VWAP exit for   ---
+   //--- this specific position. A position whose thesis was never about VWAP doesn't get a VWAP-    ---
+   //--- based exit forced onto it after the fact. ---
+   bool                  vwapAlignedAtEntry;
   };
 
 //--- exit decision returned by CExitEngine::Evaluate --------------------------

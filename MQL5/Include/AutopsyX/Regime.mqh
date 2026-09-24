@@ -1,6 +1,26 @@
 //+------------------------------------------------------------------+
 //|                                                       Regime.mqh |
 //|  Market Regime Engine (spec section 7)                           |
+//|                                                                    |
+//|  Why short, fixed bar-count windows instead of long calendar      |
+//|  formation/holding periods: fixed multi-week/month lookback       |
+//|  windows are the kind of setup documented to have grown           |
+//|  increasingly crowded and to decay faster since roughly the       |
+//|  early 2010s as momentum-factor strategies proliferated. This     |
+//|  engine instead keeps the trend/breakout lookback short           |
+//|  (AX_REGIME_TREND_BARS/AX_REGIME_BREAKOUT_BARS, 20 bars on         |
+//|  whatever timeframe InpRegimeTimeframe is set to - by default a   |
+//|  few minutes, not weeks) and layers a volatility-ratio read        |
+//|  (m_volRatio = current ATR / average ATR over                     |
+//|  AX_REGIME_ATR_LOOKBACK) on top to classify the CURRENT regime     |
+//|  (high-vol/low-vol/chaotic/trending). To be precise about what     |
+//|  that does and doesn't mean: the lookback WINDOW LENGTH itself     |
+//|  (20 bars) is fixed, not literally resized as volatility changes - |
+//|  it's the regime CLASSIFICATION, and the resulting aggression      |
+//|  multiplier applied elsewhere, that adapts to current volatility,  |
+//|  not the window's own size. That's a real distinction worth        |
+//|  stating plainly rather than overclaiming a fully adaptive-window  |
+//|  design this file doesn't actually implement.                     |
 //+------------------------------------------------------------------+
 #property strict
 #ifndef AX_REGIME_MQH
