@@ -230,6 +230,30 @@ enum ENUM_X15_TRAIL_MODE
    X15_TRAIL_VWAP
   };
 
+enum ENUM_X15_VWAP_EXIT
+  {
+   X15_VWAP_EXIT_OFF,
+   X15_VWAP_EXIT_IMMEDIATE,                    // live price beyond the closed-bar VWAP, intrabar
+   X15_VWAP_EXIT_CONFIRMED_CROSS,              // a closed bar crossed VWAP against the position
+   X15_VWAP_EXIT_CONFIRMED_CROSS_PLUS_STRUCTURE // confirmed cross AND an opposite structure break since entry
+  };
+
+// Every broker answer to an order request is classified into exactly one
+// of these; only the three "not executed" classes may ever be retried.
+enum ENUM_X15_SEND_OUTCOME
+  {
+   X15_SEND_FILLED,
+   X15_SEND_PLACED,           // pending order accepted
+   X15_SEND_REJECTED,
+   X15_SEND_REQUOTE,          // not executed: safe to retry once
+   X15_SEND_PRICE_CHANGED,    // not executed: safe to retry once
+   X15_SEND_OFF_QUOTES,       // not executed: safe to retry once
+   X15_SEND_TIMEOUT,          // may have executed: never resent
+   X15_SEND_CONNECTION_ERROR, // may have executed: never resent
+   X15_SEND_UNCERTAIN,        // success code without a deal/order ticket, or no answer: never resent
+   X15_SEND_OTHER_ERROR
+  };
+
 enum ENUM_X15_NEWS_EMERGENCY
   {
    X15_NEWS_EMERG_NONE,
@@ -345,9 +369,11 @@ input ENUM_X15_ENTRY_ORDER InpEntryOrderType = X15_ENTRY_MARKET;
 input int     InpPendingExpiryBars        = 3;       // stop-entry orders are cancelled after this many exec bars
 input double  InpStopEntryBufferATR       = 0.05;    // stop-entry trigger sits this x ATR beyond the confirmation bar's extreme
 input int     InpMaxSlippagePoints        = 30;      // CTrade deviation for market orders
+input int     InpPaperSlippagePoints      = 0;       // PAPER only: adverse slippage applied to every market-priced fill (entries, SL/manual exits); TP fills at its level
 
 input group "=== HARD RISK LIMITS (no adaptive bonus, override or evidence score can pass these) ===";
-input int     InpMaxPositionsTotal        = 3;     // this EA's positions + pending orders, all symbols
+input int     InpMaxPositionsTotal        = 3;     // this EA's positions + pending orders, all symbols (a pending order is a potential position)
+input int     InpMaxPendingOrders         = 3;     // this EA's pending stop-entry orders, all symbols
 input int     InpMaxPositionsPerSymbol    = 1;
 input int     InpMaxPositionsPerDirection = 1;     // per symbol, per direction
 input double  InpMaxTotalOpenRiskPct      = 3.0;   // this EA's money-at-risk-to-SL across all symbols, including the new trade
@@ -375,6 +401,7 @@ input bool    InpUsePartialClose          = true;
 input double  InpPartialAtR               = 1.5;
 input double  InpPartialClosePercent      = 50.0;
 input ENUM_X15_TRAIL_MODE InpTrailMode    = X15_TRAIL_STRUCTURE;
+input ENUM_X15_VWAP_EXIT InpVWAPExitMode  = X15_VWAP_EXIT_OFF; // independent of trailing; confirmed modes use CLOSED bars only
 input double  InpTrailStartR              = 1.5;
 input double  InpTrailATRMultiple         = 2.0;
 input double  InpTrailFixedR              = 1.0;
@@ -400,7 +427,7 @@ input group "=== PYRAMIDING ENGINE (section 21) ===";
 input bool    AllowPyramiding             = false; // OFF by default -- this is a new way to increase aggregate exposure, so like every other engine in this file, it earns activation explicitly rather than starting on
 input int     MaxPyramidAdds              = 3;     // NOT specified in the originating task -- conservative default, flagged here explicitly, trivial to change
 input double  MinProfitRMultipleToAdd     = 1.0;   // position must be at least this many R in profit (using the ORIGINAL entry's risk distance, the same yardstick as every other R-multiple in this file) before an add is even considered
-input bool    RequireFreshConfirmation    = true;  // see CheckPyramidEligibility() -- adds require a NEW signal event, not just "price moved favorably since the last add"
+input bool    RequireFreshConfirmation    = true;  // adds require a NEW VP-MACD crossover event (checked in CheckExecutionEligibility's add mode), not just "price moved favorably since the last add"
 
 input group "=== TIMEFRAMES & MARKET STRUCTURE ===";
 input ENUM_TIMEFRAMES InpExecTF           = PERIOD_M15; // execution/setup timeframe -- deliberately NOT the chart's timeframe, so switching the chart never changes a decision
@@ -515,6 +542,7 @@ struct JournalEntry
    ENUM_X15_EXIT_REASON exitReason;
    bool              isFlip;
    int               evidenceScore;
+   double            slippagePts;    // first fill vs requested price, in points; positive = adverse
   };
 JournalEntry g_journal[];
 
@@ -594,6 +622,10 @@ struct X15Position
    datetime          pendingExpiry;
    int               finalizeAttempts;
    bool              valuationFailed; // paper P&L could not be valued by OrderCalcProfit: journaled as invalid
+   double            requestedPrice;  // price the entry was requested at (market quote or stop level): slippage basis
+   bool              vwapFavorableSeen; // runtime only
+   datetime          lastCloseAttempt;  // runtime only: close/partial retry backoff
+   int               closeFailCount;    // runtime only
   };
 X15Position g_positions[];
 bool g_firstSyncDone = false; // flips true after the first reconcile pass -- positions found on that pass pre-date this run
@@ -2174,7 +2206,7 @@ void BuildLiquidity(X15Liquidity &L)
    else { L.londonHigh = 0.0; L.londonLow = 0.0; }
 
    // execution-TF swings: most recent 10, plus equal highs/lows among them
-   int confirmSec = InpSwingStrengthExec * period;
+   int confirmSec = (InpSwingStrengthExec + 1) * period; // swing bar + k confirming bars, all closed
    int firstSwing = MathMax(0, g_structExec.swingCount - 10);
    double tol = g_structExec.atrAvailable ? InpEqualLevelTolATR * g_structExec.atr : 0.0;
    for(int i = firstSwing; i < g_structExec.swingCount; i++)
@@ -2194,7 +2226,7 @@ void BuildLiquidity(X15Liquidity &L)
    // external HTF swings from the lowest bias voter
    if(g_structHTF[2].available)
      {
-      int htfConfirm = InpSwingStrengthHTF * PeriodSeconds(g_structHTF[2].tf);
+      int htfConfirm = (InpSwingStrengthHTF + 1) * PeriodSeconds(g_structHTF[2].tf);
       for(int i = MathMax(0, g_structHTF[2].swingCount - 4); i < g_structHTF[2].swingCount; i++)
          AddLiqLevel(L, g_structHTF[2].swings[i].price,
                      g_structHTF[2].swings[i].isHigh ? X15_LIQ_HTF_SWING_HIGH : X15_LIQ_HTF_SWING_LOW,
@@ -2442,14 +2474,31 @@ bool SessionTradable(ENUM_X15_SESSION s, string &why)
 // Decisions use closed-bar reads only. VP-MACD's P*_t already sums bars
 // t-N..t-1, so GetVPMACD(shift 0) touches no forming-bar data.
 //====================================================================
+// Per-bar VWAP state, set once per new closed exec bar by RunMarketAnalysis:
+// the decision read and every VWAP exit use these same values.
+string g_vwapClosedState = "UNAVAILABLE";
+double g_vwapClosed      = -1.0;  // VWAP through the last closed bar
+bool   g_vwapCrossDown   = false; // previous closed bar at/above its VWAP, last closed bar below
+bool   g_vwapCrossUp     = false; // previous closed bar at/below its VWAP, last closed bar above
+
 string ClassifyVWAPClosedBar(void)
   {
+   g_vwapClosed = -1.0;
+   g_vwapCrossDown = false;
+   g_vwapCrossUp = false;
    MqlRates rates[];
    int n = CopyRates(_Symbol, InpExecTF, 1, VWAPMaxBars, rates);
-   if(n <= 1) return("UNAVAILABLE");
+   if(n <= 2) return("UNAVAILABLE");
    double vwap = ComputeSessionVWAP(rates, n);
    if(vwap < 0.0) return("UNAVAILABLE");
+   g_vwapClosed = vwap;
+   double vwapPrev = ComputeSessionVWAP(rates, n - 1); // VWAP as it stood at the previous bar's close
    double c = rates[n-1].close;
+   if(vwapPrev > 0.0)
+     {
+      g_vwapCrossDown = (rates[n-2].close >= vwapPrev && c < vwap);
+      g_vwapCrossUp   = (rates[n-2].close <= vwapPrev && c > vwap);
+     }
    if(c > vwap) return("BULLISH");
    if(c < vwap) return("BEARISH");
    return("NEUTRAL");
@@ -2939,7 +2988,7 @@ ENUM_X15_DIR_STATE GetCompositeDirection(X15Decision &d)
    if(!g_htfBias.available) { d.state = X15_DIR_DATA_UNAVAILABLE; d.stateReason = g_htfBias.detail; return(d.state); }
    if(!g_liq.available) { d.state = X15_DIR_DATA_UNAVAILABLE; d.stateReason = g_liq.reason; return(d.state); }
 
-   d.vwapState   = ClassifyVWAPClosedBar();
+   d.vwapState   = g_vwapClosedState;
    d.vpmacdState = ClassifyVPMACDState();
 
    // every model x direction; a candidate survives only if it also clears the HTF hard gate
@@ -3068,6 +3117,7 @@ void RunMarketAnalysis(void)
    BuildLiquidity(g_liq);
    EvaluateNewsGate(g_newsGate);
    ClassifyRegime(g_regime, g_newsGate.eventActive);
+   g_vwapClosedState = ClassifyVWAPClosedBar();
 
    g_state = X15_ST_SETUP_SEARCH;
    GetCompositeDirection(g_decision);
@@ -3177,6 +3227,10 @@ void ResetPosition(X15Position &p)
    p.closed = false; p.isPendingOrder = false; p.pendingPrice = 0.0; p.pendingExpiry = 0;
    p.finalizeAttempts = 0;
    p.valuationFailed = false;
+   p.requestedPrice = 0.0;
+   p.vwapFavorableSeen = false;
+   p.lastCloseAttempt = 0;
+   p.closeFailCount = 0;
   }
 
 int FindPositionIndex(ulong positionId, bool isPaper)
@@ -3585,7 +3639,7 @@ bool SizeForRisk(int dir, double entry, double sl, double riskPct, double &lots,
       if(!OrderCalcProfit(type, _Symbol, v, entry, sl, profit)) { why = "OrderCalcProfit failed -- monetary risk cannot be validated"; return(false); }
       double loss = -profit;
       if(loss <= 0.0) { why = "stop is not on the losing side of entry"; return(false); }
-      if(loss <= budget * 1.0001)
+      if(loss <= budget * (1.0 + 1e-9))
         {
          lots = v;
          riskMoney = loss;
@@ -3754,6 +3808,51 @@ bool BrokerHasSetup(string setupId)
    return(false);
   }
 
+bool BrokerHistoryHasSetup(string setupId, int days)
+  {
+   if(setupId == "") return(false);
+   datetime now = TimeCurrent();
+   if(!HistorySelect(now - days * 86400, now + 60)) return(false);
+   int n = HistoryOrdersTotal();
+   for(int i = n - 1; i >= 0; i--)
+     {
+      ulong t = HistoryOrderGetTicket(i);
+      if(t == 0 || (ulong)HistoryOrderGetInteger(t, ORDER_MAGIC) != InpMagicNumber) continue;
+      if(ExtractSetupIdFromComment(HistoryOrderGetString(t, ORDER_COMMENT)) == setupId) return(true);
+     }
+   return(false);
+  }
+
+// A send whose result is not known -- SENDING left behind by a crash, or an
+// UNCERTAIN / TIMEOUT / CONNECTION_ERROR answer -- is resolved ONLY by
+// searching the broker (open positions, open orders, recent order
+// history). It is never resent; an unresolved record stays consumed.
+datetime g_lastUnconfirmedCheck = 0;
+
+void ResolveUnconfirmedSetups(bool force)
+  {
+   if(!force && TimeCurrent() - g_lastUnconfirmedCheck < 15) return;
+   g_lastUnconfirmedCheck = TimeCurrent();
+   for(int i = 0; i < ArraySize(g_setups); i++)
+     {
+      string st = g_setups[i].status;
+      bool unconfirmed = (st == "UNCERTAIN" || st == "TIMEOUT" || st == "CONNECTION_ERROR"
+                          || (st == "SENDING" && (force || TimeCurrent() - g_setups[i].time > 30)));
+      if(!unconfirmed) continue;
+      string id = g_setups[i].setupId;
+      if(BrokerHasSetup(id) || BrokerHistoryHasSetup(id, 3))
+        {
+         RecordSetupStatus(id, g_setups[i].direction, "RESOLVED_EXECUTED", 0);
+         X15Log("EXECUTION", "unconfirmed send of setup " + id + " WAS executed by the broker -- tracked, not resent");
+        }
+      else if(TimeCurrent() - g_setups[i].time > 3600)
+        {
+         RecordSetupStatus(id, g_setups[i].direction, "RESOLVED_NOT_FOUND", 0);
+         X15Log("EXECUTION", "unconfirmed send of setup " + id + " not found at the broker after 1 h -- setup stays consumed, never resent");
+        }
+     }
+  }
+
 // Restart safety (spec 37.4): every setup ID found on this EA's open
 // orders, open positions and last 14 days of order history is marked
 // consumed, whatever the local file says.
@@ -3856,13 +3955,18 @@ double IntendedEntryPrice(X15Setup &s)
    return(s.direction == 1 ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID));
   }
 
-X15ExecDecision CheckExecutionEligibility(X15Decision &d)
+// The ONE authorization function for every order that opens or adds
+// exposure. addIdx < 0: a new entry from decision `d`. addIdx >= 0: a
+// pyramid add to own position g_positions[addIdx] -- same account, market
+// and risk gates; the setup-specific gates are replaced by the add rules.
+// No code path sends an opening order without an ELIGIBLE result from here.
+X15ExecDecision CheckExecutionEligibility(X15Decision &d, int addIdx = -1)
   {
    X15ExecDecision ed;
    ResetExecDecision(ed);
    ed.computed = true;
    ed.barTime = d.barTime;
-   ed.direction = d.setup.direction;
+   bool isAdd = (addIdx >= 0);
    string why = "";
 
    if(InpEmergencyStop)            { GateFail(ed, X15_BLOCKED, "EMERGENCY_STOP", "emergency stop is active"); return(ed); }
@@ -3873,12 +3977,28 @@ X15ExecDecision CheckExecutionEligibility(X15Decision &d)
    if(!g_dq.ok) { GateFail(ed, X15_ELIG_DATA_UNAVAILABLE, "DATA", g_dq.reason); return(ed); }
    GatePass(ed, "DATA");
 
-   if(d.state == X15_DIR_DATA_UNAVAILABLE)      { GateFail(ed, X15_ELIG_DATA_UNAVAILABLE, "COMPOSITE", d.stateReason); return(ed); }
-   if(d.state == X15_DIR_BLOCKED)               { GateFail(ed, X15_BLOCKED, "COMPOSITE", d.stateReason); return(ed); }
-   if(d.state == X15_DIR_INSUFFICIENT_EVIDENCE) { GateFail(ed, X15_ELIG_INSUFFICIENT_EVIDENCE, "COMPOSITE", d.stateReason); return(ed); }
-   if(d.state != X15_DIR_LONG && d.state != X15_DIR_SHORT) { GateFail(ed, X15_NOT_ELIGIBLE, "COMPOSITE", d.stateReason); return(ed); }
-   int dir = d.setup.direction;
-   GatePass(ed, "COMPOSITE");
+   int dir = 0;
+   ulong addTicket = 0;
+   if(!isAdd)
+     {
+      if(d.state == X15_DIR_DATA_UNAVAILABLE)      { GateFail(ed, X15_ELIG_DATA_UNAVAILABLE, "COMPOSITE", d.stateReason); return(ed); }
+      if(d.state == X15_DIR_BLOCKED)               { GateFail(ed, X15_BLOCKED, "COMPOSITE", d.stateReason); return(ed); }
+      if(d.state == X15_DIR_INSUFFICIENT_EVIDENCE) { GateFail(ed, X15_ELIG_INSUFFICIENT_EVIDENCE, "COMPOSITE", d.stateReason); return(ed); }
+      if(d.state != X15_DIR_LONG && d.state != X15_DIR_SHORT) { GateFail(ed, X15_NOT_ELIGIBLE, "COMPOSITE", d.stateReason); return(ed); }
+      dir = d.setup.direction;
+      GatePass(ed, "COMPOSITE");
+     }
+   else
+     {
+      if(!AllowPyramiding) { GateFail(ed, X15_NOT_ELIGIBLE, "PYRAMID", "AllowPyramiding is OFF"); return(ed); }
+      if(!IsNettingAccount()) { GateFail(ed, X15_NOT_ELIGIBLE, "PYRAMID", "pyramiding is netting-only"); return(ed); }
+      if(!g_positions[addIdx].isOwn || g_positions[addIdx].isPaper || g_positions[addIdx].closed)
+        { GateFail(ed, X15_NOT_ELIGIBLE, "PYRAMID", "not an open live position of this EA"); return(ed); }
+      if(!SelectLivePositionById(g_positions[addIdx].positionId, addTicket)) { GateFail(ed, X15_NOT_ELIGIBLE, "PYRAMID", "position not found"); return(ed); }
+      dir = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? 1 : -1;
+      GatePass(ed, "PYRAMID_TARGET");
+     }
+   ed.direction = dir;
 
    if(dir == 1 && !InpEnableLong)   { GateFail(ed, X15_BLOCKED, "DIRECTION", "long entries disabled"); return(ed); }
    if(dir == -1 && !InpEnableShort) { GateFail(ed, X15_BLOCKED, "DIRECTION", "short entries disabled"); return(ed); }
@@ -3899,40 +4019,73 @@ X15ExecDecision CheckExecutionEligibility(X15Decision &d)
    if(RegimeBlocked(g_regime.regime, why)) { GateFail(ed, X15_NOT_ELIGIBLE, "REGIME", why); return(ed); }
    GatePass(ed, "REGIME");
 
-   if(g_execGot == 0 || d.setup.triggerBarTime != g_execRates[g_execGot-1].time)
-     { GateFail(ed, X15_NOT_ELIGIBLE, "FRESHNESS", "decision does not belong to the last closed bar"); return(ed); }
-   if(IsSetupConsumed(d.setup.setupId) || BrokerHasSetup(d.setup.setupId))
-     { GateFail(ed, X15_NOT_ELIGIBLE, "DUPLICATE", "setup " + d.setup.setupId + " was already executed"); return(ed); }
-   GatePass(ed, "NOT_DUPLICATE");
-
-   datetime lastClose = 0;
-   int lastDir = 0;
-   if(LastOwnClose(lastClose, lastDir))
-     {
-      int period = PeriodSeconds(InpExecTF);
-      int barsSince = (period > 0) ? (int)((TimeCurrent() - lastClose) / period) : 0;
-      if(barsSince < InpCooldownBarsAfterClose)
-        { GateFail(ed, X15_NOT_ELIGIBLE, "COOLDOWN", StringFormat("%d bar(s) since the last close, cooldown %d", barsSince, InpCooldownBarsAfterClose)); return(ed); }
-      if(lastDir == -dir && barsSince < InpFlipWindowBars)
-        {
-         if(!InpAllowFlip) { GateFail(ed, X15_NOT_ELIGIBLE, "FLIP", "opposite entry this soon after a close is a flip, and flips are disabled"); return(ed); }
-         if(d.setup.structureTime <= lastClose)
-           { GateFail(ed, X15_NOT_ELIGIBLE, "FLIP", "a flip needs structure that formed AFTER the previous close"); return(ed); }
-         ed.isFlip = true;
-        }
-     }
-   GatePass(ed, "COOLDOWN_FLIP");
-
    X15Exposure ex;
-   ComputeExposure(ex);
-   if(ex.unprotected) { GateFail(ed, X15_BLOCKED, "EXPOSURE", "an open position of this EA has no stop loss"); return(ed); }
-   if(ex.total >= InpMaxPositionsTotal) { GateFail(ed, X15_NOT_ELIGIBLE, "EXPOSURE", StringFormat("%d/%d positions+orders open", ex.total, InpMaxPositionsTotal)); return(ed); }
-   if(ex.symbolTotal >= InpMaxPositionsPerSymbol) { GateFail(ed, X15_NOT_ELIGIBLE, "EXPOSURE", StringFormat("%d/%d on this symbol", ex.symbolTotal, InpMaxPositionsPerSymbol)); return(ed); }
-   if((dir == 1 ? ex.symbolLong : ex.symbolShort) >= InpMaxPositionsPerDirection)
-     { GateFail(ed, X15_NOT_ELIGIBLE, "EXPOSURE", "max positions in this direction reached"); return(ed); }
-   if(InpExecutionMode != X15_PAPER_EXECUTION && IsNettingAccount() && (ex.symbolTotal > 0 || ex.foreignOnSymbol))
-     { GateFail(ed, X15_NOT_ELIGIBLE, "EXPOSURE", "netting account: a position already exists on this symbol and would be merged/reduced"); return(ed); }
-   GatePass(ed, "EXPOSURE");
+   if(!isAdd)
+     {
+      if(g_execGot == 0 || d.setup.triggerBarTime != g_execRates[g_execGot-1].time)
+        { GateFail(ed, X15_NOT_ELIGIBLE, "FRESHNESS", "decision does not belong to the last closed bar"); return(ed); }
+      if(IsSetupConsumed(d.setup.setupId) || BrokerHasSetup(d.setup.setupId))
+        { GateFail(ed, X15_NOT_ELIGIBLE, "DUPLICATE", "setup " + d.setup.setupId + " was already executed"); return(ed); }
+      GatePass(ed, "NOT_DUPLICATE");
+
+      datetime lastClose = 0;
+      int lastDir = 0;
+      if(LastOwnClose(lastClose, lastDir))
+        {
+         int period = PeriodSeconds(InpExecTF);
+         int barsSince = (period > 0) ? (int)((TimeCurrent() - lastClose) / period) : 0;
+         if(barsSince < InpCooldownBarsAfterClose)
+           { GateFail(ed, X15_NOT_ELIGIBLE, "COOLDOWN", StringFormat("%d bar(s) since the last close, cooldown %d", barsSince, InpCooldownBarsAfterClose)); return(ed); }
+         if(lastDir == -dir && barsSince < InpFlipWindowBars)
+           {
+            if(!InpAllowFlip) { GateFail(ed, X15_NOT_ELIGIBLE, "FLIP", "opposite entry this soon after a close is a flip, and flips are disabled"); return(ed); }
+            // a flip is a NEW trade: new structure (and, for a reversal, a new sweep) that formed after the close
+            if(d.setup.structureTime <= lastClose)
+              { GateFail(ed, X15_NOT_ELIGIBLE, "FLIP", "a flip needs a structure break that formed AFTER the previous close"); return(ed); }
+            if(d.setup.type == X15_SETUP_SWEEP_REVERSAL && d.setup.sweepTime <= lastClose)
+              { GateFail(ed, X15_NOT_ELIGIBLE, "FLIP", "a reversal flip needs a liquidity sweep that happened AFTER the previous close"); return(ed); }
+            ed.isFlip = true;
+           }
+        }
+      GatePass(ed, "COOLDOWN_FLIP");
+
+      ComputeExposure(ex);
+      if(ex.unprotected) { GateFail(ed, X15_BLOCKED, "EXPOSURE", "an open position of this EA has no stop loss"); return(ed); }
+      if(ex.total >= InpMaxPositionsTotal) { GateFail(ed, X15_NOT_ELIGIBLE, "EXPOSURE", StringFormat("%d/%d positions+orders open", ex.total, InpMaxPositionsTotal)); return(ed); }
+      if(InpEntryOrderType == X15_ENTRY_STOP && ex.pending >= InpMaxPendingOrders)
+        { GateFail(ed, X15_NOT_ELIGIBLE, "EXPOSURE", StringFormat("%d/%d pending orders open", ex.pending, InpMaxPendingOrders)); return(ed); }
+      if(ex.symbolTotal >= InpMaxPositionsPerSymbol) { GateFail(ed, X15_NOT_ELIGIBLE, "EXPOSURE", StringFormat("%d/%d on this symbol", ex.symbolTotal, InpMaxPositionsPerSymbol)); return(ed); }
+      if((dir == 1 ? ex.symbolLong : ex.symbolShort) >= InpMaxPositionsPerDirection)
+        { GateFail(ed, X15_NOT_ELIGIBLE, "EXPOSURE", "max positions in this direction reached"); return(ed); }
+      if(InpExecutionMode != X15_PAPER_EXECUTION && IsNettingAccount() && (ex.symbolTotal > 0 || ex.foreignOnSymbol))
+        { GateFail(ed, X15_NOT_ELIGIBLE, "EXPOSURE", "netting account: a position already exists on this symbol and would be merged/reduced"); return(ed); }
+      GatePass(ed, "EXPOSURE");
+     }
+   else
+     {
+      // add rules: only ever onto a proven winner, never more than the configured count
+      if(!SelectLivePositionById(g_positions[addIdx].positionId, addTicket)) { GateFail(ed, X15_NOT_ELIGIBLE, "PYRAMID", "position not found"); return(ed); }
+      double currentPrice = PositionGetDouble(POSITION_PRICE_CURRENT);
+      if(PositionGetDouble(POSITION_SL) <= 0.0) { GateFail(ed, X15_BLOCKED, "PYRAMID", "position has no SL -- undefined risk"); return(ed); }
+      double entry = g_positions[addIdx].entryPrice, origSL = g_positions[addIdx].originalSL;
+      double riskDistance = (dir == 1) ? (entry - origSL) : (origSL - entry);
+      if(riskDistance <= 0.0) { GateFail(ed, X15_NOT_ELIGIBLE, "PYRAMID", "original SL on the wrong side of entry -- undefined risk basis"); return(ed); }
+      double currentR = (dir == 1) ? (currentPrice - entry) / riskDistance : (entry - currentPrice) / riskDistance;
+      if(currentR < MinProfitRMultipleToAdd)
+        { GateFail(ed, X15_NOT_ELIGIBLE, "PYRAMID", StringFormat("position at %.2fR, needs >= %.2fR to add", currentR, MinProfitRMultipleToAdd)); return(ed); }
+      int addsSoFar = MathMax(0, CountPositionEntryDeals(g_positions[addIdx].positionId) - 1);
+      if(addsSoFar >= MaxPyramidAdds) { GateFail(ed, X15_NOT_ELIGIBLE, "PYRAMID", StringFormat("already at max adds (%d/%d)", addsSoFar, MaxPyramidAdds)); return(ed); }
+      if(IsSetupConsumed(PyramidAddKey(addIdx, addsSoFar + 1))) { GateFail(ed, X15_NOT_ELIGIBLE, "DUPLICATE", "this add was already attempted"); return(ed); }
+      if(RequireFreshConfirmation)
+        {
+         if(!UseVPMACDEntry) { GateFail(ed, X15_NOT_ELIGIBLE, "PYRAMID", "RequireFreshConfirmation needs UseVPMACDEntry: no other event-based confirmation exists"); return(ed); }
+         bool fresh = (dir == 1) ? CheckVPMACDBuySignal(_Symbol) : CheckVPMACDSellSignal(_Symbol);
+         if(!fresh) { GateFail(ed, X15_NOT_ELIGIBLE, "PYRAMID", "no fresh VP-MACD crossover in the position's direction on this bar"); return(ed); }
+        }
+      ComputeExposure(ex);
+      if(ex.unprotected) { GateFail(ed, X15_BLOCKED, "EXPOSURE", "an open position of this EA has no stop loss"); return(ed); }
+      GatePass(ed, "PYRAMID_RULES");
+     }
 
    ComputeLossMetrics(g_loss);
    if(!g_loss.available) { GateFail(ed, X15_BLOCKED, "LOSS_LIMITS", "loss metrics unavailable: " + g_loss.detail); return(ed); }
@@ -3946,42 +4099,58 @@ X15ExecDecision CheckExecutionEligibility(X15Decision &d)
      { GateFail(ed, X15_BLOCKED, "LOSS_STREAK", StringFormat("%d consecutive losses: paused until %s", streak, TimeToString(lastLoss + InpConsecutiveLossPauseHours * 3600, TIME_DATE|TIME_MINUTES))); return(ed); }
    GatePass(ed, "LOSS_LIMITS");
 
-   ed.entryPrice = IntendedEntryPrice(d.setup);
-   ed.sl = NormalizePriceToTick(d.setup.sl);
-   ed.tp = NormalizePriceToTick(d.setup.tp);
-   double risk = (dir == 1) ? ed.entryPrice - ed.sl : ed.sl - ed.entryPrice;
-   if(ed.entryPrice <= 0.0 || risk <= 0.0) { GateFail(ed, X15_NOT_ELIGIBLE, "STOP_LOSS", "entry price is at or beyond the stop"); return(ed); }
-   double spreadPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK) - SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   if(risk < MinStopDistancePrice() + spreadPrice)
-     { GateFail(ed, X15_NOT_ELIGIBLE, "STOP_LOSS", "SL closer than the broker stops/freeze level plus spread"); return(ed); }
-   if(g_structExec.atrAvailable && risk > InpMaxSLATR * g_structExec.atr)
-     { GateFail(ed, X15_NOT_ELIGIBLE, "STOP_LOSS", StringFormat("SL %.2f x ATR exceeds the %.2f maximum", risk / g_structExec.atr, InpMaxSLATR)); return(ed); }
-   if(InpMaxSLPoints > 0.0 && risk / g_spec.point > InpMaxSLPoints)
-     { GateFail(ed, X15_NOT_ELIGIBLE, "STOP_LOSS", StringFormat("SL %.0f pts exceeds the %.0f maximum", risk / g_spec.point, InpMaxSLPoints)); return(ed); }
-   GatePass(ed, "STOP_LOSS");
-
-   double reward = (dir == 1) ? ed.tp - ed.entryPrice : ed.entryPrice - ed.tp;
-   ed.rr = reward / risk;
-   if(ed.rr < InpMinRR) { GateFail(ed, X15_NOT_ELIGIBLE, "REWARD_RISK", StringFormat("R:R %.2f at the actual entry is below %.2f", ed.rr, InpMinRR)); return(ed); }
-   GatePass(ed, "REWARD_RISK");
-
-   ed.riskPct = ComputeFinalRiskPct(dir, ed.isFlip, ed.riskTrace);
-   if(ed.riskPct <= 0.0) { GateFail(ed, X15_NOT_ELIGIBLE, "RISK", "final risk is zero"); return(ed); }
-   if(!SizeForRisk(dir, ed.entryPrice, ed.sl, ed.riskPct, ed.lots, ed.riskMoney, why)) { GateFail(ed, X15_NOT_ELIGIBLE, "VOLUME", why); return(ed); }
-   GatePass(ed, "VOLUME");
-
-   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-   if(ex.openRiskMoney + ed.riskMoney > equity * InpMaxTotalOpenRiskPct / 100.0)
+   if(isAdd)
      {
-      GateFail(ed, X15_NOT_ELIGIBLE, "TOTAL_RISK", StringFormat("open risk %.2f + new %.2f exceeds %.2f%% of equity", ex.openRiskMoney, ed.riskMoney, InpMaxTotalOpenRiskPct));
-      return(ed);
+      ed.lots = SizePyramidAdd(addIdx, dir, ed.riskMoney, why);
+      if(ed.lots <= 0.0) { GateFail(ed, X15_NOT_ELIGIBLE, "VOLUME", why); return(ed); }
+      if(!SelectLivePositionById(g_positions[addIdx].positionId, addTicket)) { GateFail(ed, X15_NOT_ELIGIBLE, "PYRAMID", "position not found"); return(ed); }
+      ed.sl = PositionGetDouble(POSITION_SL);
+      ed.tp = PositionGetDouble(POSITION_TP);
+      ed.entryPrice = SymbolInfoDouble(_Symbol, dir == 1 ? SYMBOL_ASK : SYMBOL_BID);
+      double equityNow = AccountInfoDouble(ACCOUNT_EQUITY);
+      ed.riskPct = (equityNow > 0.0) ? ed.riskMoney / equityNow * 100.0 : 0.0;
+      GatePass(ed, "VOLUME");
      }
-   GatePass(ed, "TOTAL_RISK");
+   else
+     {
+      ed.entryPrice = IntendedEntryPrice(d.setup);
+      ed.sl = NormalizePriceToTick(d.setup.sl);
+      ed.tp = NormalizePriceToTick(d.setup.tp);
+      double risk = (dir == 1) ? ed.entryPrice - ed.sl : ed.sl - ed.entryPrice;
+      if(ed.entryPrice <= 0.0 || risk <= 0.0) { GateFail(ed, X15_NOT_ELIGIBLE, "STOP_LOSS", "entry price is at or beyond the stop"); return(ed); }
+      double spreadPrice = SymbolInfoDouble(_Symbol, SYMBOL_ASK) - SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      if(risk < MinStopDistancePrice() + spreadPrice)
+        { GateFail(ed, X15_NOT_ELIGIBLE, "STOP_LOSS", "SL closer than the broker stops/freeze level plus spread"); return(ed); }
+      if(g_structExec.atrAvailable && risk > InpMaxSLATR * g_structExec.atr)
+        { GateFail(ed, X15_NOT_ELIGIBLE, "STOP_LOSS", StringFormat("SL %.2f x ATR exceeds the %.2f maximum", risk / g_structExec.atr, InpMaxSLATR)); return(ed); }
+      if(InpMaxSLPoints > 0.0 && risk / g_spec.point > InpMaxSLPoints)
+        { GateFail(ed, X15_NOT_ELIGIBLE, "STOP_LOSS", StringFormat("SL %.0f pts exceeds the %.0f maximum", risk / g_spec.point, InpMaxSLPoints)); return(ed); }
+      GatePass(ed, "STOP_LOSS");
+
+      double reward = (dir == 1) ? ed.tp - ed.entryPrice : ed.entryPrice - ed.tp;
+      ed.rr = reward / risk;
+      if(ed.rr < InpMinRR) { GateFail(ed, X15_NOT_ELIGIBLE, "REWARD_RISK", StringFormat("R:R %.2f at the actual entry is below %.2f", ed.rr, InpMinRR)); return(ed); }
+      GatePass(ed, "REWARD_RISK");
+
+      ed.riskPct = ComputeFinalRiskPct(dir, ed.isFlip, ed.riskTrace);
+      if(ed.riskPct <= 0.0) { GateFail(ed, X15_NOT_ELIGIBLE, "RISK", "final risk is zero"); return(ed); }
+      if(!SizeForRisk(dir, ed.entryPrice, ed.sl, ed.riskPct, ed.lots, ed.riskMoney, why)) { GateFail(ed, X15_NOT_ELIGIBLE, "VOLUME", why); return(ed); }
+      GatePass(ed, "VOLUME");
+
+      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      if(ex.openRiskMoney + ed.riskMoney > equity * InpMaxTotalOpenRiskPct / 100.0)
+        {
+         GateFail(ed, X15_NOT_ELIGIBLE, "TOTAL_RISK", StringFormat("open risk %.2f + new %.2f exceeds %.2f%% of equity", ex.openRiskMoney, ed.riskMoney, InpMaxTotalOpenRiskPct));
+         return(ed);
+        }
+      GatePass(ed, "TOTAL_RISK");
+     }
    if(!MarginAcceptable(dir, ed.lots, ed.entryPrice, why)) { GateFail(ed, X15_NOT_ELIGIBLE, "MARGIN", why); return(ed); }
    GatePass(ed, "MARGIN");
 
    ed.state = (dir == 1) ? X15_ELIGIBLE_LONG : X15_ELIGIBLE_SHORT;
-   ed.reason = StringFormat("%s %.2f lots, risk %.2f (%.2f%%), R:R %.2f%s", DirLabel(dir), ed.lots, ed.riskMoney, ed.riskPct, ed.rr, ed.isFlip ? ", FLIP" : "");
+   ed.reason = StringFormat("%s%s %.2f lots, risk %.2f (%.2f%%)%s%s", isAdd ? "ADD " : "", DirLabel(dir), ed.lots, ed.riskMoney, ed.riskPct,
+                            isAdd ? "" : StringFormat(", R:R %.2f", ed.rr), ed.isFlip ? ", FLIP" : "");
    return(ed);
   }
 
@@ -4210,33 +4379,59 @@ bool RetcodeSucceeded(uint rc)
    return(rc == TRADE_RETCODE_DONE || rc == TRADE_RETCODE_PLACED || rc == TRADE_RETCODE_DONE_PARTIAL);
   }
 
-// Definitively NOT executed -- one re-validated retry is safe.
-bool RetcodeNotExecuted(uint rc)
+// "Request sent" is never treated as "filled": a success retcode must also
+// come with the ticket that proves it -- a deal for a market order, an
+// order for a pending one. A success code without that proof is UNCERTAIN.
+ENUM_X15_SEND_OUTCOME ClassifySendResult(bool callOk, uint rc, bool isPending, ulong orderTicket, ulong dealTicket)
   {
-   return(rc == TRADE_RETCODE_REQUOTE || rc == TRADE_RETCODE_PRICE_CHANGED || rc == TRADE_RETCODE_PRICE_OFF);
+   if(callOk && RetcodeSucceeded(rc))
+     {
+      if(isPending) return(orderTicket > 0 ? X15_SEND_PLACED : X15_SEND_UNCERTAIN);
+      if(rc == TRADE_RETCODE_PLACED) return(X15_SEND_UNCERTAIN); // accepted, not yet executed: the position is confirmed by reconciliation
+      return(dealTicket > 0 ? X15_SEND_FILLED : X15_SEND_UNCERTAIN);
+     }
+   if(rc == TRADE_RETCODE_REQUOTE)       return(X15_SEND_REQUOTE);
+   if(rc == TRADE_RETCODE_PRICE_CHANGED) return(X15_SEND_PRICE_CHANGED);
+   if(rc == TRADE_RETCODE_PRICE_OFF)     return(X15_SEND_OFF_QUOTES);
+   if(rc == TRADE_RETCODE_TIMEOUT)       return(X15_SEND_TIMEOUT);
+   if(rc == TRADE_RETCODE_CONNECTION)    return(X15_SEND_CONNECTION_ERROR);
+   if(rc == 0 || rc == TRADE_RETCODE_ERROR) return(X15_SEND_UNCERTAIN);
+   if(rc == TRADE_RETCODE_REJECT)        return(X15_SEND_REJECTED);
+   return(X15_SEND_OTHER_ERROR);
   }
 
-// MAY have executed server-side. Never resent: resending here is exactly
-// how a timeout turns into a duplicate position. The setup is marked
-// UNCERTAIN and reconciled against the broker's records instead.
-bool RetcodeAmbiguous(uint rc)
+string SendOutcomeLabel(ENUM_X15_SEND_OUTCOME o)
   {
-   return(rc == 0 || rc == TRADE_RETCODE_TIMEOUT || rc == TRADE_RETCODE_CONNECTION || rc == TRADE_RETCODE_ERROR);
+   return(EnumLabel(EnumToString(o), "X15_SEND_"));
   }
 
-bool SendLiveOrder(X15OrderRequest &rq, ulong &orderTicket, double &fillPrice, bool &uncertain, string &why)
+// Definitively not executed -- the only outcomes that may ever be retried.
+bool SendOutcomeRetryable(ENUM_X15_SEND_OUTCOME o)
   {
-   orderTicket = 0; fillPrice = 0.0; uncertain = false; why = "";
+   return(o == X15_SEND_REQUOTE || o == X15_SEND_PRICE_CHANGED || o == X15_SEND_OFF_QUOTES);
+  }
+
+// May have executed server-side: never resent, reconciled against the broker instead.
+bool SendOutcomeMayHaveExecuted(ENUM_X15_SEND_OUTCOME o)
+  {
+   return(o == X15_SEND_TIMEOUT || o == X15_SEND_CONNECTION_ERROR || o == X15_SEND_UNCERTAIN);
+  }
+
+ENUM_X15_SEND_OUTCOME SendLiveOrder(X15OrderRequest &rq, ulong &orderTicket, double &fillPrice, string &why)
+  {
+   orderTicket = 0; fillPrice = 0.0; why = "";
    g_trade.SetExpertMagicNumber(rq.magic);
    g_trade.SetDeviationInPoints(InpMaxSlippagePoints);
    g_trade.SetTypeFilling(rq.isPending ? ORDER_FILLING_RETURN : DetectFillingMode(_Symbol));
+   ENUM_X15_SEND_OUTCOME outcome = X15_SEND_OTHER_ERROR;
    for(int attempt = 0; attempt < 2; attempt++)
      {
       if(attempt > 0)
         {
-         if(BrokerHasSetup(rq.setupId)) { why = "order found on the broker after a requote"; return(true); }
+         // before the single permitted retry, the broker is searched first: never a second order
+         if(BrokerHasSetup(rq.setupId)) { why = "order found on the broker after a requote"; return(X15_SEND_UNCERTAIN); }
          if(!rq.isPending) rq.price = (rq.direction == 1) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
-         if(!ValidateOrderRequest(rq, true, why)) return(false);
+         if(!ValidateOrderRequest(rq, true, why)) return(X15_SEND_REJECTED);
         }
       bool ok;
       if(rq.isPending)
@@ -4248,18 +4443,14 @@ bool SendLiveOrder(X15OrderRequest &rq, ulong &orderTicket, double &fillPrice, b
               ? g_trade.Buy(rq.volume, _Symbol, 0.0, rq.sl, rq.tp, rq.comment)
               : g_trade.Sell(rq.volume, _Symbol, 0.0, rq.sl, rq.tp, rq.comment);
       uint rc = g_trade.ResultRetcode();
-      if(ok && RetcodeSucceeded(rc))
-        {
-         orderTicket = g_trade.ResultOrder();
-         fillPrice = g_trade.ResultPrice();
-         return(true);
-        }
-      why = StringFormat("%u %s", rc, g_trade.ResultRetcodeDescription());
-      if(RetcodeNotExecuted(rc)) continue;
-      if(RetcodeAmbiguous(rc)) uncertain = true;
-      return(false);
+      orderTicket = g_trade.ResultOrder();
+      fillPrice = g_trade.ResultPrice();
+      outcome = ClassifySendResult(ok, rc, rq.isPending, orderTicket, g_trade.ResultDeal());
+      why = StringFormat("%s (%u %s, order #%I64u, deal #%I64u)", SendOutcomeLabel(outcome), rc, g_trade.ResultRetcodeDescription(),
+                         orderTicket, g_trade.ResultDeal());
+      if(!SendOutcomeRetryable(outcome)) return(outcome);
      }
-   return(false);
+   return(outcome);
   }
 
 ulong NewPaperId(void)
@@ -4283,9 +4474,14 @@ void OpenPaperPosition(X15OrderRequest &rq, X15Position &ctx)
      }
    else
      {
+      double fill = PaperFillPrice(rq.direction, true);
       p.entryTime = TimeCurrent();
-      p.entryPrice = rq.price;
-      p.avgEntryPrice = rq.price;
+      p.requestedPrice = rq.price;
+      p.entryPrice = fill;
+      p.avgEntryPrice = fill;
+      double pr = 0.0;
+      if(OrderCalcProfit(rq.direction == 1 ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, _Symbol, p.volume, fill, p.originalSL, pr) && pr < 0.0)
+         p.riskMoney = -pr; // money at risk from the actual (slipped) fill
      }
    AppendPosition(p);
    X15Log("EXECUTION", StringFormat("[PAPER] %s %s %.2f lots @ %s SL %s TP %s setup %s",
@@ -4316,6 +4512,7 @@ void ExecuteEntry(X15Decision &d, X15ExecDecision &ed)
      }
    X15Position ctx;
    BuildEntryContext(d, ed, ctx);
+   ctx.requestedPrice = rq.price;
 
    if(!live)
      {
@@ -4335,31 +4532,27 @@ void ExecuteEntry(X15Decision &d, X15ExecDecision &ed)
    g_sendInFlight = true;
    ulong order = 0;
    double fill = 0.0;
-   bool uncertain = false;
-   bool ok = SendLiveOrder(rq, order, fill, uncertain, why);
+   ENUM_X15_SEND_OUTCOME outcome = SendLiveOrder(rq, order, fill, why);
    g_sendInFlight = false;
+   RecordSetupStatus(id, rq.direction, SendOutcomeLabel(outcome), order);
+   g_reconcileRequested = true;
 
-   if(ok)
+   if(outcome == X15_SEND_FILLED || outcome == X15_SEND_PLACED)
      {
-      RecordSetupStatus(id, rq.direction, rq.isPending ? "PENDING" : "FILLED", order);
-      ed.executionResult = StringFormat("%s #%I64u %s %.2f lots @ %s", rq.isPending ? "stop-entry placed" : "filled",
+      ed.executionResult = StringFormat("%s #%I64u %s %.2f lots @ %s", outcome == X15_SEND_PLACED ? "stop-entry PLACED" : "FILLED",
                                         order, DirLabel(rq.direction), rq.volume, DoubleToString(fill > 0.0 ? fill : rq.price, g_spec.digits));
       g_lastTradeTime = TimeCurrent();
-      g_reconcileRequested = true;
       X15Log("EXECUTION", "[LIVE] " + ed.executionResult + " setup " + id);
      }
-   else if(uncertain)
+   else if(SendOutcomeMayHaveExecuted(outcome))
      {
-      RecordSetupStatus(id, rq.direction, "UNCERTAIN", 0);
-      ed.executionResult = "send result UNKNOWN (" + why + ") -- setup blocked, reconciling against the broker, never resent";
-      g_reconcileRequested = true;
+      ed.executionResult = "result " + why + " -- setup blocked, reconciling against the broker, never resent";
       X15Error("EXECUTION", ed.executionResult);
      }
    else
      {
-      RecordSetupStatus(id, rq.direction, "REJECTED", 0);
       RemoveEntryContext(id);
-      ed.executionResult = "broker rejected: " + why;
+      ed.executionResult = "not executed: " + why;
       X15Error("EXECUTION", ed.executionResult);
      }
   }
@@ -4400,8 +4593,11 @@ void ProcessEntryOpportunity(void)
 // which not every broker supports) or when price reaches their SL before
 // triggering -- the setup is invalid by then.
 //====================================================================
+datetime g_lastPendingDeleteFail = 0;
+
 void ManagePendingOrders(void)
   {
+   if(TimeCurrent() - g_lastPendingDeleteFail < 10) return; // a failed delete is retried after 10 s, not every tick
    int period = PeriodSeconds(InpExecTF);
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID), ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    for(int i = OrdersTotal() - 1; i >= 0; i--)
@@ -4421,7 +4617,11 @@ void ManagePendingOrders(void)
          RemoveEntryContext(id);
          X15Log("EXECUTION", StringFormat("pending order #%I64u deleted (%s)", t, expired ? "expired" : (invalid ? "price reached SL first" : "close-all")));
         }
-      else X15Error("EXECUTION", StringFormat("could not delete pending order #%I64u: %u", t, g_trade.ResultRetcode()));
+      else
+        {
+         g_lastPendingDeleteFail = TimeCurrent();
+         X15Error("EXECUTION", StringFormat("could not delete pending order #%I64u: %u %s", t, g_trade.ResultRetcode(), g_trade.ResultRetcodeDescription()));
+        }
      }
   }
 
@@ -4442,7 +4642,8 @@ void ManagePaperPending(int idx)
       return;
      }
    if(!triggered) return;
-   double fill = (dir == 1) ? ask : bid;
+   double fill = PaperFillPrice(dir, true);
+   g_positions[idx].requestedPrice = g_positions[idx].pendingPrice;
    g_positions[idx].isPendingOrder = false;
    g_positions[idx].entryTime = TimeCurrent();
    g_positions[idx].entryPrice = fill;
@@ -4467,19 +4668,33 @@ void ManagePaperPending(int idx)
 //====================================================================
 void PaperClose(X15Position &p, double vol, double exitPrice);
 
+// PAPER fills at the real bid/ask, moved AGAINST the trade by
+// InpPaperSlippagePoints -- opening a long or closing a short buys at the
+// ask, the other two sell at the bid.
+double PaperFillPrice(int dir, bool opening)
+  {
+   double slip = MathMax(0, InpPaperSlippagePoints) * g_spec.point;
+   bool buying = (opening && dir == 1) || (!opening && dir == -1);
+   return(buying ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) + slip : SymbolInfoDouble(_Symbol, SYMBOL_BID) - slip);
+  }
+
+// Failed broker requests are retried with backoff, never every tick: 10 s,
+// then once per bar after 10 consecutive failures (the position keeps its
+// broker-side SL/TP meanwhile).
+bool CloseRetryAllowed(X15Position &p)
+  {
+   int wait = (p.closeFailCount >= 10) ? MathMax(60, PeriodSeconds(InpExecTF)) : 10;
+   return(TimeCurrent() - p.lastCloseAttempt >= wait);
+  }
+
 bool ModifyStops(X15Position &p, double newSL, double newTP, string tag)
   {
    newSL = NormalizePriceToTick(newSL);
    newTP = NormalizePriceToTick(newTP);
-   if(p.isPaper)
-     {
-      p.currentSL = newSL; p.currentTP = newTP; p.lastModifyTime = TimeCurrent();
-      g_stateDirty = true;
-      X15Log("POSITION", StringFormat("[PAPER] %s: SL %s TP %s", tag, DoubleToString(newSL, g_spec.digits), DoubleToString(newTP, g_spec.digits)), false, true);
-      return(true);
-     }
-   if(TimeCurrent() - p.lastModifyTime < 5) return(false); // at most one modify per position per 5 s
-   if(!SelectLivePositionById(p.positionId, p.ticket)) return(false);
+   int minGap = (p.modifyFailCount >= 5) ? MathMax(60, PeriodSeconds(InpExecTF)) : 5;
+   if(!p.isPaper && TimeCurrent() - p.lastModifyTime < minGap) return(false);
+   if(!p.isPaper && !SelectLivePositionById(p.positionId, p.ticket)) return(false);
+   // broker constraints apply to paper too, so paper management cannot do what a live account would refuse
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID), ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double exitPx = (p.direction == 1) ? bid : ask;
    double minDist = MinStopDistancePrice();
@@ -4491,7 +4706,16 @@ bool ModifyStops(X15Position &p, double newSL, double newTP, string tag)
      }
    if(p.direction == 1 && (bid - newSL < minDist || (newTP > 0.0 && newTP - bid < minDist))) return(false);
    if(p.direction == -1 && (newSL - ask < minDist || (newTP > 0.0 && ask - newTP < minDist))) return(false);
+   // never widen: a new SL must be at least as protective as the current one
+   if(p.currentSL > 0.0 && ((p.direction == 1 && newSL < p.currentSL) || (p.direction == -1 && newSL > p.currentSL))) return(false);
    p.lastModifyTime = TimeCurrent();
+   if(p.isPaper)
+     {
+      p.currentSL = newSL; p.currentTP = newTP;
+      g_stateDirty = true;
+      X15Log("POSITION", StringFormat("[PAPER] %s: SL %s TP %s", tag, DoubleToString(newSL, g_spec.digits), DoubleToString(newTP, g_spec.digits)), false, true);
+      return(true);
+     }
    if(!g_trade.PositionModify(p.ticket, newSL, newTP))
      {
       p.modifyFailCount++;
@@ -4513,19 +4737,22 @@ bool CloseManagedPosition(X15Position &p, ENUM_X15_EXIT_REASON reason)
    if(p.isPaper)
      {
       p.pendingExitReason = reason;
-      double exitPx = (p.direction == 1) ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-      PaperClose(p, p.volume, exitPx);
+      PaperClose(p, p.volume, PaperFillPrice(p.direction, false));
       return(true);
      }
+   if(!CloseRetryAllowed(p)) return(false);
    if(!SelectLivePositionById(p.positionId, p.ticket)) return(false);
+   p.lastCloseAttempt = TimeCurrent();
    p.pendingExitReason = reason;
    if(!g_trade.PositionClose(p.ticket, (ulong)InpMaxSlippagePoints))
      {
       p.pendingExitReason = X15_EXIT_NONE; // the close did not happen: a later broker-side SL/TP must be journaled as what it is
-      X15Error("POSITION", StringFormat("close (%s) failed on #%I64u: %u %s", ExitReasonLabel(reason), p.ticket,
-                                        g_trade.ResultRetcode(), g_trade.ResultRetcodeDescription()));
+      p.closeFailCount++;
+      X15Error("POSITION", StringFormat("close (%s) failed on #%I64u: %u %s (%d in a row)", ExitReasonLabel(reason), p.ticket,
+                                        g_trade.ResultRetcode(), g_trade.ResultRetcodeDescription(), p.closeFailCount));
       return(false);
      }
+   p.closeFailCount = 0;
    g_reconcileRequested = true;
    X15Log("POSITION", StringFormat("close sent (%s) #%I64u", ExitReasonLabel(reason), p.ticket));
    return(true);
@@ -4535,16 +4762,20 @@ bool PartialCloseManaged(X15Position &p, double vol)
   {
    if(p.isPaper)
      {
-      double exitPx = (p.direction == 1) ? SymbolInfoDouble(_Symbol, SYMBOL_BID) : SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-      PaperClose(p, vol, exitPx);
+      PaperClose(p, vol, PaperFillPrice(p.direction, false));
       return(true);
      }
+   if(!CloseRetryAllowed(p)) return(false);
    if(!SelectLivePositionById(p.positionId, p.ticket)) return(false);
+   p.lastCloseAttempt = TimeCurrent();
    if(!g_trade.PositionClosePartial(p.ticket, vol, (ulong)InpMaxSlippagePoints))
      {
-      X15Error("POSITION", StringFormat("partial close failed on #%I64u: %u %s", p.ticket, g_trade.ResultRetcode(), g_trade.ResultRetcodeDescription()));
+      p.closeFailCount++;
+      X15Error("POSITION", StringFormat("partial close failed on #%I64u: %u %s (%d in a row)", p.ticket, g_trade.ResultRetcode(),
+                                        g_trade.ResultRetcodeDescription(), p.closeFailCount));
       return(false);
      }
+   p.closeFailCount = 0;
    g_reconcileRequested = true;
    X15Log("POSITION", StringFormat("partial close %.2f lots on #%I64u", vol, p.ticket));
    return(true);
@@ -4616,7 +4847,7 @@ bool ManageOnePosition(X15Position &p, bool newBar)
         {
          bool locked = (dir == 1) ? (p.currentSL >= p.avgEntryPrice) : (p.currentSL <= p.avgEntryPrice);
          p.pendingExitReason = !locked ? X15_EXIT_STOP_LOSS : (p.beDone && MathAbs(p.currentSL - p.avgEntryPrice) > (InpBreakEvenLockR + 0.05) * MathAbs(p.entryPrice - p.originalSL) ? X15_EXIT_TRAIL_STOP : X15_EXIT_BREAKEVEN_STOP);
-         PaperClose(p, p.volume, exitPx); // at the market price, so a gap through the SL costs what it would really cost
+         PaperClose(p, p.volume, PaperFillPrice(dir, false)); // at the (slipped) market price, so a gap through the SL costs what it would really cost
          return(true);
         }
       if(tpHit)
@@ -4660,11 +4891,29 @@ bool ManageOnePosition(X15Position &p, bool newBar)
         }
       if(InpMaxHoldBars > 0 && p.entryTime > 0 && TimeCurrent() - p.entryTime >= InpMaxHoldBars * PeriodSeconds(InpExecTF))
          return(CloseManagedPosition(p, X15_EXIT_TIME));
-      if(InpTrailMode == X15_TRAIL_VWAP && rNow >= InpTrailStartR)
+      // confirmed VWAP exits: a CLOSED bar that lies entirely after entry crossed VWAP against the
+      // position. A cross (not merely "below VWAP") is required, so an entry taken on the far side
+      // of VWAP -- normal for a sweep reversal -- cannot be stopped out by its own starting position.
+      bool barAfterEntry = (p.entryTime > 0 && lastBar >= p.entryTime);
+      bool crossAgainst = (dir == 1) ? g_vwapCrossDown : g_vwapCrossUp;
+      if(barAfterEntry && crossAgainst)
         {
-         string v = ClassifyVWAPClosedBar();
-         if((dir == 1 && v == "BEARISH") || (dir == -1 && v == "BULLISH")) return(CloseManagedPosition(p, X15_EXIT_VWAP));
+         bool structureAgainst = (dir == 1) ? (g_structExec.lastDownEventTime >= p.entryTime) : (g_structExec.lastUpEventTime >= p.entryTime);
+         if(InpVWAPExitMode == X15_VWAP_EXIT_CONFIRMED_CROSS
+            || (InpVWAPExitMode == X15_VWAP_EXIT_CONFIRMED_CROSS_PLUS_STRUCTURE && structureAgainst)
+            || (InpTrailMode == X15_TRAIL_VWAP && rNow >= InpTrailStartR))
+            return(CloseManagedPosition(p, X15_EXIT_VWAP));
         }
+     }
+
+   // IMMEDIATE: intrabar, against the closed-bar VWAP -- only after price has been on the
+   // favourable side of VWAP since entry, so it too needs a real cross, not a starting position
+   if(InpVWAPExitMode == X15_VWAP_EXIT_IMMEDIATE && g_vwapClosed > 0.0)
+     {
+      bool favourable = (dir == 1) ? (exitPx > g_vwapClosed) : (exitPx < g_vwapClosed);
+      if(favourable) p.vwapFavorableSeen = true;
+      else if(p.vwapFavorableSeen && ((dir == 1 && exitPx < g_vwapClosed) || (dir == -1 && exitPx > g_vwapClosed)))
+         return(CloseManagedPosition(p, X15_EXIT_VWAP));
      }
 
    if(InpUseBreakEven && !p.beDone && rNow >= InpBreakEvenAtR)
@@ -4785,6 +5034,7 @@ void ResetJournalEntry(JournalEntry &e)
    e.vwapState = ""; e.vpmacdState = ""; e.newsState = ""; e.compositeState = ""; e.regime = "";
    e.structureState = ""; e.liquidityState = ""; e.session = ""; e.entryReason = "";
    e.exitReason = X15_EXIT_UNKNOWN; e.isFlip = false; e.evidenceScore = 0;
+   e.slippagePts = 0.0;
   }
 
 string D8(double v)
@@ -4806,7 +5056,7 @@ void SaveJournalToFile(void)
              "nearValidatedNews", "newsEvent", "positionId", "source", "valid", "invalidReason", "setupId", "setupType",
              "entryTime", "entryPrice", "sl", "tp", "volume", "riskPct", "riskMoney", "firstExitTime", "exitPrice",
              "gross", "commission", "swap", "net", "spreadPts", "vwapState", "vpmacdState", "newsState", "composite",
-             "regime", "structure", "liquidity", "session", "entryReason", "exitReason", "isFlip", "evidence");
+             "regime", "structure", "liquidity", "session", "entryReason", "exitReason", "isFlip", "evidence", "slippagePts");
    int n = ArraySize(g_journal);
    for(int i = 0; i < n; i++)
      {
@@ -4819,7 +5069,7 @@ void SaveJournalToFile(void)
                 SanitizeForCsv(e.vwapState), SanitizeForCsv(e.vpmacdState), SanitizeForCsv(e.newsState),
                 SanitizeForCsv(e.compositeState), SanitizeForCsv(e.regime), SanitizeForCsv(e.structureState),
                 SanitizeForCsv(e.liquidityState), SanitizeForCsv(e.session), SanitizeForCsv(e.entryReason),
-                (int)e.exitReason, e.isFlip ? 1 : 0, e.evidenceScore);
+                (int)e.exitReason, e.isFlip ? 1 : 0, e.evidenceScore, D8(e.slippagePts));
      }
    FileClose(handle);
    if(!FileMove(tmpFname, 0, fname, FILE_REWRITE))
@@ -4875,6 +5125,7 @@ bool ReadJournalRowV2(int h, JournalEntry &e)
    e.isFlip                 = (StringToInteger(FileReadString(h)) != 0);
    e.evidenceScore          = (int)StringToInteger(FileReadString(h));
    bool rowComplete = FileIsLineEnding(h) || FileIsEnding(h);
+   if(!rowComplete) { e.slippagePts = StringToDouble(FileReadString(h)); rowComplete = true; } // optional trailing column (absent in older rows)
    SkipRestOfLine(h);
    // a short row (interrupted write, hand edit) is loaded as invalid: kept for audit, never learned from
    if(!rowComplete || e.closeTime <= 0)
@@ -5020,6 +5271,8 @@ void FillJournalFromPosition(X15Position &p, JournalEntry &e)
    e.entryReason = p.entryReason;
    e.isFlip = p.isFlip;
    e.evidenceScore = p.evidenceScore;
+   e.slippagePts = (p.requestedPrice > 0.0 && p.entryPrice > 0.0 && g_spec.point > 0.0)
+                   ? (p.entryPrice - p.requestedPrice) * p.direction / g_spec.point : 0.0;
    if(p.isPreExisting && p.isOwn)
      {
       e.valid = false;
@@ -5186,7 +5439,7 @@ void WritePositionRow(int h, string kind, X15Position &p)
              SanitizeForCsv(p.vwapState), SanitizeForCsv(p.vpmacdState), SanitizeForCsv(p.newsState), SanitizeForCsv(p.compositeState),
              SanitizeForCsv(p.regime), SanitizeForCsv(p.structureState), SanitizeForCsv(p.liquidityState), SanitizeForCsv(p.session),
              SanitizeForCsv(p.entryReason), D8(p.paperExitPriceVolume), D8(p.paperExitVolume), D8(p.paperGross),
-             p.isPendingOrder ? 1 : 0, D8(p.pendingPrice), (long)p.pendingExpiry, p.valuationFailed ? 1 : 0);
+             p.isPendingOrder ? 1 : 0, D8(p.pendingPrice), (long)p.pendingExpiry, p.valuationFailed ? 1 : 0, D8(p.requestedPrice));
   }
 
 void ReadPositionRow(int h, X15Position &p)
@@ -5242,6 +5495,7 @@ void ReadPositionRow(int h, X15Position &p)
    p.pendingPrice = StringToDouble(FileReadString(h));
    p.pendingExpiry = (datetime)StringToInteger(FileReadString(h));
    if(!FileIsLineEnding(h) && !FileIsEnding(h)) p.valuationFailed = (StringToInteger(FileReadString(h)) != 0); // absent in older state files
+   if(!FileIsLineEnding(h) && !FileIsEnding(h)) p.requestedPrice = StringToDouble(FileReadString(h));
    SkipRestOfLine(h);
   }
 
@@ -5327,6 +5581,21 @@ void RegisterLivePosition(ulong ticket, ulong positionId, bool own, bool initial
    // placed -- it survives restarts and any later break-even/trailing move.
    double orderSL = 0.0, orderTP = 0.0;
    string orderComment = "";
+   bool hadExit = false;
+   double inVolume = 0.0;
+   if(HistorySelectByPosition((long)positionId))
+     {
+      // any OUT deal on a still-open position means a partial close already happened (possibly
+      // before a crash): it must never be repeated. Peak volume = everything that ever entered.
+      for(int d = HistoryDealsTotal() - 1; d >= 0; d--)
+        {
+         ulong dt = HistoryDealGetTicket(d);
+         if(dt == 0) continue;
+         long de = HistoryDealGetInteger(dt, DEAL_ENTRY);
+         if(de == DEAL_ENTRY_IN) inVolume += HistoryDealGetDouble(dt, DEAL_VOLUME);
+         else if(de == DEAL_ENTRY_OUT || de == DEAL_ENTRY_OUT_BY) hadExit = true;
+        }
+     }
    if(HistorySelectByPosition((long)positionId) && HistoryOrderSelect(positionId))
      {
       orderSL = HistoryOrderGetDouble(positionId, ORDER_SL);
@@ -5384,6 +5653,8 @@ void RegisterLivePosition(ulong ticket, ulong positionId, bool own, bool initial
         }
       p.entryReason = "external position";
      }
+   if(hadExit) p.partialDone = true;
+   p.peakVolume = MathMax(p.peakVolume, inVolume);
    AppendPosition(p);
    X15Log("POSITION", StringFormat("tracking %s position %I64u %s %.2f lots @ %s%s", own ? "own" : "external", positionId,
                                    DirLabel(p.direction), p.volume, DoubleToString(p.entryPrice, g_spec.digits),
@@ -5413,6 +5684,7 @@ void ReconcilePositions(void)
       if(!PositionSelectByTicket(t)) continue;
       double vol = PositionGetDouble(POSITION_VOLUME);
       if(g_positions[idx].ticket != t || MathAbs(g_positions[idx].volume - vol) > 1e-9) g_stateDirty = true;
+      if(vol < g_positions[idx].peakVolume - 1e-9) g_positions[idx].partialDone = true; // volume already reduced: never partial again
       g_positions[idx].ticket = t;
       g_positions[idx].volume = vol;
       g_positions[idx].peakVolume = MathMax(g_positions[idx].peakVolume, vol);
@@ -5442,12 +5714,7 @@ void ReconcilePositions(void)
         }
      }
 
-   // UNCERTAIN sends: resolved to FILLED as soon as the broker shows the setup
-   for(int i = 0; i < ArraySize(g_setups); i++)
-     {
-      if(g_setups[i].status != "UNCERTAIN") continue;
-      if(BrokerHasSetup(g_setups[i].setupId)) RecordSetupStatus(g_setups[i].setupId, g_setups[i].direction, "FILLED_AFTER_UNCERTAIN", 0);
-     }
+   ResolveUnconfirmedSetups(initial);
    g_firstSyncDone = true;
    if(g_stateDirty) SavePositionState();
   }
@@ -5493,88 +5760,12 @@ void ComputeAggregatePyramidRisk(AggregatePyramidRisk &agg)
    if(equity > 0.0) agg.totalRiskPercentOfEquity = agg.totalRiskAmount / equity * 100.0;
   }
 
-// Account- and market-level gates shared with new entries.
-bool CheckAddSafetyGates(int dir, string &why)
-  {
-   why = "";
-   if(InpEmergencyStop) { why = "emergency stop is active"; return(false); }
-   if(InpCloseAllManagedPositions) { why = "close-all is active"; return(false); }
-   if(!InpEnableTrading) { why = "trading disabled"; return(false); }
-   if((dir == 1 && !InpEnableLong) || (dir == -1 && !InpEnableShort)) { why = "direction disabled"; return(false); }
-   if(!g_dq.ok) { why = "data unavailable: " + g_dq.reason; return(false); }
-   if(!TradingPermitted(dir, InpExecutionMode == X15_LIVE_EXECUTION, why)) return(false);
-   if(!SymbolSessionOpenNow(why)) return(false);
-   if(!ExecutionQualityOk(why)) return(false);
-   if(!SessionTradable(g_session, why)) return(false);
-   if(g_newsGate.blocks) { why = "News Defense: " + g_newsGate.state; return(false); }
-   if(!SpreadAcceptable(why)) return(false);
-   ComputeLossMetrics(g_loss);
-   if(!g_loss.available) { why = "loss metrics unavailable"; return(false); }
-   if(g_loss.dailyLossPct >= InpMaxDailyLossPct) { why = StringFormat("daily loss %.2f%% at limit", g_loss.dailyLossPct); return(false); }
-   if(g_loss.weeklyLossPct >= InpMaxWeeklyLossPct) { why = StringFormat("weekly loss %.2f%% at limit", g_loss.weeklyLossPct); return(false); }
-   datetime lastLoss = 0;
-   int streak = ConsecutiveOwnLosses(lastLoss);
-   if(InpMaxConsecutiveLosses > 0 && streak >= InpMaxConsecutiveLosses && TimeCurrent() - lastLoss < InpConsecutiveLossPauseHours * 3600)
-     { why = "consecutive-loss pause"; return(false); }
-   return(true);
-  }
-
 // Duplicate-protection key for one add; falls back to the position id so two
 // reconstructed positions without a setup ID can never share a key.
 string PyramidAddKey(int idx, int addNumber)
   {
    string base = (g_positions[idx].setupId != "") ? g_positions[idx].setupId : "POS" + IntegerToString((long)g_positions[idx].positionId);
    return(base + "+" + IntegerToString(addNumber));
-  }
-
-struct PyramidEligibility
-  {
-   bool              eligible;
-   string            reason;
-  };
-
-// `idx` is the registry row of an own, live position.
-PyramidEligibility CheckPyramidEligibility(int idx)
-  {
-   PyramidEligibility result;
-   result.eligible = false;
-   result.reason = "";
-   if(!AllowPyramiding) { result.reason = "AllowPyramiding is OFF"; return(result); }
-   ulong ticket = 0;
-   if(!SelectLivePositionById(g_positions[idx].positionId, ticket)) { result.reason = "position not found"; return(result); }
-   int direction = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? 1 : -1;
-   double currentPrice = PositionGetDouble(POSITION_PRICE_CURRENT);
-   double slPrice = PositionGetDouble(POSITION_SL);
-   if(slPrice <= 0.0) { result.reason = "no SL on this position -- undefined risk"; return(result); }
-
-   // profit in R against the ORIGINAL entry and ORIGINAL stop, like every R in this file
-   double entry = g_positions[idx].entryPrice, origSL = g_positions[idx].originalSL;
-   double riskDistance = (direction == 1) ? (entry - origSL) : (origSL - entry);
-   if(riskDistance <= 0.0) { result.reason = "original SL on the wrong side of entry -- undefined risk basis"; return(result); }
-   double currentR = (direction == 1) ? (currentPrice - entry) / riskDistance : (entry - currentPrice) / riskDistance;
-   if(currentR < MinProfitRMultipleToAdd)
-     {
-      result.reason = StringFormat("position at %.2fR, needs >= %.2fR to add", currentR, MinProfitRMultipleToAdd);
-      return(result);
-     }
-
-   int addsSoFar = MathMax(0, CountPositionEntryDeals(g_positions[idx].positionId) - 1);
-   if(addsSoFar >= MaxPyramidAdds) { result.reason = StringFormat("already at max adds (%d/%d)", addsSoFar, MaxPyramidAdds); return(result); }
-   if(IsSetupConsumed(PyramidAddKey(idx, addsSoFar + 1)))
-     { result.reason = "this add was already attempted"; return(result); }
-
-   string why;
-   if(!CheckAddSafetyGates(direction, why)) { result.reason = why; return(result); }
-
-   if(RequireFreshConfirmation)
-     {
-      if(!UseVPMACDEntry) { result.reason = "RequireFreshConfirmation needs UseVPMACDEntry: no other event-based confirmation exists"; return(result); }
-      bool fresh = (direction == 1) ? CheckVPMACDBuySignal(_Symbol) : CheckVPMACDSellSignal(_Symbol);
-      if(!fresh) { result.reason = "no fresh VP-MACD crossover in the position's direction on this bar"; return(result); }
-     }
-   result.eligible = true;
-   result.reason = "eligible";
-   return(result);
   }
 
 // Sized like a fresh trade: current equity, fresh ComputeFinalRiskPct(), and
@@ -5614,20 +5805,11 @@ double SizePyramidAdd(int idx, int direction, double &addRiskMoneyOut, string &w
    return(lots);
   }
 
-void SendPyramidAdd(int idx)
+// Sends one add that CheckExecutionEligibility(addIdx) already authorized;
+// `ed` carries its volume, money at risk and the position's own SL/TP.
+void SendPyramidAdd(int idx, X15ExecDecision &ed)
   {
-   ulong ticket = 0;
-   if(!SelectLivePositionById(g_positions[idx].positionId, ticket)) return;
-   int direction = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? 1 : -1;
-   double existingSl = PositionGetDouble(POSITION_SL);
-   double existingTp = PositionGetDouble(POSITION_TP);
-   string why;
-   double addRisk = 0.0;
-   double addLots = SizePyramidAdd(idx, direction, addRisk, why);
-   if(addLots <= 0.0) { X15Log("RISK", "pyramid add refused: " + why); return; }
-   if(!MarginAcceptable(direction, addLots, SymbolInfoDouble(_Symbol, direction == 1 ? SYMBOL_ASK : SYMBOL_BID), why))
-     { X15Log("RISK", "pyramid add refused: " + why); return; }
-
+   int direction = ed.direction;
    int addNumber = MathMax(0, CountPositionEntryDeals(g_positions[idx].positionId) - 1) + 1;
    string addId = PyramidAddKey(idx, addNumber);
    string comment = BuildOrderComment("P" + IntegerToString(addNumber), g_positions[idx].setupId);
@@ -5635,8 +5817,8 @@ void SendPyramidAdd(int idx)
    if(InpExecutionMode != X15_LIVE_EXECUTION)
      {
       X15Log("EXECUTION", StringFormat("[%s] pyramid add %d would send %.2f lots %s (risk %.2f), SL %s TP %s unchanged -- nothing sent",
-                                       InpExecutionMode == X15_PAPER_EXECUTION ? "PAPER" : "ANALYSIS", addNumber, addLots, DirLabel(direction),
-                                       addRisk, DoubleToString(existingSl, g_spec.digits), DoubleToString(existingTp, g_spec.digits)));
+                                       InpExecutionMode == X15_PAPER_EXECUTION ? "PAPER" : "ANALYSIS", addNumber, ed.lots, DirLabel(direction),
+                                       ed.riskMoney, DoubleToString(ed.sl, g_spec.digits), DoubleToString(ed.tp, g_spec.digits)));
       return;
      }
 
@@ -5644,41 +5826,42 @@ void SendPyramidAdd(int idx)
    g_trade.SetExpertMagicNumber(InpMagicNumber);
    g_trade.SetDeviationInPoints(InpMaxSlippagePoints);
    g_trade.SetTypeFilling(DetectFillingMode(_Symbol));
-   // existingSl/existingTp pass through UNCHANGED -- CRITICAL: on a netting
-   // account the SL/TP of an order against an open position becomes the
-   // position's SL/TP. Anything else here would silently move the stop of
-   // the WHOLE blended position.
-   bool ok = (direction == 1) ? g_trade.Buy(addLots, _Symbol, 0.0, existingSl, existingTp, comment)
-                              : g_trade.Sell(addLots, _Symbol, 0.0, existingSl, existingTp, comment);
-   uint rc = g_trade.ResultRetcode();
-   if(ok && RetcodeSucceeded(rc))
+   // ed.sl / ed.tp are the position's existing SL/TP, passed through UNCHANGED --
+   // CRITICAL: on a netting account the SL/TP of an order against an open
+   // position becomes the position's SL/TP. Anything else here would silently
+   // move the stop of the WHOLE blended position.
+   bool ok = (direction == 1) ? g_trade.Buy(ed.lots, _Symbol, 0.0, ed.sl, ed.tp, comment)
+                              : g_trade.Sell(ed.lots, _Symbol, 0.0, ed.sl, ed.tp, comment);
+   ENUM_X15_SEND_OUTCOME outcome = ClassifySendResult(ok, g_trade.ResultRetcode(), false, g_trade.ResultOrder(), g_trade.ResultDeal());
+   RecordSetupStatus(addId, direction, SendOutcomeLabel(outcome), g_trade.ResultOrder());
+   if(outcome == X15_SEND_FILLED)
      {
-      RecordSetupStatus(addId, direction, "FILLED", g_trade.ResultOrder());
-      g_positions[idx].riskMoney += addRisk;
+      g_positions[idx].riskMoney += ed.riskMoney;
       g_stateDirty = true;
       g_reconcileRequested = true;
-      X15Log("EXECUTION", StringFormat("[LIVE] pyramid add %d: %.2f lots %s @ ~%s, risk %.2f", addNumber, addLots, DirLabel(direction),
-                                       DoubleToString(g_trade.ResultPrice(), g_spec.digits), addRisk));
+      g_lastTradeTime = TimeCurrent();
+      X15Log("EXECUTION", StringFormat("[LIVE] pyramid add %d FILLED: %.2f lots %s @ ~%s, risk %.2f", addNumber, ed.lots, DirLabel(direction),
+                                       DoubleToString(g_trade.ResultPrice(), g_spec.digits), ed.riskMoney));
       return;
      }
-   RecordSetupStatus(addId, direction, RetcodeAmbiguous(rc) ? "UNCERTAIN" : "REJECTED", 0);
-   X15Error("EXECUTION", StringFormat("pyramid add %d failed: %u %s", addNumber, rc, g_trade.ResultRetcodeDescription()));
+   if(SendOutcomeMayHaveExecuted(outcome)) g_reconcileRequested = true;
+   // never retried: the add key is consumed whatever the outcome
+   X15Error("EXECUTION", StringFormat("pyramid add %d %s: %u %s", addNumber, SendOutcomeLabel(outcome), g_trade.ResultRetcode(), g_trade.ResultRetcodeDescription()));
   }
 
 void ProcessPyramidOpportunities(void)
   {
    if(!AllowPyramiding) return;
-   if(!IsNettingAccount()) return;
    for(int i = ArraySize(g_positions) - 1; i >= 0; i--)
      {
       if(!g_positions[i].isOwn || g_positions[i].isPaper || g_positions[i].closed) continue;
-      PyramidEligibility elig = CheckPyramidEligibility(i);
-      if(!elig.eligible)
+      X15ExecDecision ed = CheckExecutionEligibility(g_decision, i);
+      if(ed.state != X15_ELIGIBLE_LONG && ed.state != X15_ELIGIBLE_SHORT)
         {
-         X15Log("RISK", StringFormat("pyramid: position %I64u not eligible -- %s", g_positions[i].positionId, elig.reason), false, true);
+         X15Log("RISK", StringFormat("pyramid: position %I64u not eligible -- %s: %s", g_positions[i].positionId, ed.blockingGate, ed.reason), false, true);
          continue;
         }
-      SendPyramidAdd(i);
+      SendPyramidAdd(i, ed);
      }
   }
 
@@ -6054,7 +6237,7 @@ void BuildDashboard(void)
    DashAdd(g_dashLeft, "VWAP " + g_decision.vwapState + "  VP-MACD " + g_decision.vpmacdState);
    DashWrap(g_dashLeft, (g_newsGate.blocks ? "!" : "") + "News Defense " + g_newsGate.state + (g_newsGate.detail != "" ? ": " + g_newsGate.detail : ""));
 
-   DashAdd(g_dashLeft, "#SETUP");
+   DashAdd(g_dashLeft, "#SETUP (pre-validation)");
    X15Setup s = g_decision.setup;
    if(s.type == X15_SETUP_NONE) DashAdd(g_dashLeft, "none on the last closed bar");
    else
@@ -6074,11 +6257,19 @@ void BuildDashboard(void)
      }
 
    // ---------------- right column ----------------
-   DashAdd(g_dashRight, "#DECISION");
+   // authoritative state first: the eligibility result, never the raw signal
+   DashAdd(g_dashRight, "#DECISION" + (g_exec.barTime > 0 ? " (bar " + TimeToString(g_exec.barTime, TIME_MINUTES) + ")" : ""));
    bool eligible = (g_exec.state == X15_ELIGIBLE_LONG || g_exec.state == X15_ELIGIBLE_SHORT);
-   DashWrap(g_dashRight, "Composite " + EnumLabel(EnumToString(g_decision.state), "X15_DIR_") + ": " + g_decision.stateReason);
-   DashAdd(g_dashRight, (eligible ? "+" : (g_exec.state == X15_BLOCKED ? "!" : "")) + ExecStateLabel(g_exec.state));
+   string modeNote = (eligible && InpExecutionMode == X15_ANALYSIS_ONLY) ? "  [analysis only: not sent]" : "";
+   DashAdd(g_dashRight, (eligible ? "+" : (g_exec.state == X15_BLOCKED ? "!" : "")) + ExecStateLabel(g_exec.state) + modeNote);
    if(!eligible && g_exec.computed) DashWrap(g_dashRight, (g_exec.state == X15_BLOCKED ? "!" : "") + "Why: " + g_exec.blockingGate + " -- " + g_exec.reason);
+   // conditions that change mid-bar are shown live, so a stale ELIGIBLE can never mislead
+   string lockNow = "";
+   if(InpEmergencyStop) lockNow = "emergency stop";
+   else if(g_loss.available && g_loss.dailyLossPct >= InpMaxDailyLossPct) lockNow = "daily loss limit";
+   else if(g_loss.available && g_loss.weeklyLossPct >= InpMaxWeeklyLossPct) lockNow = "weekly loss limit";
+   if(lockNow != "") DashAdd(g_dashRight, "!Entries locked NOW: " + lockNow);
+   DashWrap(g_dashRight, "Signal before validation: " + EnumLabel(EnumToString(g_decision.state), "X15_DIR_") + " -- " + g_decision.stateReason);
    if(g_decision.state == X15_DIR_NEUTRAL)
      {
       DashWrap(g_dashRight, "long: " + g_decision.longReject);
