@@ -1394,6 +1394,10 @@ double ComputeAdaptiveRisk(string symbol, int direction, bool isFlipReentry = fa
    double multiplier = 1.0;
 
    // ---- Task 6: VWAP alignment bonus -----------------------------------
+   // Deliberate, confirmed design: this is a real >1.0x multiplier on base
+   // risk (up to VWAPAlignmentBonus), not a restore-only mechanism. It is
+   // earned solely through the aligned-subset journal gate below and can
+   // never escape InpAdaptiveRiskCeiling or the InpMaxRiskPct hard cap.
    // Structural presence (UseVWAPExit true AND the VWAP trend agreeing
    // with this trade's direction) is necessary but not sufficient. A
    // backtest on one instrument (QQQ/TQQQ) over one historical window
