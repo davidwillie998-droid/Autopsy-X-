@@ -37,6 +37,7 @@
 #include <AutopsyX/Statistics.mqh>
 #include <AutopsyX/AdaptiveFlipEngine.mqh>
 #include <AutopsyX/VWAPEngine.mqh>
+#include <AutopsyX/EmergencyControls.mqh>
 #include <AutopsyX/Dashboard.mqh>
 
 //====================================================================
@@ -95,7 +96,8 @@ input int             InpVWAPTokyoHour       = 0;      // Tokyo session open, br
 input int             InpVWAPLondonHour      = 8;      // London session open, broker server time hour
 input int             InpVWAPNewYorkHour     = 13;      // New York session open, broker server time hour
 input double          InpVWAPDeadbandATRMult = 0.1;    // Deadband around VWAP, as a multiple of ATR, before a trend read is BULLISH/BEARISH rather than NEUTRAL
-input bool            InpUseVWAPExit         = false;  // Opt-in mechanical exit: close if a bar closes on the wrong side of VWAP from the position's direction. Unconditional once armed - see ExitEngine.mqh
+input bool            InpUseVWAPExit         = false;  // Opt-in mechanical exit: close if a bar closes on the wrong side of VWAP from the position's direction - see InpVWAPExitMode for exactly when it fires
+input ENUM_AX_VWAP_EXIT_MODE InpVWAPExitMode  = AX_VWAP_EXIT_CONFIRMED_CROSS; // Only relevant when InpUseVWAPExit is on. CONFIRMED_CROSS is the original/default behavior (closed-bar confirmation) - see ExitEngine.mqh for all four modes
 input double          InpVWAPAlignmentBonus  = 1.15;   // Sizing bonus applied ONLY when InpUseVWAPExit is on and this signal agrees with VWAP trend - see AdaptiveFlipEngine.mqh for how this is bounded
 
 input group "=== RISK ENGINE ===";
@@ -109,6 +111,17 @@ input int            InpRollingPeriodSeconds    = 300;     // Rolling window len
 input double         InpMaxSpreadPoints         = 250;     // Max acceptable spread, points
 input double         InpMaxSlippagePoints       = 30;      // Max acceptable slippage, points
 input double         InpMinFreeMarginPercent    = 150.0;   // Min margin level %, refuse new entries below this
+input double         InpWeeklyLossLimitPercent  = 15.0;    // Weekly loss limit (%), Monday-anchored - stops the week when hit
+input int            InpMaxPositionsPerSymbol   = 1;       // Max simultaneously open positions on this symbol specifically
+input double         InpMaxDirectionalExposureLots = 1.0;  // Max exposure lots in one direction (BUY or SELL) at once
+input double         InpMaxMarginUsagePercent   = 50.0;     // Max ACCOUNT_MARGIN / ACCOUNT_EQUITY, as a percent
+input int            InpMaxExecutionFailures    = 5;        // Max consecutive order-send failures before blocking new entries
+
+input group "=== EXECUTION MODE & EMERGENCY CONTROLS ===";
+input ENUM_AX_EXECUTION_MODE InpExecutionMode = AX_EXEC_ANALYSIS_ONLY; // ANALYSIS_ONLY sends no orders at all - see EmergencyControls.mqh
+input bool           InpEnableTrading           = true;    // Master trading switch - false blocks ALL new entries (existing positions still managed)
+input bool           InpEnableLong              = true;    // false blocks new BUY entries specifically
+input bool           InpEnableShort             = true;    // false blocks new SELL entries specifically
 
 input group "=== SIGNAL SCORE ===";
 input double         InpMinScoreToAct           = 60.0;    // Min BUY/SELL score required to act
@@ -196,6 +209,10 @@ CSignalScorer         g_scorer;
 CFlipEngine           g_flip;
 CAntiChopEngine       g_chop;
 CRiskEngine           g_risk;
+CEmergencyControls    g_emergency;
+ENUM_AX_VWAP_EXIT_MODE g_effectiveVwapExitMode = AX_VWAP_EXIT_OFF; // set at OnInit, may be forced
+                                                                     // down from InpVWAPExitMode - see
+                                                                     // OnInit's validation for why
 CEntryEngine          g_entryEngine;
 CExecutionEngine      g_exec;
 CExitEngine           g_exit;
@@ -346,6 +363,34 @@ SAxTradeRecord AxBuildTradeRecord(const double closePrice,const double grossProf
    rec.afeWinProbability = g_posState.afeWinProbability;
    rec.afeRiskMultiplier = g_posState.afeRiskMultiplier;
    rec.impactCostPct     = g_posState.impactCostPct;
+
+   //--- R-multiple (Journal v2, spec section 27) - only computed for a full close, never a partial  ---
+   //--- slice (a partial's netProfit isn't the whole original risk's outcome, and GetDatasetRecords  ---
+   //--- excludes isPartial records from Monte Carlo/Kelly input anyway, so 0 here is correct, not a   ---
+   //--- placeholder). Uses g_posState.originalSlPrice - the AS-PLACED stop, never mutated by break-   ---
+   //--- even/trailing - so this is always measured against the true original risk, same invariant    ---
+   //--- the existing partial-take-profit R-multiple trigger already relies on. ---
+   rec.rMultiple = 0.0;
+   if(!isPartial && g_posState.originalSlPrice>0)
+     {
+      double riskPricePts = MathAbs(g_posState.entryPrice-g_posState.originalSlPrice);
+      double tickSize = g_md.TickSize();
+      double tickValue = g_md.TickValue();
+      if(riskPricePts>0 && tickSize>0 && tickValue>0 && g_posState.lots>0)
+        {
+         double originalRiskCurrency = (riskPricePts/tickSize)*tickValue*g_posState.lots;
+         if(originalRiskCurrency>0) rec.rMultiple = rec.netProfit/originalRiskCurrency;
+        }
+     }
+
+   //--- KNOWN GAP, documented rather than silently left broken: vwapStateAtEntry, vpMacdStateAtEntry,
+   //--- orderFlowStateAtEntry, structureStateAtEntry, liquidityStateAtEntry, newsStateAtEntry,
+   //--- sessionAtEntry, setupId, dealIdIn and dealIdOut all default to ""/0 here. Populating them for
+   //--- real requires SAxPositionState to snapshot each engine's read AT ENTRY TIME (the same pattern
+   //--- already used for entryBuyScore/entrySellScore/entryRegime/etc.) plus real deal ticket capture
+   //--- from OnTradeTransaction (Phase 6) - that is integration work spanning the entry-time state-
+   //--- setting code and the not-yet-wired Phase 2/3/6 engines, deliberately deferred the same way
+   //--- every other phase's main-EA wiring has been deferred in this rewrite, not an oversight.
    return(rec);
   }
 
@@ -574,13 +619,47 @@ void AxRegisterFillQuality(const double slippagePts,const int latencyMs)
       g_consecutivePoorFills = 0;
   }
 
+//--- real, broker-backed position/exposure counts for THIS symbol+magic, scanned by index (never   ---
+//--- PositionSelect(symbol) alone - see DuplicateGuard.mqh's own comment on why that alone misses    ---
+//--- positions on a hedging account). Used to feed CRiskEngine::PreTradeAllowed()'s per-symbol/     ---
+//--- directional-exposure circuit breakers with real numbers instead of the hardcoded 0/0.0 that     ---
+//--- call site used before Phase 8 (code-review finding: those two new breakers were otherwise       ---
+//--- silently unreachable, always seeing 0 regardless of real exposure). ---
+void AxCountRealPositions(int &positionsForSymbolOut,double &directionalExposureLotsOut,const ENUM_AX_DIR dir)
+  {
+   positionsForSymbolOut=0; directionalExposureLotsOut=0.0;
+   int total = PositionsTotal();
+   for(int i=0;i<total;i++)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket==0) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber) continue;
+      positionsForSymbolOut++;
+      long type = PositionGetInteger(POSITION_TYPE);
+      ENUM_AX_DIR posDir = (type==POSITION_TYPE_BUY) ? AX_DIR_BUY : AX_DIR_SELL;
+      if(posDir==dir) directionalExposureLotsOut += PositionGetDouble(POSITION_VOLUME);
+     }
+  }
+
 //--- every entry (fresh or flip re-entry) funnels through here, so risk/chop/HTF gates apply ---
 //--- unconditionally - a confirmed flip is always allowed to CLOSE the losing side, but the   ---
 //--- re-open into the new direction is still just another entry subject to every hard limit.  ---
 bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSeq,const string tag)
   {
    string gateReason;
-   if(!g_risk.PreTradeAllowed(0,0.0,g_md.CurrentSpreadPts(),gateReason))
+   //--- emergency controls checked FIRST, ahead of every other gate - an operator-triggered stop or
+   //--- a disabled direction is a deliberate override and should never be shadowed by a message that
+   //--- makes it look like an ordinary risk/session gate declined the trade (spec section 38). ---
+   if(!g_emergency.CanEnterDirection(dir,gateReason))
+     {
+      if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
+      return(false);
+     }
+   int realPositionsForSymbol; double realDirectionalExposure;
+   AxCountRealPositions(realPositionsForSymbol,realDirectionalExposure,dir);
+   if(!g_risk.PreTradeAllowed(0,0.0,g_md.CurrentSpreadPts(),gateReason,
+                               realPositionsForSymbol,realDirectionalExposure))
      {
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
       return(false);
@@ -733,10 +812,15 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr,fillLatencyMs))
      {
       g_consecutiveExecFailures++;
+      g_risk.RegisterExecutionFailure(); // feeds CRiskEngine's own MaxExecutionFailures circuit breaker
+                                          // (spec section 18) - a distinct counter/threshold from
+                                          // g_consecutiveExecFailures above, which existed before this
+                                          // phase for its own purposes; both now track every failure
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry failed (%s)",execErr);
       return(false);
      }
    g_consecutiveExecFailures = 0;
+   g_risk.RegisterExecutionSuccess();
 
    AxInitPositionState(newTicket,dir,lots,fillPrice,slPrice,tpPrice,score,entryReason,flipSeq,intendedPrice);
    // AFE's readings at the moment of this entry, carried through to the closed-trade autopsy record
@@ -905,7 +989,27 @@ int OnInit(void)
    g_risk.Configure(AxRiskPercentForMode(),InpDailyLossLimitPercent,InpMaxConsecutiveLosses,
                      InpMaxOpenPositions,InpMaxExposureLots,InpMaxFlipsPerDay,
                      InpMaxTradesPerRollingPeriod,InpRollingPeriodSeconds,
-                     InpMaxSpreadPoints,InpMaxSlippagePoints,InpMinFreeMarginPercent);
+                     InpMaxSpreadPoints,InpMaxSlippagePoints,InpMinFreeMarginPercent,
+                     InpWeeklyLossLimitPercent,InpMaxPositionsPerSymbol,
+                     InpMaxDirectionalExposureLots,InpMaxMarginUsagePercent,InpMaxExecutionFailures);
+   g_emergency.Configure(InpExecutionMode,InpEnableTrading,InpEnableLong,InpEnableShort);
+
+   //--- IMMEDIATE and CONFIRMED_CROSS_PLUS_STRUCTURE VWAP exit modes need live-price and structure-
+   //--- engine wiring that does not exist in this EA yet (see the g_exit.Evaluate() call site) - an
+   //--- operator selecting either would otherwise believe a mechanical exit is armed when it can
+   //--- never actually fire. Warned loudly and forced to the one mode that IS fully wired, rather
+   //--- than silently doing nothing (code-review finding). ---
+   if(InpUseVWAPExit && InpVWAPExitMode!=AX_VWAP_EXIT_CONFIRMED_CROSS)
+     {
+      PrintFormat("AUTOPSY X WARNING: InpVWAPExitMode=%s is not yet wired to live data in this build "
+                  "(needs live-tick-price and/or structure-engine integration) - it will NEVER trigger. "
+                  "Forcing CONFIRMED_CROSS, the only fully-wired mode, for this session.",
+                  AxVwapExitModeToString(InpVWAPExitMode));
+      g_effectiveVwapExitMode = AX_VWAP_EXIT_CONFIRMED_CROSS;
+     }
+   else
+      g_effectiveVwapExitMode = InpVWAPExitMode;
+
    g_entryEngine.Configure(InpMinConfidenceToEnter);
    g_exec.Init(_Symbol,InpMagicNumber,InpDeviationPoints,InpMaxExecRetries);
    g_exit.Configure(InpEmergencySlPoints,InpDynamicTpRR,InpBreakEvenTriggerPoints,InpBreakEvenLockPoints,
@@ -1112,8 +1216,17 @@ void OnTick(void)
       else
         {
          g_exit.UpdateExcursion(g_posState,g_md.CurrentBid(),g_md.CurrentAsk(),g_md.TickValue(),g_md.TickSize());
+         //--- InpUseVWAPExit is the master on/off switch (unchanged); InpVWAPExitMode governs exactly
+         //--- when it fires once armed. IMMEDIATE-mode live-price and PLUS_STRUCTURE-mode structure
+         //--- confirmation aren't wired to real inputs yet (StructureEngine isn't integrated into the
+         //--- live tick loop) - passing 0.0/false is correct-by-construction for CONFIRMED_CROSS (the
+         //--- default), which never reads either parameter; selecting IMMEDIATE or PLUS_STRUCTURE
+         //--- before that wiring exists would silently never fire, which is documented here rather
+         //--- than left to be discovered.
+         ENUM_AX_VWAP_EXIT_MODE effectiveVwapExitMode = InpUseVWAPExit ? g_effectiveVwapExitMode : AX_VWAP_EXIT_OFF;
          SAxExitDecision dec = g_exit.Evaluate(g_posState,g_md,g_mom,g_micro,score,InpMaxSpreadPoints,
-                                                InpUseVWAPExit && isNewBarThisTick,g_vwapValue,g_lastClosedBarClose);
+                                                effectiveVwapExitMode,isNewBarThisTick,g_vwapValue,
+                                                g_lastClosedBarClose,0.0,false);
          if(dec.shouldExit)
            {
             AxCloseAndRecord(dec.reason);
@@ -1339,6 +1452,22 @@ void OnTimer(void)
    extras.vwapTrend               = g_vwapTrend;
    extras.vwapValue               = g_vwapValue;
    extras.vwapExitEnabled         = InpUseVWAPExit;
+
+   extras.executionMode           = g_emergency.ExecutionMode();
+   extras.enableTrading           = g_emergency.EnableTrading();
+   extras.enableLong              = g_emergency.EnableLong();
+   extras.enableShort             = g_emergency.EnableShort();
+   extras.emergencyStopActive     = g_emergency.IsEmergencyStopActive();
+   extras.emergencyStopReason     = g_emergency.EmergencyStopReason();
+
+   extras.weeklyPnl               = g_risk.WeeklyPnL();
+   extras.weeklyPnlPercent        = g_risk.WeeklyPnLPercent();
+   extras.weeklyLockout           = g_risk.WeeklyLockout();
+   extras.marginUsagePercent      = g_risk.MarginUsagePercent();
+
+   // composite direction / structure / eligibility / lifecycle engines exist (Phases 2-6) but are
+   // not yet wired into this OnTick loop - honestly reported as pending rather than fabricated
+   extras.extendedEnginesIntegrated = false;
 
    g_dash.Render(InpMode,g_regime.Regime(),g_lastScore,g_mom.VelocityLabel(),
                  (g_mom.PersistentBull()?"BULLISH":g_mom.PersistentBear()?"BEARISH":"NEUTRAL"),

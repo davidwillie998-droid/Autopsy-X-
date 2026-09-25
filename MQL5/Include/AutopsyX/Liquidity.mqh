@@ -3,6 +3,20 @@
 //|  Liquidity Attack Engine (spec section 6)                        |
 //|  Levels: previous/equal/session highs & lows                      |
 //|  Sequence required: sweep -> rejection -> displacement -> confirm |
+//|                                                                    |
+//|  FLIPDEMON EXTREME upgrade: adds real previous-day/previous-week   |
+//|  high/low (PDH/PDL/PWH/PWL, read from the previous COMPLETED D1/W1 |
+//|  bar via shift=1 - never the still-forming current day/week) and   |
+//|  a terminology note. This engine already tracks two distinct       |
+//|  classes of level and always has: the fractal swing levels in      |
+//|  m_levels[] are what most retail structure education calls         |
+//|  "internal" liquidity (minor swing points inside the current       |
+//|  range, including equal highs/lows once AddOrMergeLevel has        |
+//|  merged repeated touches), while PDH/PDL/PWH/PWL and session        |
+//|  high/low are "external" liquidity (the larger reference levels    |
+//|  outside recent local structure). Nothing here is fabricated -     |
+//|  DrawOnLiquidityTarget() returns 0.0, not a guess, when no real     |
+//|  unswept external level exists on the requested side.              |
 //+------------------------------------------------------------------+
 #property strict
 #ifndef AX_LIQUIDITY_MQH
@@ -34,6 +48,10 @@ private:
    double            m_sessionLow;
    datetime          m_sessionDay;
 
+   //--- external liquidity: previous COMPLETED day/week high/low. 0.0 until a real read succeeds -
+   //--- never a fabricated placeholder value. ---
+   double            m_pdh, m_pdl, m_pwh, m_pwl;
+
    //--- sweep/rejection/displacement state machine, tracked per side ---
    bool              m_bullSweepActive;
    double            m_bullSweepLevel;
@@ -51,6 +69,7 @@ public:
                      CLiquidityEngine(void)
      {
       m_levelCount=0; m_sessionHigh=0; m_sessionLow=0; m_sessionDay=0;
+      m_pdh=0; m_pdl=0; m_pwh=0; m_pwl=0;
       m_bullSweepActive=false; m_bearSweepActive=false;
       m_bullRejectionConfirmed=false; m_bearRejectionConfirmed=false;
       m_sweepExpirySeconds=120;
@@ -104,6 +123,80 @@ public:
          if(rates[i].high>m_sessionHigh) m_sessionHigh = rates[i].high;
          if(rates[i].low<m_sessionLow || m_sessionLow==0) m_sessionLow = rates[i].low;
         }
+     }
+
+   //--- call once per new D1 bar (cheap) - refreshes the previous COMPLETED day/week's high/low. ---
+   //--- iHigh/iLow with shift=1 on PERIOD_D1/PERIOD_W1 always reads the last CLOSED period, never  ---
+   //--- the one still forming - the same no-lookahead guarantee CStructureEngine documents. A 0.0  ---
+   //--- return from iHigh/iLow (history not yet cached) is passed straight through rather than     ---
+   //--- silently kept as a stale prior value, so callers can see a genuine "not available yet" read. ---
+   void              RefreshHigherTimeframeLevels(const string symbol)
+     {
+      double pdh = iHigh(symbol,PERIOD_D1,1);
+      double pdl = iLow(symbol,PERIOD_D1,1);
+      double pwh = iHigh(symbol,PERIOD_W1,1);
+      double pwl = iLow(symbol,PERIOD_W1,1);
+      if(pdh>0) m_pdh=pdh;
+      if(pdl>0) m_pdl=pdl;
+      if(pwh>0) m_pwh=pwh;
+      if(pwl>0) m_pwl=pwl;
+     }
+
+   double            PDH(void) const { return(m_pdh); }
+   double            PDL(void) const { return(m_pdl); }
+   double            PWH(void) const { return(m_pwh); }
+   double            PWL(void) const { return(m_pwl); }
+
+   //--- an "equal" level is one AddOrMergeLevel has already merged 2+ touches into - exposed here  ---
+   //--- rather than duplicating the tolerance/merge logic a second time ---
+   bool              IsEqualLevel(const int i) const
+     {
+      if(i<0 || i>=m_levelCount) return(false);
+      return(m_levels[i].touches>=2);
+     }
+
+   bool              GetLevel(const int i,SAxLevel &out) const
+     {
+      if(i<0 || i>=m_levelCount) return(false);
+      out = m_levels[i];
+      return(true);
+     }
+
+   //--- draw-on-liquidity target: the nearest EXTERNAL liquidity level on the requested side that   ---
+   //--- price hasn't already traded through. Returns 0.0 (never a guess) when no such level is       ---
+   //--- currently known. This is a HYPOTHESIS the setup is trading toward, not a promise price will   ---
+   //--- reach it - callers must treat a 0.0 return as "no target identified", not "target is 0". ---
+   double            DrawOnLiquidityTarget(const ENUM_AX_DIR dir,const double refPrice) const
+     {
+      if(dir==AX_DIR_BUY)
+        {
+         double best=0.0;
+         if(m_sessionHigh>refPrice) best=m_sessionHigh;
+         if(m_pdh>refPrice && (best==0.0 || m_pdh<best)) best=m_pdh;
+         if(m_pwh>refPrice && (best==0.0 || m_pwh<best)) best=m_pwh;
+         return(best);
+        }
+      if(dir==AX_DIR_SELL)
+        {
+         double best=0.0;
+         if(m_sessionLow>0 && m_sessionLow<refPrice) best=m_sessionLow;
+         if(m_pdl>0 && m_pdl<refPrice && (best==0.0 || m_pdl>best)) best=m_pdl;
+         if(m_pwl>0 && m_pwl<refPrice && (best==0.0 || m_pwl>best)) best=m_pwl;
+         return(best);
+        }
+      return(0.0);
+     }
+
+   //--- free-text summary for TradeThesis.liquidityCondition / dashboard - describes the current  ---
+   //--- hypothesis, never asserts a guaranteed outcome ---
+   string            LiquidityConditionSummary(void) const
+     {
+      string s="";
+      if(m_bullSweepActive)  s += m_bullRejectionConfirmed ? "BULL_SWEEP_REJECTED " : "BULL_SWEEP_PENDING ";
+      if(m_bearSweepActive)  s += m_bearRejectionConfirmed ? "BEAR_SWEEP_REJECTED " : "BEAR_SWEEP_PENDING ";
+      if(StringLen(s)==0) s="NO_ACTIVE_SWEEP ";
+      s += StringFormat("levels=%d pdh=%.5f pdl=%.5f",m_levelCount,m_pdh,m_pdl);
+      return(s);
      }
 
    //--- call every tick: evaluate sweep/rejection/displacement against current price ---

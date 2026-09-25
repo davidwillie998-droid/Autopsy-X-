@@ -71,6 +71,28 @@ struct SAxDashboardExtras
    string         vwapTrend;              // "BULLISH"/"BEARISH"/"NEUTRAL"
    double         vwapValue;              // -1 when unavailable
    bool           vwapExitEnabled;
+
+   //--- FLIPDEMON EXTREME upgrade: execution mode + emergency controls (spec sections 37/38) - ---
+   //--- these ARE live-wired (CEmergencyControls is instantiated and checked every entry attempt) ---
+   ENUM_AX_EXECUTION_MODE executionMode;
+   bool           enableTrading;
+   bool           enableLong;
+   bool           enableShort;
+   bool           emergencyStopActive;
+   string         emergencyStopReason;
+
+   //--- weekly risk (spec section 18) - ALSO live-wired (CRiskEngine.Configure/OnTickHousekeeping) ---
+   double         weeklyPnl;
+   double         weeklyPnlPercent;
+   bool           weeklyLockout;
+   double         marginUsagePercent;
+
+   //--- structure/composite-direction/eligibility/lifecycle engines built this rewrite but NOT yet  ---
+   //--- integrated into the live tick loop (Phases 2-6) - shown honestly as pending rather than      ---
+   //--- fabricating a placeholder reading for each. See the Phase 10 engineering report for the full ---
+   //--- list of what still needs main-EA wiring. ---
+   bool           extendedEnginesIntegrated; // flips true once composite direction/structure/
+                                               // eligibility/lifecycle are actually wired into OnTick
   };
 
 class CDashboard
@@ -147,7 +169,11 @@ public:
          ObjectCreate(m_chartId,full,OBJ_BUTTON,0,0,0);
          ObjectSetInteger(m_chartId,full,OBJPROP_CORNER,CORNER_LEFT_UPPER);
          ObjectSetInteger(m_chartId,full,OBJPROP_XDISTANCE,m_x);
-         ObjectSetInteger(m_chartId,full,OBJPROP_YDISTANCE,m_y+856);
+         // code-review manually traced every y+= in Render() (including continuation lines a naive
+         // regex-based estimate missed) and found the true worst-case content end (InpUseOrderFlow
+         // AND InpUseHeatmap both on, the longest render path) is m_y+1002 - this offset leaves a
+         // real ~74px margin below that, not the smaller margin an earlier estimate implied.
+         ObjectSetInteger(m_chartId,full,OBJPROP_YDISTANCE,m_y+1076);
          ObjectSetInteger(m_chartId,full,OBJPROP_XSIZE,m_width);
          ObjectSetInteger(m_chartId,full,OBJPROP_YSIZE,26);
          ObjectSetString(m_chartId,full,OBJPROP_TEXT,"KILL ENGINE");
@@ -179,11 +205,15 @@ public:
                              const ENUM_AX_ENGINE_STATE engineState,const ENUM_AX_GATE gate,
                              const SAxDashboardExtras &extras)
      {
-      MakeRect("BG",m_x-6,m_y-6,m_width,926,C'12,12,14');
+      MakeRect("BG",m_x-6,m_y-6,m_width,1076+26+20,C'12,12,14'); // kill-button offset + its own
+                                                                    // height (26) + bottom margin (20)
 
       int y=m_y; int x=m_x+4;
       MakeLabel("T1",x,y,"AUTOPSY X",clrGold,12); y+=18;
       MakeLabel("T2",x,y,"FLIPDEMON EXTREME",clrSilver,10); y+=20;
+
+      //--- ACCOUNT section (spec section 36) ---
+      MakeLabel("SEC_ACCOUNT",x,y,"--- ACCOUNT ---",clrGray,8); y+=m_lineH;
       MakeLabel("ACCT",x,y,extras.isLiveAccount?"● LIVE ACCOUNT":"○ DEMO ACCOUNT",
                 extras.isLiveAccount?clrTomato:clrSilver,10); y+=m_lineH+4;
 
@@ -195,6 +225,8 @@ public:
       MakeLabel("MODE",x,y,"MODE: "+modeStr,clrWhite); y+=m_lineH;
       MakeLabel("SYMBOL",x,y,"SYMBOL: "+m_symbol,clrWhite); y+=m_lineH+4;
 
+      //--- MARKET section ---
+      MakeLabel("SEC_MARKET",x,y,"--- MARKET ---",clrGray,8); y+=m_lineH;
       MakeLabel("REGIME_L",x,y,"REGIME:",clrSilver); y+=m_lineH;
       MakeLabel("REGIME_V",x,y,AxRegimeToString(regime),clrAqua,10); y+=m_lineH+4;
 
@@ -209,6 +241,8 @@ public:
       MakeLabel("MOM_V",x,y,momentumLabel,clrWhite); y+=m_lineH;
       MakeLabel("SPREAD",x,y,StringFormat("SPREAD: %.1f",spreadPts),clrWhite); y+=m_lineH+4;
 
+      //--- SIGNALS / DECISION / POSITION section ---
+      MakeLabel("SEC_POSITION",x,y,"--- SIGNALS / DECISION / POSITION ---",clrGray,8); y+=m_lineH;
       string posStr = (positionDir==AX_DIR_NONE)?"FLAT":AxDirToString(positionDir);
       color posClr = (positionDir==AX_DIR_BUY)?clrLime:(positionDir==AX_DIR_SELL)?clrTomato:clrSilver;
       MakeLabel("POS",x,y,"POSITION: "+posStr,posClr); y+=m_lineH;
@@ -230,16 +264,42 @@ public:
         }
       y+=4;
 
+      //--- STATISTICS section ---
+      MakeLabel("SEC_STATS",x,y,"--- STATISTICS ---",clrGray,8); y+=m_lineH;
       MakeLabel("FLIPS",x,y,StringFormat("FLIPS TODAY: %d",flipsToday),clrWhite); y+=m_lineH;
       MakeLabel("TRADES",x,y,StringFormat("TRADES TODAY: %d",tradesToday),clrWhite); y+=m_lineH;
       MakeLabel("WINRATE",x,y,StringFormat("WIN RATE: %.0f%%",stats.winRate),clrWhite); y+=m_lineH;
       MakeLabel("PF",x,y,StringFormat("PROFIT FACTOR: %.2f (gross %.2f)",stats.profitFactor,extras.grossProfitFactor),clrWhite); y+=m_lineH+4;
 
+      //--- RISK section ---
+      MakeLabel("SEC_RISK",x,y,"--- RISK ---",clrGray,8); y+=m_lineH;
       color dailyClr = (dailyPnl>=0)?clrLime:clrTomato;
       MakeLabel("DPL",x,y,StringFormat("DAILY P/L: %s$%.2f",(dailyPnl>=0?"+":"-"),MathAbs(dailyPnl)),dailyClr); y+=m_lineH;
+      color weeklyClr = (extras.weeklyPnl>=0)?clrLime:clrTomato;
+      string weeklyLockStr = extras.weeklyLockout ? " [LOCKED OUT]" : "";
+      MakeLabel("WPL",x,y,StringFormat("WEEKLY P/L: %s$%.2f (%.1f%%)%s",
+                (extras.weeklyPnl>=0?"+":"-"),MathAbs(extras.weeklyPnl),extras.weeklyPnlPercent,weeklyLockStr),
+                extras.weeklyLockout?clrRed:weeklyClr); y+=m_lineH;
       MakeLabel("DD",x,y,StringFormat("DRAWDOWN: %.1f%%",drawdownPct),clrWhite); y+=m_lineH;
-      MakeLabel("RISK",x,y,StringFormat("RISK: %.1f%%",riskPercent),clrWhite); y+=m_lineH;
+      MakeLabel("RISK",x,y,StringFormat("RISK: %.1f%%   MARGIN USED: %.1f%%",riskPercent,extras.marginUsagePercent),clrWhite); y+=m_lineH;
       MakeLabel("GATE",x,y,"GATE: "+AxGateToString(gate),clrGold); y+=m_lineH+4;
+
+      //--- EXECUTION MODE + EMERGENCY CONTROLS section (spec sections 37/38) ---
+      MakeLabel("SEC_EXEC",x,y,"--- EXECUTION / EMERGENCY ---",clrGray,8); y+=m_lineH;
+      color execModeClr = (extras.executionMode==AX_EXEC_LIVE) ? clrTomato :
+                           (extras.executionMode==AX_EXEC_PAPER) ? clrGold : clrSilver;
+      MakeLabel("EXECMODE",x,y,"MODE: "+AxExecutionModeToString(extras.executionMode),execModeClr); y+=m_lineH;
+      string enableStr = StringFormat("TRADING:%s LONG:%s SHORT:%s",
+                          extras.enableTrading?"ON":"OFF",extras.enableLong?"ON":"OFF",extras.enableShort?"ON":"OFF");
+      MakeLabel("ENABLES",x,y,enableStr,(extras.enableTrading&&extras.enableLong&&extras.enableShort)?clrWhite:clrGold); y+=m_lineH;
+      string emStr = extras.emergencyStopActive ? ("ACTIVE: "+extras.emergencyStopReason) : "clear";
+      MakeLabel("ESTOP",x,y,"EMERGENCY STOP: "+emStr,extras.emergencyStopActive?clrRed:clrSilver); y+=m_lineH+4;
+
+      //--- SYSTEM section ---
+      MakeLabel("SEC_SYSTEM",x,y,"--- SYSTEM ---",clrGray,8); y+=m_lineH;
+      MakeLabel("EXTENDED",x,y,extras.extendedEnginesIntegrated ?
+                "EXTENDED ENGINES: integrated" : "EXTENDED ENGINES: built, pending integration (see report)",
+                extras.extendedEnginesIntegrated?clrLime:clrGold); y+=m_lineH+4;
 
       //--- next-generation metrics: HTF confluence, adaptive tuning, directional accuracy, scale-out ---
       string htfStr = extras.htfConfluenceEnabled ? (AxRegimeToString(extras.htfRegime)+StringFormat(" (slope %s)",extras.htfSlope>=0?"UP":"DOWN")) : "OFF";

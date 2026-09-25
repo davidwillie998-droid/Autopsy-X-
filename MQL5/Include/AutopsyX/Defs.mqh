@@ -76,6 +76,33 @@ enum ENUM_AX_VWAP_MODE
    AX_VWAP_SESSION_ANCHORED    // resets at the most recent of 4 configurable FX session opens
   };
 
+//--- VWAP mechanical exit mode (FLIPDEMON EXTREME upgrade, spec section 9) - replaces the         ---
+//--- previously-unconditional (whenever armed) VWAP exit with an explicit, configurable trigger.   ---
+enum ENUM_AX_VWAP_EXIT_MODE
+  {
+   AX_VWAP_EXIT_OFF = 0,
+   AX_VWAP_EXIT_IMMEDIATE,                       // any tick where live price crosses to the wrong side
+   AX_VWAP_EXIT_CONFIRMED_CROSS,                  // requires a closed bar on the wrong side (the
+                                                    // original behavior, and still the default -
+                                                    // respects VWAPEngine's own ATR deadband since
+                                                    // ClassifyVWAPTrend already builds that in)
+   AX_VWAP_EXIT_CONFIRMED_CROSS_PLUS_STRUCTURE    // confirmed cross AND the structure engine agrees
+                                                    // a reversal is underway (BOS/CHoCH/MSS against
+                                                    // the position's direction) - the strictest mode,
+                                                    // avoids exiting on a VWAP cross that structure
+                                                    // itself hasn't corroborated
+  };
+
+//--- Execution mode (spec section 37) - governs whether the EA sends real orders at all. Default  ---
+//--- is ANALYSIS_ONLY: generate signals/decisions but send no orders. Never switches silently -     ---
+//--- this is a single input, set once, read at OnInit. ---
+enum ENUM_AX_EXECUTION_MODE
+  {
+   AX_EXEC_ANALYSIS_ONLY = 0,   // signals/decisions generated and logged, no orders of any kind sent
+   AX_EXEC_PAPER,               // simulates the order lifecycle and journals it, no real broker orders
+   AX_EXEC_LIVE                 // sends real MT5 orders via CExecutionEngine
+  };
+
 //--- Trade autopsy classification ------------------------------------------
 enum ENUM_AX_TRADE_CLASS
   {
@@ -102,6 +129,28 @@ enum ENUM_AX_GATE
    AX_GATE_PROMISING,
    AX_GATE_VALIDATED,
    AX_GATE_INSUFFICIENT_DATA
+  };
+
+//--- which real dataset a journal record belongs to (spec section 29) - detected from actual        ---
+//--- account/terminal state at journal-write time, never inferred or guessed after the fact. ---
+enum ENUM_AX_DATASET_PROVENANCE
+  {
+   AX_PROVENANCE_UNKNOWN = 0,
+   AX_PROVENANCE_BACKTEST,       // MQLInfoInteger(MQL_TESTER) was true
+   AX_PROVENANCE_FORWARD_DEMO,   // live terminal, ACCOUNT_TRADE_MODE_DEMO
+   AX_PROVENANCE_LIVE            // live terminal, ACCOUNT_TRADE_MODE_REAL (or CONTEST, tagged the same -
+                                  // a contest account is not this EA's own capital either way, and
+                                  // README already documents the live/demo distinction as REAL vs not-REAL)
+  };
+
+//--- Kelly ruin-bound state (spec section 31) - REPORT ONLY, never authorizes risk directly. ---
+enum ENUM_AX_KELLY_STATE
+  {
+   AX_KELLY_VALID = 0,
+   AX_KELLY_INSUFFICIENT_SAMPLE,
+   AX_KELLY_BOUND_FAILED,
+   AX_KELLY_INVALID_INPUT,
+   AX_KELLY_RUIN_CONDITION
   };
 
 //--- Adaptive Flip Engine capital state - a graduated de-risking ladder driven by continuous
@@ -143,6 +192,55 @@ enum ENUM_AX_ELIGIBILITY
    AX_ELIGIBILITY_INSUFFICIENT_EVIDENCE
   };
 
+//--- Structure Engine (FLIPDEMON EXTREME upgrade, spec section 5) - BOS/CHoCH/MSS. NOTE: none of
+//--- these three terms has one universally agreed formal definition across retail market-structure
+//--- education - the exact operational definitions used here are documented in StructureEngine.mqh
+//--- itself, stated plainly rather than presented as if they were the single correct reading. ---
+enum ENUM_AX_STRUCTURE_EVENT
+  {
+   AX_STRUCT_NONE = 0,
+   AX_STRUCT_BOS_BULLISH,     // Break of Structure: close beyond the most recent swing high, WITH
+                               // the prevailing trend (continuation)
+   AX_STRUCT_BOS_BEARISH,
+   AX_STRUCT_CHOCH_BULLISH,   // Change of Character: close beyond the most recent swing high
+                               // AGAINST a prevailing bearish structure (first sign of reversal)
+   AX_STRUCT_CHOCH_BEARISH,
+   AX_STRUCT_MSS_BULLISH,     // Market Structure Shift: a CHoCH that a subsequent swing has
+                               // confirmed by making a genuine new higher low in the new direction
+   AX_STRUCT_MSS_BEARISH
+  };
+
+//--- prevailing structural trend read, from the most recent two confirmed swings of each type ---
+enum ENUM_AX_STRUCT_TREND
+  {
+   AX_STRUCT_TREND_BULLISH = 0,   // most recent swing high is HH, most recent swing low is HL
+   AX_STRUCT_TREND_BEARISH,       // most recent swing high is LH, most recent swing low is LL
+   AX_STRUCT_TREND_UNDEFINED      // mixed read, or too few confirmed swings yet to tell
+  };
+
+//--- Trade lifecycle state (FLIPDEMON EXTREME upgrade, spec section 21). Strictly linear/forward -
+//--- CTradeLifecycle enforces that a setup can only advance to the next state in this exact order,
+//--- or drop to CANCELLED/FAILED from any non-terminal state. Nothing is ever assumed complete -
+//--- ORDER_FILLED is only reached after a real broker confirmation, never after ORDER_SUBMITTED alone.
+enum ENUM_AX_LIFECYCLE_STATE
+  {
+   AX_LIFECYCLE_SIGNAL_DETECTED = 0,
+   AX_LIFECYCLE_THESIS_CREATED,
+   AX_LIFECYCLE_VALIDATING,
+   AX_LIFECYCLE_RISK_CHECK,
+   AX_LIFECYCLE_ORDER_READY,
+   AX_LIFECYCLE_ORDER_SUBMITTED,
+   AX_LIFECYCLE_ORDER_FILLED,
+   AX_LIFECYCLE_POSITION_ACTIVE,
+   AX_LIFECYCLE_POSITION_MANAGED,
+   AX_LIFECYCLE_EXIT_TRIGGERED,
+   AX_LIFECYCLE_POSITION_CLOSED,
+   AX_LIFECYCLE_JOURNALED,
+   AX_LIFECYCLE_AUTOPSIED,
+   AX_LIFECYCLE_CANCELLED,   // dropped out before any order reached the market (failed validation/risk/data)
+   AX_LIFECYCLE_FAILED       // dropped out after an order attempt (rejected, broker error, etc.)
+  };
+
 //--- One microstructure/momentum tick sample ---------------------------------
 struct SAxTick
   {
@@ -182,7 +280,12 @@ struct SAxAccuracySnapshot
 //--- Completed trade autopsy record (section 17) ------------------------------
 struct SAxTradeRecord
   {
+   string              setupId;          // links this record back to the SAxTradeThesis that
+                                          // produced it - empty for records predating this field
+                                          // or for untracked/restart-recovered positions
    ulong               ticket;
+   ulong               dealIdIn;         // 0 if not yet known/recorded from a real deal ticket
+   ulong               dealIdOut;
    datetime            entryTime;
    datetime            exitTime;
    ENUM_AX_DIR         direction;
@@ -220,6 +323,27 @@ struct SAxTradeRecord
    //--- order-book impact cost estimated at entry, for the size originally intended before any  ---
    //--- AFE/impact-cost capping (Patnaik & Thomas 2004) - 0 when depth was unavailable to measure it ---
    double                impactCostPct;
+
+   //--- R-multiple: netProfit expressed as a multiple of the ORIGINAL risk (entryPrice to          ---
+   //--- originalSlPrice, in currency) - the unit Monte Carlo/Kelly both operate on. 0 for a record  ---
+   //--- where original risk couldn't be computed (never fabricated as a made-up ratio). ---
+   double                rMultiple;
+
+   //--- engine states AT ENTRY TIME, journaled as their own columns (not just folded into the free- ---
+   //--- text entryReason string) so they can be queried/filtered directly (spec section 27) ---
+   string                vwapStateAtEntry;
+   string                vpMacdStateAtEntry;
+   string                orderFlowStateAtEntry;
+   string                structureStateAtEntry;
+   string                liquidityStateAtEntry;
+   string                newsStateAtEntry;
+   string                sessionAtEntry;
+
+   //--- which real dataset this record belongs to - detected from actual account/terminal state    ---
+   //--- (AccountInfoInteger(ACCOUNT_TRADE_MODE), MQLInfoInteger(MQL_TESTER)) at journal-write time,  ---
+   //--- never guessed. This is what lets adaptive learning (spec section 29) separate historical/    ---
+   //--- forward-demo/live data instead of silently mixing them. ---
+   ENUM_AX_DATASET_PROVENANCE provenance;
   };
 
 //--- Formal Trade Thesis (FLIPDEMON EXTREME upgrade, spec section 3) - the frozen, auditable
@@ -276,6 +400,19 @@ struct SAxTradeThesis
                                                       // moment execution eligibility was checked
    string                     entryReason;
    string                     invalidationReason;    // empty until/unless the thesis is invalidated
+  };
+
+//--- one confirmed swing point from CStructureEngine - built ONLY from closed bars (see
+//--- StructureEngine.mqh for the no-lookahead guarantee this implies) ---
+struct SAxSwingPoint
+  {
+   double   price;
+   datetime time;
+   bool     isHigh;    // true = swing high, false = swing low
+   bool     isHH;       // meaningful only when isHigh - higher than the prior swing high
+   bool     isLH;       // meaningful only when isHigh - lower than the prior swing high
+   bool     isHL;       // meaningful only when !isHigh - higher than the prior swing low
+   bool     isLL;       // meaningful only when !isHigh - lower than the prior swing low
   };
 
 //--- helpers -----------------------------------------------------------------
@@ -395,6 +532,114 @@ string AxEligibilityToString(const ENUM_AX_ELIGIBILITY e)
       case AX_ELIGIBILITY_BLOCKED:               return("BLOCKED");
       case AX_ELIGIBILITY_DATA_UNAVAILABLE:      return("DATA_UNAVAILABLE");
       case AX_ELIGIBILITY_INSUFFICIENT_EVIDENCE: return("INSUFFICIENT_EVIDENCE");
+     }
+   return("UNKNOWN");
+  }
+
+string AxStructureEventToString(const ENUM_AX_STRUCTURE_EVENT e)
+  {
+   switch(e)
+     {
+      case AX_STRUCT_NONE:           return("NONE");
+      case AX_STRUCT_BOS_BULLISH:    return("BOS_BULLISH");
+      case AX_STRUCT_BOS_BEARISH:    return("BOS_BEARISH");
+      case AX_STRUCT_CHOCH_BULLISH:  return("CHOCH_BULLISH");
+      case AX_STRUCT_CHOCH_BEARISH:  return("CHOCH_BEARISH");
+      case AX_STRUCT_MSS_BULLISH:    return("MSS_BULLISH");
+      case AX_STRUCT_MSS_BEARISH:    return("MSS_BEARISH");
+     }
+   return("UNKNOWN");
+  }
+
+string AxStructTrendToString(const ENUM_AX_STRUCT_TREND t)
+  {
+   switch(t)
+     {
+      case AX_STRUCT_TREND_BULLISH:   return("BULLISH");
+      case AX_STRUCT_TREND_BEARISH:   return("BEARISH");
+      case AX_STRUCT_TREND_UNDEFINED: return("UNDEFINED");
+     }
+   return("UNKNOWN");
+  }
+
+string AxLifecycleStateToString(const ENUM_AX_LIFECYCLE_STATE s)
+  {
+   switch(s)
+     {
+      case AX_LIFECYCLE_SIGNAL_DETECTED: return("SIGNAL_DETECTED");
+      case AX_LIFECYCLE_THESIS_CREATED:  return("THESIS_CREATED");
+      case AX_LIFECYCLE_VALIDATING:      return("VALIDATING");
+      case AX_LIFECYCLE_RISK_CHECK:      return("RISK_CHECK");
+      case AX_LIFECYCLE_ORDER_READY:     return("ORDER_READY");
+      case AX_LIFECYCLE_ORDER_SUBMITTED: return("ORDER_SUBMITTED");
+      case AX_LIFECYCLE_ORDER_FILLED:    return("ORDER_FILLED");
+      case AX_LIFECYCLE_POSITION_ACTIVE: return("POSITION_ACTIVE");
+      case AX_LIFECYCLE_POSITION_MANAGED:return("POSITION_MANAGED");
+      case AX_LIFECYCLE_EXIT_TRIGGERED:  return("EXIT_TRIGGERED");
+      case AX_LIFECYCLE_POSITION_CLOSED: return("POSITION_CLOSED");
+      case AX_LIFECYCLE_JOURNALED:       return("JOURNALED");
+      case AX_LIFECYCLE_AUTOPSIED:       return("AUTOPSIED");
+      case AX_LIFECYCLE_CANCELLED:       return("CANCELLED");
+      case AX_LIFECYCLE_FAILED:          return("FAILED");
+     }
+   return("UNKNOWN");
+  }
+
+string AxProvenanceToString(const ENUM_AX_DATASET_PROVENANCE p)
+  {
+   switch(p)
+     {
+      case AX_PROVENANCE_UNKNOWN:       return("UNKNOWN");
+      case AX_PROVENANCE_BACKTEST:      return("BACKTEST");
+      case AX_PROVENANCE_FORWARD_DEMO:  return("FORWARD_DEMO");
+      case AX_PROVENANCE_LIVE:          return("LIVE");
+     }
+   return("UNKNOWN");
+  }
+
+string AxKellyStateToString(const ENUM_AX_KELLY_STATE k)
+  {
+   switch(k)
+     {
+      case AX_KELLY_VALID:                return("VALID");
+      case AX_KELLY_INSUFFICIENT_SAMPLE:  return("INSUFFICIENT_SAMPLE");
+      case AX_KELLY_BOUND_FAILED:         return("BOUND_FAILED");
+      case AX_KELLY_INVALID_INPUT:        return("INVALID_INPUT");
+      case AX_KELLY_RUIN_CONDITION:       return("RUIN_CONDITION");
+     }
+   return("UNKNOWN");
+  }
+
+//--- detects the real, current dataset provenance from actual account/terminal state - never ---
+//--- inferred from anything the EA itself decided or remembered. Call at journal-write time. ---
+ENUM_AX_DATASET_PROVENANCE AxDetectProvenance(void)
+  {
+   if(MQLInfoInteger(MQL_TESTER)) return(AX_PROVENANCE_BACKTEST);
+   long tradeMode = AccountInfoInteger(ACCOUNT_TRADE_MODE);
+   if(tradeMode==ACCOUNT_TRADE_MODE_DEMO) return(AX_PROVENANCE_FORWARD_DEMO);
+   if(tradeMode==ACCOUNT_TRADE_MODE_REAL || tradeMode==ACCOUNT_TRADE_MODE_CONTEST) return(AX_PROVENANCE_LIVE);
+   return(AX_PROVENANCE_UNKNOWN);
+  }
+
+string AxVwapExitModeToString(const ENUM_AX_VWAP_EXIT_MODE m)
+  {
+   switch(m)
+     {
+      case AX_VWAP_EXIT_OFF:                          return("OFF");
+      case AX_VWAP_EXIT_IMMEDIATE:                     return("IMMEDIATE");
+      case AX_VWAP_EXIT_CONFIRMED_CROSS:                return("CONFIRMED_CROSS");
+      case AX_VWAP_EXIT_CONFIRMED_CROSS_PLUS_STRUCTURE: return("CONFIRMED_CROSS_PLUS_STRUCTURE");
+     }
+   return("UNKNOWN");
+  }
+
+string AxExecutionModeToString(const ENUM_AX_EXECUTION_MODE m)
+  {
+   switch(m)
+     {
+      case AX_EXEC_ANALYSIS_ONLY: return("ANALYSIS_ONLY");
+      case AX_EXEC_PAPER:         return("PAPER_EXECUTION");
+      case AX_EXEC_LIVE:          return("LIVE_EXECUTION");
      }
    return("UNKNOWN");
   }

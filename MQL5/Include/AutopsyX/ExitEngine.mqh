@@ -183,8 +183,10 @@ public:
    SAxExitDecision   Evaluate(const SAxPositionState &st,const CMarketData &md,const CMomentumEngine &mom,
                                const CMicrostructureEngine &micro,const SAxScore &score,
                                const double maxSpreadPts,
+                               const ENUM_AX_VWAP_EXIT_MODE vwapExitMode,
                                const bool vwapExitCheckDue,const double vwapValueAtCheck,
-                               const double lastClosedBarClose) const
+                               const double lastClosedBarClose,const double currentPrice=0.0,
+                               const bool structureConfirmsReversal=false) const
      {
       SAxExitDecision d; d.shouldExit=false; d.reason=AX_EXIT_NONE;
 
@@ -194,19 +196,42 @@ public:
       //--- also confirming", not "unless the setup score is high"), may skip it once it fires. That's ---
       //--- not stylistic - it's the entire basis for CAdaptiveFlipEngine's VWAP alignment sizing      ---
       //--- bonus being legitimate at all: aggressive sizing is only defensible because this exit is   ---
-      //--- real and always-honored, exactly the source paper's own finding. st.vwapAlignedAtEntry     ---
-      //--- being true already encodes that InpUseVWAPExit was on and this position agreed with VWAP   ---
-      //--- at entry, so no separate enabled-flag is needed here beyond that. ---
+      //--- real and honored whenever the CONFIGURED mode says it should fire, exactly the source      ---
+      //--- paper's own finding. st.vwapAlignedAtEntry being true already encodes that VWAP exit was   ---
+      //--- on and this position agreed with VWAP at entry, so no separate enabled-flag is needed here ---
+      //--- beyond that plus the mode itself.                                                          ---
+      //--- Modes (spec section 9 - "do not make a single VWAP cross an unconditional full exit"):     ---
+      //--- OFF: never fires. IMMEDIATE: any tick the LIVE price is on the wrong side. CONFIRMED_CROSS: ---
+      //--- requires a closed bar on the wrong side (the original, default behavior - also the only    ---
+      //--- mode that respects VWAPEngine's ATR deadband, since that's built into vwapValueAtCheck's    ---
+      //--- classification upstream). CONFIRMED_CROSS_PLUS_STRUCTURE: the same closed-bar confirmation, ---
+      //--- but ALSO requires the caller to report the structure engine agrees a reversal is genuinely  ---
+      //--- underway - the strictest mode, avoiding an exit on a VWAP cross that structure itself does  ---
+      //--- not corroborate.                                                                            ---
       //--- One honest interaction worth naming: if a full FLIP confirmation fires on the very same    ---
       //--- tick, main.mq5's flip branch closes the position under AX_EXIT_FLIP before this function   ---
       //--- is even called that tick - the position is still always closed either way, just possibly   ---
       //--- labeled FLIP instead of VWAP_TREND_FLIP on that one tick. That is flip's own unconditional ---
       //--- closure acting first, not a bypass of this rule. ---
-      if(st.vwapAlignedAtEntry && vwapExitCheckDue && vwapValueAtCheck>0)
+      if(st.vwapAlignedAtEntry && vwapExitMode!=AX_VWAP_EXIT_OFF)
         {
-         bool closedWrongSide = (st.dir==AX_DIR_BUY) ? (lastClosedBarClose<vwapValueAtCheck)
-                                                       : (lastClosedBarClose>vwapValueAtCheck);
-         if(closedWrongSide) { d.shouldExit=true; d.reason=AX_EXIT_VWAP_TREND_FLIP; return(d); }
+         bool triggered=false;
+
+         if(vwapExitMode==AX_VWAP_EXIT_IMMEDIATE && currentPrice>0 && vwapValueAtCheck>0)
+           {
+            triggered = (st.dir==AX_DIR_BUY) ? (currentPrice<vwapValueAtCheck) : (currentPrice>vwapValueAtCheck);
+           }
+         else if(vwapExitCheckDue && vwapValueAtCheck>0 &&
+                 (vwapExitMode==AX_VWAP_EXIT_CONFIRMED_CROSS || vwapExitMode==AX_VWAP_EXIT_CONFIRMED_CROSS_PLUS_STRUCTURE))
+           {
+            bool closedWrongSide = (st.dir==AX_DIR_BUY) ? (lastClosedBarClose<vwapValueAtCheck)
+                                                          : (lastClosedBarClose>vwapValueAtCheck);
+            triggered = closedWrongSide;
+            if(triggered && vwapExitMode==AX_VWAP_EXIT_CONFIRMED_CROSS_PLUS_STRUCTURE)
+               triggered = triggered && structureConfirmsReversal;
+           }
+
+         if(triggered) { d.shouldExit=true; d.reason=AX_EXIT_VWAP_TREND_FLIP; return(d); }
         }
 
       //--- maximum holding time - Patnaik & Thomas (2004) find momentum profits RISE with holding ---

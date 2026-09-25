@@ -214,6 +214,70 @@ public:
       return(true);
      }
 
+   //--- pending stop entry (spec section 19: "OPTIONAL BUY STOP / OPTIONAL SELL STOP"). Confirms   ---
+   //--- the order genuinely exists in the terminal's order list afterward via OrderSelect - a       ---
+   //--- successful CTrade send() result alone is never trusted, same discipline as OpenMarket. ---
+   bool              OpenPendingStop(const string symbol,const ENUM_AX_DIR dir,const double lots,
+                                      const double triggerPrice,const double slPrice,const double tpPrice,
+                                      const string comment,ulong &ticketOut,string &errorReason)
+     {
+      if(dir==AX_DIR_NONE || lots<=0 || triggerPrice<=0)
+        { errorReason="Invalid direction/lots/trigger price"; return(false); }
+
+      bool ok=false;
+      for(int attempt=0; attempt<=m_maxRetries; attempt++)
+        {
+         if(attempt>0) Sleep(m_retryDelayMs);
+
+         if(dir==AX_DIR_BUY)
+            ok = m_trade.BuyStop(lots,triggerPrice,symbol,slPrice,tpPrice,ORDER_TIME_GTC,0,comment);
+         else
+            ok = m_trade.SellStop(lots,triggerPrice,symbol,slPrice,tpPrice,ORDER_TIME_GTC,0,comment);
+
+         if(ok)
+           {
+            ulong ticket = m_trade.ResultOrder();
+            //--- write ticketOut even on the unconfirmed branch below - the broker may well have   ---
+            //--- accepted the order (ticket>0) while the terminal's local order cache just hasn't   ---
+            //--- synced yet; leaving ticketOut unset would strand the caller with no handle to later ---
+            //--- verify or cancel an order that could actually be live (code-review finding). ---
+            if(ticket>0) ticketOut=ticket;
+            if(ticket>0 && OrderSelect(ticket))
+              {
+               errorReason=""; return(true);
+              }
+            errorReason="Pending order send reported success but order did not confirm in the order list";
+            return(false);
+           }
+
+         uint retcode = m_trade.ResultRetcode();
+         errorReason = StringFormat("Pending order send failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         if(!RetryableRetcode(retcode)) return(false);
+        }
+      return(false);
+     }
+
+   //--- cancels a pending order; treats an already-gone order (triggered, expired, manually removed) ---
+   //--- as a successful outcome rather than an error - the caller's INTENT (no pending order should ---
+   //--- remain) is satisfied either way. ---
+   bool              CancelPendingOrder(const ulong ticket,string &errorReason)
+     {
+      bool ok=false;
+      for(int attempt=0; attempt<=m_maxRetries; attempt++)
+        {
+         if(attempt>0) Sleep(m_retryDelayMs);
+         if(!OrderSelect(ticket)) { errorReason=""; return(true); } // already gone - intent satisfied
+
+         ok = m_trade.OrderDelete(ticket);
+         if(ok) { errorReason=""; return(true); }
+
+         uint retcode = m_trade.ResultRetcode();
+         errorReason = StringFormat("Pending order delete failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         if(!RetryableRetcode(retcode)) return(false);
+        }
+      return(false);
+     }
+
    CTrade*           TradeObject(void) { return(GetPointer(m_trade)); }
   };
 //+------------------------------------------------------------------+
