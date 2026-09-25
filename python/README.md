@@ -36,6 +36,34 @@ Those live in the MQL5 codebase, explicitly labeled as engineering design
 in their own comments — this package only covers the parts the paper
 actually describes a testable methodology for.
 
+### Phase 11: backtesting / stress-testing / alpha decay / correlation
+
+Four additional modules, all **engineering design, not paper-sourced** —
+the paper motivates why these matter (its finding that 64% of the hedge
+funds it studied lost more than 2x their own past max drawdown in 2008
+shows a strategy's own historical envelope can't be trusted blindly) but
+does not specify a backtesting methodology, stress scenarios, a decay
+formula, or a crowding formula:
+
+| Module | Implements |
+|---|---|
+| `backtest.py` | In-sample/out-of-sample split, walk-forward windows, block-bootstrap Monte Carlo resampling (preserves autocorrelation, unlike an iid bootstrap), parameter-perturbation grids, max drawdown / Sharpe helpers |
+| `stress_test.py` | Single-shock injection, cost-multiplier stress, win-rate-degradation stress, and a fixed adversarial suite that reports baseline vs. stressed stats |
+| `alpha_decay.py` | Rolling Sharpe, and a two-window (earliest vs. most recent) decay detector — see its own docstring for an important, empirically-confirmed caveat about Sharpe-ratio sampling noise at small window sizes before picking `decline_threshold` |
+| `correlation.py` | Correlation matrix / rolling correlation / high-correlation-pair extraction across return streams the caller supplies — explicitly a **local proxy**, not real cross-fund positioning data (this package has no access to that, same honesty caveat as `CapacityCrowdingEngine.mqh` on the MQL5 side) |
+
+`test_backtest_research.py` caught a real statistical misconception during
+development the same way `test_var_model_recovers_known_coefficient` caught
+a real bug in `var_model.py`: an initial test asserted a fixed-seed "stable
+data should never flag as decayed" — false in general, since an annualized
+Sharpe ratio's sampling noise alone can trigger a `decline_threshold=0.5`
+comparison close to half the time at a 100-sample window (measured: 45%).
+The fix wasn't to the detector, which was already correct — it was to test
+the property that actually matters (does it discriminate genuine decay from
+noise; measured: 100% vs. 45%), and to document the sampling-noise caveat
+in `detect_alpha_decay()`'s own docstring so a real caller picks
+`decline_threshold`/`window` with that in mind.
+
 ## Install
 
 ```bash

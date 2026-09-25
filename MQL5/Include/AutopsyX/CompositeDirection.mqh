@@ -13,6 +13,19 @@
 //|  News reporting "BLOCK" is a hard veto handled before any vote is |
 //|  even tallied, exactly as spec section 11 requires ("must NEVER   |
 //|  generate BUY or SELL direction").                                |
+//|                                                                    |
+//|  SIGNAL-ONLY, NEVER TRADE PERMISSION (institutional engine spec     |
+//|  section 9, verified rather than requiring a rewrite): confirmed    |
+//|  by inspection that this class contains no CTrade / OrderSend /     |
+//|  position-open call anywhere. Evaluate() below returns a            |
+//|  SAxCompositeDirection classification (a candidate direction plus    |
+//|  confidence/votes/veto reason) - a SIGNAL, never a permission. Risk  |
+//|  sizing, circuit breakers, and ExecutionEligibility.mqh's own gate    |
+//|  chain remain entirely separate, downstream decisions that this      |
+//|  engine has no visibility into and cannot bypass - a caller that      |
+//|  ignores every other gate and trades directly off this return value   |
+//|  would be a misuse of this class, not something the class itself      |
+//|  permits or performs.                                                 |
 //+------------------------------------------------------------------+
 #property strict
 #ifndef AX_COMPOSITEDIRECTION_MQH

@@ -93,6 +93,39 @@ enum ENUM_AX_VWAP_EXIT_MODE
                                                     // itself hasn't corroborated
   };
 
+//--- Dynamic Drawdown state (institutional engine upgrade, spec sections 10-11) - ENGINEERING        ---
+//--- DESIGN. Five states because a single "drawdown %" threshold cannot distinguish a mild dip in    ---
+//--- calm conditions from the same % dip during a liquidity/volatility shock - CDynamicDrawdownEngine---
+//--- combines drawdown magnitude, velocity, volatility regime, liquidity, execution quality, and     ---
+//--- consecutive losses into a single severity read before classifying. Distinct from                ---
+//--- ENUM_AX_CAPITAL_STATE (AdaptiveFlipEngine.mqh's own, simpler, peak-equity-only ladder) - kept    ---
+//--- as a genuinely separate, parallel tracker (same "each engine owns its own read" convention       ---
+//--- already used throughout this codebase) rather than replacing it. ---
+enum ENUM_AX_DRAWDOWN_STATE
+  {
+   AX_DD_STATE_NORMAL = 0,
+   AX_DD_STATE_CAUTION,
+   AX_DD_STATE_DEFENSIVE,
+   AX_DD_STATE_SEVERE,
+   AX_DD_STATE_HALT
+  };
+
+//--- Crisis / Black-Swan severity ladder (institutional engine upgrade, spec sections 14-15) -        ---
+//--- ENGINEERING DESIGN. Combines what the spec presents as two separate modes (Crisis Mode, Black-   ---
+//--- Swan Mode) into one 4-level escalation ladder rather than two independent booleans: both read     ---
+//--- the same underlying inputs (volatility regime, drawdown severity, hidden risk, data integrity)    ---
+//--- and sit on the same "how systemically dangerous right now" axis, so a single monotonic ladder is  ---
+//--- both simpler and less prone to the two modes silently disagreeing (e.g. "black swan" active while ---
+//--- "crisis" isn't) than two separately-computed flags would be. See CrisisEngine.mqh for the exact,  ---
+//--- documented-as-such thresholds and weights - none of this is paper-sourced.                        ---
+enum ENUM_AX_CRISIS_LEVEL
+  {
+   AX_CRISIS_NONE = 0,
+   AX_CRISIS_ELEVATED,
+   AX_CRISIS_CRISIS,
+   AX_CRISIS_BLACK_SWAN
+  };
+
 //--- Trade permission verdict (institutional engine upgrade, spec section 18/28) - ENGINEERING       ---
 //--- DESIGN. Deliberately five states, not a boolean: the pipeline must be able to say "conditions    ---
 //--- don't justify full size right now" without collapsing that into the same TRADE/NO-TRADE binary  ---
@@ -695,6 +728,31 @@ string AxVwapExitModeToString(const ENUM_AX_VWAP_EXIT_MODE m)
       case AX_VWAP_EXIT_IMMEDIATE:                     return("IMMEDIATE");
       case AX_VWAP_EXIT_CONFIRMED_CROSS:                return("CONFIRMED_CROSS");
       case AX_VWAP_EXIT_CONFIRMED_CROSS_PLUS_STRUCTURE: return("CONFIRMED_CROSS_PLUS_STRUCTURE");
+     }
+   return("UNKNOWN");
+  }
+
+string AxDrawdownStateToString(const ENUM_AX_DRAWDOWN_STATE s)
+  {
+   switch(s)
+     {
+      case AX_DD_STATE_NORMAL:     return("NORMAL");
+      case AX_DD_STATE_CAUTION:    return("CAUTION");
+      case AX_DD_STATE_DEFENSIVE:  return("DEFENSIVE");
+      case AX_DD_STATE_SEVERE:     return("SEVERE");
+      case AX_DD_STATE_HALT:       return("HALT");
+     }
+   return("UNKNOWN");
+  }
+
+string AxCrisisLevelToString(const ENUM_AX_CRISIS_LEVEL l)
+  {
+   switch(l)
+     {
+      case AX_CRISIS_NONE:       return("NONE");
+      case AX_CRISIS_ELEVATED:   return("ELEVATED");
+      case AX_CRISIS_CRISIS:     return("CRISIS");
+      case AX_CRISIS_BLACK_SWAN: return("BLACK_SWAN");
      }
    return("UNKNOWN");
   }

@@ -37,6 +37,21 @@
 //|  engine. Every call recomputes fresh from real OHLC data; nothing  |
 //|  here is ever revised using information from a bar that wasn't     |
 //|  closed yet at the time of that revision.                          |
+//|                                                                    |
+//|  SIGNAL-ONLY, NEVER TRADE PERMISSION (institutional engine spec     |
+//|  section 9, verified rather than requiring a rewrite): this class   |
+//|  contains no CTrade / OrderSend / position-open call anywhere -     |
+//|  confirmed by inspection, not just convention - and every public    |
+//|  accessor returns a read-only classification (trend/BOS/CHoCH/MSS/  |
+//|  swing levels). It is a candidate-direction INPUT that CompositeDirection.mqh |
+//|  and downstream engines (RiskEngine, ExecutionEligibility) may       |
+//|  independently gate or refuse - it can never itself authorize a      |
+//|  trade. As of this build it is not yet wired into the live OnTick    |
+//|  loop at all (see AutopsyX_FlipDemon_Extreme.mq5's own comment       |
+//|  where CExitEngine's PLUS_STRUCTURE mode documents that this engine  |
+//|  "isn't integrated into the live tick loop" yet), so there is no     |
+//|  existing call site to refactor - the separation this spec section   |
+//|  asks for already holds architecturally and is recorded here.        |
 //+------------------------------------------------------------------+
 #property strict
 #ifndef AX_STRUCTUREENGINE_MQH
