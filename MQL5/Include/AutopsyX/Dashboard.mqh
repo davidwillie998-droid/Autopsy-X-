@@ -70,7 +70,16 @@ struct SAxDashboardExtras
    //--- VWAP Trend Engine ---
    string         vwapTrend;              // "BULLISH"/"BEARISH"/"NEUTRAL"
    double         vwapValue;              // -1 when unavailable
-   bool           vwapExitEnabled;
+   bool           vwapExitEnabled;        // the raw InpUseVWAPExit toggle - whether the feature is ON
+                                            // at all, NOT whether it will fire for the CURRENT position
+   bool           vwapExitArmedForPosition; // true only when the OPEN position's own
+                                              // g_posState.vwapAlignedAtEntry is true - CExitEngine
+                                              // gates its entire VWAP exit branch on this per-position
+                                              // flag (ExitEngine.mqh), not on the raw toggle above, so
+                                              // this is what the dashboard's "[EXIT ARMED]" tag must
+                                              // reflect (code-review finding: it previously read the
+                                              // toggle alone and could claim ARMED for a position VWAP
+                                              // was NEUTRAL/disagreeing for at entry, which never fires).
 
    //--- FLIPDEMON EXTREME upgrade: execution mode + emergency controls (spec sections 37/38) - ---
    //--- these ARE live-wired (CEmergencyControls is instantiated and checked every entry attempt) ---
@@ -394,7 +403,9 @@ public:
       //--- never goes stale (same reasoning as the AFE/SNIPER sections above) ---
       string vwapStr = (extras.vwapValue<=0) ? "N/A" :
                         StringFormat("%s @ %s",extras.vwapTrend,DoubleToString(extras.vwapValue,_Digits));
-      if(extras.vwapExitEnabled) vwapStr += " [EXIT ARMED]";
+      //--- the per-position armed flag, not the raw feature toggle - see struct field comment above ---
+      if(extras.vwapExitArmedForPosition) vwapStr += " [EXIT ARMED]";
+      else if(extras.vwapExitEnabled)     vwapStr += " [EXIT: not armed this trade]";
       color vwapClr = (extras.vwapTrend=="BULLISH") ? clrLime :
                        (extras.vwapTrend=="BEARISH") ? clrTomato : clrSilver;
       MakeLabel("VWAP",x,y,"VWAP: "+vwapStr,vwapClr); y+=m_lineH+4;

@@ -82,6 +82,12 @@ public:
                                         const double atrPrice) const
      {
       if(vwapValue<=0) return("NEUTRAL"); // -1 (unavailable) or a defensive <=0 guard either way
+      //--- atrPrice<=0 (e.g. CRegimeEngine still warming up, or its own AX_REGIME_UNSAFE guard active)  ---
+      //--- means the anti-flip-flop deadband below CANNOT be computed, not that it should collapse to   ---
+      //--- 0 - a 0 deadband removes the noise guard at exactly the moment the ATR reading is least       ---
+      //--- trustworthy, letting sub-pip noise classify BULLISH/BEARISH (code-review finding). No usable  ---
+      //--- ATR means no trustworthy classification either - NEUTRAL, not a guess. ---
+      if(atrPrice<=0) return("NEUTRAL");
       double deadband = MathAbs(atrPrice)*m_deadbandAtrMult;
       if(MathAbs(currentClose-vwapValue)<=deadband) return("NEUTRAL");
       return(currentClose>vwapValue ? "BULLISH" : "BEARISH");
@@ -94,7 +100,12 @@ private:
      {
       MqlRates rates[];
       ArraySetAsSeries(rates,true);
-      int copied = CopyRates(symbol,tf,0,m_rollingBars,rates);
+      //--- shift starts at 1, not 0 - shift 0 is the currently-forming, not-yet-closed bar. Including  ---
+      //--- it would mix a partial, still-changing bar into the VWAP average (a real lookahead/staleness ---
+      //--- issue: the exact same "no lookahead" rule StructureEngine.mqh's own CopyRates(...,1,...) call ---
+      //--- already documents) and contradicts this file's own call site, which compares the result       ---
+      //--- against iClose(...,1) - a strictly closed-bar price (code-review finding). ---
+      int copied = CopyRates(symbol,tf,1,m_rollingBars,rates);
       // "insufficient bars" per Task 1: didn't get the full configured window - never silently
       // compute on a partial window pretending it's the configured one
       if(copied<m_rollingBars) return(-1);
@@ -108,11 +119,18 @@ private:
    double            GetSessionAnchoredVwap(const string symbol,const ENUM_TIMEFRAMES tf) const
      {
       datetime anchor = FindSessionAnchor(TimeCurrent());
+      //--- CopyRates(symbol,tf,anchor,TimeCurrent(),rates) (the original implementation) includes the  ---
+      //--- currently-forming bar (its time range runs up to "now"), the same lookahead issue fixed in   ---
+      //--- GetRollingVwap() above. iBarShift finds the shift of the bar COVERING `anchor` - shift 0 is    ---
+      //--- always the forming bar, so this many bars, copied starting at shift 1, are exactly the real,   ---
+      //--- CLOSED bars from the anchor to the most recent close (code-review finding). ---
+      int barsSinceAnchor = iBarShift(symbol,tf,anchor,false);
+      // a session anchor can be minutes old right after a reset - require at least a couple of real
+      // CLOSED bars before trusting the read, rather than computing VWAP off a single just-formed bar
+      if(barsSinceAnchor<2) return(-1);
       MqlRates rates[];
       ArraySetAsSeries(rates,true);
-      int copied = CopyRates(symbol,tf,anchor,TimeCurrent(),rates);
-      // a session anchor can be minutes old right after a reset - require at least a couple of real
-      // bars before trusting the read, rather than computing VWAP off a single just-formed bar
+      int copied = CopyRates(symbol,tf,1,barsSinceAnchor,rates);
       if(copied<2) return(-1);
       return(ComputeVwapFromRates(rates,copied));
      }
@@ -152,8 +170,20 @@ private:
    double            ComputeVwapFromRates(const MqlRates &rates[],const int count) const
      {
       double sumRealVol=0;
-      for(int i=0;i<count;i++) sumRealVol += (double)rates[i].real_volume;
-      bool useReal = (sumRealVol>0);
+      int    realVolBarCount=0;
+      for(int i=0;i<count;i++)
+        {
+         double rv=(double)rates[i].real_volume;
+         sumRealVol += rv;
+         if(rv>0) realVolBarCount++;
+        }
+      //--- requires real_volume on a genuine MAJORITY of the window, not merely a positive SUM - a     ---
+      //--- feed that only sporadically populates real_volume (a known quirk on some CFD/FX feeds) would ---
+      //--- otherwise let one or two bars carry the entire window's weight, collapsing what's meant to be ---
+      //--- a representative multi-bar average into effectively a single bar's typical price (code-review---
+      //--- finding). Falls back to tick_volume - reported on every bar this codebase's feeds ever see -  ---
+      //--- whenever real_volume coverage isn't broad enough to trust as the weighting scheme. ---
+      bool useReal = (sumRealVol>0) && (realVolBarCount>=count/2);
 
       double sumPV=0, sumV=0;
       for(int i=0;i<count;i++)

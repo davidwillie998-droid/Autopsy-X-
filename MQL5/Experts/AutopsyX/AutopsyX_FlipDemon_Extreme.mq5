@@ -1452,6 +1452,11 @@ void OnTimer(void)
    extras.vwapTrend               = g_vwapTrend;
    extras.vwapValue               = g_vwapValue;
    extras.vwapExitEnabled         = InpUseVWAPExit;
+   //--- reflects THIS position's own armed state, not just the global toggle - the exact flag        ---
+   //--- CExitEngine gates its VWAP exit branch on (code-review finding: the dashboard previously      ---
+   //--- showed [EXIT ARMED] off the toggle alone, even when this position's own vwapAlignedAtEntry      ---
+   //--- was false and the exit could never fire for it) ---
+   extras.vwapExitArmedForPosition = g_posState.active && g_posState.vwapAlignedAtEntry;
 
    extras.executionMode           = g_emergency.ExecutionMode();
    extras.enableTrading           = g_emergency.EnableTrading();
