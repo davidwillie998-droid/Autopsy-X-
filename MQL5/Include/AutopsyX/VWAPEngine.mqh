@@ -125,6 +125,11 @@ private:
       //--- always the forming bar, so this many bars, copied starting at shift 1, are exactly the real,   ---
       //--- CLOSED bars from the anchor to the most recent close (code-review finding). ---
       int barsSinceAnchor = iBarShift(symbol,tf,anchor,false);
+      // iBarShift returns -1 on a hard error (no history for this symbol/timeframe) - rejected here
+      // EXPLICITLY rather than relying on the <2 guard below to catch it by numeric accident (a real
+      // trace found this: -1<2 happens to be true today, but that's not obviously true-by-design to a
+      // future reader, and a later change to the threshold below could silently stop catching it).
+      if(barsSinceAnchor<0) return(-1);
       // a session anchor can be minutes old right after a reset - require at least a couple of real
       // CLOSED bars before trusting the read, rather than computing VWAP off a single just-formed bar
       if(barsSinceAnchor<2) return(-1);
@@ -177,13 +182,18 @@ private:
          sumRealVol += rv;
          if(rv>0) realVolBarCount++;
         }
-      //--- requires real_volume on a genuine MAJORITY of the window, not merely a positive SUM - a     ---
-      //--- feed that only sporadically populates real_volume (a known quirk on some CFD/FX feeds) would ---
-      //--- otherwise let one or two bars carry the entire window's weight, collapsing what's meant to be ---
-      //--- a representative multi-bar average into effectively a single bar's typical price (code-review---
-      //--- finding). Falls back to tick_volume - reported on every bar this codebase's feeds ever see -  ---
-      //--- whenever real_volume coverage isn't broad enough to trust as the weighting scheme. ---
-      bool useReal = (sumRealVol>0) && (realVolBarCount>=count/2);
+      //--- requires real_volume on a genuine STRICT MAJORITY of the window, not merely a positive SUM -  ---
+      //--- a feed that only sporadically populates real_volume (a known quirk on some CFD/FX feeds) would---
+      //--- otherwise let one or two bars carry the entire window's weight, collapsing what's meant to be  ---
+      //--- a representative multi-bar average into effectively a single bar's typical price (code-review ---
+      //--- finding). Falls back to tick_volume - reported on every bar this codebase's feeds ever see -   ---
+      //--- whenever real_volume coverage isn't broad enough to trust as the weighting scheme.              ---
+      //--- realVolBarCount*2>count (not realVolBarCount>=count/2) - integer division in count/2 rounds     ---
+      //--- DOWN, so for an odd count (the session-anchored path's count is variable, e.g. a short/gapped    ---
+      //--- session with count=3 or count=5) the old form only required 33%-40% coverage, not a genuine       ---
+      //--- majority (a second trace caught this: 1 of 3 or 2 of 5 both satisfied `>=count/2` but neither      ---
+      //--- is a majority). The multiplication form has no rounding and means exactly "more than half". ---
+      bool useReal = (sumRealVol>0) && (realVolBarCount*2>count);
 
       double sumPV=0, sumV=0;
       for(int i=0;i<count;i++)
