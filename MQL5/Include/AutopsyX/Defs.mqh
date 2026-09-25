@@ -93,6 +93,59 @@ enum ENUM_AX_VWAP_EXIT_MODE
                                                     // itself hasn't corroborated
   };
 
+//--- Trade permission verdict (institutional engine upgrade, spec section 18/28) - ENGINEERING       ---
+//--- DESIGN. Deliberately five states, not a boolean: the pipeline must be able to say "conditions    ---
+//--- don't justify full size right now" without collapsing that into the same TRADE/NO-TRADE binary  ---
+//--- everything else already has. ---
+enum ENUM_AX_FINAL_DECISION
+  {
+   AX_DECISION_TRADE = 0,
+   AX_DECISION_REDUCE_RISK,
+   AX_DECISION_WAIT,
+   AX_DECISION_NO_TRADE,
+   AX_DECISION_HALT
+  };
+
+//--- Inferred tick-direction classification (Layer 4, institutional engine upgrade) - PAPER-SOURCED: ---
+//--- Lee, C. and Ready, M. "Inferring Trade Direction from Intraday Data", Journal of Finance, 46    ---
+//--- (1991), 733-746 - reference [11] in Malhotra SSRN 3306817, and explicitly named there ("Tick    ---
+//--- test T and quote test Q are used to infer trade direction... from TAQ trade"). This is an       ---
+//--- INFERENCE from price/quote behavior, never a claim of seeing a real trade-aggressor flag - see  ---
+//--- Microstructure2.mqh for the exact same honest caveat OrderFlow.mqh already carries. ---
+enum ENUM_AX_TICK_DIRECTION
+  {
+   AX_TICKDIR_BUY = 1,
+   AX_TICKDIR_SELL = -1,
+   AX_TICKDIR_UNCLASSIFIED = 0   // only the very first tick with no prior reference is genuinely
+                                  // unclassifiable by this method - never guessed
+  };
+
+//--- Volatility regime (Layer 2, institutional engine upgrade) - ENGINEERING DESIGN, not paper-     ---
+//--- sourced. Distinct from ENUM_AX_REGIME (which is a trend/breakout/range classification that     ---
+//--- happens to use ATR as one input) - this is purely about how much price is moving right now,    ---
+//--- independent of direction or trend structure. ---
+enum ENUM_AX_VOLATILITY_STATE
+  {
+   AX_VOL_NORMAL = 0,
+   AX_VOL_LOW,
+   AX_VOL_HIGH,
+   AX_VOL_EXTREME,
+   AX_VOL_SHOCK        // a sudden, sharp spike distinct from a sustained HIGH/EXTREME regime -
+                        // see CVolatilityEngine for the exact acceleration-based trigger
+  };
+
+//--- Macro input bias read (Layer 1, institutional engine upgrade) - ENGINEERING DESIGN, not       ---
+//--- paper-sourced. DATA_UNAVAILABLE is distinct from NEUTRAL: NEUTRAL means the symbol was read    ---
+//--- successfully and showed no clear short-term bias; DATA_UNAVAILABLE means it couldn't be read   ---
+//--- (not configured, not selectable on this broker, or confidence decayed below the usable floor). ---
+enum ENUM_AX_MACRO_BIAS
+  {
+   AX_MACRO_BULLISH = 0,
+   AX_MACRO_BEARISH,
+   AX_MACRO_NEUTRAL,
+   AX_MACRO_DATA_UNAVAILABLE
+  };
+
 //--- Execution mode (spec section 37) - governs whether the EA sends real orders at all. Default  ---
 //--- is ANALYSIS_ONLY: generate signals/decisions but send no orders. Never switches silently -     ---
 //--- this is a single input, set once, read at OnInit. ---
@@ -415,6 +468,19 @@ struct SAxSwingPoint
    bool     isLL;       // meaningful only when !isHigh - lower than the prior swing low
   };
 
+//--- one macro/cross-asset input read (Layer 1, institutional engine upgrade) - carries its own    ---
+//--- provenance so a caller can never mistake a stale or unavailable read for a fresh, trustworthy  ---
+//--- one. "available" false means value/timestamp are meaningless (0), never a fabricated number. ---
+struct SAxMacroInput
+  {
+   string   source;           // the symbol name this reading came from, e.g. "EURUSD"
+   double   value;             // last read price; 0 when !available
+   datetime timestamp;         // broker-reported time of that price; 0 when !available
+   double   freshnessSeconds;  // TimeCurrent() - timestamp; 0 when !available
+   double   confidence;        // 0..100, decays with freshness - see MacroRegime.mqh
+   bool     available;
+  };
+
 //--- helpers -----------------------------------------------------------------
 string AxDirToString(const ENUM_AX_DIR d)
   {
@@ -629,6 +695,44 @@ string AxVwapExitModeToString(const ENUM_AX_VWAP_EXIT_MODE m)
       case AX_VWAP_EXIT_IMMEDIATE:                     return("IMMEDIATE");
       case AX_VWAP_EXIT_CONFIRMED_CROSS:                return("CONFIRMED_CROSS");
       case AX_VWAP_EXIT_CONFIRMED_CROSS_PLUS_STRUCTURE: return("CONFIRMED_CROSS_PLUS_STRUCTURE");
+     }
+   return("UNKNOWN");
+  }
+
+string AxFinalDecisionToString(const ENUM_AX_FINAL_DECISION d)
+  {
+   switch(d)
+     {
+      case AX_DECISION_TRADE:        return("TRADE");
+      case AX_DECISION_REDUCE_RISK:  return("REDUCE_RISK");
+      case AX_DECISION_WAIT:         return("WAIT");
+      case AX_DECISION_NO_TRADE:     return("NO_TRADE");
+      case AX_DECISION_HALT:         return("HALT");
+     }
+   return("UNKNOWN");
+  }
+
+string AxVolatilityStateToString(const ENUM_AX_VOLATILITY_STATE v)
+  {
+   switch(v)
+     {
+      case AX_VOL_NORMAL:  return("NORMAL");
+      case AX_VOL_LOW:     return("LOW_VOLATILITY");
+      case AX_VOL_HIGH:    return("HIGH_VOLATILITY");
+      case AX_VOL_EXTREME: return("EXTREME_VOLATILITY");
+      case AX_VOL_SHOCK:   return("VOLATILITY_SHOCK");
+     }
+   return("UNKNOWN");
+  }
+
+string AxMacroBiasToString(const ENUM_AX_MACRO_BIAS b)
+  {
+   switch(b)
+     {
+      case AX_MACRO_BULLISH:          return("BULLISH");
+      case AX_MACRO_BEARISH:          return("BEARISH");
+      case AX_MACRO_NEUTRAL:          return("NEUTRAL");
+      case AX_MACRO_DATA_UNAVAILABLE: return("DATA_UNAVAILABLE");
      }
    return("UNKNOWN");
   }
