@@ -173,6 +173,13 @@ public:
       double lots = riskAmount/valuePerLot;
       lots = md.NormalizeVolume(lots);
       lots = MathMin(lots,m_maxExposureLots);
+      //--- re-normalized AFTER the exposure clamp, not just before it - m_maxExposureLots is a       ---
+      //--- user-configured input (Configure()) with no guarantee of being volume-step-aligned for a   ---
+      //--- given broker; without this second pass, an exposure cap like 0.375 lots on a 0.01-step      ---
+      //--- broker would be returned as-is instead of floored to a broker-valid size (Section A risk-   ---
+      //--- invariant audit finding: every return value must be broker-valid regardless of what config  ---
+      //--- does, never contingent on the config itself being well-behaved). ---
+      lots = md.NormalizeVolume(lots);
       return(lots);
      }
 
