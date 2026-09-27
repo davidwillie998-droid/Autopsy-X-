@@ -256,5 +256,37 @@ request's own instruction to wait for verification between phases.
    (Phase 2: Data Integrity + Market State, done — see
    `docs/PHASE2_MARKET_STATE_REPORT.md`; Phase 3: Regime +
    Volatility/Seriality, next, pending sign-off).
-4. **Economic calendar research spike (§9):** not yet actioned - still
-   open, deferred until Phase 5 (Information Surprise) is actually next.
+4. **Economic calendar research spike (§9):** not made a Phase 2/3
+   dependency, per instruction. Deferred until Phase 5 (Information
+   Surprise) is actually next; when it is, the design must include a
+   clean adapter/interface for a future calendar provider and must
+   degrade safely (never fabricate missing macro information) on
+   unavailable/stale/incomplete/conflicting data - recorded here so
+   that requirement isn't lost before Phase 5 starts.
+
+---
+
+## Correction (Phase 3a) — the §4/§6 "no existing taxonomy" claim was wrong
+
+This audit's original table claimed `Regime.mqh` had "no R1-R8 taxonomy"
+and `VolatilityEngine.mqh` had "no V01-V07 taxonomy." Both claims were
+false, and the error was structural, not a one-off typo: the interface
+grep used to build this audit's tables matched a bare `ENUM_` token
+followed by whitespace, which cannot match any real enum name in this
+codebase (all of them are `ENUM_AX_...`, no space after `ENUM_`) - so
+every enum-typed public accessor across every engine in this table was
+silently invisible to that grep, not just these two.
+
+`CRegimeEngine::Regime()` already returns a live, wired 9-state
+`ENUM_AX_REGIME`. `CVolatilityEngine::State()` already returns a 5-state
+`ENUM_AX_VOLATILITY_STATE` including a `SHOCK` state. Both are already
+consumed by multiple other engines (`AlphaEngine`, `Dashboard`,
+`PerformanceAttribution`, `CrisisEngine`, `TradePermissionMatrix`,
+`HiddenRiskDetector`, `DrawdownEngine`, `DynamicPositionSizing`,
+`InstitutionalDashboard`). Full detail and the corrected Phase 3a scope
+are in `docs/PHASE3A_REGIME_INTELLIGENCE_REPORT.md`. This correction is
+recorded here, not silently fixed, per this build's own established
+self-correction discipline (see `docs/MODULE_WIRING.md`'s own prior
+correction for precedent). Any future phase that reads this audit's §4
+or §6 rows should treat this correction as authoritative over the
+original table text above.
