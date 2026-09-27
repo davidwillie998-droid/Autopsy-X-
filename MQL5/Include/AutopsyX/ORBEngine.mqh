@@ -75,6 +75,52 @@
 //|  CExecutionEligibility/etc, exactly like every other signal-generating          |
 //|  engine in this codebase. It is not wired into the live OnTick loop as           |
 //|  part of this build.                                                              |
+//|                                                                    |
+//|  THIRD-PARTY INDEPENDENT REPLICATION (NOT the paper, NOT peer-reviewed -    |
+//|  a single researcher's own GitHub research artifact, explicitly labeled     |
+//|  as such): github.com/giovannibrusco/zarattini-2023-orb-qqq reproduces      |
+//|  this paper's own QQQ backtest (1,775 trades vs the paper's 1,795, Sharpe    |
+//|  1.06 vs 1.12 - "reproduced within noise") and then stress-tests it further   |
+//|  than the paper itself does. Findings folded in here, each labeled with       |
+//|  what it actually supports:                                                    |
+//|   - EXECUTION FRAGILITY (the single most load-bearing finding for THIS         |
+//|     codebase): the paper's own headline result assumes ZERO slippage. This      |
+//|     replication found net PnL crosses zero at ~2.2 cents/share of slippage -     |
+//|     inside QQQ's own ~1-cent spread. This is not a QQQ-specific quirk; it is      |
+//|     the general shape of a razor-thin ORB edge, and is exactly why this           |
+//|     codebase never lets a signal like this one bypass CAlphaEngine's own           |
+//|     CalculateExpectedCost() EV-cost gate (already built, already wired into         |
+//|     CAdaptiveFlipEngine) - treat that gate as load-bearing, not optional, for        |
+//|     any future ORB wiring, more so than for a less execution-sensitive signal.        |
+//|   - THE FIXED TARGET IS NEARLY DECORATIVE IN PRACTICE: this replication's own          |
+//|     trade log shows the +10R target hit on only ~2-3% of trades; ~75% exit on           |
+//|     the stop and ~22% flat at session close. This is a real-world usage note,            |
+//|     not a paper finding and not a code bug - AX_ORB_TARGET_R_MULTIPLE's default           |
+//|     of 10.0 below should be read as "effectively EOD-or-stop" in practice, not             |
+//|     as "this strategy typically earns 10R."                                                 |
+//|   - CROSS-ASSET CONFIRMATION FILTER, VALIDATED AGAINST ITS OWN PLACEBO: requiring            |
+//|     a correlated futures instrument's (NQ's) own pre-open bar to agree with the               |
+//|     primary signal's direction raised this replication's per-trade edge from                  |
+//|     $0.070 to $0.125/share (t=2.05, significant ~5%) - and a control placebo                   |
+//|     using QQQ's OWN earlier bar instead of NQ did NOT clear significance                        |
+//|     ($0.079/share, t=1.27), meaning the effect is not just same-asset momentum                  |
+//|     in disguise. Ported below as EvaluateCrossAssetConfirmation() - opt-in,                       |
+//|     caller-invoked, disabled by default (empty symbol), NOT the paper's own                       |
+//|     NQ/QQQ pair specifically (no equivalent futures leg exists for XAUUSD/FX in                    |
+//|     this account), so the caller supplies whatever correlated instrument this                      |
+//|     broker actually offers (e.g. DXY for XAUUSD).                                                    |
+//|   - REGIME CONCENTRATION, NOT STRUCTURAL: this same replication found 76% of the                      |
+//|     cross-asset-filtered PnL came from 2022 alone (a high-volatility bear market),                     |
+//|     with the filter LOSING money in 2017, 2020, and early 2023. This is the                              |
+//|     strongest reason nothing here is wired live: an edge that concentrated in one                         |
+//|     historical regime should be read alongside a volatility-regime classification                         |
+//|     (CVolatilityEngine, itself currently dormant) before ever being trusted, not                            |
+//|     traded standalone across all conditions.                                                                 |
+//|   - NOT PORTED: the paper's/replication's 1%-risk-under-4x-FINRA-day-trading-cap                              |
+//|     position-sizing formula is a US-equities-specific regulatory constraint with                              |
+//|     no FX/CFD analogue (see the position-sizing paragraph above) - this replication                            |
+//|     doesn't change that conclusion, it just independently confirms the paper's own                              |
+//|     formula is what it says it is.                                                                                |
 //+------------------------------------------------------------------+
 #property strict
 #ifndef AX_ORBENGINE_MQH
@@ -151,6 +197,15 @@ private:
         }
       if(bestAnchor==0) bestAnchor = todayStart-86400+hours[3]*3600;
       return(bestAnchor);
+     }
+
+   //--- shared open-vs-close direction classification (bullish/bearish/doji) - factored out so         ---
+   //--- Evaluate()'s own primary-range read and EvaluateCrossAssetConfirmation()'s cross-asset read      ---
+   //--- can never silently diverge if this rule is ever tightened (code-review finding). ---
+   ENUM_AX_DIR       ClassifyBarDirection(const double barOpen,const double barClose) const
+     {
+      if(barClose==barOpen) return(AX_DIR_NONE); // doji
+      return( (barClose>barOpen) ? AX_DIR_BUY : AX_DIR_SELL );
      }
 
 public:
@@ -246,10 +301,11 @@ public:
       s.rangeHigh=rangeHigh; s.rangeLow=rangeLow;
 
       //--- doji: the paper's own rule produces NO signal here, not a fallback direction guess ---
-      if(rangeClose==rangeOpen)
+      ENUM_AX_DIR rangeDirection = ClassifyBarDirection(rangeOpen,rangeClose);
+      if(rangeDirection==AX_DIR_NONE)
         { s.reason="Opening range candle was a doji - no signal, per the paper's own rule"; return(s); }
 
-      s.direction = (rangeClose>rangeOpen) ? AX_DIR_BUY : AX_DIR_SELL;
+      s.direction = rangeDirection;
 
       //--- entryPrice: the CURRENT price at the moment the range closes, supplied by the caller (bid/  ---
       //--- ask as appropriate for the direction) - a live, tick-driven EA reacts the instant the range   ---
@@ -312,6 +368,71 @@ public:
 
    bool              UsingAtrStop(void) const { return(m_useAtrStop); }
    ENUM_AX_ORB_TARGET_MODE TargetMode(void) const { return(m_targetMode); }
+
+   //--- Opt-in cross-asset opening-bar confirmation gate - see file header's "THIRD-PARTY INDEPENDENT   ---
+   //--- REPLICATION" section for the finding this implements and why it is opt-in, not automatic.       ---
+   //--- crossSymbol="" disables the check (returns true - "nothing configured, not a failure", matching   ---
+   //--- CMacroRegimeEngine::ReadSymbol()'s own convention). Otherwise reads crossSymbol's OWN bar,         ---
+   //--- leadMinutes before this opening range's own anchor, and compares THAT bar's own open-vs-close       ---
+   //--- direction (identical doji/bullish/bearish rule as this engine's own primary signal) against          ---
+   //--- primaryDirection. Fails CLOSED (false) on missing data, insufficient history, a doji cross-asset       ---
+   //--- bar, or disagreement - never treated as a pass, matching this codebase's "never treat missing          ---
+   //--- data as bullish" rule (DataIntegrity.mqh's own convention).                                              ---
+   bool              EvaluateCrossAssetConfirmation(const string crossSymbol,const datetime signalRangeStartTime,
+                                                      const ENUM_AX_DIR primaryDirection,const int leadMinutes,
+                                                      string &reasonOut) const
+     {
+      if(StringLen(crossSymbol)==0)
+        { reasonOut="Cross-asset confirmation disabled (no symbol configured)"; return(true); }
+      if(primaryDirection==AX_DIR_NONE)
+        { reasonOut="No primary direction to confirm"; return(false); }
+
+      int barSeconds = PeriodSeconds(m_barTimeframe);
+      if(barSeconds<=0)
+        { reasonOut="Invalid bar timeframe"; return(false); }
+
+      //--- must select the symbol before reading it - an unselected symbol's history often isn't      ---
+      //--- synchronized on the terminal, which would otherwise make iBarShift/CopyRates fail closed     ---
+      //--- for the wrong reason (permanently "no data" rather than a real read) - same requirement        ---
+      //--- CMacroRegimeEngine::ReadSymbol()/CMarketData::Init() already enforce for their own cross-        ---
+      //--- symbol reads (code-review finding). ---
+      if(!SymbolSelect(crossSymbol,true))
+        { reasonOut=StringFormat("Cross-asset symbol '%s' does not exist or could not be selected on this broker",crossSymbol); return(false); }
+
+      datetime crossAnchor = signalRangeStartTime-MathMax(0,leadMinutes)*60;
+
+      int crossShift = iBarShift(crossSymbol,m_barTimeframe,crossAnchor,false);
+      //--- -1 is iBarShift's own hard-error case (no history for this symbol/timeframe) - rejected        ---
+      //--- explicitly, matching this file's own established convention (see Evaluate()'s anchorShift).     ---
+      if(crossShift<0)
+        { reasonOut=StringFormat("No bar history available for cross-asset symbol '%s'",crossSymbol); return(false); }
+      //--- shift 0 is always the currently-forming bar - reading it here would classify a bar whose        ---
+      //--- close is just the latest live tick, not a settled value, violating this file's own no-           ---
+      //--- lookahead convention (code-review finding: this guard was missing, unlike Evaluate()'s own        ---
+      //--- anchorShift>=numRangeBars check that this method's comment claimed to mirror). ---
+      if(crossShift==0)
+        { reasonOut=StringFormat("Cross-asset '%s' bar not yet closed",crossSymbol); return(false); }
+
+      MqlRates crossRates[];
+      ArraySetAsSeries(crossRates,true);
+      if(CopyRates(crossSymbol,m_barTimeframe,crossShift,1,crossRates)<1)
+        { reasonOut=StringFormat("Could not read cross-asset bar for '%s'",crossSymbol); return(false); }
+
+      double crossOpen=crossRates[0].open, crossClose=crossRates[0].close;
+      ENUM_AX_DIR crossDirection = ClassifyBarDirection(crossOpen,crossClose);
+      if(crossDirection==AX_DIR_NONE)
+        { reasonOut=StringFormat("Cross-asset '%s' bar was a doji - confirmation not satisfied",crossSymbol); return(false); }
+
+      if(crossDirection!=primaryDirection)
+        {
+         reasonOut=StringFormat("Cross-asset '%s' bar disagrees (%s vs primary %s)",
+                                 crossSymbol,AxDirToString(crossDirection),AxDirToString(primaryDirection));
+         return(false);
+        }
+
+      reasonOut=StringFormat("Cross-asset '%s' bar confirms primary direction (%s)",crossSymbol,AxDirToString(primaryDirection));
+      return(true);
+     }
   };
 //+------------------------------------------------------------------+
 #endif // AX_ORBENGINE_MQH
