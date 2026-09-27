@@ -240,3 +240,21 @@ standing rule that nothing gets wired into the live `OnTick` loop.
 
 No further implementation proceeds until these are answered, per the
 request's own instruction to wait for verification between phases.
+
+---
+
+## Decisions confirmed (post-audit)
+
+1. **Instrument scope (§16, §24):** dropped. Leverage Path Engine and
+   QQQ/TQQQ/NDX specialization are explicitly out of scope for this
+   project — see `docs/PHASE2_MARKET_STATE_REPORT.md`'s "Explicitly out
+   of scope" section. If ever pursued, as a separate project, not a
+   module on Flipdemon Extreme.
+2. **Kept for future phases (not yet built):** Market Memory, State
+   Transition, Model Health, Self-Falsification, Execution Alpha.
+3. **Phase order:** proceeding in the request's own listed order
+   (Phase 2: Data Integrity + Market State, done — see
+   `docs/PHASE2_MARKET_STATE_REPORT.md`; Phase 3: Regime +
+   Volatility/Seriality, next, pending sign-off).
+4. **Economic calendar research spike (§9):** not yet actioned - still
+   open, deferred until Phase 5 (Information Surprise) is actually next.
