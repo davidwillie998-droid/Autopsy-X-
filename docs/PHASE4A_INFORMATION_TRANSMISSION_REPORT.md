@@ -368,4 +368,4 @@ authorization's own scope section.
 
 ## 20. Commit hash
 
-`(filled in after commit — see the commit that includes this file)`
+`8557cb9` (pushed to `origin/claude/autopsy-flipdemon-extreme-l4ei3d`).
