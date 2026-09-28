@@ -277,10 +277,10 @@ environment.**
 
 ## 15. Commit hash
 
-Recorded after this report is committed (see the commit that includes
-this file — its own hash is `HEAD` at push time, referenced in the
-commit message itself since a file cannot self-reference its own
-future hash).
+`624cce9` (pushed to `origin/claude/autopsy-flipdemon-extreme-l4ei3d`).
+This report was written and staged in the same commit, so this section
+is filled in as a follow-up amendment reflecting the actual pushed
+hash rather than left as a forward reference.
 
 ## 16. Recommended next step
 
