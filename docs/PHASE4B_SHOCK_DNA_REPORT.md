@@ -389,8 +389,7 @@ steps, not a substitute for compilation, and are never represented as such.
 
 ## 25. Commit hash
 
-`<to be filled in via a small follow-up commit once the real hash is
-known, matching the established pattern from every prior phase>`
+`fb9585e`
 
 ## 26. Final disposition
 
