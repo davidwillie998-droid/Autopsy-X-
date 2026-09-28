@@ -307,7 +307,7 @@ Real-market information-value conclusion:
   against real data, blocked by the lack of true-range XAUUSD data -
   this is an open question, not a negative finding, for those three.
 Known limitations:                 See §22 above in full.
-Commit:                            (filled in via follow-up commit)
+Commit:                            76416f1
 ```
 
 ## Hard stop
