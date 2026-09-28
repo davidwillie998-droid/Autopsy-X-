@@ -319,3 +319,36 @@ def test_lag_scan_never_reads_future_index():
     for r in results:
         if r.sample_count > 0:
             assert r.sample_count == n - r.lag
+
+
+def test_13_subwindow_significance_floor_regression():
+    """Regression test for a defect found by the post-4A independent
+    statistical audit: corr_older/corr_recent are each computed on HALF
+    the observations corr_full uses, so their own noise floor is
+    materially larger (SignificanceFloor(half,...) ~= 1.4x
+    SignificanceFloor(m,...) at typical sizes). An earlier version applied
+    the full-sample-calibrated threshold to both, which was masked at
+    n=400 by the flat min_association=0.25 floor dominating anyway, but
+    NOT masked at n=200: false-positive rate was empirically 8.10% over
+    1000 independent unrelated-series trials before the fix. This test
+    locks in a materially lower rate at n=200 so a regression is caught
+    automatically rather than requiring another manual audit to notice."""
+    n = 200
+    trials = 500
+    active = {
+        TransmissionState.LEADER, TransmissionState.CONFIRMING, TransmissionState.WEAKENING,
+        TransmissionState.DIVERGING, TransmissionState.INVERTED,
+    }
+    false_positive = 0
+    for seed in range(500000, 500000 + trials):
+        rng = np.random.default_rng(seed)
+        leader = rng.normal(0, 0.001, n)
+        receiver = rng.normal(0, 0.0015, n)
+        snap = compute_snapshot(leader, receiver, max_lag=10, min_sample_size=30)
+        if snap.state in active:
+            false_positive += 1
+    rate = false_positive / trials
+    # the pre-fix rate was ~8%; a well-calibrated two-sided alpha=0.01
+    # Bonferroni floor should sit close to 1-2%, generously bounded here
+    # to avoid a flaky threshold while still catching a real regression
+    assert rate < 0.05, f"false-positive rate {rate:.3f} at n=200 - subwindow significance floor regression?"

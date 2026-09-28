@@ -64,6 +64,26 @@
 //|  pushed. See python/tests/test_lead_lag.py::test_12_lookahead_trap for the             |
 //|  executable proof this port's own algorithm is mirroring.                                 |
 //|                                                                    |
+//|  INDEPENDENT STATISTICAL AUDIT (post-4A, see docs/PHASE4A_AUDIT_REPORT.md      |
+//|  for the full 22-item report): one confirmed, fixed defect (see                    |
+//|  SignificanceFloor's own call sites below - corrOlder/corrRecent were                |
+//|  gated by a threshold calibrated for the FULL sample, not their own HALF               |
+//|  sample, under-correcting them; masked at n=400, NOT masked at n=200 -                   |
+//|  8.10% false-positive rate before the fix, 1.05% after, per the Python                     |
+//|  reference module's own empirical reproduction). Two confirmed, DOCUMENTED-                 |
+//|  NOT-FIXED limitations, mirrored from lead_lag.py's own docstring: (1) Pearson                |
+//|  correlation's known lack of outlier robustness - a handful of coincident                       |
+//|  extreme co-moving observations can manufacture high confidence from otherwise                    |
+//|  unrelated data, not fixed here since this codebase treats data-quality                             |
+//|  screening as CDataIntegrityEngine.mqh's job, not something to reinvent per-                          |
+//|  engine, and distinguishing a legitimate shock from corrupt data needs a design                         |
+//|  judgment this module cannot make from return values alone; (2) selection/                                |
+//|  threshold bias ("winner's curse") near the detection threshold - a real but                                |
+//|  modest true relationship can be reported with an upward-biased strength                                      |
+//|  conditional on clearing the threshold, an inherent property of any best-of-N                                    |
+//|  selection procedure, already substantially mitigated by the confidence gate                                       |
+//|  (empirically capped well below 50 for near-threshold detections).                                                    |
+//|                                                                    |
 //|  STATISTICAL HONESTY: min_association is a FLOOR, not the only gate - the    |
 //|  effective threshold is max(m_minAssociation, SignificanceFloor(...)), a        |
 //|  sample-size-and-lag-count-aware, Bonferroni-corrected statistical               |
@@ -444,22 +464,32 @@ public:
       //--- toward zero by construction, so gating on it first would misclassify the exact scenario               ---
       //--- INVERTED exists to catch as INACTIVE instead - see python/autopsy_research/lead_lag.py's own              ---
       //--- comment on this exact bug, caught by test_8_relationship_inversion actually failing). ---
+      //--- AUDIT FIX (independent statistical audit, post-4A): corrOlder/corrRecent are each computed on   ---
+      //--- HALF the observations corrFull uses (`half`, not `m`), so their own sampling noise floor is       ---
+      //--- materially larger than corrFull's - SignificanceFloor(half,...) is ~1.4x SignificanceFloor(m,...)   ---
+      //--- at typical sample sizes. Applying the full-sample threshold to corrOlder/corrRecent under-corrects    ---
+      //--- those specific checks - masked at n=400 by the flat m_minAssociation=0.25 floor dominating both         ---
+      //--- thresholds anyway, but NOT masked at n=200: an empirical check (1000 independent unrelated-series        ---
+      //--- trials) found an 8.10% false-positive rate (mostly spurious DIVERGING) before this fix, 1.05% after.       ---
+      //--- See docs/PHASE4A_AUDIT_REPORT.md section 2/10 for the full reproduction (Python side - this MQL5           ---
+      //--- port mirrors the same fix, unverified independently since MQL5 cannot be executed here). ---
       double effectiveMinAssociation = MathMax(m_minAssociation,SignificanceFloor(m,lagCount));
+      double effectiveMinAssociationHalf = halfHasEnough ? MathMax(m_minAssociation,SignificanceFloor(half,lagCount)) : 1.0;
       ENUM_AX_TRANSMISSION_STATE state;
       if(!halfHasEnough)
         {
          state = (MathAbs(corrFull)<effectiveMinAssociation) ? AX_TS_INACTIVE : AX_TS_LEADER;
         }
-      else if(MathAbs(corrOlder)>=effectiveMinAssociation && MathAbs(corrRecent)>=effectiveMinAssociation
+      else if(MathAbs(corrOlder)>=effectiveMinAssociationHalf && MathAbs(corrRecent)>=effectiveMinAssociationHalf
               && ((corrOlder>0)!=(corrRecent>0)))
         {
          state = AX_TS_INVERTED;
         }
-      else if(MathAbs(corrOlder)>=effectiveMinAssociation && MathAbs(corrRecent)<effectiveMinAssociation)
+      else if(MathAbs(corrOlder)>=effectiveMinAssociationHalf && MathAbs(corrRecent)<effectiveMinAssociationHalf)
         {
          state = AX_TS_DIVERGING;
         }
-      else if(MathAbs(corrOlder)>=effectiveMinAssociation && MathAbs(corrRecent)<MathAbs(corrOlder)*m_weakeningRatio)
+      else if(MathAbs(corrOlder)>=effectiveMinAssociationHalf && MathAbs(corrRecent)<MathAbs(corrOlder)*m_weakeningRatio)
         {
          state = AX_TS_WEAKENING;
         }

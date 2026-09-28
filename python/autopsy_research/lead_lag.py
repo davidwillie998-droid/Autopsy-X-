@@ -62,6 +62,58 @@ are already-closed, already-known observations at the point of
 computation. There is no code path in this module that reads
 `leader_returns` at an index greater than `i`. See
 test_lead_lag.py::test_lookahead_trap for an executable proof.
+
+INDEPENDENT STATISTICAL AUDIT (post-4A, see docs/PHASE4A_AUDIT_REPORT.md
+for the full 22-item report): one confirmed, fixed defect and two
+confirmed, DOCUMENTED-NOT-FIXED limitations.
+
+  FIXED: corr_older/corr_recent (the INVERTED/DIVERGING/WEAKENING checks)
+  were gated by the same threshold calibrated for corr_full's full sample
+  size `m`, despite being computed on half that many observations - their
+  true noise floor is materially larger. Masked at n=400 by the flat
+  min_association floor dominating both thresholds, but NOT masked at
+  n=200: empirically an 8.10% false-positive rate over 1000 independent
+  unrelated-series trials before the fix, 1.05% after (see
+  test_13_subwindow_significance_floor_regression, which locks this in).
+
+  DOCUMENTED, NOT FIXED - outlier sensitivity: Pearson correlation is not
+  robust to extreme values. An adversarial test found that co-incident
+  extreme observations on BOTH series at as few as 1-4 bars out of 400
+  (0.25%-1% of the data) can flip a genuinely unrelated pair from INACTIVE
+  to a high-confidence LEADER classification (confirmed: 1 outlier ->
+  48.7% confidence, 4 spread-out outliers -> 93.6% confidence, the latter
+  case NOT caught by the stability check because outliers spread evenly
+  across the older/recent split look "stable"). Not fixed here: this
+  codebase treats data-quality screening as CDataIntegrityEngine.mqh's
+  job, not something to reinvent per-engine, and the audit's own
+  instruction explicitly cautions against blind winsorizing without a
+  design that distinguishes a legitimate simultaneous market shock from a
+  corrupt data point - a judgment this module cannot make from return
+  values alone. A caller's own dataIntegrityOk gate is the only current
+  defense; tightening it is a configuration matter, not a code change.
+
+  DOCUMENTED, NOT FIXED - selection/threshold bias ("winner's curse"): a
+  genuine but modest true relationship, when its measured strength sits
+  near the detection threshold, is reported with an upward-biased
+  strength conditional on clearing that threshold (empirically +0.087 on
+  a true 0.20 correlation, a ~43% relative bias, versus +0.015 / ~5% for
+  a true 0.30 correlation comfortably above the floor). This is an
+  inherent, well-documented property of any best-of-N threshold
+  selection procedure, not unique to this implementation. The existing
+  confidence gate already provides real, measured protection here
+  (confidence capped at 35.3/100 across near-threshold detections in the
+  same test, versus a caller might otherwise assume from the strength
+  number alone) - a caller should read confidence, not association
+  strength alone, as the reliability signal.
+
+  Bonferroni's independence assumption is also only approximately true
+  here (adjacent lags share most of their underlying data and are not
+  independent tests) - Bonferroni's bound remains VALID under arbitrary
+  dependence (it does not require independence, unlike Sidak's exact
+  method), but may be more conservative than a dependence-aware
+  correction (e.g. block-bootstrap) would be. Not implemented: would turn
+  a "clean statistical transmission layer" into a research project,
+  against this phase's own explicit instruction.
 """
 from __future__ import annotations
 
@@ -363,7 +415,7 @@ def compute_snapshot(
     # INVERTED exists to catch as INACTIVE instead (fixed after this was
     # caught by test_8_relationship_inversion actually failing).
     #
-    # Every comparison below uses `effective_min_association`, the
+    # Every comparison below uses an EFFECTIVE threshold, the
     # multiple-comparisons-corrected floor (see _significance_floor), not
     # the raw `min_association` parameter directly - scanning max_lag+1
     # lags and keeping the strongest is a "best of N" selection, and an
@@ -371,22 +423,40 @@ def compute_snapshot(
     # strength well past a flat 0.15 threshold on a real fraction of
     # random draws (test_3_no_relationship/test_12_lookahead_trap both
     # failed against the flat threshold before this was added).
+    #
+    # AUDIT FIX (independent statistical audit, post-4A): corr_older and
+    # corr_recent are each computed on HALF the observations corr_full
+    # uses (`half`, not `m`), so their own sampling noise floor is
+    # materially larger - _significance_floor(half, ...) is roughly 1.4x
+    # _significance_floor(m, ...) at typical sample sizes. Applying the
+    # full-sample-calibrated `effective_min_association` to corr_older/
+    # corr_recent under-corrects those specific checks. At n=400 this was
+    # masked by the flat min_association=0.25 floor dominating both
+    # thresholds anyway, but at n=200 it was NOT masked: an empirical
+    # check (1000 independent unrelated-series trials) found an 8.10%
+    # false-positive rate (mostly spurious DIVERGING) before this fix,
+    # dropping to 1.05% after computing corr_older/corr_recent's own
+    # threshold from `half` instead of `m` - see
+    # docs/PHASE4A_AUDIT_REPORT.md section 2/10 for the full reproduction.
     effective_min_association = max(min_association, _significance_floor(m, len(lag_results)))
     min_half_sample = max(5, min_sample_size // 4)
     half_has_enough = half >= min_half_sample
+    effective_min_association_half = (
+        max(min_association, _significance_floor(half, len(lag_results))) if half_has_enough else 1.0
+    )
     if not half_has_enough:
         # too little data to compare older-vs-recent - fall back to a
         # whole-window read only, never fabricate a stability-derived state
         state = TransmissionState.INACTIVE if abs(corr_full) < effective_min_association else TransmissionState.LEADER
     elif (
-        abs(corr_older) >= effective_min_association
-        and abs(corr_recent) >= effective_min_association
+        abs(corr_older) >= effective_min_association_half
+        and abs(corr_recent) >= effective_min_association_half
         and np.sign(corr_older) != np.sign(corr_recent)
     ):
         state = TransmissionState.INVERTED
-    elif abs(corr_older) >= effective_min_association and abs(corr_recent) < effective_min_association:
+    elif abs(corr_older) >= effective_min_association_half and abs(corr_recent) < effective_min_association_half:
         state = TransmissionState.DIVERGING
-    elif abs(corr_older) >= effective_min_association and abs(corr_recent) < abs(corr_older) * weakening_ratio:
+    elif abs(corr_older) >= effective_min_association_half and abs(corr_recent) < abs(corr_older) * weakening_ratio:
         state = TransmissionState.WEAKENING
     elif abs(corr_full) < effective_min_association:
         # neither the full window nor either half shows a meaningful
