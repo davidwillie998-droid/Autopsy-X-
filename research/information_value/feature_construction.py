@@ -166,9 +166,14 @@ def add_transmission_features(df: pd.DataFrame, leader_col: str = "eur_log_retur
         confidence[i] = snap.confidence
 
     out["transmission_state"] = states
-    out["transmission_assoc"] = assoc
+    out["transmission_assoc"] = assoc          # |r| at best lag - unsigned, per lead_lag.py's own convention
     out["transmission_direction"] = direction
     out["transmission_confidence"] = confidence
+    # signed association (magnitude * direction) - a derived convenience for linear models
+    # downstream (ablation.py), not a new statistical claim: association_strength is documented
+    # by lead_lag.py itself as |r|, so direction is reattached here rather than inventing a
+    # second, independently-computed signed correlation.
+    out["transmission_assoc_signed"] = out["transmission_assoc"] * out["transmission_direction"]
     return out
 
 
