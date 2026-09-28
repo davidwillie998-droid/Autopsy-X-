@@ -1,19 +1,23 @@
 # AUTOPSY X FLIPDEMON EXTREME — Full Description
 
-**Applies to commit:** a6f4aad
+**Applies to commit:** e7a5d72 (updated; originally written at a6f4aad,
+before Layer 3 and the Phase 5 research existed — see Section 4.9)
 **Platform:** MetaTrader 5 (MQL5 Expert Advisor)
 **Instruments:** designed for XAUUSD and major FX pairs (24-hour markets,
 no single session open)
-**Size:** 1,499-line main `.mq5` file, 53 supporting `.mqh` modules, 134
-configurable `input` parameters, plus a standalone Python research
-package
+**Size:** 1,499-line main `.mq5` file, roughly 70 supporting `.mqh`
+modules across three architectural layers, plus a standalone Python
+research package and a separate real-data research pipeline
+(`research/information_value/`) outside the MQL5 tree entirely
 
 This document describes the EA as it actually is today, not as it is
-eventually intended to become. Two things are true simultaneously and
-neither cancels the other out: the codebase is large, carefully built,
-and reviewed to a high standard; and most of it does not currently
-affect a single live trading decision. Both facts are load-bearing to
-understanding what this is.
+eventually intended to become. Three things are true simultaneously and
+none of them cancels the others out: the codebase is large, carefully
+built, and reviewed to a high standard; most of it does not currently
+affect a single live trading decision; and the newest layer has now
+been empirically tested against real market data, with an honest
+negative result. All three facts are load-bearing to understanding what
+this is.
 
 ---
 
@@ -33,10 +37,10 @@ either sourced from a specific academic paper or an explicit,
 undisguised design choice, and every phase of construction was
 balance-checked and code-reviewed before being called done.
 
-## 2. Two layers, one of which is live
+## 2. Three layers, one of which is live
 
-The codebase was built in two large passes over one long development
-session, and they are **not equally connected to live trading**:
+The codebase was built in three large passes over one long development
+history, and they are **not equally connected to live trading**:
 
 ### Layer 1 — FLIPDEMON EXTREME v1 (LIVE)
 
@@ -55,6 +59,19 @@ standard as Layer 1. **None of them are `#include`d by the live EA file
 — confirmed mechanically, not assumed** (see
 `docs/MODULE_WIRING.md`). They exist on disk as reviewed, dormant code.
 Described in Section 4 below.
+
+### Layer 3 — the "10X Market Intelligence" upgrade (NOT LIVE)
+
+The newest addition, built across five sequential, phase-gated,
+sign-off-required passes (Phase 2, 3, 3a, 4A, 4B). Five more isolated,
+unwired, purely observational engines — `MarketStateEngine.mqh`,
+`RegimeClassifierEngine.mqh`, `VolatilitySerialityEngine.mqh`,
+`InformationTransmissionEngine.mqh`, `ShockDNAEngine.mqh` — each with
+its own tested Python reference implementation in
+`python/autopsy_research/`. **Also confirmed by repo-wide grep to have
+zero references anywhere in `MQL5/Experts/`.** Described in Section 4.9
+below, along with the real-data research (Phase 5) that has since been
+run against this layer specifically.
 
 If you only read one sentence of this document: **the bot that runs
 today is Layer 1 alone.**
@@ -289,6 +306,69 @@ Also dormant: `CExecutionEligibility` (thesis-quality gate),
 confirmed), and a `TradeLifecycle` state machine more granular than the
 simple position struct the live code uses today.
 
+### 4.9 Layer 3: the 10X Market Intelligence upgrade, and what Phase 5 found
+
+Five phases, each shipped as its own isolated `.mqh` file plus a tested
+Python reference under `python/autopsy_research/`, each phase requiring
+explicit sign-off before the next began:
+
+- **Phase 2 — `MarketStateEngine.mqh`:** a single unified snapshot
+  struct assembled from fields already computed by other engines
+  (structure/momentum/liquidity/volume/microstructure) - nothing
+  recomputed, deliberately thin.
+- **Phase 3 / 3a — `RegimeClassifierEngine.mqh`** (a 9-state,
+  direction-aware regime taxonomy — `AX_RC_PERSISTENT_BULLISH_TREND`
+  through `AX_RC_STRUCTURAL_BREAK` — layered on top of, not replacing,
+  the live `CRegimeEngine`'s own classification) and
+  **`VolatilitySerialityEngine.mqh`** (a 7-state volatility/seriality
+  taxonomy, with genuinely new bar-level return-serial-dependence math:
+  lag-1 autocorrelation, directional persistence, reversal frequency —
+  distinct from `CMomentumEngine`'s own tick-level persistence measure).
+- **Phase 4A — `InformationTransmissionEngine.mqh`:** lead-lag /
+  information-transmission detection between two instruments' return
+  series (8-state taxonomy: `LEADER`/`CONFIRMING`/`WEAKENING`/
+  `DIVERGING`/`INVERTED`/etc.), Bonferroni-corrected against
+  multiple-lag-scan false positives. Passed an independent adversarial
+  statistical audit that found and fixed one real defect (a sub-window
+  significance-floor mismatch, 8.10%→1.05% false-positive rate at
+  n=200) — final disposition **PASS WITH LIMITATIONS**
+  (`docs/PHASE4A_AUDIT_REPORT.md`).
+- **Phase 4B — `ShockDNAEngine.mqh`:** characterizes single-bar market
+  shock *events*, not just "large candle" detection, through a 9-state
+  lifecycle (`ONSET`→`IMPULSE`→`FOLLOW_THROUGH`/`ABSORPTION`/`REVERSAL`
+  →`NORMALIZING`), using ATR-relative displacement normalization with a
+  formal, test-verified look-ahead-protection guarantee and
+  gated-minimum (never blind-average) confidence scoring. Also
+  **PASS WITH LIMITATIONS** (`docs/PHASE4B_SHOCK_DNA_REPORT.md`).
+
+**Phase 5 — does any of this actually contain information?** Rather
+than another feature pass, Phase 5 asked whether Layer 3's engines add
+predictive information beyond what precedes them, using real XAUUSD and
+EUR/USD daily history retrieved from a live market-data connector (not
+synthetic data) - see `docs/PHASE5_DATA_PROVENANCE.md` and
+`docs/PHASE5_INFORMATION_VALUE_REPORT.md`. A full ablation, redundancy,
+block-permutation null-testing, and Benjamini-Hochberg multiple-testing
+pipeline was built and actually run (`research/information_value/`,
+outside the MQL5 tree, never imported by it).
+
+**The honest result: 0 of 54 tested hypotheses survived FDR
+correction.** One apparent strong finding (Information Transmission at
+a 20-day horizon, naive p=2.4×10⁻⁶) was traced to a real statistical
+artifact - overlapping forward-return windows inflating a parametric
+p-value that assumes independent observations - and evaporated under a
+proper block-permutation null (corrected p=0.15). Regime's real
+ATR-gated classification, the live volatility engine's own state
+taxonomy, and Shock DNA itself could not be tested against real data at
+all, because the only available real XAUUSD source is close-price-only
+(no OHLC) - left as an explicit open question, not reported as a
+negative finding for those three specifically. All real-data findings
+are scoped to **daily granularity only** and are explicitly not
+extrapolated to the live M15/intraday system.
+
+Per its own authorization, Phase 5 did not proceed to any MQL5 port -
+there is no real-data evidence yet to justify porting dead logic into
+the EA, and none was manufactured to look otherwise.
+
 ---
 
 ## 5. The Python research package (separate from the MQL5 bot entirely)
@@ -383,3 +463,13 @@ is architecturally complete and verification-incomplete.
 - `docs/ENGINEERING_REPORT.md` — the Phase 12 closing report indexing
   all of the above plus a consolidated findings table.
 - `python/README.md` — the research package's own documentation.
+- `docs/PHASE2_MARKET_STATE_REPORT.md`, `docs/PHASE3A_REGIME_INTELLIGENCE_REPORT.md`,
+  `docs/PHASE3_REGIME_VOLATILITY_REPORT.md`,
+  `docs/PHASE4A_INFORMATION_TRANSMISSION_REPORT.md` +
+  `docs/PHASE4A_AUDIT_REPORT.md`, `docs/PHASE4B_SHOCK_DNA_REPORT.md` —
+  the individual Layer 3 phase reports, each with its own 20+ item
+  verification checklist and final disposition.
+- `docs/PHASE5_DATA_PROVENANCE.md` + `docs/PHASE5_INFORMATION_VALUE_REPORT.md`
+  — the real-data source audit and the full information-value research
+  report (ablation matrix, redundancy analysis, block-permutation null
+  testing, multiple-testing correction, final per-layer classification).
