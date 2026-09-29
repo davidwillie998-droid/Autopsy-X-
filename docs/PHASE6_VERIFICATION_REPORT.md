@@ -1,6 +1,6 @@
 # Phase 6 — Verification, Integration Readiness & Production-Gate Audit
 
-**Commit at time of audit:** 833ade5
+**Commit at time of audit:** 833ade5 (this report's own findings committed at 8ce83d0)
 **Scope:** verification only. No architecture rewrite, no new engines, no
 ML, no parameter optimization, no wiring of any dormant layer into live
 execution. This report answers one question: *is AUTOPSY X technically
