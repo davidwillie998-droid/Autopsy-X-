@@ -1,0 +1,284 @@
+//+------------------------------------------------------------------+
+//|                                                ExecutionEngine.mqh|
+//|  Execution Engine (spec section 13)                              |
+//|  Never assumes an order filled - always confirms actual state.    |
+//+------------------------------------------------------------------+
+#property strict
+#ifndef AX_EXECUTIONENGINE_MQH
+#define AX_EXECUTIONENGINE_MQH
+#include <Trade/Trade.mqh>
+#include "Defs.mqh"
+#include "MarketData.mqh"
+
+class CExecutionEngine
+  {
+private:
+   CTrade            m_trade;
+   string            m_symbol;
+   int               m_maxRetries;
+   int               m_retryDelayMs;
+
+   bool              RetryableRetcode(const uint code) const
+     {
+      return(code==TRADE_RETCODE_REQUOTE ||
+             code==TRADE_RETCODE_PRICE_CHANGED ||
+             code==TRADE_RETCODE_TIMEOUT ||
+             code==TRADE_RETCODE_CONNECTION ||
+             code==TRADE_RETCODE_PRICE_OFF ||
+             code==TRADE_RETCODE_REJECT);
+     }
+
+   //--- brokers differ on supported order-filling modes (spec section 14) - never hard-code one ---
+   ENUM_ORDER_TYPE_FILLING DetectFillingMode(const string symbol) const
+     {
+      int filling = (int)SymbolInfoInteger(symbol,SYMBOL_FILLING_MODE);
+      if((filling & SYMBOL_FILLING_FOK)!=0) return(ORDER_FILLING_FOK);
+      if((filling & SYMBOL_FILLING_IOC)!=0) return(ORDER_FILLING_IOC);
+      return(ORDER_FILLING_RETURN);
+     }
+
+public:
+                     CExecutionEngine(void) { m_maxRetries=2; m_retryDelayMs=200; }
+
+   void              Init(const string symbol,const ulong magic,const int deviationPts,const int maxRetries=2)
+     {
+      m_symbol = symbol;
+      m_trade.SetExpertMagicNumber(magic);
+      m_trade.SetDeviationInPoints(deviationPts);
+      m_trade.SetTypeFilling(DetectFillingMode(symbol));
+      m_trade.SetAsyncMode(false);
+      m_maxRetries = maxRetries;
+     }
+
+   //--- live spread can widen well beyond what a demo feed ever shows; a fixed deviation either
+   //--- rejects good fills during normal spread widening or lets slippage run unchecked during
+   //--- a real spike. Called with a spread-scaled value right before sending an order. ---
+   void              SetDeviationPoints(const int deviationPts)
+     {
+      m_trade.SetDeviationInPoints(deviationPts);
+     }
+
+   //--- confirm actual open position matches expectation; never trust the send() return alone ---
+   bool              ConfirmPosition(const string symbol,ENUM_AX_DIR expectedDir,const double expectedLots,
+                                      ulong &ticketOut,double &fillPriceOut) const
+     {
+      if(!PositionSelect(symbol)) return(expectedDir==AX_DIR_NONE);
+      long type = PositionGetInteger(POSITION_TYPE);
+      ENUM_AX_DIR actualDir = (type==POSITION_TYPE_BUY) ? AX_DIR_BUY : AX_DIR_SELL;
+      if(actualDir!=expectedDir) return(false);
+      double vol = PositionGetDouble(POSITION_VOLUME);
+      if(MathAbs(vol-expectedLots) > (expectedLots*0.05+0.0001)) return(false);
+      ticketOut    = (ulong)PositionGetInteger(POSITION_TICKET);
+      fillPriceOut = PositionGetDouble(POSITION_PRICE_OPEN);
+      return(true);
+     }
+
+   bool              HasOpenPosition(const string symbol) const
+     {
+      return(PositionSelect(symbol));
+     }
+
+   ENUM_AX_DIR       CurrentPositionDir(const string symbol) const
+     {
+      if(!PositionSelect(symbol)) return(AX_DIR_NONE);
+      long type = PositionGetInteger(POSITION_TYPE);
+      return((type==POSITION_TYPE_BUY) ? AX_DIR_BUY : AX_DIR_SELL);
+     }
+
+   //--- market entry with confirmation + limited retry on transient broker errors. latencyMsOut  ---
+   //--- measures total wall time in this call - on a live account under load (slow server round ---
+   //--- trip, repeated requotes) this rises well above what a demo feed ever shows, and the      ---
+   //--- caller uses it as a live-execution-quality signal alongside slippage. ---
+   bool              OpenMarket(const string symbol,const ENUM_AX_DIR dir,const double lots,
+                                 const double slPrice,const double tpPrice,const string comment,
+                                 ulong &ticketOut,double &fillPriceOut,string &errorReason,
+                                 int &latencyMsOut)
+     {
+      uint startTick = GetTickCount();
+      latencyMsOut = 0;
+      if(dir==AX_DIR_NONE || lots<=0) { errorReason="Invalid direction/lots"; return(false); }
+
+      bool ok=false;
+      for(int attempt=0; attempt<=m_maxRetries; attempt++)
+        {
+         if(attempt>0) Sleep(m_retryDelayMs);
+
+         double freshBid = SymbolInfoDouble(symbol,SYMBOL_BID);
+         double freshAsk = SymbolInfoDouble(symbol,SYMBOL_ASK);
+         if(freshBid<=0 || freshAsk<=0) { errorReason="Invalid quote on retry"; continue; }
+
+         if(dir==AX_DIR_BUY)
+            ok = m_trade.Buy(lots,symbol,0.0,slPrice,tpPrice,comment);
+         else
+            ok = m_trade.Sell(lots,symbol,0.0,slPrice,tpPrice,comment);
+
+         if(ok)
+           {
+            latencyMsOut = (int)(GetTickCount()-startTick);
+            if(ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut))
+              {
+               errorReason="";
+               return(true);
+              }
+            errorReason="Send reported success but position state did not confirm";
+            return(false);
+           }
+
+         uint retcode = m_trade.ResultRetcode();
+         errorReason = StringFormat("OrderSend failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         if(!RetryableRetcode(retcode)) { latencyMsOut=(int)(GetTickCount()-startTick); return(false); }
+        }
+      latencyMsOut = (int)(GetTickCount()-startTick);
+      return(false);
+     }
+
+   //--- close whatever is open on symbol, confirm flat afterward ---
+   bool              ClosePosition(const string symbol,string &errorReason)
+     {
+      if(!PositionSelect(symbol)) { errorReason=""; return(true); } // already flat
+
+      bool ok=false;
+      for(int attempt=0; attempt<=m_maxRetries; attempt++)
+        {
+         if(attempt>0) Sleep(m_retryDelayMs);
+         if(!PositionSelect(symbol)) { errorReason=""; return(true); }
+         ok = m_trade.PositionClose(symbol);
+         if(ok)
+           {
+            if(!PositionSelect(symbol)) { errorReason=""; return(true); }
+            errorReason="Close reported success but position still open";
+           }
+         else
+           {
+            uint retcode = m_trade.ResultRetcode();
+            errorReason = StringFormat("Close failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+            if(!RetryableRetcode(retcode)) return(false);
+            continue;
+           }
+        }
+      return(!PositionSelect(symbol));
+     }
+
+   //--- close part of an open position (scale-out); confirms the remaining volume shrank ---
+   bool              ClosePartial(const string symbol,const double volumeToClose,string &errorReason)
+     {
+      if(!PositionSelect(symbol)) { errorReason="No position to partially close"; return(false); }
+      double before = PositionGetDouble(POSITION_VOLUME);
+      if(volumeToClose<=0 || volumeToClose>=before) { errorReason="Invalid partial close volume"; return(false); }
+
+      bool ok=false;
+      for(int attempt=0; attempt<=m_maxRetries; attempt++)
+        {
+         if(attempt>0) Sleep(m_retryDelayMs);
+         if(!PositionSelect(symbol)) { errorReason="Position closed before partial could execute"; return(false); }
+         ok = m_trade.PositionClosePartial(symbol,volumeToClose);
+         if(ok)
+           {
+            if(!PositionSelect(symbol))
+              {
+               errorReason="Partial close left the position fully closed unexpectedly";
+               return(false);
+              }
+            double after = PositionGetDouble(POSITION_VOLUME);
+            if(after < before-0.0000001) { errorReason=""; return(true); }
+            errorReason="Partial close reported success but volume did not shrink";
+            return(false);
+           }
+         uint retcode = m_trade.ResultRetcode();
+         errorReason = StringFormat("Partial close failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         if(!RetryableRetcode(retcode)) return(false);
+        }
+      return(false);
+     }
+
+   //--- flip = close, confirm flat, then open opposite direction ---
+   bool              Flip(const string symbol,const ENUM_AX_DIR newDir,const double lots,
+                           const double slPrice,const double tpPrice,const string comment,
+                           ulong &ticketOut,double &fillPriceOut,string &errorReason)
+     {
+      if(!ClosePosition(symbol,errorReason)) return(false);
+      int latencyMs;
+      return(OpenMarket(symbol,newDir,lots,slPrice,tpPrice,comment,ticketOut,fillPriceOut,errorReason,latencyMs));
+     }
+
+   bool              ModifyStops(const string symbol,const double slPrice,const double tpPrice,string &errorReason)
+     {
+      if(!PositionSelect(symbol)) { errorReason="No position to modify"; return(false); }
+      bool ok = m_trade.PositionModify(symbol,slPrice,tpPrice);
+      if(!ok)
+        {
+         errorReason = StringFormat("Modify failed: %u %s",m_trade.ResultRetcode(),m_trade.ResultRetcodeDescription());
+         return(false);
+        }
+      errorReason="";
+      return(true);
+     }
+
+   //--- pending stop entry (spec section 19: "OPTIONAL BUY STOP / OPTIONAL SELL STOP"). Confirms   ---
+   //--- the order genuinely exists in the terminal's order list afterward via OrderSelect - a       ---
+   //--- successful CTrade send() result alone is never trusted, same discipline as OpenMarket. ---
+   bool              OpenPendingStop(const string symbol,const ENUM_AX_DIR dir,const double lots,
+                                      const double triggerPrice,const double slPrice,const double tpPrice,
+                                      const string comment,ulong &ticketOut,string &errorReason)
+     {
+      if(dir==AX_DIR_NONE || lots<=0 || triggerPrice<=0)
+        { errorReason="Invalid direction/lots/trigger price"; return(false); }
+
+      bool ok=false;
+      for(int attempt=0; attempt<=m_maxRetries; attempt++)
+        {
+         if(attempt>0) Sleep(m_retryDelayMs);
+
+         if(dir==AX_DIR_BUY)
+            ok = m_trade.BuyStop(lots,triggerPrice,symbol,slPrice,tpPrice,ORDER_TIME_GTC,0,comment);
+         else
+            ok = m_trade.SellStop(lots,triggerPrice,symbol,slPrice,tpPrice,ORDER_TIME_GTC,0,comment);
+
+         if(ok)
+           {
+            ulong ticket = m_trade.ResultOrder();
+            //--- write ticketOut even on the unconfirmed branch below - the broker may well have   ---
+            //--- accepted the order (ticket>0) while the terminal's local order cache just hasn't   ---
+            //--- synced yet; leaving ticketOut unset would strand the caller with no handle to later ---
+            //--- verify or cancel an order that could actually be live (code-review finding). ---
+            if(ticket>0) ticketOut=ticket;
+            if(ticket>0 && OrderSelect(ticket))
+              {
+               errorReason=""; return(true);
+              }
+            errorReason="Pending order send reported success but order did not confirm in the order list";
+            return(false);
+           }
+
+         uint retcode = m_trade.ResultRetcode();
+         errorReason = StringFormat("Pending order send failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         if(!RetryableRetcode(retcode)) return(false);
+        }
+      return(false);
+     }
+
+   //--- cancels a pending order; treats an already-gone order (triggered, expired, manually removed) ---
+   //--- as a successful outcome rather than an error - the caller's INTENT (no pending order should ---
+   //--- remain) is satisfied either way. ---
+   bool              CancelPendingOrder(const ulong ticket,string &errorReason)
+     {
+      bool ok=false;
+      for(int attempt=0; attempt<=m_maxRetries; attempt++)
+        {
+         if(attempt>0) Sleep(m_retryDelayMs);
+         if(!OrderSelect(ticket)) { errorReason=""; return(true); } // already gone - intent satisfied
+
+         ok = m_trade.OrderDelete(ticket);
+         if(ok) { errorReason=""; return(true); }
+
+         uint retcode = m_trade.ResultRetcode();
+         errorReason = StringFormat("Pending order delete failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         if(!RetryableRetcode(retcode)) return(false);
+        }
+      return(false);
+     }
+
+   CTrade*           TradeObject(void) { return(GetPointer(m_trade)); }
+  };
+//+------------------------------------------------------------------+
+#endif // AX_EXECUTIONENGINE_MQH
