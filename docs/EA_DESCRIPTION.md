@@ -1,14 +1,16 @@
 # AUTOPSY X FLIPDEMON EXTREME — Full Description
 
-**Applies to commit:** e7a5d72 (updated; originally written at a6f4aad,
-before Layer 3 and the Phase 5 research existed — see Section 4.9)
+**Applies to commit:** (Phase 6 verification pass — see
+`docs/PHASE6_VERIFICATION_REPORT.md`; previously updated at e7a5d72,
+originally written at a6f4aad)
 **Platform:** MetaTrader 5 (MQL5 Expert Advisor)
 **Instruments:** designed for XAUUSD and major FX pairs (24-hour markets,
 no single session open)
-**Size:** 1,499-line main `.mq5` file, roughly 70 supporting `.mqh`
-modules across three architectural layers, plus a standalone Python
-research package and a separate real-data research pipeline
-(`research/information_value/`) outside the MQL5 tree entirely
+**Size:** 1,499-line main `.mq5` file, 61 supporting `.mqh` modules (25
+live, 36 dormant — see Section 4.10 for two of those 36 not previously
+catalogued here), plus a standalone Python research package and a
+separate real-data research pipeline (`research/information_value/`)
+outside the MQL5 tree entirely
 
 This document describes the EA as it actually is today, not as it is
 eventually intended to become. Three things are true simultaneously and
@@ -369,6 +371,30 @@ Per its own authorization, Phase 5 did not proceed to any MQL5 port -
 there is no real-data evidence yet to justify porting dead logic into
 the EA, and none was manufactured to look otherwise.
 
+### 4.10 Two more dormant modules, found and catalogued during Phase 6
+
+Phase 6's own repository audit (`docs/PHASE6_VERIFICATION_REPORT.md` §3)
+found two complete, independent, paper-sourced trading-strategy modules
+that predate this document's layer taxonomy and had never been given an
+entry here:
+
+- **`ORBEngine.mqh`** — Opening Range Breakout, from Zarattini, C. and
+  Aziz, A., "Can Day Trading Really Be Profitable? Evidence of
+  Sustainable Long-term Profits from Opening Range Breakout (ORB) Day
+  Trading Strategy vs. Benchmark in the US Stock Market," SSRN 4416622
+  (2023).
+- **`NoiseAreaEngine.mqh`** — an intraday noise-area momentum strategy,
+  from Zarattini, C., Aziz, A., and Barbon, A., "Beat the Market: An
+  Effective Intraday Momentum Strategy for S&P500 ETF (SPY)," Swiss
+  Finance Institute Research Paper N24-97, SSRN 4824172 (2024/2025).
+
+Both are confirmed, by the same repository-wide execution-authority scan
+applied to every other dormant module, to contain **zero `CTrade`/
+`OrderSend` calls** and are **not** `#include`d by the live EA — they are
+architecturally isolated exactly like Layers 2 and 3. This was a
+documentation gap, not a safety gap: the modules were always inert, they
+simply weren't listed anywhere a reader of this document would see them.
+
 ---
 
 ## 5. The Python research package (separate from the MQL5 bot entirely)
@@ -473,3 +499,8 @@ is architecturally complete and verification-incomplete.
   — the real-data source audit and the full information-value research
   report (ablation matrix, redundancy analysis, block-permutation null
   testing, multiple-testing correction, final per-layer classification).
+- `docs/PHASE6_VERIFICATION_REPORT.md` + `docs/SYSTEM_STATUS.md` — the
+  full technical-verification audit (execution-path trace, risk-invariant
+  proofs, dormant-isolation confirmation, production-readiness matrix) and
+  the single high-level status document distinguishing BUILT from TESTED
+  from COMPILED from FORWARD-TESTED, none of which are the same claim.
