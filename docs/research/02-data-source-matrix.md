@@ -1,5 +1,7 @@
 # 02. Data-Source Matrix
 
+> Phase 2 audit results supersede the candidate list below where they conflict: see [`../PHASE2_DATA_SOURCE_MATRIX.md`](../PHASE2_DATA_SOURCE_MATRIX.md).
+
 Candidate providers per data class. **None has been verified live in this phase**: the build container's proxy refused connections to vendor APIs. Rate limits, prices and field shapes change often, so every row is marked for verification at adapter time. Phase 2 is complete when each row has a recorded probe: latency to `seen_ts`, completeness against chain truth for a sample of blocks, and cost at target throughput.
 
 ## Matrix

@@ -17,7 +17,19 @@ Run: `cd intel && python -m pytest -q` (stdlib code, pytest only).
 | Validation tooling | Purged walk-forward has no train/test overlap; logistic baseline recovers a planted signal | `test_purged_walk_forward_has_no_overlap`, `test_logistic_beats_base_rate_on_informative_feature` |
 | Docs sync | Feature dictionary regenerates from the registry | `test_feature_dictionary_*` |
 
-## To add in Phase 2 and 3
+## Added in Phase 2
+
+| Layer | What it proves | Where |
+|---|---|---|
+| Adapter contract | Captured real payloads parse to the right records; every bad field (future or zone-less timestamp, negative price or volume, malformed address, chain or pair mismatch, null) is dropped and reported | `tests/test_phase2_adapters.py` |
+| Provider failure | 429 retried and recorded; timeouts exhausting retries recorded while collection continues; partial responses and pagination gaps reported | same |
+| Provenance | every normalized record carries a `raw_id` present in the archive; archive detects corrupted bodies | same |
+| Look-ahead A–D | future append, late-arriving records, future transactions (per stage: move, manipulation, regime, exhaustion, signal, exit, risk, rankings) and future social posts cannot change a past assessment | `tests/test_phase2_pit.py` |
+| Missing / stale / conflicting data | unobserved flow is MISSING, partial history is INSUFFICIENT_HISTORY, stale liquidity is STALE, cross-source price disagreement blocks signals | same |
+| Replay | byte-identical journals across runs; config hash pinned; experiments cannot be mixed | `tests/test_phase2_replay.py` |
+| Database | migrations 0001 + 0002 execute on PostgreSQL 16; constraints reject invalid rows; journal append-only; real normalized archives and replay records load | same (skips with `DATABASE EXECUTION UNVERIFIED` when no server) |
+
+## Still to add (Phase 3 and later)
 
 | Layer | Content |
 |---|---|
