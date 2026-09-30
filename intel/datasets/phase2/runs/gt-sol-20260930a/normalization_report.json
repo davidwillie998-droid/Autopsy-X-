@@ -1,0 +1,223 @@
+{
+  "coverage_gaps": {
+    "solana:CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp": [
+      [
+        1790757133860,
+        1790757732000
+      ],
+      [
+        1790757747375,
+        1790758001000
+      ],
+      [
+        1790758011149,
+        1790758137000
+      ]
+    ]
+  },
+  "dataset_sha256": "fb7d3607fbd91c34df16fad4b77ce27119a369b6fc5740f94d45dbeb186b2d42",
+  "duplicate_swaps": 26176,
+  "exchanges": 449,
+  "first_response_ms": 1790755331188,
+  "issue_samples": {
+    "COVERAGE_GAP": [
+      {
+        "action": "flagged",
+        "code": "COVERAGE_GAP",
+        "detail": "solana:CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp: 3 trade-coverage gap(s)",
+        "raw_id": null
+      }
+    ],
+    "DERIVED_FIELD": [
+      {
+        "action": "derived",
+        "code": "DERIVED_FIELD",
+        "detail": "Cberc427PuwyGh3HicbwF2msangnZiEkzWqJDzjsvUxu: total_supply = fdv_usd / price",
+        "raw_id": "5791ce72e62ae92a4ceb8feb3e94b25a83c76606e037d9700d8c244530c3c0c2"
+      },
+      {
+        "action": "derived",
+        "code": "DERIVED_FIELD",
+        "detail": "9J2jCgTiAfD9fFssmmwYMEu95Yx1VLPrRT5Co4ASpump: total_supply = fdv_usd / price",
+        "raw_id": "5791ce72e62ae92a4ceb8feb3e94b25a83c76606e037d9700d8c244530c3c0c2"
+      },
+      {
+        "action": "derived",
+        "code": "DERIVED_FIELD",
+        "detail": "GFDgm6fWbLBEjW3u9VH4EvyxQjKBEsdDi2EzR3acpump: total_supply = fdv_usd / price",
+        "raw_id": "5791ce72e62ae92a4ceb8feb3e94b25a83c76606e037d9700d8c244530c3c0c2"
+      },
+      {
+        "action": "derived",
+        "code": "DERIVED_FIELD",
+        "detail": "7o3BwjiouC4e8RvMpwG9yfwyPZPf6pJ56QdZbnNMpump: total_supply = fdv_usd / price",
+        "raw_id": "5791ce72e62ae92a4ceb8feb3e94b25a83c76606e037d9700d8c244530c3c0c2"
+      },
+      {
+        "action": "derived",
+        "code": "DERIVED_FIELD",
+        "detail": "BA7pNWLvWwNcTEXunLGXMhj7TnkWThdLSQsEh98Zpump: total_supply = fdv_usd / price",
+        "raw_id": "5791ce72e62ae92a4ceb8feb3e94b25a83c76606e037d9700d8c244530c3c0c2"
+      }
+    ],
+    "DUPLICATE_OBSERVATION": [
+      {
+        "action": "flagged",
+        "code": "DUPLICATE_OBSERVATION",
+        "detail": "26176 repeat observations of already-seen swaps (poll overlap); earliest-seen copy kept by the quality gate",
+        "raw_id": null
+      }
+    ],
+    "FORMING_BAR_DROPPED": [
+      {
+        "action": "dropped_record",
+        "code": "FORMING_BAR_DROPPED",
+        "detail": "HnhpJPJgBG2KwniMTNW8cVBHvk1hFog3RC3kjnyc23tD: 2 unclosed bar(s)",
+        "raw_id": "577985b1d17dfe47e67c54366df5fa4579f706dfe2de0d8176e02244bc41fc88"
+      },
+      {
+        "action": "dropped_record",
+        "code": "FORMING_BAR_DROPPED",
+        "detail": "Q2sPHPdUWFMg7M7wwrQKLrn619cAucfRsmhVJffodSp: 2 unclosed bar(s)",
+        "raw_id": "8b21e13083144ad87c7ab593012c4076fc9ae122be4d087c760448df2eb15e9c"
+      },
+      {
+        "action": "dropped_record",
+        "code": "FORMING_BAR_DROPPED",
+        "detail": "4JAnKFddd5fFTk5PxDj3PpTWJuTEfSWQEjZJcgKQ9KwW: 2 unclosed bar(s)",
+        "raw_id": "d2b876545125df348fd31081e811512c54cb0aa9f20f6fc697d9ef9a1b9d8aab"
+      },
+      {
+        "action": "dropped_record",
+        "code": "FORMING_BAR_DROPPED",
+        "detail": "HnhpJPJgBG2KwniMTNW8cVBHvk1hFog3RC3kjnyc23tD: 2 unclosed bar(s)",
+        "raw_id": "8bfc24667ad88f3d9d07adec2a4b71dd654247a551d17adea81c504dbdf4ffac"
+      },
+      {
+        "action": "dropped_record",
+        "code": "FORMING_BAR_DROPPED",
+        "detail": "Q2sPHPdUWFMg7M7wwrQKLrn619cAucfRsmhVJffodSp: 1 unclosed bar(s)",
+        "raw_id": "91503c056ce37b7880fb4002e0ce29197efd2dce9a01892b82385036e26132f6"
+      }
+    ],
+    "NULL_FIELD": [
+      {
+        "action": "dropped_record",
+        "code": "NULL_FIELD",
+        "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: price='1.00101242104514' reserve=None; no snapshot",
+        "raw_id": "947dbb43b32f6fec3b1977f5d211e221ee4a7ad4e8517bc8e805aa4c8ba4ad13"
+      },
+      {
+        "action": "dropped_record",
+        "code": "NULL_FIELD",
+        "detail": "8sjV1AqBFvFuADBCQHhotaRq5DFFYSjjg1jMyVWMqXvZ: price='1.00022263852749' reserve=None; no snapshot",
+        "raw_id": "947dbb43b32f6fec3b1977f5d211e221ee4a7ad4e8517bc8e805aa4c8ba4ad13"
+      },
+      {
+        "action": "dropped_record",
+        "code": "NULL_FIELD",
+        "detail": "6tpuF9m2s8abaqmzRGxUdhUErRbggT8rDpFswsKJoQJs: priceUsd='0.000003211' liquidity=None",
+        "raw_id": "6596ea28d67427ce2b84a5e232cc43f1f78b9931f6c42660e8e543d5fa39ef5f"
+      },
+      {
+        "action": "dropped_record",
+        "code": "NULL_FIELD",
+        "detail": "FGmprTjfLyWvkBcs5vuXAPqwu43kncJsgxHHH9pRDLaT: priceUsd='0.000003348' liquidity=None",
+        "raw_id": "6596ea28d67427ce2b84a5e232cc43f1f78b9931f6c42660e8e543d5fa39ef5f"
+      },
+      {
+        "action": "dropped_record",
+        "code": "NULL_FIELD",
+        "detail": "H6Xn3EUpTcMxVjRpqMwgFmCz1yhzSQKQN33VKGQin9ZL: priceUsd='0.0000003578' liquidity=None",
+        "raw_id": "6596ea28d67427ce2b84a5e232cc43f1f78b9931f6c42660e8e543d5fa39ef5f"
+      }
+    ],
+    "PAGE_FULL": [
+      {
+        "action": "flagged",
+        "code": "PAGE_FULL",
+        "detail": "2iJyUmnGDpcHbJfrUQahnVhQcxewcSxRTcFjkeKbKuqY: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+        "raw_id": "e59025a65fb46e91382078805dfd180c93f569a1b4160701860a948c603960e2"
+      },
+      {
+        "action": "flagged",
+        "code": "PAGE_FULL",
+        "detail": "HnhpJPJgBG2KwniMTNW8cVBHvk1hFog3RC3kjnyc23tD: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+        "raw_id": "e0b94b5e9a33bc7a0382caec11e38fadf94cc29f28c4a04c7e7e8da5a98710b1"
+      },
+      {
+        "action": "flagged",
+        "code": "PAGE_FULL",
+        "detail": "Q2sPHPdUWFMg7M7wwrQKLrn619cAucfRsmhVJffodSp: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+        "raw_id": "f0c2a5060f013e16480f1a77c47b02e7f833f7ade8cb6da081c83c61d8097775"
+      },
+      {
+        "action": "flagged",
+        "code": "PAGE_FULL",
+        "detail": "4JAnKFddd5fFTk5PxDj3PpTWJuTEfSWQEjZJcgKQ9KwW: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+        "raw_id": "ca3d4bc7c3662dd98ae5c17d6620fb9ae25db5767482a4d996bc1a3426f69634"
+      },
+      {
+        "action": "flagged",
+        "code": "PAGE_FULL",
+        "detail": "AxGtLoCCfgXD1STXNUT8UFowHHQn4GEFPRg4wWi3uZXq: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+        "raw_id": "1eb03d9b52ee009cdbea2cc4f2050388b4c14ff995e4deee44128d6446d1d899"
+      }
+    ],
+    "PROVIDER_ERROR": [
+      {
+        "action": "skipped_response",
+        "code": "PROVIDER_ERROR",
+        "detail": "gt.ohlcv https://api.geckoterminal.com/api/v2/networks/solana/pools/6tpuF9m2s8abaqmzRGxUdhUErRbggT8rDpFswsKJoQJs/ohlcv/minute?aggregate=1&limit=1000&currency=usd: exhausted retries for /networks/solana/pools/6tpuF9m2s8abaqmzRGxUdhUErRbggT8rDpFswsKJoQJs/ohlcv/minute?aggregate=1&limit=1000&currency=usd: HTTP Error 429: Too Many Requests",
+        "raw_id": null
+      },
+      {
+        "action": "skipped_response",
+        "code": "PROVIDER_ERROR",
+        "detail": "gt.token_info https://api.geckoterminal.com/api/v2/networks/solana/tokens/EMc7FL2B5ZKVbUk7CHxTPMk1pnTXjLmf5o1ML5Pgpump/info: exhausted retries for /networks/solana/tokens/EMc7FL2B5ZKVbUk7CHxTPMk1pnTXjLmf5o1ML5Pgpump/info: HTTP Error 429: Too Many Requests",
+        "raw_id": null
+      },
+      {
+        "action": "skipped_response",
+        "code": "PROVIDER_ERROR",
+        "detail": "gt.ohlcv https://api.geckoterminal.com/api/v2/networks/solana/pools/FGmprTjfLyWvkBcs5vuXAPqwu43kncJsgxHHH9pRDLaT/ohlcv/minute?aggregate=1&limit=1000&currency=usd: circuit open for https://api.geckoterminal.com/api/v2",
+        "raw_id": null
+      },
+      {
+        "action": "skipped_response",
+        "code": "PROVIDER_ERROR",
+        "detail": "gt.token_info https://api.geckoterminal.com/api/v2/networks/solana/tokens/ADzAcui1WQaeM8kRV5oZFsb9tsFhaoko7Qzs2ELqpump/info: circuit open for https://api.geckoterminal.com/api/v2",
+        "raw_id": null
+      },
+      {
+        "action": "skipped_response",
+        "code": "PROVIDER_ERROR",
+        "detail": "gt.ohlcv https://api.geckoterminal.com/api/v2/networks/solana/pools/H6Xn3EUpTcMxVjRpqMwgFmCz1yhzSQKQN33VKGQin9ZL/ohlcv/minute?aggregate=1&limit=1000&currency=usd: circuit open for https://api.geckoterminal.com/api/v2",
+        "raw_id": null
+      }
+    ]
+  },
+  "issues": {
+    "COVERAGE_GAP": 1,
+    "DERIVED_FIELD": 256,
+    "DUPLICATE_OBSERVATION": 1,
+    "FORMING_BAR_DROPPED": 38,
+    "NULL_FIELD": 95,
+    "PAGE_FULL": 91,
+    "PROVIDER_ERROR": 78
+  },
+  "last_response_ms": 1790758406375,
+  "provider_errors": 78,
+  "records": {
+    "Coverage": 310,
+    "HolderSnapshot": 23,
+    "PoolInfo": 256,
+    "PoolSnapshot": 344,
+    "ProviderBar": 598,
+    "Swap": 31173,
+    "TokenMeta": 282
+  },
+  "responses_ok": 371,
+  "run_dir": "datasets/phase2/runs/gt-sol-20260930a",
+  "tokens": 93
+}
