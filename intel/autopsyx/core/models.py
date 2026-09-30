@@ -6,7 +6,12 @@ Every record carries two clocks:
   ``ts``      when the event happened (block time, publication time)
   ``seen_ts`` when this system could first have known about it
 
-Point-in-time queries filter on ``seen_ts``. Using ``ts`` alone is the most
+In Phase 2 vocabulary ``ts`` is ``event_time`` and ``seen_ts`` is
+``available_time``. Point-in-time queries filter on ``seen_ts``.
+
+Records built from real providers also carry ``source`` (adapter name) and
+``raw_id`` (sha256 of the exact response body they were parsed from), so every
+normalized value can be traced back to the bytes a vendor returned. Using ``ts`` alone is the most
 common source of look-ahead leakage in crypto backtests: an API that reports a
 swap 40 seconds late did not give you that swap at block time.
 """
@@ -49,6 +54,8 @@ class TokenMeta:
     seen_ts: int
     narratives_hint: tuple[str, ...] = ()
     description: str = ""
+    source: str = ""
+    raw_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -61,6 +68,8 @@ class PoolInfo:
     seen_ts: int
     amm_model: str = "cpmm"  # cpmm | clmm | orderbook | unknown
     fee_bps: float = 30.0
+    source: str = ""
+    raw_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -78,6 +87,8 @@ class Swap:
     token_amount: float
     quote_usd: float
     price_usd: float
+    source: str = ""
+    raw_id: str = ""
 
     @property
     def uid(self) -> tuple[str, str, int]:
@@ -113,6 +124,7 @@ class PoolSnapshot:
     liquidity_usd: float
     price_usd: float
     source: str = ""
+    raw_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -138,6 +150,51 @@ class HolderSnapshot:
     holders: int
     top10_pct: float
     creator_pct: float | None
+    source: str = ""
+    raw_id: str = ""
+
+
+@dataclass(frozen=True)
+class ProviderBar:
+    """OHLCV bar as a provider reported it. Providers revise the latest bars,
+    so several versions of one bar can exist; the point-in-time view exposes
+    the latest version with ``seen_ts <= as_of``. Order flow (buyers,
+    sellers, buy/sell split, trade count) is NOT part of provider OHLCV."""
+
+    chain: str
+    pool: str
+    token: str
+    ts: int  # bar open
+    interval_ms: int
+    seen_ts: int
+    open: float
+    high: float
+    low: float
+    close: float
+    volume_usd: float | None
+    source: str = ""
+    raw_id: str = ""
+
+
+@dataclass(frozen=True)
+class Coverage:
+    """A claim that a stream was complete over [start_ts, end_ts) as of seen_ts.
+
+    kind "trades": every swap of this pool in the interval is in the store.
+    kind "bars": every non-empty bar in the interval is in the store (the
+    provider omits minutes without trades, so a missing minute inside a
+    covered interval means no trades, not missing data).
+    """
+
+    chain: str
+    token: str
+    pool: str
+    kind: str
+    start_ts: int
+    end_ts: int
+    seen_ts: int
+    source: str = ""
+    raw_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -189,6 +246,7 @@ class Bar:
     buyers: set[str] = field(default_factory=set)
     sellers: set[str] = field(default_factory=set)
     complete: bool = True  # False when the bar overlaps a known data gap
+    flow_known: bool = True  # False when buyers/sellers/side split/trade count were not observed
 
     @property
     def has_price(self) -> bool:

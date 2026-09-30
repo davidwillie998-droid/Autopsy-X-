@@ -1,0 +1,50 @@
+name: Phase 2 data acquisition
+
+# Runs the repository's own acquisition code against public, keyless market-data
+# APIs (GeckoTerminal, DexScreener) and commits the raw archive back to this
+# branch. Triggered only by changing the request file. Acquisition only: no
+# order placement, no wallets, no keys, no execution infrastructure.
+
+on:
+  push:
+    branches: [ccr-dea9382c-vwhvi6]
+    paths: ["intel/datasets/phase2/REQUEST.json"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phase2-acquire
+  cancel-in-progress: false
+
+jobs:
+  acquire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Acquire
+        working-directory: intel
+        run: |
+          RUN_ID=$(python -c "import json;print(json.load(open('datasets/phase2/REQUEST.json'))['run_id'])")
+          echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          python -m autopsyx --log acquire --live --request datasets/phase2/REQUEST.json --out "datasets/phase2/runs/$RUN_ID"
+      - name: Normalize on the runner (cross-machine reproducibility check)
+        if: always()
+        working-directory: intel
+        run: python -m autopsyx normalize "datasets/phase2/runs/$RUN_ID" > "datasets/phase2/runs/$RUN_ID/normalize_stdout.json"
+      - name: Commit raw archive
+        if: always()
+        run: |
+          rm -f "intel/datasets/phase2/runs/$RUN_ID/normalized.jsonl"
+          git config user.name "autopsyx-acquisition"
+          git config user.email "actions@users.noreply.github.com"
+          git add "intel/datasets/phase2/runs/$RUN_ID"
+          git commit -m "Phase 2 raw archive: $RUN_ID (acquired by workflow run ${{ github.run_id }})"
+          for i in 1 2 3 4; do git pull --rebase origin "${{ github.ref_name }}" && git push origin "HEAD:${{ github.ref_name }}" && exit 0; sleep $((2**i)); done
+          exit 1

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Iterable
 
 from ..core.models import (
+    Coverage,
     FundingTransfer,
     HolderSnapshot,
     LiquidityEvent,
@@ -20,6 +21,7 @@ from ..core.models import (
     NewsEvent,
     PoolInfo,
     PoolSnapshot,
+    ProviderBar,
     Side,
     SocialPost,
     Swap,
@@ -37,6 +39,8 @@ _KINDS = {
     "holders": HolderSnapshot,
     "news": NewsEvent,
     "social": SocialPost,
+    "bar": ProviderBar,
+    "coverage": Coverage,
 }
 
 
@@ -70,6 +74,8 @@ class EventStore:
     snapshots: dict[str, _Series] = field(default_factory=dict)
     holders: dict[str, _Series] = field(default_factory=dict)
     social: dict[str, _Series] = field(default_factory=dict)
+    bars: dict[str, _Series] = field(default_factory=dict)
+    coverage: dict[str, _Series] = field(default_factory=dict)
 
     def add(self, rec) -> None:
         if isinstance(rec, TokenMeta):
@@ -91,6 +97,10 @@ class EventStore:
         elif isinstance(rec, SocialPost):
             for t in rec.tokens:
                 self.social.setdefault(t, _Series()).add(rec)
+        elif isinstance(rec, ProviderBar):
+            self.bars.setdefault(f"{rec.chain}:{rec.token}", _Series()).add(rec)
+        elif isinstance(rec, Coverage):
+            self.coverage.setdefault(f"{rec.chain}:{rec.token}", _Series()).add(rec)
         else:
             raise TypeError(f"unsupported record {type(rec).__name__}")
 
@@ -161,6 +171,23 @@ class PointInTimeView:
     def social(self, token_key: str) -> list[SocialPost]:
         s = self._s.social.get(token_key)
         return sorted(s.upto(self.as_of), key=lambda x: x.ts) if s else []
+
+    def provider_bars(self, token_key: str) -> list[ProviderBar]:
+        """Latest visible version of each (pool, bar open) pair, time-ordered."""
+        s = self._s.bars.get(token_key)
+        if not s:
+            return []
+        latest: dict[tuple[str, int], ProviderBar] = {}
+        for b in s.upto(self.as_of):  # ordered by seen_ts, so later versions overwrite
+            latest[(b.pool, b.ts)] = b
+        return sorted(latest.values(), key=lambda b: (b.ts, b.pool))
+
+    def coverage(self, token_key: str, kind: str) -> list[Coverage]:
+        s = self._s.coverage.get(token_key)
+        return [c for c in s.upto(self.as_of) if c.kind == kind] if s else []
+
+    def has_real_market_data(self, token_key: str) -> bool:
+        return token_key in self._s.bars or token_key in self._s.coverage
 
 
 def _encode(d: dict) -> dict:

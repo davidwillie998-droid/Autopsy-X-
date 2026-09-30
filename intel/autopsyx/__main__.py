@@ -60,6 +60,12 @@ def main(argv: list[str] | None = None) -> int:
     rp.add_argument("--config")
     rp.add_argument("--json", action="store_true")
     sub.add_parser("features")
+    aq = sub.add_parser("acquire", help="LIVE: fetch real data from public APIs into a raw archive (no trading)")
+    aq.add_argument("--live", action="store_true", help="required: confirms network access to vendor APIs is intended")
+    aq.add_argument("--request", required=True, help="JSON file with run_id and plan overrides")
+    aq.add_argument("--out", required=True)
+    nm = sub.add_parser("normalize", help="raw archive -> normalized.jsonl + normalization_report.json")
+    nm.add_argument("run_dir")
     ap.add_argument("--log", action="store_true", help="emit structured JSON logs to stderr")
     args = ap.parse_args(argv)
     if args.log:
@@ -68,6 +74,24 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "features":
         print(registry.markdown())
+        return 0
+    if args.cmd == "acquire":
+        if not args.live:
+            print("refusing: acquisition contacts external APIs; pass --live to confirm", file=sys.stderr)
+            return 2
+        from .data import acquire
+        req = json.load(open(args.request))
+        plan = acquire.Plan(**{k: v for k, v in req.items() if k in acquire.Plan.__dataclass_fields__})
+        meta = acquire.run(args.out, plan)
+        print(json.dumps({k: meta.get(k) for k in ("status", "cycles", "exchanges", "errors")}))
+        return 0 if meta.get("status") == "COMPLETE" else 1
+    if args.cmd == "normalize":
+        from .data.normalize import normalize
+        records, rep = normalize(args.run_dir)
+        EventStore.dump_jsonl(f"{args.run_dir}/normalized.jsonl", records)
+        with open(f"{args.run_dir}/normalization_report.json", "w") as fh:
+            json.dump(rep.to_dict(), fh, indent=2, sort_keys=True, default=str)
+        print(json.dumps({"records": rep.records, "issues": rep.issues, "dataset_sha256": rep.dataset_sha256}))
         return 0
     cfg = Config.load(args.config)
     if args.cmd == "demo":
