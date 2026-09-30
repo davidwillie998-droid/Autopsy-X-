@@ -232,7 +232,7 @@ def rule_fingerprint(source: str) -> str:
     for start, end in (("\nREQUIRED_CAPABILITIES = {", "\n}\n"), ("\nCLASSIFICATION_RULE = [", "\n]\n"),
                        ("\nREQUIRED_OK_SHARE = ", "\n"), ("\ndef classify(ev: dict)", "\n\n\n")):
         i = source.index(start)
-        parts.append(source[i: source.index(end, i) + len(end)])
+        parts.append(source[i: source.index(end, i + len(start)) + len(end)])  # end searched after the anchor
     return hashlib.sha256("".join(parts).encode()).hexdigest()
 
 
