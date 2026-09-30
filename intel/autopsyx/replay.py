@@ -90,6 +90,29 @@ def feature_status(a) -> dict[str, str]:
     return {k: (v.status.value if v is not None else "MISSING") for k, v in obs.items()}
 
 
+def provenance(view, key: str) -> dict:
+    """raw_ids of the most recent visible observation of each kind, and how many
+    observations of each kind were visible at the decision time."""
+    bars = view.provider_bars(key)
+    snaps = view.pool_snapshots(key)
+    hold = view.holder_snapshots(key)
+    tcov = view.coverage(key, "trades")
+    latest_snap = {}
+    for sn in snaps:
+        latest_snap[sn.source] = sn
+    return {
+        "visible": {"provider_bars": len(bars), "swaps": len(view.swaps(key)), "pool_snapshots": len(snaps),
+                    "holder_snapshots": len(hold), "trade_coverage_claims": len(tcov)},
+        "latest_raw_ids": {
+            "provider_bar": bars[-1].raw_id if bars else None,
+            **{f"snapshot:{src}": sn.raw_id for src, sn in sorted(latest_snap.items())},
+            "holder_snapshot": hold[-1].raw_id if hold else None,
+            "trade_coverage": max(tcov, key=lambda c: c.seen_ts).raw_id if tcov else None,
+        },
+        "max_seen_ts": max([b.seen_ts for b in bars] + [x.seen_ts for x in snaps] + [h.seen_ts for h in hold], default=None),
+    }
+
+
 def run(store: EventStore, cfg: Config, spec: ReplaySpec, out_dir: str | Path | None = None) -> ReplayResult:
     fp = cfg.fingerprint()
     if spec.expected_config_hash is not None and spec.expected_config_hash != fp:
@@ -114,7 +137,8 @@ def run(store: EventStore, cfg: Config, spec: ReplaySpec, out_dir: str | Path | 
     stats = Counter()
     t = spec.start_ts
     while t <= spec.end_ts:
-        res = scan(store.view(t), cfg, prior, caps=spec.caps)
+        view = store.view(t)
+        res = scan(view, cfg, prior, caps=spec.caps)
         fill_view = store.view(t + spec.latency_ms)
         ranks = all_rankings(res.assessments, limit=3)
         for key in sorted(res.assessments):
@@ -134,9 +158,12 @@ def run(store: EventStore, cfg: Config, spec: ReplaySpec, out_dir: str | Path | 
                 "signal": sig.type.value, "blocked_by": sig.blocked_by,
                 "conditions": {c.name: c.passed for c in sig.conditions},
                 "feature_status": feature_status(a),
+                "provenance": provenance(view, key),
                 "ranked_in": sorted(n for n, rows in ranks.items() if any(r["token"] == key for r in rows)),
                 "risk": None, "entry": None, "exit": None, "reason": None, "outcome": None,
             }
+            if rec["provenance"]["max_seen_ts"] is not None and rec["provenance"]["max_seen_ts"] > t:
+                raise AssertionError(f"point-in-time violation: {key} saw data from {rec['provenance']['max_seen_ts']} at {t}")
             stats["assessments"] += 1
             stats[f"signal:{sig.type.value}"] += 1
             stats[f"move:{a.move.move_class.value}"] += 1

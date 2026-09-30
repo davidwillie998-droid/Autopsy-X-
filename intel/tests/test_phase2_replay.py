@@ -311,3 +311,57 @@ def test_early_life_experiment_measures_and_checks_safety(cfg):
     assert set(out["by_age"]) <= {"<1h", "1-6h", "6-24h", "1-7d", ">7d", "unknown_age"}
     fake = [dict(res.records[0], move_class="UNCLASSIFIED", signal="HIGH_CONVICTION_CONTINUATION")]
     assert not early_life.evaluate(fake, 0.7)["S1_safe"]  # the invariant check can fail
+
+
+def test_lookahead_audit_passes_on_clean_data(cfg):
+    from autopsyx.research import lookahead_audit
+    out = lookahead_audit.run(real_path_records(), cfg, CAPS, [as_of_after(640), as_of_after(680)])
+    assert out["all_passed"], out["summary"]
+
+
+def test_lookahead_audit_detects_a_planted_leak(cfg, monkeypatch):
+    """The audit must be able to fail. A view that ignores available_time for swaps lets a
+    late-arriving trade (event before t, available after t) through; test D must catch it.
+    (A leak of records whose event time is after t is additionally masked by the engines'
+    own event-time windows, so it cannot change a decision; see the replay report.)"""
+    from autopsyx.providers import store as store_mod
+    from autopsyx.research import lookahead_audit
+
+    def leaky(self, key):
+        s = self._s.swaps.get(key)
+        return sorted(s._items, key=lambda x: (x.ts, x.log_index)) if s else []  # ignores as_of
+    monkeypatch.setattr(store_mod.PointInTimeView, "swaps", leaky)
+    out = lookahead_audit.run(real_path_records(), cfg, CAPS, [as_of_after(640)])
+    assert not out["per_time"][0]["D_timestamp_manipulation"]
+    assert not out["all_passed"]
+
+
+def test_replay_guard_rejects_future_provenance(cfg, monkeypatch):
+    from autopsyx.providers import store as store_mod
+    def leaky(self, key):
+        s = self._s.snapshots.get(key)
+        return sorted(s._items, key=lambda x: x.ts) if s else []
+    monkeypatch.setattr(store_mod.PointInTimeView, "pool_snapshots", leaky)
+    with pytest.raises(AssertionError, match="point-in-time violation"):
+        replay.run(real_store(), cfg, spec())
+
+
+def test_journal_audit_detects_tampering(cfg, tmp_path):
+    from autopsyx.research.phase2_report import journal_audit
+    replay.run(real_store(), cfg, spec(), tmp_path)
+    clean = journal_audit(str(tmp_path))
+    assert clean["chain_breaks"] == 0 and clean["hash_mismatches"] == 0 and len(clean["configuration_hashes"]) == 1
+    lines = (tmp_path / "journal.jsonl").read_text().splitlines()
+    rec = json.loads(lines[3])
+    rec["payload"]["signal"] = "HIGH_CONVICTION_CONTINUATION"
+    lines[3] = json.dumps(rec)
+    del lines[7]
+    (tmp_path / "journal.jsonl").write_text("\n".join(lines) + "\n")
+    bad = journal_audit(str(tmp_path))
+    assert bad["hash_mismatches"] >= 1 and bad["chain_breaks"] >= 1
+
+
+def test_replay_records_carry_provenance(cfg):
+    res = replay.run(real_store(), cfg, spec())
+    p = res.records[-1]["provenance"]
+    assert p["latest_raw_ids"]["provider_bar"] and p["max_seen_ts"] <= res.records[-1]["as_of"]
