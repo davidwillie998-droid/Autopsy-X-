@@ -63,3 +63,18 @@ def test_scope_audit_does_not_flag_itself():
     assert sc["forbidden_terms_present"] == {}
     assert sc["engine_changes_unexplained"] == {}
     assert "place_order" in (Path(phase2_verify.__file__).read_text())  # the list really is in this file
+
+
+def test_rule_fingerprint_detects_rule_changes():
+    src = Path(phase2_verify.__file__).read_text()
+    base = phase2_verify.rule_fingerprint(src)
+    assert phase2_verify.rule_fingerprint(src.replace("\nREQUIRED_OK_SHARE = 0.5", "\nREQUIRED_OK_SHARE = 0.4")) != base
+    assert phase2_verify.rule_fingerprint(src.replace("if pa[\"classified_assessments\"] == 0:",
+                                                      "if pa[\"classified_assessments\"] < 0:")) != base
+    # unrelated renderer text does not change it
+    assert phase2_verify.rule_fingerprint(src.replace("## Archive Comparison", "## Archives")) == base
+
+
+def test_rule_in_force_equals_rule_frozen_before_newest_archive():
+    f = phase2_verify.rule_freeze(ROOT / "intel" / "datasets" / "phase2" / "runs")
+    assert f["identical_to_frozen"], f

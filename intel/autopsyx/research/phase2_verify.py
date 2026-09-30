@@ -154,6 +154,7 @@ def funnel(raw: RawStore, all_records: list, sel_records: list, journal_path: Pa
             creator[r.token] += r.creator_pct is not None
     evaluable, classified = set(), set()
     steps = defaultdict(int)
+    dq = defaultdict(lambda: defaultdict(int))
     if journal_path is not None and journal_path.exists():
         for l in journal_path.read_text().splitlines():
             if not l.strip():
@@ -161,6 +162,8 @@ def funnel(raw: RawStore, all_records: list, sel_records: list, journal_path: Pa
             j = json.loads(l)["payload"]
             tok = j["token"].split(":", 1)[1]
             steps[tok] += 1
+            for f in j["data_quality"]:
+                dq[tok][f] += 1
             if j["feature_status"]["price"] == "OK" and "NO_DATA" not in j["data_quality"]:
                 evaluable.add(tok)
             if j["move_class"] != "UNCLASSIFIED":
@@ -178,7 +181,12 @@ def funnel(raw: RawStore, all_records: list, sel_records: list, journal_path: Pa
             "bar_history_minutes": (ts[-1] - ts[0]) // 60_000 + 1 if ts else 0,
             "holder_snapshots": holders[t], "holder_snapshots_with_creator_pct": creator[t],
             "replay_steps": steps[t], "successful": t in successful, "evaluable": t in evaluable,
-            "classified": t in classified})
+            "classified": t in classified, "data_quality_counts": dict(sorted(dq[t].items())),
+            "reduction_reason": (None if t in classified else
+                                 "no successful OHLCV and trades response" if t not in successful else
+                                 "no replay step with an OK price" if t not in evaluable else
+                                 "move never classifiable: " + (", ".join(f"{k} {v}/{steps[t]}" for k, v in sorted(dq[t].items()))
+                                                                  or "fewer historical windows than min_baseline_samples"))})
     return {"discovered": len(discovered), "attempted": len(picked), "successful": len(successful),
             "evaluable": len(evaluable), "classified": len(classified),
             "unclassified_or_incomplete": len(picked) - len(classified),
@@ -199,14 +207,50 @@ def coverage_adjusted(journal_path: Path) -> dict:
     fresh = [j for j in ev if "STALE_DATA" not in j["data_quality"]]
     reach_creator = [j for j in js if "creator_concentration_ok" in j["conditions"]]
     creator_unknown = [j for j in reach_creator if j["conditions"]["creator_concentration_ok"] is None]
-    rate = lambda a, b: (len(a) / len(b)) if b else None
+    def rate(num, den, num_def, den_def):
+        return {"numerator": len(num), "denominator": len(den), "value": (len(num) / len(den)) if den else None,
+                "numerator_definition": num_def, "denominator_definition": den_def, "source": "replay journal"}
     return {"assessments": len(js), "evaluable_assessments": len(ev), "classified_assessments": len(cls),
             "fresh_evaluable_assessments": len(fresh),
-            "classified_share_of_evaluable": rate(cls, ev), "fresh_share_of_evaluable": rate(fresh, ev),
-            "signals_per_evaluable": rate([j for j in ev if j["signal"] != "NO_SIGNAL"], ev),
-            "creator_input_unknown_share": rate(creator_unknown, reach_creator),
+            "evaluable_share_of_all": rate(ev, js, "evaluable assessments", "all replay assessments"),
+            "classified_share_of_all": rate(cls, js, "classified assessments", "all replay assessments"),
+            "classified_share_of_evaluable": rate(cls, ev, "classified assessments", "evaluable assessments"),
+            "fresh_share_of_evaluable": rate(fresh, ev, "evaluable assessments without STALE_DATA", "evaluable assessments"),
+            "signals_per_evaluable": rate([j for j in ev if j["signal"] != "NO_SIGNAL"], ev,
+                                          "evaluable assessments with a signal", "evaluable assessments"),
+            "creator_input_unknown_share": rate(creator_unknown, reach_creator, "assessments with creator input unknown",
+                                                "all assessments (every assessment evaluates the creator condition)"),
             "required_data_unavailable_assessments": sum(1 for j in js if any(b.startswith("critical input missing")
                                                                              for b in j["blocked_by"]))}
+
+
+def rule_fingerprint(source: str) -> str:
+    """sha256 over the text of classify(), CLASSIFICATION_RULE, REQUIRED_OK_SHARE and REQUIRED_CAPABILITIES."""
+    import hashlib
+    parts = []
+    # anchored at line start: these strings also occur, quoted, inside this function
+    for start, end in (("\nREQUIRED_CAPABILITIES = {", "\n}\n"), ("\nCLASSIFICATION_RULE = [", "\n]\n"),
+                       ("\nREQUIRED_OK_SHARE = ", "\n"), ("\ndef classify(ev: dict)", "\n\n\n")):
+        i = source.index(start)
+        parts.append(source[i: source.index(end, i) + len(end)])
+    return hashlib.sha256("".join(parts).encode()).hexdigest()
+
+
+def rule_freeze(runs_dir: Path) -> dict:
+    """The rule in force is compared with the rule as committed before the newest archive landed."""
+    rel = "intel/autopsyx/research/phase2_verify.py"
+    newest = sorted(p.name for p in runs_dir.iterdir() if p.is_dir())[-1]
+    landed = git("log", "--format=%H", "--diff-filter=A", "-1", "--", f"intel/datasets/phase2/runs/{newest}/run.json")
+    frozen_commit = git("rev-parse", f"{landed}^") if landed else None
+    current = rule_fingerprint(Path(__file__).read_text())
+    frozen_src = git("show", f"{frozen_commit}:{rel}") if frozen_commit else ""
+    frozen = rule_fingerprint(frozen_src) if frozen_src else None
+    return {"newest_archive": newest, "newest_archive_commit": landed, "frozen_commit": frozen_commit,
+            "frozen_rule_sha256": frozen, "current_rule_sha256": current, "identical_to_frozen": current == frozen,
+            "missing_evidence_treatment": "a capability absent from the dataset scores OK share 0.0; an archive "
+                                          "without live polls is not replayable and cannot satisfy rules 3-6",
+            "acquisition_incomplete_treatment": "non-replayable archives are reported and excluded from rules 3-5; "
+                                                "rule 1 blocks if none is replayable"}
 
 
 def collect(runs_dir: Path, work: Path, pg: list[str] | None, baseline: str = "e8c4f66") -> dict:
@@ -223,6 +267,9 @@ def collect(runs_dir: Path, work: Path, pg: list[str] | None, baseline: str = "e
                            "phase1_baseline": git("rev-parse", baseline), "log": git("log", "--oneline", f"{baseline}^..HEAD")},
             "configuration_hash": cfg.fingerprint(), "tests": tests, "scope": scope_audit(baseline),
             "runs": runs}
+    ev["rule_freeze"] = rule_freeze(runs_dir)
+    if not ev["rule_freeze"]["identical_to_frozen"]:
+        raise RuntimeError("classification rule differs from the frozen rule; refusing to classify")
     c, why, inputs = classify(ev)
     ev["classification"] = {"rule": CLASSIFICATION_RULE, "result": c, "reasons": why, "inputs": inputs}
     return ev
@@ -384,6 +431,13 @@ def render(ev: dict) -> str:
     ci = ev["classification"]["inputs"]
     a(f"\nREQUIRED_OK_SHARE = {ci['required_ok_share']}; tests failed = {ci['tests_failed']}, errors = {ci['tests_errors']}; "
       f"primary archive = `{ci.get('primary_archive')}`.\n")
+    rf = ev["rule_freeze"]
+    a(_t([["rule sha256 in force", rf["current_rule_sha256"]], ["rule sha256 frozen", rf["frozen_rule_sha256"]],
+          ["frozen at commit (parent of the commit that added the newest archive)", rf["frozen_commit"]],
+          ["newest archive / commit", f"{rf['newest_archive']} / {rf['newest_archive_commit']}"],
+          ["identical", rf["identical_to_frozen"]], ["missing evidence", rf["missing_evidence_treatment"]],
+          ["incomplete acquisition", rf["acquisition_incomplete_treatment"]]], ["rule freeze", "value"]))
+    a("")
     a("### Measurements the rule evaluated\n")
     caps = list(REQUIRED_CAPABILITIES)
     a(_t([[aid, x["replayable"], x.get("lookahead_all_passed"), x.get("double_replay_identical"),
@@ -403,11 +457,21 @@ def render(ev: dict) -> str:
     a(_t([[k, *(r["funnel"][k] for r in ev["runs"])] for k in fk], ["universe", *(r["run_id"] for r in ev["runs"])]))
     a("")
     ca_keys = ["assessments", "evaluable_assessments", "classified_assessments", "fresh_evaluable_assessments",
-               "classified_share_of_evaluable", "fresh_share_of_evaluable", "signals_per_evaluable",
-               "creator_input_unknown_share", "required_data_unavailable_assessments"]
-    a(_t([[k, *((_pct(r["coverage_adjusted"][k]) if isinstance(r["coverage_adjusted"][k], float) else r["coverage_adjusted"][k])
-                if "coverage_adjusted" in r else "not replayable" for r in ev["runs"])] for k in ca_keys],
-         ["coverage-adjusted measure", *(r["run_id"] for r in ev["runs"])]))
+               "required_data_unavailable_assessments"]
+    a(_t([[k, *(r["coverage_adjusted"][k] if "coverage_adjusted" in r else "not replayable" for r in ev["runs"])]
+          for k in ca_keys], ["count", *(r["run_id"] for r in ev["runs"])]))
+    a("")
+    rate_keys = ["evaluable_share_of_all", "classified_share_of_all", "classified_share_of_evaluable",
+                 "fresh_share_of_evaluable", "signals_per_evaluable", "creator_input_unknown_share"]
+    rows = []
+    for r in ev["runs"]:
+        if "coverage_adjusted" not in r:
+            continue
+        for k in rate_keys:
+            x = r["coverage_adjusted"][k]
+            rows.append([r["run_id"], k, x["numerator"], x["denominator"], _pct(x["value"]), x["numerator_definition"],
+                         x["denominator_definition"]])
+    a(_t(rows, ["archive", "rate", "numerator", "denominator", "value", "numerator is", "denominator is"]))
     a("\nDefinitions: " + "; ".join(f"**{k}**: {v}" for k, v in ev["runs"][0]["funnel"]["definitions"].items()) + ".\n")
     for r in ev["runs"]:
         a(f"**{r['run_id']} per token**\n")
@@ -418,6 +482,9 @@ def render(ev: dict) -> str:
              ["token", "stratum", "successful", "evaluable", "classified", "backfill ok", "backfill failed",
               "distinct bars", "bar history (min)", "holder snapshots", "with creator %", "replay steps",
               "failed responses"]))
+        a("")
+        a(_t([[x["token"], x["reduction_reason"] or "classified"] for x in r["funnel"]["per_token"]],
+             ["token", "why it stops before CLASSIFIED"]))
         a("")
 
     r0 = ev["repository"]
