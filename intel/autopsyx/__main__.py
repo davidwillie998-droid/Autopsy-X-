@@ -101,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     pv.add_argument("--work", default="/tmp/autopsyx_phase2_verify")
     pv.add_argument("--evidence", default="../docs/phase2_evidence/evidence.json")
     pv.add_argument("--report", default="../docs/PHASE2_REAL_DATA_REPLAY_REPORT.md")
+    pv.add_argument("--status", default="../docs/SYSTEM_STATUS.md")
     nm = sub.add_parser("normalize", help="raw archive -> normalized.jsonl + normalization_report.json")
     nm.add_argument("run_dir")
     ap.add_argument("--log", action="store_true", help="emit structured JSON logs to stderr")
@@ -171,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
         Path(args.evidence).parent.mkdir(parents=True, exist_ok=True)
         Path(args.evidence).write_text(json.dumps(ev, indent=1, sort_keys=True, default=str) + "\n")
         Path(args.report).write_text(phase2_verify.render(ev))
+        Path(args.status).write_text(phase2_verify.render_status(ev))
         cls, why = phase2_verify.classify(ev)
         print(json.dumps({"classification": cls, "why": why, "tests": ev["tests"]["summary_line"]}, indent=2))
         return 0
