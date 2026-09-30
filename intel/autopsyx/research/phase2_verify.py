@@ -203,18 +203,20 @@ def coverage_adjusted(journal_path: Path) -> dict:
     """Rates computed over the assessments that could be evaluated, next to the raw totals."""
     js = [json.loads(l)["payload"] for l in journal_path.read_text().splitlines() if l.strip()]
     ev = [j for j in js if j["feature_status"]["price"] == "OK" and "NO_DATA" not in j["data_quality"]]
-    cls = [j for j in ev if j["move_class"] != "UNCLASSIFIED"]
+    cls_all = [j for j in js if j["move_class"] != "UNCLASSIFIED"]
+    cls = [j for j in ev if j["move_class"] != "UNCLASSIFIED"]  # classified AND evaluable
     fresh = [j for j in ev if "STALE_DATA" not in j["data_quality"]]
     reach_creator = [j for j in js if "creator_concentration_ok" in j["conditions"]]
     creator_unknown = [j for j in reach_creator if j["conditions"]["creator_concentration_ok"] is None]
     def rate(num, den, num_def, den_def):
         return {"numerator": len(num), "denominator": len(den), "value": (len(num) / len(den)) if den else None,
                 "numerator_definition": num_def, "denominator_definition": den_def, "source": "replay journal"}
-    return {"assessments": len(js), "evaluable_assessments": len(ev), "classified_assessments": len(cls),
+    return {"assessments": len(js), "evaluable_assessments": len(ev), "classified_assessments": len(cls_all),
+            "classified_evaluable_assessments": len(cls),
             "fresh_evaluable_assessments": len(fresh),
             "evaluable_share_of_all": rate(ev, js, "evaluable assessments", "all replay assessments"),
-            "classified_share_of_all": rate(cls, js, "classified assessments", "all replay assessments"),
-            "classified_share_of_evaluable": rate(cls, ev, "classified assessments", "evaluable assessments"),
+            "classified_share_of_all": rate(cls_all, js, "classified assessments", "all replay assessments"),
+            "classified_share_of_evaluable": rate(cls, ev, "classified evaluable assessments", "evaluable assessments"),
             "fresh_share_of_evaluable": rate(fresh, ev, "evaluable assessments without STALE_DATA", "evaluable assessments"),
             "signals_per_evaluable": rate([j for j in ev if j["signal"] != "NO_SIGNAL"], ev,
                                           "evaluable assessments with a signal", "evaluable assessments"),
@@ -253,6 +255,29 @@ def rule_freeze(runs_dir: Path) -> dict:
                                                 "rule 1 blocks if none is replayable"}
 
 
+def acquisition_quality(ev_run: dict, raw: RawStore) -> dict:
+    """Mechanical acquisition label, separate from any research result."""
+    m = ev_run["run"] or {}
+    per = ev_run["funnel"]["per_token"]
+    backfill_failed = sum(1 for t in per if t["backfill_ok"] == 0)
+    polls = sorted(e.response_ts for e in raw.entries() if e.endpoint == "gt.pools_multi" and e.response_ts)
+    gaps = [(b - a) / 1000 for a, b in zip(polls, polls[1:])]
+    med = sorted(gaps)[len(gaps) // 2] if gaps else None
+    if m.get("status") != "COMPLETE":
+        label = "PARTIAL/CANCELLED"
+    elif m.get("errors") or backfill_failed:
+        label = "ACQUISITION-LIMITED"
+    else:
+        label = "COMPLETE"
+    return {"label": label,
+            "rule": "PARTIAL/CANCELLED if run.json has no COMPLETE status; ACQUISITION-LIMITED if complete but any "
+                    "provider error or any token without a successful backfill; otherwise COMPLETE",
+            "run_status": m.get("status"), "provider_errors": m.get("errors"), "tokens_without_backfill": backfill_failed,
+            "tokens_attempted": len(per), "live_polls": len(polls), "median_poll_interval_s": med,
+            "max_poll_interval_s": max(gaps) if gaps else None, "planned_cycle_s": (m.get("plan") or {}).get("cycle_s"),
+            "final_gt_rate_per_s": m.get("final_gt_rate_per_s"), "circuit_waits": m.get("circuit_waits")}
+
+
 def collect(runs_dir: Path, work: Path, pg: list[str] | None, baseline: str = "e8c4f66") -> dict:
     cfg = Config.load()
     tests = pytest_counts()
@@ -260,7 +285,8 @@ def collect(runs_dir: Path, work: Path, pg: list[str] | None, baseline: str = "e
     dirty = bool(git("status", "--porcelain", "--", "intel/autopsyx", "intel/config"))
     code_version = head + ("-dirty" if dirty else "")
     runs = [verify_run(d, cfg, pg, work, code_version) for d in sorted(p for p in runs_dir.iterdir() if p.is_dir())]
-    for r in runs:
+    for r, d in zip(runs, sorted(p for p in runs_dir.iterdir() if p.is_dir())):
+        r["acquisition"] = acquisition_quality(r, RawStore(d))
         c, why, _ = classify({"runs": [r], "tests": tests})
         r["archive_classification"] = {"classification": c, "reasons": why}
     ev = {"repository": {"branch": git("branch", "--show-current"), "head": head, "code_version": code_version,
@@ -453,11 +479,35 @@ def render(ev: dict) -> str:
           for r in ev["runs"]], ["archive", "classification", "reasons"]))
     a("")
     a("## Archive Comparison\n")
+    acq = ["label", "run_status", "provider_errors", "tokens_attempted", "tokens_without_backfill", "live_polls",
+           "median_poll_interval_s", "max_poll_interval_s", "planned_cycle_s", "final_gt_rate_per_s", "circuit_waits"]
+    a(_t([[k, *(r["acquisition"][k] for r in ev["runs"])] for k in acq], ["acquisition", *(r["run_id"] for r in ev["runs"])]))
+    a("\nAcquisition label rule: " + ev["runs"][0]["acquisition"]["rule"] + ". This is about collection only; it says "
+      "nothing about research results, and improvement across archives is not evidence of strategy quality.\n")
+    cmp_rows = [
+        ["acquisition", *(r["acquisition"]["label"] for r in ev["runs"])],
+        ["replayable", *(r.get("replayable") for r in ev["runs"])],
+        ["records sha256 (replay)", *(r["determinism"]["runs"][0]["records_sha256"][:16] if r.get("replayable") else "n/a"
+                                      for r in ev["runs"])],
+        ["double replay identical", *(r["determinism"]["identical"] if r.get("replayable") else "n/a" for r in ev["runs"])],
+        ["look-ahead A-F", *(("all passed" if r["lookahead"]["all_passed"] else "FAILED") if r.get("replayable") else "n/a"
+                             for r in ev["runs"])],
+        ["journal intact", *((r["report"]["journal_audit"]["chain_breaks"] == 0 and r["report"]["journal_audit"]["hash_mismatches"] == 0)
+                             if r.get("replayable") else "n/a" for r in ev["runs"])],
+        ["PostgreSQL checks zero", *(r["postgres"].get("all_checks_zero") if r.get("replayable") else "n/a" for r in ev["runs"])],
+        ["OHLCV distinct bars (all tokens)", *(sum(t["distinct_bars"] for t in r["funnel"]["per_token"]) for r in ev["runs"])],
+        ["tokens with holder snapshot", *(sum(1 for t in r["funnel"]["per_token"] if t["holder_snapshots"]) for r in ev["runs"])],
+        ["tokens with creator %", *(sum(1 for t in r["funnel"]["per_token"] if t["holder_snapshots_with_creator_pct"])
+                                    for r in ev["runs"])],
+        ["Phase 2 classification (archive alone)", *(r["archive_classification"]["classification"] for r in ev["runs"])],
+    ]
+    a(_t(cmp_rows, ["measure", *(r["run_id"] for r in ev["runs"])]))
+    a("")
     fk = ["discovered", "attempted", "successful", "evaluable", "classified", "unclassified_or_incomplete"]
     a(_t([[k, *(r["funnel"][k] for r in ev["runs"])] for k in fk], ["universe", *(r["run_id"] for r in ev["runs"])]))
     a("")
-    ca_keys = ["assessments", "evaluable_assessments", "classified_assessments", "fresh_evaluable_assessments",
-               "required_data_unavailable_assessments"]
+    ca_keys = ["assessments", "evaluable_assessments", "classified_assessments", "classified_evaluable_assessments",
+               "fresh_evaluable_assessments", "required_data_unavailable_assessments"]
     a(_t([[k, *(r["coverage_adjusted"][k] if "coverage_adjusted" in r else "not replayable" for r in ev["runs"])]
           for k in ca_keys], ["count", *(r["run_id"] for r in ev["runs"])]))
     a("")
