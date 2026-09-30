@@ -36,9 +36,11 @@ class ManipulationReport:
     flags: list[Flag] = field(default_factory=list)
     score: float = 0.0  # noisy-OR of flag confidences
     detectors_run: list[str] = field(default_factory=list)
+    detectors_unavailable: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
-        return {"score": self.score, "detectors_run": self.detectors_run, "flags": [f.to_dict() for f in self.flags]}
+        return {"score": self.score, "detectors_run": self.detectors_run,
+                "detectors_unavailable": self.detectors_unavailable, "flags": [f.to_dict() for f in self.flags]}
 
 
 def wash_trading(swaps: Sequence[Swap], cfg: dict, clusters: ClusterReport | None) -> list[Flag]:
@@ -214,8 +216,16 @@ def liquidity_inflation(events: Sequence[LiquidityEvent], creator: str | None, c
 def run_all(*, swaps: Sequence[Swap], funding: Sequence[FundingTransfer], events: Sequence[LiquidityEvent],
             pools: Sequence[PoolInfo], creator: str | None, total_supply: float | None,
             clusters: ClusterReport | None, cfg: dict, fresh_ms: int,
-            extra_flags: Sequence[Flag] = ()) -> ManipulationReport:
+            extra_flags: Sequence[Flag] = (), available: dict | None = None) -> ManipulationReport:
+    """``available`` maps input classes (flow, funding, liquidity_events,
+    creator) to whether they were observed. A detector whose inputs are
+    unavailable is listed in ``detectors_unavailable`` and never in
+    ``detectors_run``: "not checked" must not read as "checked, clean"."""
     rep = ManipulationReport()
+    av = {"flow": True, "funding": True, "liquidity_events": True, "creator": True} | (available or {})
+    needs = {"wash_trading": ["flow"], "volume_concentration": ["flow"], "creator_distribution": ["flow", "creator"],
+             "sniper_activity": ["flow"], "fresh_wallet_burst": ["flow", "funding"],
+             "liquidity_single_provider": ["liquidity_events"]}
     for name, fn in [
         ("wash_trading", lambda: wash_trading(swaps, cfg, clusters)),
         ("volume_concentration", lambda: volume_concentration(swaps, cfg, clusters)),
@@ -224,6 +234,10 @@ def run_all(*, swaps: Sequence[Swap], funding: Sequence[FundingTransfer], events
         ("fresh_wallet_burst", lambda: fresh_wallet_burst(swaps, funding, cfg, fresh_ms)),
         ("liquidity_single_provider", lambda: liquidity_inflation(events, creator, clusters, cfg)),
     ]:
+        missing_inputs = [k for k in needs[name] if not av[k]]
+        if missing_inputs:
+            rep.detectors_unavailable[name] = "inputs unavailable: " + ", ".join(missing_inputs)
+            continue
         rep.flags.extend(fn())
         rep.detectors_run.append(name)
     rep.flags.extend(extra_flags)

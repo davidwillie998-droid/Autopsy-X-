@@ -36,7 +36,14 @@ class Participation:
 
 def compute(swaps: Sequence[Swap], holders: Sequence[HolderSnapshot], as_of: int, window_ms: int,
             baseline_windows: int, top_k: int, creator: str | None,
-            cluster_of: Mapping[str, str] | None = None) -> Participation:
+            cluster_of: Mapping[str, str] | None = None, flow_covered_from: int | None = None,
+            independence_note: str | None = None) -> Participation:
+    """``flow_covered_from``: earliest time from which the swap stream is known
+    complete up to ``as_of`` (None = complete for all history, the synthetic
+    case). Windows reaching before it report MISSING or INSUFFICIENT_HISTORY
+    instead of counting unobserved minutes as zero buyers.
+    ``independence_note``: when set, cluster collapsing ran on incomplete
+    graph inputs, so the independence ratio is reported as UNVERIFIED."""
     start = as_of - window_ms
     cur = [s for s in swaps if start <= s.ts < as_of]
     first_seen: dict[str, int] = {}
@@ -59,6 +66,10 @@ def compute(swaps: Sequence[Swap], holders: Sequence[HolderSnapshot], as_of: int
         prior_n.append(len(n))
     have_base = swaps and swaps[0].ts <= start - baseline_windows * window_ms
     base_reason = "token younger than participation baseline"
+    if flow_covered_from is not None and flow_covered_from > start - baseline_windows * window_ms:
+        have_base = False
+        base_reason = "trade stream not observed for the whole participation baseline"
+    window_observed = flow_covered_from is None or flow_covered_from <= start
 
     def ratio(now: int, prior: list[int]) -> Obs:
         if not have_base:
@@ -91,9 +102,22 @@ def compute(swaps: Sequence[Swap], holders: Sequence[HolderSnapshot], as_of: int
         eff_obs = missing("cluster analysis not run")
         indep = missing("cluster analysis not run")
 
+    if independence_note and indep.ok:
+        indep = Obs(indep.value, DataStatus.UNVERIFIED, independence_note)
+        eff_obs = Obs(eff_obs.value, DataStatus.UNVERIFIED, independence_note)
+
     h_now = [h for h in holders if h.ts < as_of]
     h_prev = [h for h in h_now if h.ts <= start]
     latest = h_now[-1] if h_now else None
+    if not window_observed:
+        m = missing("trade stream not observed for the whole current window")
+        hold = dict(holders=ok(latest.holders) if latest else missing("no holder snapshots"),
+                    holder_growth=(ok(latest.holders / h_prev[-1].holders - 1) if latest and h_prev and h_prev[-1].holders > 0
+                                   else missing("no holder snapshot at window start")),
+                    top10_pct=ok(latest.top10_pct) if latest else missing("no holder snapshots"),
+                    creator_pct=(ok(latest.creator_pct) if latest and latest.creator_pct is not None
+                                 else missing("creator holdings unknown")))
+        return Participation(m, m, m, m, m, m, m, m, m, m, m, large_holder_net_usd=m, creator_net_usd=m, **hold)
     return Participation(
         unique_buyers=ok(len(buyers)),
         unique_sellers=ok(len(sellers)),

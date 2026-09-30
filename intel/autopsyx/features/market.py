@@ -131,6 +131,10 @@ def compute(bars: Sequence[Bar], cfg: dict, liquidity_usd: Obs | None = None,
 
         buy = sum(b.buy_volume_usd for b in bars[-n:])
         sell = sum(b.sell_volume_usd for b in bars[-n:])
+        # Order flow is only readable where it was observed for every bar in the window
+        # (and, for the trade-count baseline, for every bar in the history as well).
+        flow_now = all(b.flow_known for b in bars[-n:])
+        flow_hist = all(b.flow_known for b in bars[max(0, L - baseline - n):])
         state.windows[n] = WindowStats(
             bars=n,
             ret=guarded(r, need_hist=False),
@@ -148,9 +152,11 @@ def compute(bars: Sequence[Bar], cfg: dict, liquidity_usd: Obs | None = None,
             volume_z=guarded(stats.robust_z(math.log1p(vol_n), [math.log1p(v) for v in hist_v]) if hist_v else None),
             volume_acceleration=guarded(vol_n / prev_vol if prev_vol else None, need_hist=False,
                                         why="no previous-window volume"),
-            trades_z=guarded(stats.robust_z(trd_at[L - 1], hist_t) if hist_t else None),
+            trades_z=guarded(stats.robust_z(trd_at[L - 1], hist_t) if hist_t else None) if flow_hist else
+            missing("trade counts not observed for the full history (provider OHLCV has no trade count)"),
             buy_sell_imbalance=guarded((buy - sell) / (buy + sell) if buy + sell > 0 else None, need_hist=False,
-                                       why="no volume"),
+                                       why="no volume") if flow_now else
+            missing("buy/sell split not observed in this window"),
         )
 
     if total_supply:

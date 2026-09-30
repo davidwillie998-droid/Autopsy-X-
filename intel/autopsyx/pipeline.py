@@ -40,6 +40,27 @@ from .social import attention as social_mod
 log = logging.getLogger("autopsyx.pipeline")
 
 
+@dataclass(frozen=True)
+class Capabilities:
+    """Which input classes the dataset actually contains. A False entry makes
+    every consumer of that input report it as unavailable instead of treating
+    the empty list as "checked, nothing found". Defaults describe the complete
+    synthetic scenarios."""
+
+    funding: bool = True  # native funding transfers (cluster shared-funding edges, fresh-wallet detector)
+    liquidity_events: bool = True  # LP add/remove events
+    news: bool = True
+    social: bool = True
+    creator: bool = True  # creator/deployer identity
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Capabilities":
+        return cls(**{k: bool(v) for k, v in d.items() if k in cls.__dataclass_fields__})
+
+
+FULL = Capabilities()
+
+
 @dataclass
 class ScanResult:
     as_of: int
@@ -50,30 +71,64 @@ class ScanResult:
     symbol_collisions: dict[str, list[str]] = field(default_factory=dict)
 
 
-def assess_token(view: PointInTimeView, token: TokenMeta, cfg: Config, social_available: bool = True) -> Assessment:
+def assess_token(view: PointInTimeView, token: TokenMeta, cfg: Config, social_available: bool = True,
+                 caps: Capabilities = FULL) -> Assessment:
     as_of = view.as_of
     key = token.ref.key
     interval = cfg.section("bars")["interval_ms"]
     mcfg = cfg.section("move")
+    dq = cfg.section("data_quality")
+    social_available = social_available and caps.social
 
     raw_swaps = view.swaps(key)
     snaps = view.pool_snapshots(key)
-    swaps, qrep = quality_mod.run(key, raw_swaps, snaps, as_of, cfg.section("data_quality"))
+    swaps, qrep = quality_mod.run(key, raw_swaps, snaps, as_of, dq)
 
     lookback = (mcfg["baseline_bars"] + max(mcfg["windows"]) + 1) * interval
-    bars = bars_mod.build_bars(swaps, interval, max(as_of - lookback, swaps[0].ts if swaps else as_of), as_of)
-    if bars and bars[-1].ts + interval > as_of:
-        bars = bars[:-1]  # drop the still-forming bar: only closed bars are observations
+    pbars = view.provider_bars(key)
+    flow_from: int | None = None  # None = swap stream complete for all history (synthetic data)
+    part_as_of = as_of
+    if pbars:
+        # Real-data path: price/volume from provider OHLCV, order flow from swaps where covered.
+        bar_cov = view.coverage(key, "bars")
+        trade_cov = view.coverage(key, "trades")
+        bar_end = max((c.end_ts for c in bar_cov), default=None)
+        if bar_end is None:
+            bars = []
+            qrep.flag(FailureMode.NO_DATA, "provider bars present but no bar coverage claim")
+        else:
+            end = min(as_of, bar_end)
+            end -= end % interval
+            bars = bars_mod.build_bars_from_provider(pbars, swaps, bar_cov, trade_cov, interval,
+                                                     max(end - lookback, pbars[0].ts), end)
+            if as_of - end > dq["max_price_age_ms"]:
+                qrep.flag(FailureMode.STALE_DATA, f"closed-bar coverage ends {as_of - end} ms before as_of")
+        tcov = bars_mod.covered_intervals(trade_cov)
+        t_end = max((b for _, b in tcov), default=None)
+        if t_end is None:
+            flow_from, part_as_of = as_of, as_of  # nothing observed: every flow window is unobserved
+        else:
+            part_as_of = min(as_of, t_end)
+            flow_from = bars_mod.contiguous_from(tcov, part_as_of)
+            if as_of - part_as_of > dq["max_price_age_ms"]:
+                qrep.flag(FailureMode.STALE_DATA, f"trade coverage ends {as_of - part_as_of} ms before as_of")
+    else:
+        bars = bars_mod.build_bars(swaps, interval, max(as_of - lookback, swaps[0].ts if swaps else as_of), as_of)
+        if bars and bars[-1].ts + interval > as_of:
+            bars = bars[:-1]  # drop the still-forming bar: only closed bars are observations
 
     pools = view.pools(key)
     liq_events = view.liquidity_events(key)
     lcfg = cfg.section("liquidity")
+    prio = cfg.raw.get("data_sources", {}).get("liquidity_source_priority")
     pre_liq = liq_mod.compute(snaps, liq_events, pools, as_of, lcfg["window_bars"] * interval,
-                              lcfg["reference_trade_usd"], missing("pending"))
+                              lcfg["reference_trade_usd"], missing("pending"), prio, dq["max_price_age_ms"])
     market = market_mod.compute(bars, mcfg, pre_liq.liquidity_usd, token.total_supply) if bars else \
         market_mod.MarketState(as_of=as_of, price=missing("no bars"))
     liq = liq_mod.compute(snaps, liq_events, pools, as_of, lcfg["window_bars"] * interval,
-                          lcfg["reference_trade_usd"], market.market_cap)
+                          lcfg["reference_trade_usd"], market.market_cap, prio, dq["max_price_age_ms"])
+    if liq.liquidity_usd.status == DataStatus.STALE:
+        qrep.flag(FailureMode.STALE_DATA, liq.liquidity_usd.reason)
     if liq.liquidity_usd.ok and liq.liquidity_usd.value < cfg.section("risk")["min_liquidity_usd"]:
         qrep.flag(FailureMode.LOW_LIQUIDITY, f"${liq.liquidity_usd.value:,.0f} below minimum")
     if liq.est_slippage.ok and liq.est_slippage.value > cfg.section("risk")["max_slippage"]:
@@ -90,10 +145,15 @@ def assess_token(view: PointInTimeView, token: TokenMeta, cfg: Config, social_av
     wallets = {s.wallet for s in swaps}
     funding = [f for f in view.funding() if f.dst in wallets or f.src in wallets]
     clusters = cluster_mod.analyze(swaps, funding, token.creator, ccfg)
+    if not caps.funding:
+        clusters.notes.append("funding transfers unavailable: shared-funding and creator-link edges not evaluated")
 
     pcfg = cfg.section("participation")
-    part = part_mod.compute(swaps, view.holder_snapshots(key), as_of, pcfg["window_bars"] * interval,
-                            pcfg["baseline_windows"], pcfg["top_k"], token.creator, clusters.cluster_of)
+    part = part_mod.compute([s for s in swaps if s.ts < part_as_of], view.holder_snapshots(key), part_as_of,
+                            pcfg["window_bars"] * interval, pcfg["baseline_windows"], pcfg["top_k"], token.creator,
+                            clusters.cluster_of, flow_covered_from=flow_from,
+                            independence_note=None if caps.funding else
+                            "cluster graph built without funding transfers; independence overstated")
 
     scfg = cfg.section("social")
     social = social_mod.compute(view.social(key), as_of, scfg, social_available)
@@ -111,21 +171,35 @@ def assess_token(view: PointInTimeView, token: TokenMeta, cfg: Config, social_av
         ))
     win_ms = pcfg["window_bars"] * interval * pcfg["baseline_windows"]
     recent_swaps = [s for s in swaps if s.ts >= as_of - win_ms]
+    flow_ok = flow_from is None or flow_from <= part_as_of - win_ms
     manip = manip_mod.run_all(swaps=recent_swaps, funding=funding, events=liq_events, pools=pools,
                               creator=token.creator, total_supply=token.total_supply, clusters=clusters,
-                              cfg=cfg.section("manipulation"), fresh_ms=ccfg["fresh_wallet_ms"], extra_flags=extra)
+                              cfg=cfg.section("manipulation"), fresh_ms=ccfg["fresh_wallet_ms"], extra_flags=extra,
+                              available={"flow": flow_ok, "funding": caps.funding,
+                                         "liquidity_events": caps.liquidity_events,
+                                         "creator": caps.creator and token.creator is not None})
 
     cat = news_mod.assess(key, mv.onset_ts, mv.direction, view.news(), cfg.section("news"))
+    if not caps.news:
+        cat.reason = "news provider unavailable for this dataset; catalyst unknown, not absent"
     rg = regime_mod.classify(bars, market, part, liq, mv, cfg.section("regime"), mcfg) if bars else \
         regime_mod.RegimeAssessment(regime_mod.Regime.UNKNOWN, reasons=["no bars"])
     exh = exh_mod.assess(bars, market, part, liq, mv, rg, social, cfg.section("exhaustion"),
                          cfg.section("regime")["parabolic_z"], cfg.section("signal")["max_top10_pct"])
 
     venues = _cross_venue(snaps, as_of, interval * 15)
+    created = min([p.created_ts for p in pools] + ([token.launch_ts] if token.launch_ts else []), default=None)
+    early = cfg.raw.get("lifecycle", {}).get("early_life_ms", 86_400_000)
+    if created is None:
+        lifecycle = "UNKNOWN_AGE"
+    elif as_of - created < early:
+        lifecycle = "EARLY_LIFE"
+    else:
+        lifecycle = "ESTABLISHED"
     return Assessment(token=token, as_of=as_of, quality=qrep, bars=bars, market=market, move=mv,
                       participation=part, liquidity=liq, clusters=clusters, manipulation=manip, catalyst=cat,
                       social=social, regime=rg, exhaustion=exh, narratives=narr_mod.assign(token),
-                      cross_venue=venues)
+                      cross_venue=venues, lifecycle=lifecycle, token_age_ms=None if created is None else as_of - created)
 
 
 def _cross_venue(snaps, as_of: int, window_ms: int) -> Obs:
@@ -161,10 +235,10 @@ def _member(a: Assessment, breadth_class: str) -> narr_mod.MemberSnapshot:
 
 
 def scan(view: PointInTimeView, cfg: Config, prior: ScanResult | None = None,
-         social_available: bool = True) -> ScanResult:
+         social_available: bool = True, caps: Capabilities = FULL) -> ScanResult:
     tokens = view.tokens()
     with timed(log, "per_token"):
-        assessments = {t.ref.key: assess_token(view, t, cfg, social_available) for t in tokens}
+        assessments = {t.ref.key: assess_token(view, t, cfg, social_available, caps) for t in tokens}
 
     # Narrative stage (cross-token)
     ncfg = cfg.section("narrative")

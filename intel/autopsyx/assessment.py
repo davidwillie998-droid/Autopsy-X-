@@ -43,6 +43,8 @@ class Assessment:
     cross_venue: Obs = field(default_factory=lambda: missing("single venue observed"))
     role: str = "ISOLATED_MOVE"
     move_quality: MoveQuality | None = None
+    lifecycle: str = "UNKNOWN_AGE"  # EARLY_LIFE | ESTABLISHED | UNKNOWN_AGE (descriptive; no signal uses it)
+    token_age_ms: int | None = None
 
     @property
     def key(self) -> str:
@@ -72,5 +74,7 @@ class Assessment:
             "narrative_breadth": self.narrative_breadth.to_dict(),
             "cross_venue": self.cross_venue.to_dict(),
             "role": self.role,
+            "lifecycle": self.lifecycle,
+            "token_age_ms": self.token_age_ms,
             "move_quality": self.move_quality.to_dict() if self.move_quality else None,
         }

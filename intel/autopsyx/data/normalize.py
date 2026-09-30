@@ -12,11 +12,27 @@ from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass, field
 
 from ..core.models import Coverage, PoolInfo, Swap
+from ..pipeline import Capabilities
 from ..providers.store import EventStore, _encode
 from .providers import dexscreener as ds
 from .providers import geckoterminal as gt
 from .raw import RawStore
 from .validate import Code, Issue
+
+
+# What a GeckoTerminal + DexScreener archive can and cannot supply to the engines.
+# creator=True: the field exists (developer_address) but is usually null; per-token
+# absence is handled where token.creator is None.
+PHASE2_CAPABILITIES = Capabilities(funding=False, liquidity_events=False, news=False, social=False, creator=True)
+
+
+def replay_window(raw: RawStore) -> tuple[int, int] | None:
+    """[first poll response, last response]: the span in which availability times were observed live."""
+    polls = [e.response_ts for e in raw.entries() if e.endpoint == "gt.pools_multi" and e.response_ts]
+    ends = [e.response_ts for e in raw.entries() if e.response_ts]
+    if not polls:
+        return None
+    return min(polls), max(ends)
 
 
 @dataclass

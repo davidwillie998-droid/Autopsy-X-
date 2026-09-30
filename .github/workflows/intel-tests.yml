@@ -2,9 +2,9 @@ name: Intelligence engine tests
 
 on:
   push:
-    paths: ["intel/**", "docs/research/**", ".github/workflows/intel-tests.yml"]
+    paths: ["intel/**", "docs/**", ".github/workflows/intel-tests.yml"]
   pull_request:
-    paths: ["intel/**", "docs/research/**", ".github/workflows/intel-tests.yml"]
+    paths: ["intel/**", "docs/**", ".github/workflows/intel-tests.yml"]
 
 permissions:
   contents: read
@@ -12,6 +12,18 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      # Plain PostgreSQL 16. TimescaleDB is not installed; the tests stub
+      # create_hypertable, so hypertable behaviour itself is not exercised here.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      AUTOPSYX_PG: "host=localhost port=5432 user=postgres"
     defaults:
       run:
         working-directory: intel
@@ -21,5 +33,5 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install pytest
-      - run: python -m pytest -q
+      - run: python -m pytest -q -rs
       - run: python -m autopsyx demo

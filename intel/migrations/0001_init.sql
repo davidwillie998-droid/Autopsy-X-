@@ -182,7 +182,9 @@ CREATE TABLE social_posts (
     tokens            TEXT[],
     is_repost         BOOLEAN NOT NULL,
     engagement        INTEGER,
-    PRIMARY KEY (platform, post_id)
+    -- ts is part of the key because TimescaleDB requires every unique index on a
+    -- hypertable to include the partitioning column (found in Phase 2 review).
+    PRIMARY KEY (platform, post_id, ts)
 );
 SELECT create_hypertable('social_posts', 'ts', if_not_exists => TRUE, migrate_data => TRUE);
 

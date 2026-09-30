@@ -48,6 +48,16 @@ def radar(res: ScanResult) -> str:
     return "\n".join("  ".join(str(c).ljust(wd) for c, wd in zip(r, widths)) for r in rows)
 
 
+def _git_version() -> str:
+    import subprocess
+    try:
+        sha = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+        dirty = subprocess.run(["git", "status", "--porcelain", "--", "."], capture_output=True, text=True).stdout.strip()
+        return sha + ("-dirty" if dirty else "")
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="autopsyx")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -64,6 +74,17 @@ def main(argv: list[str] | None = None) -> int:
     aq.add_argument("--live", action="store_true", help="required: confirms network access to vendor APIs is intended")
     aq.add_argument("--request", required=True, help="JSON file with run_id and plan overrides")
     aq.add_argument("--out", required=True)
+    rr = sub.add_parser("replay-run", help="deterministic point-in-time replay of an acquired raw archive")
+    rr.add_argument("run_dir")
+    rr.add_argument("--step-min", type=int, default=5)
+    rr.add_argument("--out")
+    rr.add_argument("--config")
+    rr.add_argument("--expect-config", help="refuse to run unless the config hash equals this")
+    rr.add_argument("--code-version", help="defaults to the git commit of the working tree")
+    pr = sub.add_parser("phase2-report", help="descriptive statistics for the Phase 2 replay report")
+    pr.add_argument("run_dir")
+    pr.add_argument("replay_dir")
+    pr.add_argument("--config")
     nm = sub.add_parser("normalize", help="raw archive -> normalized.jsonl + normalization_report.json")
     nm.add_argument("run_dir")
     ap.add_argument("--log", action="store_true", help="emit structured JSON logs to stderr")
@@ -85,6 +106,30 @@ def main(argv: list[str] | None = None) -> int:
         meta = acquire.run(args.out, plan)
         print(json.dumps({k: meta.get(k) for k in ("status", "cycles", "exchanges", "errors")}))
         return 0 if meta.get("status") == "COMPLETE" else 1
+    if args.cmd == "replay-run":
+        from . import replay
+        from .data.normalize import PHASE2_CAPABILITIES, normalize, replay_window, to_store
+        from .data.raw import RawStore
+        cfg = Config.load(args.config)
+        records, rep = normalize(args.run_dir)
+        win = replay_window(RawStore(args.run_dir))
+        if win is None:
+            print("no live polls in archive; nothing to replay", file=sys.stderr)
+            return 1
+        spec = replay.ReplaySpec(start_ts=win[0], end_ts=win[1], step_ms=args.step_min * 60_000,
+                                 dataset_id=f"{args.run_dir.rstrip('/').split('/')[-1]}:{rep.dataset_sha256[:16]}",
+                                 code_version=args.code_version or _git_version(),
+                                 caps=PHASE2_CAPABILITIES, expected_config_hash=args.expect_config)
+        out = args.out or f"{args.run_dir}/replay_{cfg.fingerprint()}"
+        res = replay.run(to_store(records), cfg, spec, out)
+        print(json.dumps(res.summary, indent=2, sort_keys=True))
+        return 0
+    if args.cmd == "phase2-report":
+        from .research import phase2_report
+        cfg = Config.load(args.config)
+        out = phase2_report.build(args.run_dir, args.replay_dir, cfg.section("signal")["min_coverage"])
+        print(json.dumps(out, indent=2, sort_keys=True, default=str))
+        return 0
     if args.cmd == "normalize":
         from .data.normalize import normalize
         records, rep = normalize(args.run_dir)

@@ -13,6 +13,14 @@ max_clock_skew_ms = 5_000           # ts may not exceed seen_ts by more than thi
 cross_source_price_tolerance = 0.03 # relative diff between sources -> CONFLICTING_DATA
 min_confirmations = { solana = 32, ethereum = 12, base = 12, bsc = 15 }
 
+[data_sources]
+# Which vendor's liquidity figure is authoritative when several report a pool.
+# Data-contract setting, not a signal threshold.
+liquidity_source_priority = ["geckoterminal", "dexscreener"]
+
+[lifecycle]
+early_life_ms = 86_400_000  # descriptive label only; no signal reads it
+
 [bars]
 interval_ms = 60_000
 

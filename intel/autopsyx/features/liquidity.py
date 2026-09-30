@@ -41,9 +41,26 @@ def cpmm_slippage(trade_usd: float, liquidity_usd: float, fee_bps: float) -> flo
 
 
 def compute(snapshots: Sequence[PoolSnapshot], events: Sequence[LiquidityEvent], pools: Sequence[PoolInfo],
-            as_of: int, window_ms: int, reference_trade_usd: float, market_cap: Obs) -> LiquidityState:
+            as_of: int, window_ms: int, reference_trade_usd: float, market_cap: Obs,
+            source_priority: list[str] | None = None, max_age_ms: int | None = None) -> LiquidityState:
+    """``source_priority``: when several sources report the same pool, level and
+    change come from the first listed source that has snapshots, so a change is
+    never computed between two vendors' different liquidity definitions. Other
+    sources remain available to the cross-source price check. None or no
+    listed source present: all snapshots are used (synthetic case).
+
+    ``max_age_ms``: a latest snapshot older than this is reported STALE (not
+    OK), and a change is only computed when a snapshot exists inside the
+    window. Comparing a stale snapshot with itself would report a 0.0 change,
+    which is the "unavailable -> healthy" error the missing-data policy forbids
+    (found by the Phase 2 stale-liquidity test)."""
     start = as_of - window_ms
     snaps = [s for s in snapshots if s.ts < as_of]
+    for src in source_priority or []:
+        chosen = [s for s in snaps if s.source == src]
+        if chosen:
+            snaps = chosen
+            break
     # Aggregate across pools: latest snapshot per pool.
     latest: dict[str, PoolSnapshot] = {}
     at_start: dict[str, PoolSnapshot] = {}
@@ -53,6 +70,9 @@ def compute(snapshots: Sequence[PoolSnapshot], events: Sequence[LiquidityEvent],
             at_start[s.pool] = s
     liq_now = sum(s.liquidity_usd for s in latest.values()) if latest else None
     liq_then = sum(s.liquidity_usd for s in at_start.values()) if at_start else None
+    newest = max((s.ts for s in latest.values()), default=None)
+    stale = max_age_ms is not None and newest is not None and as_of - newest > max_age_ms
+    fresh_in_window = newest is not None and newest > start
 
     win = [e for e in events if start <= e.ts < as_of]
     added = sum(e.usd for e in win if e.kind == LiquidityKind.ADD)
@@ -72,10 +92,22 @@ def compute(snapshots: Sequence[PoolSnapshot], events: Sequence[LiquidityEvent],
     else:
         slip = missing("no liquidity observation")
 
+    if liq_now is None:
+        level = missing("no pool snapshots")
+    elif stale:
+        level = Obs(liq_now, DataStatus.STALE, f"latest liquidity snapshot {as_of - newest} ms old")
+        slip = Obs(slip.value, DataStatus.STALE, "liquidity stale") if slip.value is not None else slip
+    else:
+        level = ok(liq_now)
+    if liq_now is None or not liq_then:
+        change = missing("no snapshot at window start")
+    elif not fresh_in_window or stale:
+        change = missing("no liquidity snapshot inside the window; change unobserved, not zero")
+    else:
+        change = ok(liq_now / liq_then - 1)
     return LiquidityState(
-        liquidity_usd=ok(liq_now) if liq_now is not None else missing("no pool snapshots"),
-        liquidity_change=(ok(liq_now / liq_then - 1) if liq_now is not None and liq_then
-                          else missing("no snapshot at window start")),
+        liquidity_usd=level,
+        liquidity_change=change,
         added_usd=ok(added),
         removed_usd=ok(removed),
         net_flow_usd=ok(added - removed),

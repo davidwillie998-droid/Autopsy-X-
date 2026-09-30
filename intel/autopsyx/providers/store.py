@@ -117,7 +117,9 @@ class EventStore:
         with open(path, "w") as fh:
             for r in records:
                 kind = next(k for k, cls in _KINDS.items() if isinstance(r, cls))
-                fh.write(json.dumps({"kind": kind, **_encode(asdict(r))}) + "\n")
+                # "_type" (not "kind"): Coverage and LiquidityEvent have their own "kind" field,
+                # which silently overwrote the record type under the Phase 1 envelope.
+                fh.write(json.dumps({**_encode(asdict(r)), "_type": kind}, sort_keys=True) + "\n")
 
     @classmethod
     def load_jsonl(cls, path: str | Path) -> "EventStore":
@@ -204,7 +206,7 @@ def _encode(d: dict) -> dict:
 
 def decode_record(d: dict):
     d = dict(d)
-    kind = d.pop("kind")
+    kind = d.pop("_type") if "_type" in d else d.pop("kind")  # legacy envelope used "kind"
     cls = _KINDS[kind]
     if kind == "token":
         d["ref"] = TokenRef(**d["ref"])

@@ -85,3 +85,81 @@ def run_fake(tmp, cycles=2, faults=None, plan=None):
 
     meta = acquire.run(str(tmp), p, clients(net, clock), now_ms=lambda: clock[0], sleep=sleep, max_cycles=cycles)
     return meta, net
+
+
+# ------------------------------------------------------------------------------------------
+# Provider-shaped stores for point-in-time and missing-data tests. Synthetic values, but the
+# same record types, clocks and coverage semantics the real adapters produce.
+import math
+import random
+
+from autopsyx.core.models import (Coverage, HolderSnapshot, PoolInfo, PoolSnapshot, ProviderBar, Side, Swap,
+                                  TokenMeta, TokenRef)
+from autopsyx.providers.store import EventStore
+
+T0 = 1_790_000_000_000 - (1_790_000_000_000 % 60_000)
+MIN = 60_000
+TOKEN = "9sJZFixcrP4WVTXmQ4Rmkbr1LTk9Em5v5A7Y82jtpump"
+POOL = "HCikAJCwxbpfE6jGMiGaKQQv9vUkoBpTq5AV9gPnzKPg"
+KEY = f"solana:{TOKEN}"
+LAG = 60_000
+
+
+def wallet(i: int) -> str:
+    alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    r = random.Random(i)
+    return "".join(r.choice(alphabet) for _ in range(44))
+
+
+def real_path_records(bars=700, jump_at=640, seed=5, trades_from=None, ds_price_skew=0.0, poll_every=1):
+    """Minute-by-minute collection as a poller would record it. Everything up to
+    minute ``bars`` is 'history'; observation (seen_ts) follows the poll clock:
+    each minute m is polled at T0 + (m + 1) * MIN + LAG + 5 s."""
+    r = random.Random(seed)
+    recs = [TokenMeta(TokenRef("solana", TOKEN), "STONK", "Stonk Inu", T0 - 3 * 86_400_000, None, 1e9, T0,
+                      source="geckoterminal", raw_id="r0"),
+            PoolInfo("solana", POOL, TOKEN, "pumpswap", T0 - 3 * 86_400_000, T0, "cpmm", 25.0, "geckoterminal", "r0")]
+    price, liq = 1e-4, 400_000.0
+    trades_from = trades_from if trades_from is not None else 0
+    tx = 0
+    for m in range(bars):
+        t = T0 + m * MIN
+        step = r.gauss(0, 0.004) + (0.012 if m >= jump_at else 0.0)
+        o = price
+        price *= math.exp(step)
+        seen = t + MIN + LAG + 5_000
+        if m % poll_every:
+            seen += (poll_every - m % poll_every) * MIN
+        recs.append(ProviderBar("solana", POOL, TOKEN, t, MIN, seen, o, max(o, price) * 1.001, min(o, price) * 0.999,
+                                price, 2_000 + r.random() * 500 + (20_000 if m >= jump_at else 0), "geckoterminal", f"b{m}"))
+        recs.append(Coverage("solana", TOKEN, POOL, "bars", t - 10 * MIN if m else t - 5 * MIN, t + MIN, seen,
+                             "geckoterminal", f"cb{m}"))
+        liq *= math.exp(step * 0.5)
+        recs.append(PoolSnapshot("solana", POOL, TOKEN, seen, seen, liq, price, "geckoterminal", f"s{m}"))
+        recs.append(PoolSnapshot("solana", POOL, TOKEN, seen + 1_000, seen + 1_000, liq * 1.1,
+                                 price * (1 + ds_price_skew), "dexscreener", f"d{m}"))
+        if m >= trades_from:
+            n = 3 + (12 if m >= jump_at else 0)
+            for k in range(n):
+                tx += 1
+                w = wallet(r.randint(0, 40) if m < jump_at else 1000 + tx)
+                side = Side.BUY if r.random() < (0.5 if m < jump_at else 0.75) else Side.SELL
+                usd = r.uniform(50, 900)
+                recs.append(Swap("solana", f"tx{tx}", 0, t + k * 1000, seen, (t + k * 1000) // 400, POOL, TOKEN, w,
+                                 side, usd / price, usd, price, "geckoterminal", f"t{m}"))
+            recs.append(Coverage("solana", TOKEN, POOL, "trades", t - (MIN if m > trades_from else 0), t + MIN, seen,
+                                 "geckoterminal", f"ct{m}"))
+        if m % 15 == 0:
+            recs.append(HolderSnapshot("solana", TOKEN, t, seen, 900 + m, 0.3, None, "geckoterminal", f"h{m}"))
+    return recs
+
+
+def real_store(**kw) -> EventStore:
+    s = EventStore()
+    s.extend(real_path_records(**kw))
+    return s
+
+
+def as_of_after(minute: int) -> int:
+    """First moment at which minute ``minute`` has been polled."""
+    return T0 + (minute + 1) * MIN + LAG + 5_000 + 2_000
