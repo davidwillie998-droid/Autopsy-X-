@@ -106,3 +106,33 @@ def replay_sql(summary: dict, records: Iterable[dict]) -> list[str]:
                    f"{arr(r['data_quality'])},{lit(r['risk'])},{lit(r['entry'])},{lit(r['exit'])},{lit(r['reason'])},"
                    f"{lit(r['outcome'])},{lit(r)});")
     return out
+
+
+# Integrity queries run after loading an archive. Each returns a single integer that must be 0.
+VALIDATION_QUERIES = {
+    "swaps_without_raw_id": "select count(*) from swaps where raw_id is null",
+    "bars_without_raw_id": "select count(*) from provider_bars where raw_id is null",
+    "snapshots_without_raw_id": "select count(*) from pool_snapshots where raw_id is null",
+    "raw_ids_not_in_manifest": ("select count(*) from (select raw_id from swaps union select raw_id from provider_bars "
+                                "union select raw_id from pool_snapshots union select raw_id from coverage "
+                                "union select raw_id from holder_snapshots) r where r.raw_id is not null and not exists "
+                                "(select 1 from raw_manifest m where m.raw_id = r.raw_id)"),
+    "orphan_pools": "select count(*) from pools p where not exists (select 1 from tokens t where t.chain=p.chain and t.address=p.token)",
+    "orphan_swaps": "select count(*) from swaps s where not exists (select 1 from tokens t where t.chain=s.chain and t.address=s.token)",
+    "orphan_replay_records": "select count(*) from replay_records r where not exists (select 1 from replay_runs u where u.replay_id=r.replay_id)",
+    "replay_config_hash_mismatch": ("select count(*) from replay_records r join replay_runs u using (replay_id) "
+                                    "where r.configuration_hash <> u.config_hash"),
+    "duplicate_replay_steps": "select count(*) - count(distinct (replay_id, token, as_of)) from replay_records",
+    "seen_before_event_swaps": "select count(*) from swaps where seen_ts < ts - interval '5 seconds'",
+    "unclosed_bars": "select count(*) from provider_bars where seen_ts < ts + make_interval(secs => interval_ms/1000.0)",
+    "coverage_beyond_seen": "select count(*) from coverage where end_ts > seen_ts",
+}
+
+
+def journal_sql(lines: list[str]) -> list[str]:
+    out = []
+    for l in lines:
+        r = json.loads(l)
+        out.append(f"INSERT INTO journal (kind,config_hash,label_rules,prev_hash,hash,payload) VALUES ({lit(r['kind'])},"
+                   f"{lit(r['config'])},{lit(r['label_rules'])},{lit(r['prev'])},{lit(r['hash'])},{lit(r['payload'])});")
+    return out

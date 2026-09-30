@@ -87,6 +87,15 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("run_dir")
     pr.add_argument("replay_dir")
     pr.add_argument("--config")
+    dv = sub.add_parser("db-validate", help="load archive + replay into a disposable PostgreSQL db and check integrity")
+    dv.add_argument("run_dir")
+    dv.add_argument("replay_dir")
+    dv.add_argument("--pg", default="host=/tmp port=55432 user=postgres", help="libpq-style key=value pairs")
+    dv.add_argument("--db", default="autopsyx_phase2_validate")
+    la = sub.add_parser("lookahead-audit", help="adversarial look-ahead tests A-F against a real archive")
+    la.add_argument("run_dir")
+    la.add_argument("--samples", type=int, default=4)
+    la.add_argument("--config")
     nm = sub.add_parser("normalize", help="raw archive -> normalized.jsonl + normalization_report.json")
     nm.add_argument("run_dir")
     ap.add_argument("--log", action="store_true", help="emit structured JSON logs to stderr")
@@ -128,6 +137,27 @@ def main(argv: list[str] | None = None) -> int:
         res = replay.run(to_store(records), cfg, spec, out)
         print(json.dumps(res.summary, indent=2, sort_keys=True))
         return 0
+    if args.cmd == "db-validate":
+        from pathlib import Path
+        from .research import db_validate
+        conn = [f"--{'username' if k == 'user' else k}={v}" for k, v in (kv.split("=", 1) for kv in args.pg.split())]
+        out = db_validate.run(args.run_dir, args.replay_dir, conn, args.db, Path(__file__).resolve().parents[1] / "migrations",
+                              Path(args.replay_dir) / "db_load")
+        print(json.dumps(out, indent=2, sort_keys=True))
+        return 0 if out.get("all_checks_zero") else 1
+    if args.cmd == "lookahead-audit":
+        from .data.normalize import PHASE2_CAPABILITIES, normalize, replay_window, restrict_to_selection
+        from .data.raw import RawStore
+        from .research import lookahead_audit
+        cfg = Config.load(args.config)
+        raw = RawStore(args.run_dir)
+        records = restrict_to_selection(normalize(args.run_dir)[0], raw.read_json("selection.json"))
+        lo, hi = replay_window(raw)
+        step = (hi - lo) // (args.samples + 1)
+        times = [lo + step * (i + 1) for i in range(args.samples)]
+        out = lookahead_audit.run(records, cfg, PHASE2_CAPABILITIES, times)
+        print(json.dumps(out, indent=2, sort_keys=True))
+        return 0 if out["all_passed"] else 1
     if args.cmd == "phase2-report":
         from .research import phase2_report
         cfg = Config.load(args.config)
