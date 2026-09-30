@@ -366,3 +366,30 @@ def test_replay_records_carry_provenance(cfg):
     res = replay.run(real_store(), cfg, spec())
     p = res.records[-1]["provenance"]
     assert p["latest_raw_ids"]["provider_bar"] and p["max_seen_ts"] <= res.records[-1]["as_of"]
+
+
+def test_replay_is_identical_across_processes_with_different_hash_seeds():
+    """Regression: Signal.blocked_by was built by iterating a set of FailureMode (str) values, whose
+    order depends on the per-process string-hash seed, so journals differed between processes even
+    though every in-process determinism test passed."""
+    import os
+    import subprocess
+    import sys
+    code = ("import sys; sys.path.insert(0, 'tests'); sys.path.insert(0, '.');"
+            "from test_phase2_replay import spec, real_store; from autopsyx import replay;"
+            "from autopsyx.core.config import Config;"
+            "from phase2_fakes import real_path_records, T0, MIN; from autopsyx.core.models import ProviderBar, Coverage;"
+            "from autopsyx.providers.store import EventStore;"
+            # bars stop at minute 650 (STALE_DATA) while both price sources stay fresh and disagree (CONFLICTING_DATA)
+            "recs = [r for r in real_path_records(ds_price_skew=0.2) if not (isinstance(r, (ProviderBar, Coverage))"
+            " and getattr(r, 'kind', 'bars') == 'bars' and r.seen_ts > T0 + 651 * MIN)];"
+            "s = EventStore(); s.extend(recs);"
+            "print(replay.run(s, Config.load(), spec()).digest)")
+    root = Path(__file__).resolve().parents[1]
+    out = []
+    for seed in ("1", "2", "3"):
+        env = dict(os.environ, PYTHONHASHSEED=seed)
+        r = subprocess.run([sys.executable, "-c", code], cwd=root, env=env, capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr[-2000:]
+        out.append(r.stdout.strip())
+    assert len(set(out)) == 1, out

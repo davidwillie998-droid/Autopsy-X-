@@ -132,7 +132,8 @@ def evaluate_conditions(a: Assessment, cfg: dict, risk_cfg: dict, move_cfg: dict
 
 def generate(a: Assessment, cfg: dict, risk_cfg: dict, move_cfg: dict) -> Signal:
     conds = evaluate_conditions(a, cfg, risk_cfg, move_cfg)
-    blocked: list[str] = [f.value for f in a.failures & BLOCKING]
+    # sorted: set iteration order follows per-process string hashing, which made output differ between runs
+    blocked: list[str] = sorted(f.value for f in a.failures & BLOCKING)
     if a.move_quality is None or a.move_quality.coverage < cfg["min_coverage"]:
         blocked.append(f"coverage {a.move_quality.coverage if a.move_quality else 0:.2f} < {cfg['min_coverage']}")
     for cnd in conds:
