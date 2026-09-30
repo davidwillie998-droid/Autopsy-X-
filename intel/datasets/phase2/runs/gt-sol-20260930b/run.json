@@ -1,0 +1,28 @@
+{
+  "code_version": "b6c74a2937b41e9fd9b40c3c6328af340dcf3b54",
+  "execution": "none: acquisition only, no orders",
+  "plan": {
+    "backfill_pages": 2,
+    "circuit_waits": 5,
+    "cycle_s": 90,
+    "ds_rate_per_s": 2.0,
+    "duration_s": 3000,
+    "gt_min_rate_per_s": 0.03,
+    "gt_rate_per_s": 0.2,
+    "holders_per_cycle": 1,
+    "lag_ms": 60000,
+    "network": "solana",
+    "new_pool_pages": 3,
+    "ohlcv_every": 2,
+    "poll_ohlcv_limit": 5,
+    "seed": 20260930,
+    "strata": {
+      "established": 2,
+      "quiet_young": 1,
+      "trending": 2,
+      "young": 3
+    }
+  },
+  "runner": "GitHub Actions 1000000008",
+  "started_ms": 1790758932920
+}
