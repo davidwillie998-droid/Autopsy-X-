@@ -60,7 +60,7 @@ Never commit keys; `.env` files are ignored.
 
 ### Limitations of the real-data path
 
-See [`docs/PHASE2_DATA_SOURCE_MATRIX.md`](../docs/PHASE2_DATA_SOURCE_MATRIX.md) and [`docs/PHASE2_REAL_DATA_REPLAY_REPORT.md`](../docs/PHASE2_REAL_DATA_REPLAY_REPORT.md). In short: no funding transfers, no LP add/remove events, no liquidity history before collection starts, trades capped at the latest 300 per poll, creator holdings almost always null, no news, no social.
+See [`docs/PHASE2_DATA_SOURCE_MATRIX.md`](../docs/PHASE2_DATA_SOURCE_MATRIX.md) and [`docs/PHASE2_REPORT.md`](../docs/PHASE2_REPORT.md). In short: no funding transfers, no LP add/remove events, no liquidity history before collection starts, trades capped at the latest 300 per poll, creator holdings almost always null, no news, no social.
 
 The demo data is synthetic: an organic news-led breakout, a wash-traded pump, a creator rug, a quiet token, and a follower that lags the breakout by three minutes. It exists to prove each engine separates cases whose ground truth is known. It is not market evidence.
 

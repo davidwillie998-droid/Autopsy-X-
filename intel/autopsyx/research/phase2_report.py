@@ -1,4 +1,4 @@
-"""Numbers for docs/PHASE2_REAL_DATA_REPLAY_REPORT.md, computed from a run
+"""Numbers for docs/PHASE2_REPORT.md, computed from a run
 directory's archive, normalization report and replay journal. Descriptive
 only: nothing here scores or ranks strategy performance."""
 from __future__ import annotations

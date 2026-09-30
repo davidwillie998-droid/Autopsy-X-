@@ -1,8 +1,8 @@
 """Phase 2 final verification: evidence collection and report rendering.
 
 ``collect`` runs every gate against every archive and returns one evidence
-dict (saved as docs/phase2_evidence/evidence.json). ``render`` turns that
-dict into docs/PHASE2_REAL_DATA_REPLAY_REPORT.md. Every number in the report
+dict (saved as artifacts/phase2/PHASE2_EVIDENCE.json). ``render`` turns that
+dict into docs/PHASE2_REPORT.md. Every number in the report
 is read from the evidence dict; the prose around the numbers is fixed text.
 """
 from __future__ import annotations
@@ -34,13 +34,41 @@ def pytest_counts() -> dict:
     r = subprocess.run(["python3", "-m", "pytest", "-q", "-rs"], cwd=ROOT / "intel", capture_output=True, text=True)
     tail = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
     counts = {k: int(v) for v, k in re.findall(r"(\d+) (passed|failed|skipped|error|errors)", tail)}
+    tail = re.sub(r" in [0-9.]+s.*$", "", tail)  # wall-clock duration would make the evidence nondeterministic
     return {"summary_line": tail, "passed": counts.get("passed", 0), "failed": counts.get("failed", 0),
             "skipped": counts.get("skipped", 0), "errors": counts.get("error", 0) + counts.get("errors", 0),
             "exit_code": r.returncode}
 
 
+# Every change to an engine file since Phase 1, with the reason. The scope audit fails if the
+# diff contains anything else.
+ENGINE_CHANGES_EXPLAINED = {
+    "intel/autopsyx/signals/entry.py": {
+        "reason": "blocked_by was built by iterating a set of FailureMode values; its order followed the per-process "
+                  "string-hash seed, so journals differed between processes. Sorted. No decision, threshold or gate "
+                  "changed (regression: test_replay_is_identical_across_processes_with_different_hash_seeds).",
+        "removed": ["    blocked: list[str] = [f.value for f in a.failures & BLOCKING]"],
+        "added": ["    # sorted: set iteration order follows per-process string hashing, which made output differ between runs",
+                  "    blocked: list[str] = sorted(f.value for f in a.failures & BLOCKING)"],
+    },
+}
+
+
 def scope_audit(baseline: str) -> dict:
     engine = git("diff", "--stat", baseline, "--", *ENGINE_PATHS)
+    engine_lines: dict[str, dict[str, list[str]]] = {}
+    cur = None
+    for l in git("diff", "-U0", baseline, "--", *ENGINE_PATHS).splitlines():
+        if l.startswith("+++ b/"):
+            cur = l[6:]
+            engine_lines[cur] = {"removed": [], "added": []}
+        elif cur and l.startswith("-") and not l.startswith("---"):
+            engine_lines[cur]["removed"].append(l[1:])
+        elif cur and l.startswith("+") and not l.startswith("+++"):
+            engine_lines[cur]["added"].append(l[1:])
+    unexplained = {f: d for f, d in engine_lines.items()
+                   if f not in ENGINE_CHANGES_EXPLAINED
+                   or d != {k: ENGINE_CHANGES_EXPLAINED[f][k] for k in ("removed", "added")}}
     adapted = git("diff", "--stat", baseline, "--", *ADAPTED_PATHS)
     cfg = [l for l in git("diff", baseline, "--", "intel/config/default.toml").splitlines()
            if l[:1] in "+-" and not l.startswith(("+++", "---"))]
@@ -50,6 +78,8 @@ def scope_audit(baseline: str) -> dict:
     forbidden = {w: w in tree for w in ("sklearn", "torch", "tensorflow", "lightgbm", "xgboost", "place_order",
                                         "send_transaction", "sign_transaction", "private_key")}
     return {"baseline": baseline, "engine_diff_stat": engine or "(no changes)",
+            "engine_changed_lines": engine_lines, "engine_changes_explained": ENGINE_CHANGES_EXPLAINED,
+            "engine_changes_unexplained": unexplained,
             "adapted_diff_stat": adapted.splitlines()[-1] if adapted else "(no changes)",
             "adapted_files": [l.split("|")[0].strip() for l in adapted.splitlines()[:-1]] if adapted else [],
             "config_lines_added": [l[1:] for l in cfg if l.startswith("+")], "config_lines_removed": removed_cfg,
@@ -70,6 +100,7 @@ def verify_run(run_dir: Path, cfg: Config, pg: list[str] | None, work: Path, cod
         ev["replayable"] = False
         ev["not_replayable_reason"] = "no live poll responses in archive (run ended during backfill)"
         ev["normalization"] = {k: v for k, v in rep.to_dict().items() if k != "issue_samples"}
+        ev["funnel"] = funnel(raw, records, restrict_to_selection(records, ev["selection"]), None)
         return ev
     ev["replayable"] = True
     ev["replay_window_ms"] = list(win)
@@ -86,6 +117,8 @@ def verify_run(run_dir: Path, cfg: Config, pg: list[str] | None, work: Path, cod
     ev["determinism"] = {"runs": digests, "identical": digests[0] == digests[1]}
     rd = str(work / run_dir.name / "replay_1")
     ev["report"] = phase2_report.build(str(run_dir), rd, cfg.section("signal")["min_coverage"])
+    ev["funnel"] = funnel(raw, records, sel_records, Path(rd) / "journal.jsonl")
+    ev["coverage_adjusted"] = coverage_adjusted(Path(rd) / "journal.jsonl")
     step = (win[1] - win[0]) // 5
     ev["lookahead"] = lookahead_audit.run(sel_records, cfg, PHASE2_CAPABILITIES, [win[0] + step * k for k in (1, 2, 3, 4)])
     if pg:
@@ -96,16 +129,103 @@ def verify_run(run_dir: Path, cfg: Config, pg: list[str] | None, work: Path, cod
     return ev
 
 
+def funnel(raw: RawStore, all_records: list, sel_records: list, journal_path: Path | None) -> dict:
+    """discovered -> attempted -> successful -> evaluable -> classified, per token."""
+    from collections import defaultdict
+    sel = raw.read_json("selection.json") or {}
+    picked = [p["token"] for p in sel.get("picked", [])]
+    discovered = sorted({r.ref.key.split(":", 1)[1] for r in all_records if type(r).__name__ == "TokenMeta"})
+    ok_by = defaultdict(lambda: defaultdict(int))
+    fail_by = defaultdict(lambda: defaultdict(int))
+    for e in raw.entries():
+        tok = e.context.get("token")
+        if tok is None:
+            continue
+        (fail_by if e.error or e.raw_id is None else ok_by)[tok][e.endpoint + (".backfill" if "page" in e.context else "")] += 1
+    bars = defaultdict(list)
+    holders = defaultdict(int)
+    creator = defaultdict(int)
+    for r in sel_records:
+        n = type(r).__name__
+        if n == "ProviderBar":
+            bars[r.token].append(r.ts)
+        elif n == "HolderSnapshot":
+            holders[r.token] += 1
+            creator[r.token] += r.creator_pct is not None
+    evaluable, classified = set(), set()
+    steps = defaultdict(int)
+    if journal_path is not None and journal_path.exists():
+        for l in journal_path.read_text().splitlines():
+            if not l.strip():
+                continue
+            j = json.loads(l)["payload"]
+            tok = j["token"].split(":", 1)[1]
+            steps[tok] += 1
+            if j["feature_status"]["price"] == "OK" and "NO_DATA" not in j["data_quality"]:
+                evaluable.add(tok)
+            if j["move_class"] != "UNCLASSIFIED":
+                classified.add(tok)
+    successful = [t for t in picked if ok_by[t].get("gt.ohlcv", 0) + ok_by[t].get("gt.ohlcv.backfill", 0) > 0
+                  and ok_by[t].get("gt.trades", 0) > 0]
+    per_token = []
+    for t in picked:
+        ts = sorted(bars[t])
+        per_token.append({
+            "token": t, "stratum": next(p["stratum"] for p in sel["picked"] if p["token"] == t),
+            "ok_responses": dict(sorted(ok_by[t].items())), "failed_responses": dict(sorted(fail_by[t].items())),
+            "backfill_ok": ok_by[t].get("gt.ohlcv.backfill", 0), "backfill_failed": fail_by[t].get("gt.ohlcv.backfill", 0),
+            "bar_versions": len(ts), "distinct_bars": len(set(ts)),
+            "bar_history_minutes": (ts[-1] - ts[0]) // 60_000 + 1 if ts else 0,
+            "holder_snapshots": holders[t], "holder_snapshots_with_creator_pct": creator[t],
+            "replay_steps": steps[t], "successful": t in successful, "evaluable": t in evaluable,
+            "classified": t in classified})
+    return {"discovered": len(discovered), "attempted": len(picked), "successful": len(successful),
+            "evaluable": len(evaluable), "classified": len(classified),
+            "unclassified_or_incomplete": len(picked) - len(classified),
+            "definitions": {
+                "discovered": "distinct tokens described by any discovery or poll response",
+                "attempted": "tokens picked by the seeded stratified selection and polled",
+                "successful": "attempted tokens with at least one successful OHLCV and one successful trades response",
+                "evaluable": "tokens with at least one replay assessment whose price input was OK and not NO_DATA",
+                "classified": "tokens with at least one replay assessment whose move class was not UNCLASSIFIED"},
+            "per_token": per_token}
+
+
+def coverage_adjusted(journal_path: Path) -> dict:
+    """Rates computed over the assessments that could be evaluated, next to the raw totals."""
+    js = [json.loads(l)["payload"] for l in journal_path.read_text().splitlines() if l.strip()]
+    ev = [j for j in js if j["feature_status"]["price"] == "OK" and "NO_DATA" not in j["data_quality"]]
+    cls = [j for j in ev if j["move_class"] != "UNCLASSIFIED"]
+    fresh = [j for j in ev if "STALE_DATA" not in j["data_quality"]]
+    reach_creator = [j for j in js if "creator_concentration_ok" in j["conditions"]]
+    creator_unknown = [j for j in reach_creator if j["conditions"]["creator_concentration_ok"] is None]
+    rate = lambda a, b: (len(a) / len(b)) if b else None
+    return {"assessments": len(js), "evaluable_assessments": len(ev), "classified_assessments": len(cls),
+            "fresh_evaluable_assessments": len(fresh),
+            "classified_share_of_evaluable": rate(cls, ev), "fresh_share_of_evaluable": rate(fresh, ev),
+            "signals_per_evaluable": rate([j for j in ev if j["signal"] != "NO_SIGNAL"], ev),
+            "creator_input_unknown_share": rate(creator_unknown, reach_creator),
+            "required_data_unavailable_assessments": sum(1 for j in js if any(b.startswith("critical input missing")
+                                                                             for b in j["blocked_by"]))}
+
+
 def collect(runs_dir: Path, work: Path, pg: list[str] | None, baseline: str = "e8c4f66") -> dict:
     cfg = Config.load()
+    tests = pytest_counts()
     head = git("rev-parse", "HEAD")
     dirty = bool(git("status", "--porcelain", "--", "intel/autopsyx", "intel/config"))
     code_version = head + ("-dirty" if dirty else "")
     runs = [verify_run(d, cfg, pg, work, code_version) for d in sorted(p for p in runs_dir.iterdir() if p.is_dir())]
-    return {"repository": {"branch": git("branch", "--show-current"), "head": head, "code_version": code_version,
+    for r in runs:
+        c, why, _ = classify({"runs": [r], "tests": tests})
+        r["archive_classification"] = {"classification": c, "reasons": why}
+    ev = {"repository": {"branch": git("branch", "--show-current"), "head": head, "code_version": code_version,
                            "phase1_baseline": git("rev-parse", baseline), "log": git("log", "--oneline", f"{baseline}^..HEAD")},
-            "configuration_hash": cfg.fingerprint(), "tests": pytest_counts(), "scope": scope_audit(baseline),
+            "configuration_hash": cfg.fingerprint(), "tests": tests, "scope": scope_audit(baseline),
             "runs": runs}
+    c, why, inputs = classify(ev)
+    ev["classification"] = {"rule": CLASSIFICATION_RULE, "result": c, "reasons": why, "inputs": inputs}
+    return ev
 
 
 # ------------------------------------------------------------------------------------ render ----
@@ -124,36 +244,64 @@ REQUIRED_CAPABILITIES = {  # capability -> (gate or engine that needs it, field-
 }
 
 
-def classify(ev: dict) -> tuple[str, list[str]]:
-    """Rule, in order. Printed verbatim in the report."""
-    why = []
+CLASSIFICATION_RULE = [
+    "1. BLOCKED if no archive is replayable.",
+    "2. BLOCKED if any test failed or errored.",
+    "3. BLOCKED if, for any replayable archive: the look-ahead audit did not pass, the double replay was not identical, "
+    "a referenced raw body is missing or fails its hash, or any database integrity check is non-zero.",
+    "4. INSUFFICIENT DATA if the primary archive (the replayable archive with the most assessments) has zero "
+    "assessments that reached move classification.",
+    "5. VERIFIED WITH LIMITATIONS if, in the primary archive, any required capability is OK in fewer than "
+    "REQUIRED_OK_SHARE of assessments.",
+    "6. Otherwise REAL-DATA PIPELINE VERIFIED.",
+]
+REQUIRED_OK_SHARE = 0.5
+
+
+def classify(ev: dict) -> tuple[str, list[str], dict]:
+    """Apply CLASSIFICATION_RULE mechanically. Returns (classification, reasons, every measured input)."""
+    inputs: dict = {"required_ok_share": REQUIRED_OK_SHARE, "tests_failed": ev["tests"]["failed"],
+                    "tests_errors": ev["tests"]["errors"], "archives": {}}
     rep = [r for r in ev["runs"] if r.get("replayable")]
+    for r in ev["runs"]:
+        a = {"replayable": bool(r.get("replayable"))}
+        if r.get("replayable"):
+            pg = r["postgres"] if isinstance(r["postgres"], dict) else {}
+            a.update({"lookahead_all_passed": r["lookahead"]["all_passed"],
+                      "double_replay_identical": r["determinism"]["identical"],
+                      "raw_referenced_but_missing": r["raw_audit"]["referenced_but_missing"],
+                      "raw_hash_mismatches": sum(v.get("hash_mismatch", 0) for v in r["raw_audit"]["by_provider"].values()),
+                      "db_all_checks_zero": pg.get("all_checks_zero"),
+                      "assessments": r["report"]["decisions"]["total_replay_assessments"],
+                      "classified_assessments": r["report"]["decisions"]["total_replay_assessments"]
+                      - r["report"]["decisions"]["unclassified"],
+                      "capability_ok_share": {cap: (r["report"]["missingness"].get(fk, {}).get("OK", 0.0) if fk else 0.0)
+                                              for cap, (_, fk) in REQUIRED_CAPABILITIES.items()}})
+        inputs["archives"][r["run_id"]] = a
     if not rep:
-        return "BLOCKED", ["no archive could be replayed"]
+        return "BLOCKED", ["rule 1: no archive is replayable"], inputs
     if ev["tests"]["failed"] or ev["tests"]["errors"]:
-        return "BLOCKED", ["test failures"]
+        return "BLOCKED", ["rule 2: test failures"], inputs
     for r in rep:
-        if not r["lookahead"]["all_passed"]:
-            return "BLOCKED", [f"{r['run_id']}: look-ahead audit failed"]
-        if not r["determinism"]["identical"]:
-            return "BLOCKED", [f"{r['run_id']}: replay not deterministic"]
-        if r["raw_audit"]["referenced_but_missing"] or any(v.get("hash_mismatch") for v in r["raw_audit"]["by_provider"].values()):
-            return "BLOCKED", [f"{r['run_id']}: raw archive provenance broken"]
-        if isinstance(r["postgres"], dict) and r["postgres"].get("all_checks_zero") is False:
-            return "BLOCKED", [f"{r['run_id']}: database integrity checks failed"]
-    primary = max(rep, key=lambda r: r["report"]["decisions"]["total_replay_assessments"])
-    d = primary["report"]["decisions"]
-    classified = d["total_replay_assessments"] - d["unclassified"]
-    if classified == 0:
-        return "INSUFFICIENT DATA", [f"{primary['run_id']}: no assessment reached move classification"]
-    miss = primary["report"]["missingness"]
-    for cap, (needer, fkey) in REQUIRED_CAPABILITIES.items():
-        ok = miss.get(fkey, {}).get("OK", 0.0) if fkey else 0.0
-        if ok < 0.5:
-            why.append(f"{cap}: OK in {ok:.0%} of assessments (needed by {needer})")
-    if why:
-        return "VERIFIED WITH LIMITATIONS", why
-    return "REAL-DATA PIPELINE VERIFIED", ["all gates passed and required capabilities covered"]
+        a = inputs["archives"][r["run_id"]]
+        bad = [k for k, ok in (("lookahead_all_passed", a["lookahead_all_passed"]),
+                               ("double_replay_identical", a["double_replay_identical"]),
+                               ("raw_referenced_but_missing", a["raw_referenced_but_missing"] == 0),
+                               ("raw_hash_mismatches", a["raw_hash_mismatches"] == 0),
+                               ("db_all_checks_zero", a["db_all_checks_zero"] is not False)) if not ok]
+        if bad:
+            return "BLOCKED", [f"rule 3: {r['run_id']} failed {', '.join(bad)}"], inputs
+    primary = max(rep, key=lambda r: (inputs["archives"][r["run_id"]]["assessments"], r["run_id"]))
+    pa = inputs["archives"][primary["run_id"]]
+    inputs["primary_archive"] = primary["run_id"]
+    if pa["classified_assessments"] == 0:
+        return "INSUFFICIENT DATA", [f"rule 4: {primary['run_id']} has 0 classified assessments"], inputs
+    short = [f"rule 5: {cap} OK in {share:.1%} of {primary['run_id']} assessments (< {REQUIRED_OK_SHARE:.0%}; "
+             f"needed by {REQUIRED_CAPABILITIES[cap][0]})"
+             for cap, share in pa["capability_ok_share"].items() if share < REQUIRED_OK_SHARE]
+    if short:
+        return "VERIFIED WITH LIMITATIONS", short, inputs
+    return "REAL-DATA PIPELINE VERIFIED", ["rule 6: all gates passed and required capabilities covered"], inputs
 
 
 def _t(rows: list[list], head: list[str]) -> str:
@@ -208,13 +356,14 @@ def hypothesis_rows(primary: dict) -> list[list]:
 
 
 def render(ev: dict) -> str:
-    cls, why = classify(ev)
+    cls, why = ev["classification"]["result"], ev["classification"]["reasons"]
     rep = [r for r in ev["runs"] if r.get("replayable")]
-    primary = max(rep, key=lambda r: r["report"]["decisions"]["total_replay_assessments"]) if rep else None
+    pid = ev["classification"]["inputs"].get("primary_archive")
+    primary = next((r for r in rep if r["run_id"] == pid), None)
     L = []
     a = L.append
     a("# Phase 2 Real-Data Replay Report\n")
-    a("_Generated by `python -m autopsyx phase2-verify` from `docs/phase2_evidence/evidence.json`. "
+    a("_Generated by `python -m autopsyx phase2-verify` from `artifacts/phase2/PHASE2_EVIDENCE.json`. "
       "Every number below is read from that file; none is typed by hand._\n")
     a("## Executive Summary\n")
     a(f"**Phase 2 classification: {cls}.**\n")
@@ -229,10 +378,47 @@ def render(ev: dict) -> str:
           f"Replay determinism: {'identical' if primary['determinism']['identical'] else 'DIFFERENT'}.")
     a("\nReal-data ingestion and point-in-time replay are what this report verifies. It does **not** show that any "
       "strategy is valid, profitable, live-ready or safe to trade, and signal scarcity is not evidence either way.\n")
-    a("Classification rule (applied in order, `research/phase2_verify.classify`): BLOCKED if no archive replays, any "
-      "test fails, the look-ahead audit fails, replay is non-deterministic, raw provenance is broken, or database "
-      "integrity checks fail. INSUFFICIENT DATA if no assessment reached move classification. VERIFIED WITH "
-      "LIMITATIONS if any required capability is OK in under 50% of assessments. Otherwise REAL-DATA PIPELINE VERIFIED.\n")
+    a("### Classification rule (applied in order by `research/phase2_verify.classify`)\n")
+    for line in ev["classification"]["rule"]:
+        a(f"    {line}")
+    ci = ev["classification"]["inputs"]
+    a(f"\nREQUIRED_OK_SHARE = {ci['required_ok_share']}; tests failed = {ci['tests_failed']}, errors = {ci['tests_errors']}; "
+      f"primary archive = `{ci.get('primary_archive')}`.\n")
+    a("### Measurements the rule evaluated\n")
+    caps = list(REQUIRED_CAPABILITIES)
+    a(_t([[aid, x["replayable"], x.get("lookahead_all_passed"), x.get("double_replay_identical"),
+           x.get("raw_referenced_but_missing"), x.get("raw_hash_mismatches"), x.get("db_all_checks_zero"),
+           x.get("assessments"), x.get("classified_assessments"),
+           *((_pct(x["capability_ok_share"][c]) if "capability_ok_share" in x else None) for c in caps)]
+          for aid, x in ci["archives"].items()],
+         ["archive", "replayable", "look-ahead passed", "double replay identical", "raw missing", "raw hash mismatch",
+          "db checks zero", "assessments", "classified", *(f"{c} OK" for c in caps)]))
+    a("")
+    a("### Per-archive classification (same rule applied to each archive alone)\n")
+    a(_t([[r["run_id"], r["archive_classification"]["classification"], "; ".join(r["archive_classification"]["reasons"])]
+          for r in ev["runs"]], ["archive", "classification", "reasons"]))
+    a("")
+    a("## Archive Comparison\n")
+    fk = ["discovered", "attempted", "successful", "evaluable", "classified", "unclassified_or_incomplete"]
+    a(_t([[k, *(r["funnel"][k] for r in ev["runs"])] for k in fk], ["universe", *(r["run_id"] for r in ev["runs"])]))
+    a("")
+    ca_keys = ["assessments", "evaluable_assessments", "classified_assessments", "fresh_evaluable_assessments",
+               "classified_share_of_evaluable", "fresh_share_of_evaluable", "signals_per_evaluable",
+               "creator_input_unknown_share", "required_data_unavailable_assessments"]
+    a(_t([[k, *((_pct(r["coverage_adjusted"][k]) if isinstance(r["coverage_adjusted"][k], float) else r["coverage_adjusted"][k])
+                if "coverage_adjusted" in r else "not replayable" for r in ev["runs"])] for k in ca_keys],
+         ["coverage-adjusted measure", *(r["run_id"] for r in ev["runs"])]))
+    a("\nDefinitions: " + "; ".join(f"**{k}**: {v}" for k, v in ev["runs"][0]["funnel"]["definitions"].items()) + ".\n")
+    for r in ev["runs"]:
+        a(f"**{r['run_id']} per token**\n")
+        a(_t([[x["token"], x["stratum"], x["successful"], x["evaluable"], x["classified"], x["backfill_ok"],
+               x["backfill_failed"], x["distinct_bars"], x["bar_history_minutes"], x["holder_snapshots"],
+               x["holder_snapshots_with_creator_pct"], x["replay_steps"],
+               sum(x["failed_responses"].values())] for x in r["funnel"]["per_token"]],
+             ["token", "stratum", "successful", "evaluable", "classified", "backfill ok", "backfill failed",
+              "distinct bars", "bar history (min)", "holder snapshots", "with creator %", "replay steps",
+              "failed responses"]))
+        a("")
 
     r0 = ev["repository"]
     a("## Repository Baseline\n")
@@ -429,15 +615,19 @@ def render(ev: dict) -> str:
     a("## Scope Audit\n")
     sc = ev["scope"]
     a(_t([["engine files changed since Phase 1 (signals, regime, detection, risk, ranking, narrative, news, social, "
-           "onchain, backtest, journal)", sc["engine_diff_stat"]],
+           "onchain, backtest, journal)", "; ".join(sc["engine_changed_lines"]) or "none"],
+          ["engine changes not in the explained list", sc["engine_changes_unexplained"] or "none"],
           ["data-contract files changed", sc["adapted_diff_stat"]],
           ["config lines removed or changed", len(sc["config_lines_removed"])],
           ["config lines added", "; ".join(x.strip() for x in sc["config_lines_added"] if x.strip() and not x.strip().startswith("#"))],
           ["ML / execution terms present in package", sc["forbidden_terms_present"] or "none"]], ["check", "result"]))
+    for f, x in sc["engine_changes_explained"].items():
+        a(f"\n**Engine change `{f}`**: {x['reason']}\n\n```diff\n" + "\n".join("-" + l for l in x["removed"])
+          + "\n" + "\n".join("+" + l for l in x["added"]) + "\n```")
     a("\nChanged data-contract files: " + ", ".join(f"`{f}`" for f in sc["adapted_files"]) + ". Their changes are "
       "listed in DATA_PROVENANCE.md and SYSTEM_STATUS.md (coverage-aware bars and participation, stale-liquidity fix, "
       "capability gating of detectors, provenance fields, transport repairs). No threshold, weight, signal, entry, "
-      "exit, risk or ranking rule changed.\n")
+      "exit, risk or ranking rule changed; the single engine edit above changes the order of reason strings only.\n")
 
     a("## Known Limitations\n")
     cr = primary["report"]["field_coverage"]["rows"]["creator holdings"] if primary else {}
@@ -480,12 +670,13 @@ def render(ev: dict) -> str:
 
 
 def render_status(ev: dict) -> str:
-    cls, why = classify(ev)
+    cls, why = ev["classification"]["result"], ev["classification"]["reasons"]
     rep = [r for r in ev["runs"] if r.get("replayable")]
-    primary = max(rep, key=lambda r: r["report"]["decisions"]["total_replay_assessments"]) if rep else None
+    pid = ev["classification"]["inputs"].get("primary_archive")
+    primary = next((r for r in rep if r["run_id"] == pid), None)
     t = ev["tests"]
     L = ["# System Status\n",
-         "_Generated by `python -m autopsyx phase2-verify` from `docs/phase2_evidence/evidence.json`._\n",
+         "_Generated by `python -m autopsyx phase2-verify` from `artifacts/phase2/PHASE2_EVIDENCE.json`._\n",
          _t([["branch", ev["repository"]["branch"]], ["commit at verification", ev["repository"]["head"]],
              ["Phase 1 baseline", ev["repository"]["phase1_baseline"]],
              ["Phase 2 state", f"COMPLETE: {cls}"],
@@ -515,7 +706,7 @@ def render_status(ev: dict) -> str:
     L.append("\n## Known data limitations\n")
     for w in why:
         L.append(f"* {w}")
-    L.append("* See docs/PHASE2_REAL_DATA_REPLAY_REPORT.md, Known Limitations, for the full list.\n")
+    L.append("* See docs/PHASE2_REPORT.md, Known Limitations, for the full list.\n")
     L.append("## What this status does not claim\n")
     L.append("No live-trading validation, no profitability, no predictive validity. Replay executing on real data is an "
              "ingestion and integrity result only. No execution code exists.\n")

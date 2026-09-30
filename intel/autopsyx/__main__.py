@@ -99,8 +99,8 @@ def main(argv: list[str] | None = None) -> int:
     pv = sub.add_parser("phase2-verify", help="run every Phase 2 gate on every archive; write evidence and report")
     pv.add_argument("--pg", default="host=/tmp port=55432 user=postgres")
     pv.add_argument("--work", default="/tmp/autopsyx_phase2_verify")
-    pv.add_argument("--evidence", default="../docs/phase2_evidence/evidence.json")
-    pv.add_argument("--report", default="../docs/PHASE2_REAL_DATA_REPLAY_REPORT.md")
+    pv.add_argument("--evidence", default="../artifacts/phase2/PHASE2_EVIDENCE.json")
+    pv.add_argument("--report", default="../docs/PHASE2_REPORT.md")
     pv.add_argument("--status", default="../docs/SYSTEM_STATUS.md")
     nm = sub.add_parser("normalize", help="raw archive -> normalized.jsonl + normalization_report.json")
     nm.add_argument("run_dir")
@@ -171,10 +171,13 @@ def main(argv: list[str] | None = None) -> int:
         ev = phase2_verify.collect(Path("datasets/phase2/runs"), Path(args.work), conn)
         Path(args.evidence).parent.mkdir(parents=True, exist_ok=True)
         Path(args.evidence).write_text(json.dumps(ev, indent=1, sort_keys=True, default=str) + "\n")
-        Path(args.report).write_text(phase2_verify.render(ev))
-        Path(args.status).write_text(phase2_verify.render_status(ev))
-        cls, why = phase2_verify.classify(ev)
-        print(json.dumps({"classification": cls, "why": why, "tests": ev["tests"]["summary_line"]}, indent=2))
+        # Renderers read the file just written, never the in-memory dict, so the documents
+        # provably derive from the artifact alone.
+        frozen = json.loads(Path(args.evidence).read_text())
+        Path(args.report).write_text(phase2_verify.render(frozen))
+        Path(args.status).write_text(phase2_verify.render_status(frozen))
+        print(json.dumps({"classification": ev["classification"]["result"], "why": ev["classification"]["reasons"],
+                          "tests": ev["tests"]["summary_line"]}, indent=2))
         return 0
     if args.cmd == "phase2-report":
         from .research import phase2_report
