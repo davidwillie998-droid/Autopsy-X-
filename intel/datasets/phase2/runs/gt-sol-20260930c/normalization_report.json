@@ -1,0 +1,199 @@
+{
+  "coverage_gaps": {},
+  "dataset_sha256": "1ebe77ec9ec2e9b6f06da26cbcce17721db4504f6029baf610931f5489e71d14",
+  "duplicate_swaps": 12209,
+  "exchanges": 225,
+  "first_response_ms": 1790759103922,
+  "issue_samples": {
+    "DERIVED_FIELD": [
+      {
+        "action": "derived",
+        "code": "DERIVED_FIELD",
+        "detail": "J6TjYRa5yAuf3FGhRyj49yE1bePn6NMbtUiSFRbg8Vcn: total_supply = fdv_usd / price",
+        "raw_id": "ce4275d938472191e59da549ae25053989a5c10d690f8848f3c24232d2f0862a"
+      },
+      {
+        "action": "derived",
+        "code": "DERIVED_FIELD",
+        "detail": "EJCmsk8uX1ja2GNXeYaDFT2XVqNxpTUnTVw5TXYppump: total_supply = fdv_usd / price",
+        "raw_id": "ce4275d938472191e59da549ae25053989a5c10d690f8848f3c24232d2f0862a"
+      },
+      {
+        "action": "derived",
+        "code": "DERIVED_FIELD",
+        "detail": "6LVPUuNdWmgsqwdyD9aFhmS4ijHJyQRXDJ3CQeSMpump: total_supply = fdv_usd / price",
+        "raw_id": "ce4275d938472191e59da549ae25053989a5c10d690f8848f3c24232d2f0862a"
+      },
+      {
+        "action": "derived",
+        "code": "DERIVED_FIELD",
+        "detail": "8FvR5JwtnDARU9jWs81xDGrHoctx3surjyaVYcVKpump: total_supply = fdv_usd / price",
+        "raw_id": "ce4275d938472191e59da549ae25053989a5c10d690f8848f3c24232d2f0862a"
+      },
+      {
+        "action": "derived",
+        "code": "DERIVED_FIELD",
+        "detail": "G9Z6yyTHKgRpwc5AsZe8S9Lh3J8iAYnjF85eFCQGpump: total_supply = fdv_usd / price",
+        "raw_id": "ce4275d938472191e59da549ae25053989a5c10d690f8848f3c24232d2f0862a"
+      }
+    ],
+    "DUPLICATE_OBSERVATION": [
+      {
+        "action": "flagged",
+        "code": "DUPLICATE_OBSERVATION",
+        "detail": "12209 repeat observations of already-seen swaps (poll overlap); earliest-seen copy kept by the quality gate",
+        "raw_id": null
+      }
+    ],
+    "FORMING_BAR_DROPPED": [
+      {
+        "action": "dropped_record",
+        "code": "FORMING_BAR_DROPPED",
+        "detail": "25XK4DaAfuEVBVfUWApM6SysWz8S24BQ2SwdHiqn7rGL: 1 unclosed bar(s)",
+        "raw_id": "8b2451389d8d559687df53f6514d93540d30520d7aec1cd363567d3ea8186b78"
+      },
+      {
+        "action": "dropped_record",
+        "code": "FORMING_BAR_DROPPED",
+        "detail": "zxTpi4BtaWX3mgdAPoezkMD1hxx8CdeCfrqXMWvSCLX: 1 unclosed bar(s)",
+        "raw_id": "28e3f3d94baeef1ada87a33309c6e8390280d4874e77a4423b53ba9ef6ca266a"
+      },
+      {
+        "action": "dropped_record",
+        "code": "FORMING_BAR_DROPPED",
+        "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: 1 unclosed bar(s)",
+        "raw_id": "21a35516b5e635653d87dfeca4e20c9107c3ee5f4ac967f4fb63bc922838d749"
+      },
+      {
+        "action": "dropped_record",
+        "code": "FORMING_BAR_DROPPED",
+        "detail": "zxTpi4BtaWX3mgdAPoezkMD1hxx8CdeCfrqXMWvSCLX: 2 unclosed bar(s)",
+        "raw_id": "093635e92206043603eac3771f1c6752a276588ec0d908765cb61bb3897c434a"
+      },
+      {
+        "action": "dropped_record",
+        "code": "FORMING_BAR_DROPPED",
+        "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: 1 unclosed bar(s)",
+        "raw_id": "22ba642d96d0bca2503ac17caa7b7328a82541d0052d5e46027eead848493da4"
+      }
+    ],
+    "NULL_FIELD": [
+      {
+        "action": "dropped_record",
+        "code": "NULL_FIELD",
+        "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: price='0.999147082590957' reserve=None; no snapshot",
+        "raw_id": "06ad3ef3b423aeefe3270b527a485cdd622f27ecc1f3bbaada0bd71780b1289e"
+      },
+      {
+        "action": "dropped_record",
+        "code": "NULL_FIELD",
+        "detail": "8sjV1AqBFvFuADBCQHhotaRq5DFFYSjjg1jMyVWMqXvZ: price='0.998867776233695' reserve=None; no snapshot",
+        "raw_id": "06ad3ef3b423aeefe3270b527a485cdd622f27ecc1f3bbaada0bd71780b1289e"
+      },
+      {
+        "action": "dropped_record",
+        "code": "NULL_FIELD",
+        "detail": "6LVPUuNdWmgsqwdyD9aFhmS4ijHJyQRXDJ3CQeSMpump: holders unavailable",
+        "raw_id": "e9df6edd3632a4c6d6931576f36e6c7930b58f34f634120a90d60a735d715d66"
+      },
+      {
+        "action": "dropped_record",
+        "code": "NULL_FIELD",
+        "detail": "H3BGCayg7zqgWwaXmoy5DG6AkVbUXaN5apGyX4wHpump: holders unavailable",
+        "raw_id": "dff1a13b21afcadeb35e4dd90fd2063ae165911f253f2a64e58f91e215085518"
+      },
+      {
+        "action": "dropped_record",
+        "code": "NULL_FIELD",
+        "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: price='1.00020354723424' reserve=None; no snapshot",
+        "raw_id": "df97f7e8549b1f22988885cc7c845a22d31f10d7ea31ccb21411778e47992ffd"
+      }
+    ],
+    "PAGE_FULL": [
+      {
+        "action": "flagged",
+        "code": "PAGE_FULL",
+        "detail": "CUXsFJDqSv82xfqdWywyQRYyPikx76dHp3Phe87Yyg1p: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+        "raw_id": "d84775245f728f7e2b799423aec09864f58fd73f044d83708f4862a803633c30"
+      },
+      {
+        "action": "flagged",
+        "code": "PAGE_FULL",
+        "detail": "zxTpi4BtaWX3mgdAPoezkMD1hxx8CdeCfrqXMWvSCLX: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+        "raw_id": "eaa7cf99001c7dd3bd8b904285e68b33d136ae94746f69e0ac3c2ddf183a6c11"
+      },
+      {
+        "action": "flagged",
+        "code": "PAGE_FULL",
+        "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+        "raw_id": "3ec4a2698608aa4018e6304f58276b2f4530d30b75f89f49adb543e206169bea"
+      },
+      {
+        "action": "flagged",
+        "code": "PAGE_FULL",
+        "detail": "CUXsFJDqSv82xfqdWywyQRYyPikx76dHp3Phe87Yyg1p: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+        "raw_id": "d84775245f728f7e2b799423aec09864f58fd73f044d83708f4862a803633c30"
+      },
+      {
+        "action": "flagged",
+        "code": "PAGE_FULL",
+        "detail": "zxTpi4BtaWX3mgdAPoezkMD1hxx8CdeCfrqXMWvSCLX: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+        "raw_id": "2302f7f5951a7110004846b0742188b4434bcb2a323dde243efddebdbc8439e7"
+      }
+    ],
+    "PARTIAL_RESPONSE": [
+      {
+        "action": "flagged",
+        "code": "PARTIAL_RESPONSE",
+        "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: requested but not returned",
+        "raw_id": "6ff8d58263807036b8068b407a3d0d911e60fbb1af1621632e98e18857e343a0"
+      },
+      {
+        "action": "flagged",
+        "code": "PARTIAL_RESPONSE",
+        "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: requested but not returned",
+        "raw_id": "15c81fb415f87bc1e6e0ed132a9f215ce1e0c9a00c688c5e70175e6a58057259"
+      },
+      {
+        "action": "flagged",
+        "code": "PARTIAL_RESPONSE",
+        "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: requested but not returned",
+        "raw_id": "9bf26ff23cd1b03b4b96bd28aa9b26dbe64bca3b155ddd4d947368206b569734"
+      },
+      {
+        "action": "flagged",
+        "code": "PARTIAL_RESPONSE",
+        "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: requested but not returned",
+        "raw_id": "9bf468057c4957bf8d299953e4f628779d76b37461868c1b194920aa8c1acd22"
+      },
+      {
+        "action": "flagged",
+        "code": "PARTIAL_RESPONSE",
+        "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: requested but not returned",
+        "raw_id": "4a1256fc981ff9cc219fca22e9cac99ee4f8714d0b366668400bcd227bf7275d"
+      }
+    ]
+  },
+  "issues": {
+    "DERIVED_FIELD": 180,
+    "DUPLICATE_OBSERVATION": 1,
+    "FORMING_BAR_DROPPED": 34,
+    "NULL_FIELD": 55,
+    "PAGE_FULL": 48,
+    "PARTIAL_RESPONSE": 16
+  },
+  "last_response_ms": 1790762141754,
+  "provider_errors": 0,
+  "records": {
+    "Coverage": 167,
+    "HolderSnapshot": 16,
+    "PoolInfo": 180,
+    "PoolSnapshot": 194,
+    "ProviderBar": 4276,
+    "Swap": 14464,
+    "TokenMeta": 201
+  },
+  "responses_ok": 225,
+  "run_dir": "datasets/phase2/runs/gt-sol-20260930c",
+  "tokens": 93
+}
