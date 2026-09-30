@@ -9,7 +9,8 @@ What this source provides, as observed in Phase 2 probes:
   pool OHLCV            minute bars with USD volume; minutes without trades
                         are omitted; the in-progress minute is included
   token info            symbol, name, holder count, top-10 share, developer
-                        address/holding (usually null)
+                        address/holding (null only in the early schema probe;
+                        present for every token in the real archives)
 What it does not provide: funding transfers, liquidity add/remove events,
 historical liquidity, per-trade log index (an in-tx index from the trade id
 is used), social data, news.

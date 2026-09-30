@@ -96,6 +96,11 @@ def main(argv: list[str] | None = None) -> int:
     la.add_argument("run_dir")
     la.add_argument("--samples", type=int, default=4)
     la.add_argument("--config")
+    pv = sub.add_parser("phase2-verify", help="run every Phase 2 gate on every archive; write evidence and report")
+    pv.add_argument("--pg", default="host=/tmp port=55432 user=postgres")
+    pv.add_argument("--work", default="/tmp/autopsyx_phase2_verify")
+    pv.add_argument("--evidence", default="../docs/phase2_evidence/evidence.json")
+    pv.add_argument("--report", default="../docs/PHASE2_REAL_DATA_REPLAY_REPORT.md")
     nm = sub.add_parser("normalize", help="raw archive -> normalized.jsonl + normalization_report.json")
     nm.add_argument("run_dir")
     ap.add_argument("--log", action="store_true", help="emit structured JSON logs to stderr")
@@ -158,6 +163,17 @@ def main(argv: list[str] | None = None) -> int:
         out = lookahead_audit.run(records, cfg, PHASE2_CAPABILITIES, times)
         print(json.dumps(out, indent=2, sort_keys=True))
         return 0 if out["all_passed"] else 1
+    if args.cmd == "phase2-verify":
+        from pathlib import Path
+        from .research import phase2_verify
+        conn = [f"--{'username' if k == 'user' else k}={v}" for k, v in (kv.split("=", 1) for kv in args.pg.split())]
+        ev = phase2_verify.collect(Path("datasets/phase2/runs"), Path(args.work), conn)
+        Path(args.evidence).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.evidence).write_text(json.dumps(ev, indent=1, sort_keys=True, default=str) + "\n")
+        Path(args.report).write_text(phase2_verify.render(ev))
+        cls, why = phase2_verify.classify(ev)
+        print(json.dumps({"classification": cls, "why": why, "tests": ev["tests"]["summary_line"]}, indent=2))
+        return 0
     if args.cmd == "phase2-report":
         from .research import phase2_report
         cfg = Config.load(args.config)

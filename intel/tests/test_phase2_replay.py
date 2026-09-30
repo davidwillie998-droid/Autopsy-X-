@@ -86,7 +86,8 @@ def test_replay_refuses_to_mix_experiments_in_one_journal(cfg, tmp_path):
 def test_no_command_can_execute_trades():
     """Phase 2 has no execution path: no order, wallet, or signing code in the package."""
     root = Path(__file__).resolve().parents[1] / "autopsyx"
-    text = "\n".join(p.read_text() for p in root.rglob("*.py"))
+    # research/phase2_verify.py holds the list of forbidden terms for the scope audit itself
+    text = "\n".join(p.read_text() for p in root.rglob("*.py") if p.name != "phase2_verify.py")
     for forbidden in ("place_order", "send_transaction", "sign_transaction", "private_key", "sendTransaction"):
         assert forbidden not in text
 

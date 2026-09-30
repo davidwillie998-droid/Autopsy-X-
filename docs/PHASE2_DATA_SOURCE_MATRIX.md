@@ -39,7 +39,7 @@ Audit date: 2026-09-30. Status vocabulary: **AVAILABLE**, **PARTIALLY_AVAILABLE*
 | Transaction counts | aggregate buys/sells and distinct buyers/sellers per window (m5..h24) |
 | Buy/sell | per trade `kind` |
 | Wallet level | per trade `tx_from_address` (transaction signer; for router and bot trades this is the signer, not necessarily the beneficiary) |
-| Creator / deployer | `developer_address`, `developer_holding_percentage` in token info; null in every probe |
+| Creator / deployer | `developer_address`, `developer_holding_percentage` in token info. Null in the one early schema probe (a minutes-old token); present for every token in the real archives (measured in the replay report) |
 | Holders | `holders.count`, top-10 / 11-20 / 21-40 / rest distribution |
 | Social | handles only (`twitter_handle`, `telegram_handle`); no activity data |
 | Rate limit | published free tier ≈ 30 calls/min; the client is capped at 27/min. Measured behaviour in section 4 |
@@ -78,8 +78,8 @@ Audit date: 2026-09-30. Status vocabulary: **AVAILABLE**, **PARTIALLY_AVAILABLE*
 | liquidity change | Move Quality, exit | derived from snapshots | PARTIALLY_AVAILABLE | forward only | per poll | response time | MISSING without a snapshot inside the window |
 | LP add/remove events | liquidity_single_provider detector | none | UNAVAILABLE | no | n/a | n/a | detector listed unavailable |
 | holders count, top-10 share | participation, exhaustion, entry | GeckoTerminal token info | AVAILABLE | no | ≈ every 6 min per token (round robin) | vendor `last_updated` | MISSING when null |
-| creator identity | creator_distribution, clusters | GeckoTerminal `developer_address` | UNAVAILABLE in practice (null in every probe) | no | per info call | n/a | detector unavailable per token |
-| creator holdings | entry veto `creator_concentration_ok` | GeckoTerminal `developer_holding_percentage` | UNAVAILABLE in practice | no | per info call | n/a | veto input missing → NO_SIGNAL |
+| creator identity | creator_distribution, clusters | GeckoTerminal `developer_address` | AVAILABLE (after the first token-info fetch) | no | per info call | response time | detector unavailable until fetched |
+| creator holdings | entry veto `creator_concentration_ok` | GeckoTerminal `developer_holding_percentage` | PARTIALLY_AVAILABLE (dropped when holder count is null) | no | per info call | vendor `holders.last_updated` | veto input missing → NO_SIGNAL until fetched |
 | funding transfers | cluster shared-funding edges, fresh-wallet detector | none integrated (Solana RPC candidate) | UNAVAILABLE | n/a | n/a | n/a | independence ratio UNVERIFIED; detector unavailable |
 | cross-venue prices | cross-venue confirmation (H9) | only the primary pool is polled | UNAVAILABLE in this dataset | n/a | n/a | n/a | component MISSING, MQ coverage reduced |
 | news events | catalyst engine (H8) | Alpha Vantage, CryptoPanic, exchange pages | REQUIRES_AUTH / not integrated | n/a | n/a | publisher vs ingestion time | catalyst "unknown, not absent" |
@@ -97,7 +97,7 @@ Audit date: 2026-09-30. Status vocabulary: **AVAILABLE**, **PARTIALLY_AVAILABLE*
 | H3 social + on-chain | social posts; independence | none; see H1 | n/a | n/a | none | not testable |
 | H4 social frenzy without wallets | social posts; buyer growth | none; trades | n/a | n/a | none | not testable |
 | H5 narrative precedes followers | move classes of many tokens | OHLCV for the universe | 1 min | bar open | yes for polled tokens | universe of 12 is too small for narrative breadth to mean much |
-| H6 creator distribution → failure | creator identity; creator sells | `developer_address`; trades | per call | n/a | none in practice | not testable |
+| H6 creator distribution → failure | creator identity; creator sells; outcomes | `developer_address`; trades | per call | response time | identity yes; sells only inside trade coverage | inputs present, sample far too small; no outcome labels |
 | H7 liquidity exit vs fixed stop | liquidity series; prices | snapshots; OHLCV | per poll | response time | forward only | testable only over collection windows; needs many windows |
 | H8 news-confirmed vs unexplained | news with publish and ingest times | none integrated | n/a | n/a | n/a | not testable |
 | H9 cross-venue confirmation | prices on ≥ 2 venues per token | multi-pool polling not done; CEX not integrated | n/a | n/a | n/a | not testable with this dataset |

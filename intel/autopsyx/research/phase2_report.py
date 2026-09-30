@@ -16,6 +16,8 @@ def build(run_dir: str, replay_dir: str, min_coverage: float) -> dict:
     raw = RawStore(run_dir)
     entries = raw.entries()
     records, rep = normalize(run_dir)
+    from ..data.normalize import restrict_to_selection
+    records = restrict_to_selection(records, raw.read_json("selection.json"))  # the polled universe
     journal = [json.loads(l)["payload"] for l in Path(replay_dir, "journal.jsonl").read_text().splitlines() if l]
     summary = json.loads(Path(replay_dir, "summary.json").read_text())
 
