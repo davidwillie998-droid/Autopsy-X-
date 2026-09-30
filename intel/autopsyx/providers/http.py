@@ -39,7 +39,13 @@ class TokenBucket:
                 if self.tokens >= 1:
                     self.tokens -= 1
                     return
-                self._sleep((1 - self.tokens) / self.rate)
+                # Wait for the missing fraction, then consume the token outright. Re-checking a
+                # rounded balance (0.999...) livelocked with coarse clocks (found in Phase 2 tests).
+                wait = (1 - self.tokens) / self.rate
+                self._sleep(wait)
+                self.tokens = 0.0
+                self._last = max(self._clock(), self._last + wait)
+                return
 
 
 @dataclass
@@ -92,6 +98,11 @@ class HttpClient:
     * every retry and every final failure is logged on ``autopsyx.http``
     * the circuit breaker refuses calls while open and lets one through
       after its cooldown; a success closes it
+    * with ``adaptive_min_rate`` set, every HTTP 429 halves the token-bucket
+      rate (never below the minimum) and every success raises it by
+      ``adaptive_step`` (never above the configured rate). Added after the
+      first Phase 2 acquisition: a shared CI runner IP was throttled far
+      below the vendor's published limit
     """
 
     base_url: str
@@ -105,6 +116,23 @@ class HttpClient:
     opener: Callable[..., Any] = urllib.request.urlopen
     now_ms: Callable[[], int] = field(default=lambda: int(time.time() * 1000))
     jitter: Callable[[], float] = random.random
+    adaptive_min_rate: float | None = None
+    adaptive_step: float = 0.01
+    max_rate: float | None = None
+
+    def _adapt(self, throttled: bool) -> None:
+        if self.adaptive_min_rate is None:
+            return
+        if self.max_rate is None:
+            self.max_rate = self.limiter.rate
+        old = self.limiter.rate
+        if throttled:
+            self.limiter.rate = max(self.adaptive_min_rate, old * 0.5)
+        else:
+            self.limiter.rate = min(self.max_rate, old + self.adaptive_step)
+        if self.limiter.rate != old and throttled:
+            log.warning("rate reduced", extra={"fields": {"from_per_s": round(old, 4),
+                                                          "to_per_s": round(self.limiter.rate, 4)}})
 
     def get_raw(self, path: str) -> RawResponse:
         url = self.base_url + path
@@ -123,10 +151,13 @@ class HttpClient:
                     status = getattr(resp, "status", 200)
                     ctype = resp.headers.get("Content-Type", "") if getattr(resp, "headers", None) else ""
                 self.breaker.record(True)
+                self._adapt(False)
                 return RawResponse(url, status, body, ctype, t0, self.now_ms(), attempt)
             except urllib.error.HTTPError as exc:
                 last = exc
                 retryable = exc.code == 429 or 500 <= exc.code < 600
+                if exc.code == 429:
+                    self._adapt(True)
                 if not retryable:
                     self.breaker.record(False)
                     log.error("non-retryable HTTP error", extra={"fields": {"url": url, "status": exc.code}})

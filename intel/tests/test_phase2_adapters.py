@@ -266,3 +266,49 @@ def test_acquire_cli_refuses_without_live_flag(tmp_path):
     req.write_text("{}")
     assert main(["acquire", "--request", str(req), "--out", str(tmp_path / "o")]) == 2
     assert not (tmp_path / "o").exists()
+
+
+def test_adaptive_rate_halves_on_429_and_recovers():
+    """Regression (archive gt-sol-20260930a): a shared CI IP was throttled below the published limit."""
+    from autopsyx.providers.http import CircuitBreaker, HttpClient, TokenBucket
+    from phase2_fakes import _Resp
+    script = [http_error(429), http_error(429), b"{}", b"{}"]
+
+    def opener(req, timeout):
+        r = script.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return _Resp(r)
+    bucket = TokenBucket(0.4, 5, clock=lambda: 0.0, sleep=lambda s: None)
+    c = HttpClient("https://x", bucket, sleep=lambda s: None, opener=opener, max_retries=3,
+                   breaker=CircuitBreaker(50, 1), adaptive_min_rate=0.05, adaptive_step=0.01)
+    c.get_raw("/a")
+    assert bucket.rate == pytest.approx(0.4 * 0.25 + 0.01)
+    c.get_raw("/b")
+    assert bucket.rate == pytest.approx(0.12)
+    for _ in range(3):
+        script.append(http_error(429))
+    script.append(b"{}")
+    c.get_raw("/c")
+    assert bucket.rate >= 0.05  # never below the floor
+
+
+def test_fetcher_waits_out_open_circuit_instead_of_failing(tmp_path):
+    """Regression (archive gt-sol-20260930a): queued backfill calls failed instantly against an open circuit."""
+    faults = {"/ohlcv/": [http_error(503)] * 3}
+    plan = acquire.Plan(strata={"young": 1, "quiet_young": 0, "trending": 0, "established": 0}, new_pool_pages=1,
+                        backfill_pages=1, cycle_s=60, duration_s=10_000, circuit_waits=3)
+    from phase2_fakes import FakeNet, clients as mk_clients
+    clock = [T_FIX]
+    net = FakeNet(clock, faults)
+    cl = mk_clients(net, clock)
+    cl["geckoterminal"].breaker = __import__("autopsyx.providers.http", fromlist=["CircuitBreaker"]).CircuitBreaker(
+        threshold=2, cooldown_s=30, clock=lambda: clock[0] / 1000)
+
+    def sleep(s):
+        clock[0] += int(s * 1000)
+    acquire.run(str(tmp_path), plan, cl, now_ms=lambda: clock[0], sleep=sleep, max_cycles=0)
+    ohlcv = [e for e in RawStore(tmp_path).entries() if e.endpoint == "gt.ohlcv"]
+    info = [e for e in RawStore(tmp_path).entries() if e.endpoint == "gt.token_info"]
+    assert info and info[0].raw_id is not None  # the call after the failures waited and succeeded
+    assert json.loads((tmp_path / "run.json").read_text())["circuit_waits"] >= 1

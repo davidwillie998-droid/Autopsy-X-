@@ -81,3 +81,16 @@ def test_token_bucket_waits_when_empty():
     b.acquire()
     b.acquire()
     assert waited and waited[0] == pytest.approx(0.5)
+
+
+def test_token_bucket_does_not_livelock_on_float_rounding():
+    """Regression: with a clock that only advances by the requested sleep, the leftover
+    0.999... balance made acquire() spin forever."""
+    t = [0.0]
+
+    def sleep(s):
+        t[0] += s
+    b = TokenBucket(0.11, 1, clock=lambda: t[0], sleep=sleep)
+    for _ in range(50):
+        b.acquire()
+    assert t[0] == pytest.approx(49 / 0.11, rel=1e-6)

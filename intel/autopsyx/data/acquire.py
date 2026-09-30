@@ -47,22 +47,46 @@ class Plan:
     lag_ms: int = 60_000
     gt_rate_per_s: float = 0.45  # below GeckoTerminal's published free-tier limit (30/min)
     ds_rate_per_s: float = 2.0
+    gt_min_rate_per_s: float = 0.05  # adaptive floor after 429s
+    ohlcv_every: int = 1  # poll OHLCV every N cycles
+    circuit_waits: int = 3  # times a call waits out an open circuit before being recorded as failed
 
 
 class Fetcher:
     """Wraps provider clients; every exchange lands in the raw archive, errors included."""
 
-    def __init__(self, raw: RawStore, clients: dict[str, HttpClient], now_ms: Callable[[], int]):
+    def __init__(self, raw: RawStore, clients: dict[str, HttpClient], now_ms: Callable[[], int],
+                 sleep: Callable[[float], None] = time.sleep, circuit_waits: int = 0):
         self.raw, self.clients, self.now_ms = raw, clients, now_ms
+        self.sleep, self.circuit_waits = sleep, circuit_waits
+        self.waited = 0
 
     def get(self, provider: str, endpoint: str, path: str, context: dict) -> tuple[ManifestEntry, bytes | None]:
+        """One logical request. While the provider's circuit is open the call
+        waits out the cooldown (up to ``circuit_waits`` times) instead of
+        failing immediately; the first Phase 2 run lost its entire backfill
+        because queued calls failed in milliseconds against an open circuit."""
         c = self.clients[provider]
         t0 = self.now_ms()
-        try:
-            r = c.get_raw(path)
-        except ProviderError as exc:
+        waits = 0
+        while True:
+            try:
+                r = c.get_raw(path)
+                break
+            except ProviderError as exc:
+                if "circuit open" in str(exc) and waits < self.circuit_waits:
+                    waits += 1
+                    self.waited += 1
+                    self.sleep(c.breaker.cooldown_s)
+                    continue
+                err = exc
+                r = None
+                break
+        if r is None:
+            exc = err
             e = self.raw.record(provider=provider, endpoint=endpoint, url=c.base_url + path, request_ts=t0,
-                                response_ts=None, status=None, body=None, attempts=None, error=str(exc), context=context)
+                                response_ts=None, status=None, body=None, attempts=None, error=str(exc),
+                                context=context | ({"circuit_waits": waits} if waits else {}))
             return e, None
         e = self.raw.record(provider=provider, endpoint=endpoint, url=r.url, request_ts=r.request_ts,
                             response_ts=r.response_ts, status=r.status, body=r.body, attempts=r.attempts,
@@ -73,7 +97,8 @@ class Fetcher:
 def default_clients(plan: Plan, now_ms: Callable[[], int]) -> dict[str, HttpClient]:
     return {
         gt.NAME: HttpClient(gt.BASE, TokenBucket(plan.gt_rate_per_s, 2), dict(gt.HEADERS), max_retries=3,
-                            timeout_s=15, backoff_s=2.0, breaker=CircuitBreaker(8, 90), now_ms=now_ms),
+                            timeout_s=15, backoff_s=2.0, breaker=CircuitBreaker(8, 90), now_ms=now_ms,
+                            adaptive_min_rate=plan.gt_min_rate_per_s, adaptive_step=0.005),
         ds.NAME: HttpClient(ds.BASE, TokenBucket(plan.ds_rate_per_s, 4), dict(ds.HEADERS), max_retries=3,
                             timeout_s=15, backoff_s=2.0, breaker=CircuitBreaker(8, 90), now_ms=now_ms),
     }
@@ -191,7 +216,8 @@ def poll_cycle(f: Fetcher, plan: Plan, picked: list[dict], cycle: int) -> None:
     for p in picked:
         ctx = {"chain": n, "pool": p["pool"], "token": p["token"], "cycle": cycle}
         f.get(gt.NAME, "gt.trades", gt.path_trades(n, p["pool"]), ctx)
-        f.get(gt.NAME, "gt.ohlcv", gt.path_ohlcv(n, p["pool"], plan.poll_ohlcv_limit), ctx)
+        if cycle % plan.ohlcv_every == 0:
+            f.get(gt.NAME, "gt.ohlcv", gt.path_ohlcv(n, p["pool"], plan.poll_ohlcv_limit), ctx)
     for k in range(plan.holders_per_cycle):
         p = picked[(cycle * plan.holders_per_cycle + k) % len(picked)]
         f.get(gt.NAME, "gt.token_info", gt.path_token_info(n, p["token"]),
@@ -203,7 +229,7 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
         now_ms: Callable[[], int] = lambda: int(time.time() * 1000),
         sleep: Callable[[float], None] = time.sleep, max_cycles: int | None = None) -> dict:
     raw = RawStore(run_dir)
-    f = Fetcher(raw, clients or default_clients(plan, now_ms), now_ms)
+    f = Fetcher(raw, clients or default_clients(plan, now_ms), now_ms, sleep, plan.circuit_waits)
     started = now_ms()
     meta = {"started_ms": started, "plan": plan.__dict__, "code_version": os.environ.get("GITHUB_SHA", "local"),
             "runner": os.environ.get("RUNNER_NAME", "local"), "execution": "none: acquisition only, no orders"}
@@ -225,7 +251,8 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
         if spent < plan.cycle_s:
             sleep(plan.cycle_s - spent)
     entries = raw.entries()
-    meta.update({"ended_ms": now_ms(), "cycles": cycle, "exchanges": len(entries),
+    meta.update({"ended_ms": now_ms(), "cycles": cycle, "exchanges": len(entries), "circuit_waits": f.waited,
+                 "final_gt_rate_per_s": f.clients[gt.NAME].limiter.rate,
                  "errors": sum(1 for e in entries if e.error), "status": "COMPLETE"})
     raw.write_json("run.json", meta)
     log.info("acquisition done", extra={"fields": {k: meta[k] for k in ("cycles", "exchanges", "errors")}})

@@ -6,3 +6,5 @@ __pycache__/
 journal*.jsonl
 .env
 .env.*
+datasets/**/normalized.jsonl
+datasets/**/replay_*/
