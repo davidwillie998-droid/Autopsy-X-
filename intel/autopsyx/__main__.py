@@ -81,6 +81,8 @@ def main(argv: list[str] | None = None) -> int:
     rr.add_argument("--config")
     rr.add_argument("--expect-config", help="refuse to run unless the config hash equals this")
     rr.add_argument("--code-version", help="defaults to the git commit of the working tree")
+    rr.add_argument("--universe", choices=["selection", "all"], default="selection",
+                    help="replay only the selected, polled tokens (default) or every token seen in discovery")
     pr = sub.add_parser("phase2-report", help="descriptive statistics for the Phase 2 replay report")
     pr.add_argument("run_dir")
     pr.add_argument("replay_dir")
@@ -108,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if meta.get("status") == "COMPLETE" else 1
     if args.cmd == "replay-run":
         from . import replay
-        from .data.normalize import PHASE2_CAPABILITIES, normalize, replay_window, to_store
+        from .data.normalize import PHASE2_CAPABILITIES, normalize, replay_window, restrict_to_selection, to_store
         from .data.raw import RawStore
         cfg = Config.load(args.config)
         records, rep = normalize(args.run_dir)
@@ -121,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
                                  code_version=args.code_version or _git_version(),
                                  caps=PHASE2_CAPABILITIES, expected_config_hash=args.expect_config)
         out = args.out or f"{args.run_dir}/replay_{cfg.fingerprint()}"
+        if args.universe == "selection":
+            records = restrict_to_selection(records, RawStore(args.run_dir).read_json("selection.json"))
         res = replay.run(to_store(records), cfg, spec, out)
         print(json.dumps(res.summary, indent=2, sort_keys=True))
         return 0

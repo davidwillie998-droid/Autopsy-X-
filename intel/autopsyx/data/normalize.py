@@ -159,6 +159,22 @@ def normalize(run_dir: str, lag_ms: int = 60_000) -> tuple[list, NormalizationRe
     return records, rep
 
 
+def restrict_to_selection(records: list, selection: dict | None) -> list:
+    """Keep only records of the tokens the acquisition selected and polled.
+
+    Discovery responses also describe dozens of unselected pools; those have
+    a single snapshot at selection time and would otherwise be replayed as
+    permanently STALE tokens. The selection (seed, strata, picks) is recorded
+    in selection.json, so this filter is reproducible and auditable."""
+    if not selection:
+        return records
+    keep = {p["token"] for p in selection.get("picked", [])}
+
+    def tok(r):
+        return r.ref.address if hasattr(r, "ref") else getattr(r, "token", None)
+    return [r for r in records if tok(r) in keep]
+
+
 def to_store(records: list) -> EventStore:
     s = EventStore()
     s.extend(records)

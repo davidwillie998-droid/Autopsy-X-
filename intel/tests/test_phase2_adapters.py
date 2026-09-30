@@ -312,3 +312,14 @@ def test_fetcher_waits_out_open_circuit_instead_of_failing(tmp_path):
     info = [e for e in RawStore(tmp_path).entries() if e.endpoint == "gt.token_info"]
     assert info and info[0].raw_id is not None  # the call after the failures waited and succeeded
     assert json.loads((tmp_path / "run.json").read_text())["circuit_waits"] >= 1
+
+
+def test_restrict_to_selection_keeps_only_polled_tokens(tmp_path):
+    from autopsyx.data.normalize import restrict_to_selection
+    run_fake(tmp_path, cycles=1, plan=acquire.Plan(strata={"young": 1, "quiet_young": 0, "trending": 0, "established": 0},
+                                                   new_pool_pages=1, backfill_pages=1, duration_s=10_000))
+    records, _ = normalize(str(tmp_path))
+    sel = json.loads((tmp_path / "selection.json").read_text())
+    kept = restrict_to_selection(records, sel)
+    toks = {getattr(r, "token", None) or r.ref.address for r in kept}
+    assert toks == {p["token"] for p in sel["picked"]} and len(kept) < len(records)
