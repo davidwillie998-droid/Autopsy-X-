@@ -357,6 +357,8 @@ def collect(work: Path, pg: list[str] | None) -> tuple[dict, dict]:
     prov = {d.name: provenance.verify(str(d)) for d in candidates}
     arch = [d for d in candidates if prov[d.name]["verified"]]
     excluded = [{"archive": d.name, "family": d.parent.parent.name, "verification": prov[d.name],
+                 "label": "AUDIT / REFERENCE ONLY — PROVENANCE HASH UNAVAILABLE" if prov[d.name]["source"] == "none"
+                 else "EXCLUDED — PROVENANCE CHECK FAILED",
                  "reason": "provenance not verifiable: " + prov[d.name]["scope"]}
                 for d in candidates if not prov[d.name]["verified"]]
     policy = tel.freshness_policy(cfg)
@@ -587,7 +589,7 @@ def render(ev: dict) -> str:
                      "yes" if p_["verified"] else "NO"])
     for x in inc["excluded"]:
         p_ = x["verification"]
-        rows.append([x["archive"], "EXCLUDED", p_["source"], p_["scope"], "none", p_["rebuild_1"]["phase2_records"],
+        rows.append([x["archive"], x["label"], p_["source"], p_["scope"], "none", p_["rebuild_1"]["phase2_records"],
                      "none", p_["rebuild_1"]["phase3a_observations"], "yes" if p_["reproducible"] else "NO", "n/a", "NO"])
     L += [_t(rows, ["Archive", "Status", "Runner hash source", "Hash scope", "Runner phase2 hash", "Rebuilt phase2 hash",
                     "Runner phase3a hash", "Rebuilt phase3a hash", "Rebuild twice identical",
