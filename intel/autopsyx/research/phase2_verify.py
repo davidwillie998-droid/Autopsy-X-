@@ -83,6 +83,7 @@ def scope_audit(baseline: str) -> dict:
             "adapted_diff_stat": adapted.splitlines()[-1] if adapted else "(no changes)",
             "adapted_files": [l.split("|")[0].strip() for l in adapted.splitlines()[:-1]] if adapted else [],
             "config_lines_added": [l[1:] for l in cfg if l.startswith("+")], "config_lines_removed": removed_cfg,
+            "config_lines_removed_count": len(removed_cfg),
             "forbidden_terms_present": {k: v for k, v in forbidden.items() if v}}
 
 
@@ -95,6 +96,8 @@ def verify_run(run_dir: Path, cfg: Config, pg: list[str] | None, work: Path, cod
     ev["dataset_sha256_runner"] = runner.get("dataset_sha256")
     ev["cross_machine_normalization_match"] = rep.dataset_sha256 == runner.get("dataset_sha256")
     ev["raw_audit"] = phase2_report.raw_audit(str(run_dir))
+    ev["normalization_summary"] = {"coverage_gap_count": sum(len(v) for v in rep.coverage_gaps.values()),
+                                   "tokens_with_coverage_gaps": len(rep.coverage_gaps)}
     win = replay_window(raw)
     if win is None:
         ev["replayable"] = False
@@ -182,12 +185,18 @@ def funnel(raw: RawStore, all_records: list, sel_records: list, journal_path: Pa
             "holder_snapshots": holders[t], "holder_snapshots_with_creator_pct": creator[t],
             "replay_steps": steps[t], "successful": t in successful, "evaluable": t in evaluable,
             "classified": t in classified, "data_quality_counts": dict(sorted(dq[t].items())),
+            "failed_responses_total": sum(fail_by[t].values()),
             "reduction_reason": (None if t in classified else
                                  "no successful OHLCV and trades response" if t not in successful else
                                  "no replay step with an OK price" if t not in evaluable else
                                  "move never classifiable: " + (", ".join(f"{k} {v}/{steps[t]}" for k, v in sorted(dq[t].items()))
                                                                   or "fewer historical windows than min_baseline_samples"))})
-    return {"discovered": len(discovered), "attempted": len(picked), "successful": len(successful),
+    totals = {"distinct_bars": sum(t["distinct_bars"] for t in per_token),
+              "bar_versions": sum(t["bar_versions"] for t in per_token),
+              "tokens_with_holder_snapshot": sum(1 for t in per_token if t["holder_snapshots"]),
+              "tokens_with_creator_pct": sum(1 for t in per_token if t["holder_snapshots_with_creator_pct"]),
+              "tokens_with_successful_backfill": sum(1 for t in per_token if t["backfill_ok"])}
+    return {"totals": totals, "discovered": len(discovered), "attempted": len(picked), "successful": len(successful),
             "evaluable": len(evaluable), "classified": len(classified),
             "unclassified_or_incomplete": len(picked) - len(classified),
             "definitions": {
@@ -495,10 +504,10 @@ def render(ev: dict) -> str:
         ["journal intact", *((r["report"]["journal_audit"]["chain_breaks"] == 0 and r["report"]["journal_audit"]["hash_mismatches"] == 0)
                              if r.get("replayable") else "n/a" for r in ev["runs"])],
         ["PostgreSQL checks zero", *(r["postgres"].get("all_checks_zero") if r.get("replayable") else "n/a" for r in ev["runs"])],
-        ["OHLCV distinct bars (all tokens)", *(sum(t["distinct_bars"] for t in r["funnel"]["per_token"]) for r in ev["runs"])],
-        ["tokens with holder snapshot", *(sum(1 for t in r["funnel"]["per_token"] if t["holder_snapshots"]) for r in ev["runs"])],
-        ["tokens with creator %", *(sum(1 for t in r["funnel"]["per_token"] if t["holder_snapshots_with_creator_pct"])
-                                    for r in ev["runs"])],
+        ["OHLCV distinct bars (all tokens)", *(r["funnel"]["totals"]["distinct_bars"] for r in ev["runs"])],
+        ["tokens with successful backfill", *(r["funnel"]["totals"]["tokens_with_successful_backfill"] for r in ev["runs"])],
+        ["tokens with holder snapshot", *(r["funnel"]["totals"]["tokens_with_holder_snapshot"] for r in ev["runs"])],
+        ["tokens with creator %", *(r["funnel"]["totals"]["tokens_with_creator_pct"] for r in ev["runs"])],
         ["Phase 2 classification (archive alone)", *(r["archive_classification"]["classification"] for r in ev["runs"])],
     ]
     a(_t(cmp_rows, ["measure", *(r["run_id"] for r in ev["runs"])]))
@@ -528,7 +537,7 @@ def render(ev: dict) -> str:
         a(_t([[x["token"], x["stratum"], x["successful"], x["evaluable"], x["classified"], x["backfill_ok"],
                x["backfill_failed"], x["distinct_bars"], x["bar_history_minutes"], x["holder_snapshots"],
                x["holder_snapshots_with_creator_pct"], x["replay_steps"],
-               sum(x["failed_responses"].values())] for x in r["funnel"]["per_token"]],
+               x["failed_responses_total"]] for x in r["funnel"]["per_token"]],
              ["token", "stratum", "successful", "evaluable", "classified", "backfill ok", "backfill failed",
               "distinct bars", "bar history (min)", "holder snapshots", "with creator %", "replay steps",
               "failed responses"]))
@@ -620,8 +629,8 @@ def render(ev: dict) -> str:
         if not n:
             continue
         a(f"**{r['run_id']}** records: {n['records']}; duplicate swap observations (poll overlap, earliest kept): "
-          f"{n['duplicate_swaps']}; trade-coverage gaps: {sum(len(v) for v in n['coverage_gaps'].values())} across "
-          f"{len(n['coverage_gaps'])} tokens.\n")
+          f"{n['duplicate_swaps']}; trade-coverage gaps: {r['normalization_summary']['coverage_gap_count']} across "
+          f"{r['normalization_summary']['tokens_with_coverage_gaps']} tokens.\n")
         a(_t([[k, v] for k, v in n["issues"].items()], ["normalization issue", "count"]))
         a("")
         if r.get("replayable"):
@@ -688,7 +697,7 @@ def render(ev: dict) -> str:
         a("")
         el = r["report"]["early_life"]
         a(f"Early-life experiment (definitions fixed in `research/early_life.py`): S1 safety invariant "
-          f"{'held' if el['S1_safe'] else 'VIOLATED'} ({len(el['S1_violations'])} violations).\n")
+          f"{'held' if el['S1_safe'] else 'VIOLATED'} ({el['S1_violation_count']} violations).\n")
         a(_t([[b, v["assessments"], v["tokens"], _pct(v["U1_classified_share"]), _pct(v["U2_coverage_ok_share"]),
                _pct(v["U3_participation_evaluable_share"]), _pct(v["insufficient_history_share"]), v["high_conviction_signals"]]
               for b, v in el["by_age"].items()],
@@ -735,7 +744,7 @@ def render(ev: dict) -> str:
            "onchain, backtest, journal)", "; ".join(sc["engine_changed_lines"]) or "none"],
           ["engine changes not in the explained list", sc["engine_changes_unexplained"] or "none"],
           ["data-contract files changed", sc["adapted_diff_stat"]],
-          ["config lines removed or changed", len(sc["config_lines_removed"])],
+          ["config lines removed or changed", sc["config_lines_removed_count"]],
           ["config lines added", "; ".join(x.strip() for x in sc["config_lines_added"] if x.strip() and not x.strip().startswith("#"))],
           ["ML / execution terms present in package", sc["forbidden_terms_present"] or "none"]], ["check", "result"]))
     for f, x in sc["engine_changes_explained"].items():

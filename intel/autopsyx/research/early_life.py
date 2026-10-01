@@ -68,5 +68,5 @@ def evaluate(records: Iterable[dict], min_coverage: float) -> dict:
                        "U3_participation_evaluable_share": b["participation_evaluable"] / n,
                        "insufficient_history_share": b["insufficient_history"] / n,
                        "high_conviction_signals": b["high_conviction"]}
-    return {"S1_safe": not violations, "S1_violations": violations, "by_age": table,
+    return {"S1_safe": not violations, "S1_violations": violations, "S1_violation_count": len(violations), "by_age": table,
             "definitions": __doc__}
