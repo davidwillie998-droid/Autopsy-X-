@@ -4,10 +4,10 @@ Generated from `artifacts/phase3a/PHASE3A_EVIDENCE.json` by `intel/autopsyx/rese
 
 ## PHASE 3A STATUS
 
-* Commit: `cc21316e258380f300b113f079d2e61d8272c1ed`
+* Commit: `c320848559ce87614e2adc3b9f65291408d12918`
 * Branch: `ccr-dea9382c-vwhvi6`
 * Working tree: clean for intel/autopsyx, intel/config, intel/migrations
-* Tests: Passed 254, Failed 0, Skipped 0
+* Tests: Passed 265, Failed 0, Skipped 0
 * Provider error rate: 11.4% (78 of 687 requests)
 * Freshness compliance: 0.8% (501 governed evaluations, 497 stale)
 * Funding coverage: 0 of 25 archive-token rows OBSERVED (0.0%)
@@ -22,6 +22,7 @@ Generated from `artifacts/phase3a/PHASE3A_EVIDENCE.json` by `intel/autopsyx/rese
 * Look-ahead: NONE DETECTED
 * Traceability: VERIFIED
 * Evidence integrity: VERIFIED
+* Finalization gate: BLOCKED
 * Readiness: NOT_READY
 
 ## Readiness gate
@@ -43,6 +44,114 @@ Reasons:
 * threshold universe_min_tokens is UNSET (metric universe_tokens = 25)
 
 Hypothesis testing does not start: the gate is not READY.
+
+## Finalization gate
+
+Result: **BLOCKED**. Phase 3B: NOT STARTED.
+
+| Check | Result |
+|---|---|
+| archive_d_acquisition_complete | FAIL |
+| archive_d_included_and_provenance_verified | FAIL |
+| cross_seed_identical | pass |
+| every_included_archive_provenance_verified | pass |
+| existing_phase2_checks_passed | pass |
+| lookahead_a_to_f_passed | pass |
+| phase3a_integrity | pass |
+| scope_clean | pass |
+| tests_green | pass |
+| traceability | pass |
+
+## Archive provenance and inclusion
+
+Rule: an archive enters the evidence only if data.provenance.verify() returns verified: its runner dataset hash is recorded and equals, exactly, the hash rebuilt twice from the committed raw archive (and, where the runner sealed canonical files, the hash of those committed files), and a sealed archive's acquisition reports COMPLETE; any other archive is listed as excluded with the verification result.
+
+| Archive | Status | Runner hash source | Hash scope | Runner phase2 hash | Rebuilt phase2 hash | Runner phase3a hash | Rebuilt phase3a hash | Rebuild twice identical | Committed canonical = runner | Verified |
+|---|---|---|---|---|---|---|---|---|---|---|
+| gt-sol-20260930a | included | normalize_stdout.json (Phase 2 runner normalization) | phase2_records only (archive predates Phase 3A runner sealing) | fb7d3607fbd91c34df16fad4b77ce27119a369b6fc5740f94d45dbeb186b2d42 | fb7d3607fbd91c34df16fad4b77ce27119a369b6fc5740f94d45dbeb186b2d42 | not recorded | ad59f1cd7eea33df1b8fba9d5b58305826ad9b5087a55f351c9a4fbe4cdae35a | yes | n/a | yes |
+| gt-sol-20260930b | included | normalize_stdout.json (Phase 2 runner normalization) | phase2_records only (archive predates Phase 3A runner sealing) | 031917e87897293846524c7f2977134f0e723a65d3220cf98f175eb8f15d9f36 | 031917e87897293846524c7f2977134f0e723a65d3220cf98f175eb8f15d9f36 | not recorded | 0687e2b8bd58addb879fc33cb6518b3495127f74e4c3a16290b5bd7dafa68206 | yes | n/a | yes |
+| gt-sol-20260930c | included | normalize_stdout.json (Phase 2 runner normalization) | phase2_records only (archive predates Phase 3A runner sealing) | 1ebe77ec9ec2e9b6f06da26cbcce17721db4504f6029baf610931f5489e71d14 | 1ebe77ec9ec2e9b6f06da26cbcce17721db4504f6029baf610931f5489e71d14 | not recorded | 35e114f1d5ee5f6b2f067df76f9329ff3b7d644f3470d15e2bb7b7b7dfbfeefd | yes | n/a | yes |
+
+## Per-archive funnel
+
+Definitions are the Phase 2 funnel's, unchanged. An archive without a replay has evaluable and classified not measured; they are not counted as failures.
+
+| Archive | Step | Numerator | Denominator | Share | Denominator definition | Not measured |
+|---|---|---|---|---|---|---|
+| gt-sol-20260930a | discovered -> attempted | 12 | 93 | 12.9% | distinct tokens described by any discovery or poll response |  |
+| gt-sol-20260930a | attempted -> successful | 12 | 12 | 100.0% | tokens picked by the seeded stratified selection and polled |  |
+| gt-sol-20260930a | successful -> evaluable | 12 | 12 | 100.0% | attempted tokens with at least one successful OHLCV and one successful trades response |  |
+| gt-sol-20260930a | evaluable -> classified | 3 | 12 | 25.0% | tokens with at least one replay assessment whose price input was OK and not NO_DATA |  |
+| gt-sol-20260930b | discovered -> attempted | 8 | 90 | 8.9% | distinct tokens described by any discovery or poll response |  |
+| gt-sol-20260930b | attempted -> successful | 0 | 8 | 0.0% | tokens picked by the seeded stratified selection and polled |  |
+| gt-sol-20260930b | successful -> evaluable | n/a | 0 | n/a | attempted tokens with at least one successful OHLCV and one successful trades response | archive not replayable: no replay assessment exists, so evaluable and classified are not measured |
+| gt-sol-20260930b | evaluable -> classified | n/a | n/a | n/a | tokens with at least one replay assessment whose price input was OK and not NO_DATA | archive not replayable: no replay assessment exists, so evaluable and classified are not measured |
+| gt-sol-20260930c | discovered -> attempted | 5 | 93 | 5.4% | distinct tokens described by any discovery or poll response |  |
+| gt-sol-20260930c | attempted -> successful | 5 | 5 | 100.0% | tokens picked by the seeded stratified selection and polled |  |
+| gt-sol-20260930c | successful -> evaluable | 5 | 5 | 100.0% | attempted tokens with at least one successful OHLCV and one successful trades response |  |
+| gt-sol-20260930c | evaluable -> classified | 2 | 5 | 40.0% | tokens with at least one replay assessment whose price input was OK and not NO_DATA |  |
+
+## Baseline (A, B, C) versus A, B, C, D
+
+Baseline: Phase 3A evidence at commit `8df2918` over gt-sol-20260930a, gt-sol-20260930b, gt-sol-20260930c. Added: none.
+
+Classification of the change: **SAMPLE EXPANSION** (A, B, C recomputed now reproduce the committed baseline: yes). differences are descriptive; Phase 3A defines no statistical test, so no difference is called an improvement, and none implies predictive power or edge.
+
+| Sample | A, B, C | A, B, C, D |
+|---|---|---|
+| archives | 3 | 3 |
+| attempted | 25 | 25 |
+| classified | 5 | 5 |
+| coverage_rows | 25 | 25 |
+| discovered | 276 | 276 |
+| evaluable | 17 | 17 |
+| successful | 17 | 17 |
+
+| Metric | Baseline committed | A, B, C now | A, B, C, D | Difference (descriptive) | A, B, C reproduces |
+|---|---|---|---|---|---|
+| provider_error_rate | 0.113537 | 0.113537 | 0.113537 | 0.0 | yes |
+| freshness_compliance | 0.007984 | 0.007984 | 0.007984 | 0.0 | yes |
+| universe_tokens | 25 | 25 | 25 | 0 | yes |
+| coverage_rows | 25 | 25 | 25 | 0 | yes |
+| liquidity_vault_delta_share | 0.0 | 0.0 | 0.0 | 0.0 | yes |
+| coverage_share.funding_transfer | 0.0 | 0.0 | 0.0 | 0.0 | yes |
+| coverage_share.liquidity_events | 1.0 | 1.0 | 1.0 | 0.0 | yes |
+| coverage_share.creator_state | 0.8 | 0.8 | 0.8 | 0.0 | yes |
+| coverage_share.holder_state | 0.64 | 0.64 | 0.64 | 0.0 | yes |
+| coverage_share.news | 0.0 | 0.0 | 0.0 | 0.0 | yes |
+| coverage_share.social | 0.0 | 0.0 | 0.0 | 0.0 | yes |
+| coverage_share.ohlcv | 0.84 | 0.84 | 0.84 | 0.0 | yes |
+| coverage_share.trades | 0.68 | 0.68 | 0.68 | 0.0 | yes |
+| coverage_share.freshness | 0.0 | 0.0 | 0.0 | 0.0 | yes |
+| coverage_share.provider | 0.36 | 0.36 | 0.36 | 0.0 | yes |
+| coverage_share.replayability | 0.68 | 0.68 | 0.68 | 0.0 | yes |
+| coverage_share.point_in_time_validity | 1.0 | 1.0 | 1.0 | 0.0 | yes |
+
+| Archive | Look-ahead A-F | Two replays |
+|---|---|---|
+| gt-sol-20260930a | passed | identical |
+| gt-sol-20260930b | n/a | n/a |
+| gt-sol-20260930c | passed | identical |
+
+| Integrity | Baseline | Now |
+|---|---|---|
+| contract_valid | pass | pass |
+| evidence_integrity | pass | pass |
+| freshness_policy_frozen | pass | pass |
+| no_blank_cells | pass | pass |
+| point_in_time_validity | pass | pass |
+| replay_determinism | pass | pass |
+| scope_clean | pass | pass |
+| tests_green | pass | pass |
+| traceability | pass | pass |
+
+## Existing Phase 2 checks at this commit
+
+| Archive | Clock / hash violations | Bodies missing | Journal | PostgreSQL (Phase 2 load) | Result |
+|---|---|---|---|---|---|
+| gt-sol-20260930a | hash_mismatch 0, length_mismatch 0, missing_body_file 0, missing_request_ts 0, missing_response_ts 0, out_of_order_response 0, response_before_request 0 | 0 | 120 entries, 0 breaks, 0 mismatches | all checks zero | pass |
+| gt-sol-20260930b | hash_mismatch 0, length_mismatch 0, missing_body_file 0, missing_request_ts 0, missing_response_ts 0, out_of_order_response 0, response_before_request 0 | 0 | n/a | not run: archive not replayable (no journal to load) | pass |
+| gt-sol-20260930c | hash_mismatch 0, length_mismatch 0, missing_body_file 0, missing_request_ts 0, missing_response_ts 0, out_of_order_response 0, response_before_request 0 | 0 | 50 entries, 0 breaks, 0 mismatches | all checks zero | pass |
 
 ## Coverage matrix totals
 

@@ -4,10 +4,10 @@ Living status of the AUTOPSY X intelligence system, generated from `artifacts/ph
 
 ## Current phase: 3A (data-coverage hardening)
 
-* Commit: `cc21316e258380f300b113f079d2e61d8272c1ed`
+* Commit: `c320848559ce87614e2adc3b9f65291408d12918`
 * Branch: `ccr-dea9382c-vwhvi6`
 * Working tree: clean for intel/autopsyx, intel/config, intel/migrations
-* Tests: Passed 254, Failed 0, Skipped 0
+* Tests: Passed 265, Failed 0, Skipped 0
 * Provider error rate: 11.4% (78 of 687 requests)
 * Freshness compliance: 0.8% (501 governed evaluations, 497 stale)
 * Funding coverage: 0 of 25 archive-token rows OBSERVED (0.0%)
@@ -22,6 +22,7 @@ Living status of the AUTOPSY X intelligence system, generated from `artifacts/ph
 * Look-ahead: NONE DETECTED
 * Traceability: VERIFIED
 * Evidence integrity: VERIFIED
+* Finalization gate: BLOCKED
 * Readiness: NOT_READY
 
 ## Readiness reasons

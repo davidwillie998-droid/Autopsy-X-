@@ -163,6 +163,74 @@
     "governed_evaluations": 314,
     "governed_stale": 312
    },
+   "funnel": {
+    "counts": {
+     "attempted": 12,
+     "classified": 3,
+     "discovered": 93,
+     "evaluable": 12,
+     "successful": 12
+    },
+    "definitions": {
+     "attempted": "tokens picked by the seeded stratified selection and polled",
+     "classified": "tokens with at least one replay assessment whose move class was not UNCLASSIFIED",
+     "discovered": "distinct tokens described by any discovery or poll response",
+     "evaluable": "tokens with at least one replay assessment whose price input was OK and not NO_DATA",
+     "successful": "attempted tokens with at least one successful OHLCV and one successful trades response"
+    },
+    "per_token_reduction": {
+     "141bZt7hXvDezAvuKMGym1Y8wFUWxD4NNMJ82VDmbonk": "move never classifiable: HIGH_SLIPPAGE 6/10, INSUFFICIENT_HISTORY 9/10, LOW_LIQUIDITY 6/10, STALE_DATA 9/10",
+     "2FsgkzDB1HUQBwikTbCTxCtnrwrdf2qStFptE6TPRoCV": null,
+     "2fVHL58T1z9Pm63cCQP6wc9SWVivjzdZRY74Q8Anpump": "move never classifiable: INSUFFICIENT_HISTORY 9/10, LOW_LIQUIDITY 6/10, STALE_DATA 9/10",
+     "4q1V2WZcwLHCQc9CEuLDsYyJc3Q2gN3Ad9u33EcApump": "move never classifiable: INSUFFICIENT_HISTORY 9/10, LOW_LIQUIDITY 6/10, STALE_DATA 9/10",
+     "9tib9sVufn3qCxnwszbGgfg396Jr9RcBUMsXnKGBrK4A": null,
+     "ADzAcui1WQaeM8kRV5oZFsb9tsFhaoko7Qzs2ELqpump": "move never classifiable: INSUFFICIENT_HISTORY 9/10, LOW_LIQUIDITY 6/10, STALE_DATA 10/10",
+     "CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp": "move never classifiable: INSUFFICIENT_HISTORY 9/10, STALE_DATA 9/10",
+     "CbcyNo7m1amFWqEQm2m4PLv1UNvpcL3C1Ujm6AkzpKoU": "move never classifiable: INSUFFICIENT_HISTORY 9/10, STALE_DATA 10/10",
+     "Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk": "move never classifiable: INSUFFICIENT_HISTORY 9/10, STALE_DATA 9/10",
+     "EMc7FL2B5ZKVbUk7CHxTPMk1pnTXjLmf5o1ML5Pgpump": "move never classifiable: INSUFFICIENT_HISTORY 9/10, LOW_LIQUIDITY 6/10, STALE_DATA 8/10",
+     "EeTBxBbQEafRJHUAfWTasxygTQhmcD2Mx2mRxKgQSFWe": "move never classifiable: INSUFFICIENT_HISTORY 9/10, LOW_LIQUIDITY 6/10, STALE_DATA 10/10",
+     "GytyxXBmcNPdM4nCug4qLZSB1DHe6SyYkJwyFZed4yQN": null
+    },
+    "ratios": [
+     {
+      "denominator": 93,
+      "denominator_definition": "distinct tokens described by any discovery or poll response",
+      "not_measured_reason": null,
+      "numerator": 12,
+      "numerator_definition": "tokens picked by the seeded stratified selection and polled",
+      "share": 0.129032,
+      "step": "discovered -> attempted"
+     },
+     {
+      "denominator": 12,
+      "denominator_definition": "tokens picked by the seeded stratified selection and polled",
+      "not_measured_reason": null,
+      "numerator": 12,
+      "numerator_definition": "attempted tokens with at least one successful OHLCV and one successful trades response",
+      "share": 1.0,
+      "step": "attempted -> successful"
+     },
+     {
+      "denominator": 12,
+      "denominator_definition": "attempted tokens with at least one successful OHLCV and one successful trades response",
+      "not_measured_reason": null,
+      "numerator": 12,
+      "numerator_definition": "tokens with at least one replay assessment whose price input was OK and not NO_DATA",
+      "share": 1.0,
+      "step": "successful -> evaluable"
+     },
+     {
+      "denominator": 12,
+      "denominator_definition": "tokens with at least one replay assessment whose price input was OK and not NO_DATA",
+      "not_measured_reason": null,
+      "numerator": 3,
+      "numerator_definition": "tokens with at least one replay assessment whose move class was not UNCLASSIFIED",
+      "share": 0.25,
+      "step": "evaluable -> classified"
+     }
+    ]
+   },
    "observation_raw_ids_not_in_manifest": 0,
    "observations_by_kind_state": {
     "creator_state|ERROR": 16,
@@ -171,6 +239,86 @@
     "holder_state|NOT_OBSERVED": 3,
     "holder_state|OBSERVED": 23,
     "liquidity_event|OBSERVED": 100
+   },
+   "phase2_checks": {
+    "clock_and_hash_violations": {
+     "hash_mismatch": 0,
+     "length_mismatch": 0,
+     "missing_body_file": 0,
+     "missing_request_ts": 0,
+     "missing_response_ts": 0,
+     "out_of_order_response": 0,
+     "response_before_request": 0
+    },
+    "informational_body_counts": {
+     "empty_body": 0,
+     "identical_body_repeats": 121,
+     "malformed_json": 0,
+     "partial_or_error_body": 0
+    },
+    "journal_audit": {
+     "chain_breaks": 0,
+     "chronology_violations": 0,
+     "configuration_hashes": [
+      "417bd32cce8fb72c"
+     ],
+     "duplicate_token_steps": 0,
+     "entries": 120,
+     "hash_mismatches": 0,
+     "head_hash": "acc8979877e71a5b7fd1cc53dd2c10f03ecabef8144b6e55d958b44daa832a6d"
+    },
+    "passed": true,
+    "postgres_phase2": {
+     "all_checks_zero": true,
+     "integrity_checks": {
+      "bars_without_raw_id": 0,
+      "coverage_beyond_seen": 0,
+      "duplicate_replay_steps": 0,
+      "journal_chain_breaks_in_db": 0,
+      "orphan_pools": 0,
+      "orphan_replay_records": 0,
+      "orphan_swaps": 0,
+      "raw_ids_not_in_manifest": 0,
+      "replay_config_hash_mismatch": 0,
+      "seen_before_event_swaps": 0,
+      "snapshots_without_raw_id": 0,
+      "swaps_without_raw_id": 0,
+      "unclosed_bars": 0
+     },
+     "postgres_version": "16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)",
+     "row_counts": {
+      "coverage": 202,
+      "holder_snapshots": 11,
+      "journal": 120,
+      "pool_snapshots": 260,
+      "pools": 14,
+      "provider_bars": 483,
+      "raw_manifest": 449,
+      "replay_records": 120,
+      "replay_runs": 1,
+      "swaps": 4997,
+      "tokens": 12
+     },
+     "timescaledb_available": false
+    },
+    "raw_audit": {
+     "body_files": 250,
+     "by_provider": {
+      "dexscreener": {
+       "exchanges": 15,
+       "valid_json": 15
+      },
+      "geckoterminal": {
+       "exchanges": 434,
+       "identical_body_repeats": 121,
+       "provider_errors": 78,
+       "valid_json": 356
+      }
+     },
+     "referenced_bodies": 250,
+     "referenced_but_missing": 0,
+     "unreferenced_body_files": 0
+    }
    },
    "postgres": {
     "all_checks_pass": true,
@@ -181,6 +329,32 @@
     "pit_rows_python": 100,
     "pit_rows_sql": 100,
     "status": "LOADED"
+   },
+   "provenance": {
+    "acquisition_status": "COMPLETE",
+    "archive": "gt-sol-20260930a",
+    "committed_canonical": {
+     "phase2_records": null,
+     "phase3a_observations": null
+    },
+    "committed_matches_runner": null,
+    "rebuild_1": {
+     "phase2_records": "fb7d3607fbd91c34df16fad4b77ce27119a369b6fc5740f94d45dbeb186b2d42",
+     "phase3a_observations": "ad59f1cd7eea33df1b8fba9d5b58305826ad9b5087a55f351c9a4fbe4cdae35a"
+    },
+    "rebuild_2": {
+     "phase2_records": "fb7d3607fbd91c34df16fad4b77ce27119a369b6fc5740f94d45dbeb186b2d42",
+     "phase3a_observations": "ad59f1cd7eea33df1b8fba9d5b58305826ad9b5087a55f351c9a4fbe4cdae35a"
+    },
+    "rebuild_matches_runner": true,
+    "reproducible": true,
+    "runner": {
+     "phase2_records": "fb7d3607fbd91c34df16fad4b77ce27119a369b6fc5740f94d45dbeb186b2d42",
+     "phase3a_observations": null
+    },
+    "scope": "phase2_records only (archive predates Phase 3A runner sealing)",
+    "source": "normalize_stdout.json (Phase 2 runner normalization)",
+    "verified": true
    },
    "raw_bodies_referenced_but_missing": 0,
    "replay": {
@@ -207,12 +381,12 @@
     "replayable": true,
     "replays": [
      {
-      "journal_sha256": "03e4fa3954a1b96ada55c05e7736debac6ea5305950d39564365b205b84c4ce0",
-      "records_sha256": "d21457e981c2feb256bb5b4ab1e44a47c06cbd7d39f2f7bdf77c0cb0b0210d74"
+      "journal_sha256": "68d4bd14fbe110caa1253400239bc59f3ebe0ab4ab2b51f4e220af968bbf3e79",
+      "records_sha256": "be5cbf472e522cf2b8c9a493fee163757d761fc5f94317b64697601a609d2ff9"
      },
      {
-      "journal_sha256": "03e4fa3954a1b96ada55c05e7736debac6ea5305950d39564365b205b84c4ce0",
-      "records_sha256": "d21457e981c2feb256bb5b4ab1e44a47c06cbd7d39f2f7bdf77c0cb0b0210d74"
+      "journal_sha256": "68d4bd14fbe110caa1253400239bc59f3ebe0ab4ab2b51f4e220af968bbf3e79",
+      "records_sha256": "be5cbf472e522cf2b8c9a493fee163757d761fc5f94317b64697601a609d2ff9"
      }
     ],
     "window_ms": [
@@ -353,12 +527,110 @@
     "governed_evaluations": 0,
     "governed_stale": 0
    },
+   "funnel": {
+    "counts": {
+     "attempted": 8,
+     "classified": null,
+     "discovered": 90,
+     "evaluable": null,
+     "successful": 0
+    },
+    "definitions": {
+     "attempted": "tokens picked by the seeded stratified selection and polled",
+     "classified": "tokens with at least one replay assessment whose move class was not UNCLASSIFIED",
+     "discovered": "distinct tokens described by any discovery or poll response",
+     "evaluable": "tokens with at least one replay assessment whose price input was OK and not NO_DATA",
+     "successful": "attempted tokens with at least one successful OHLCV and one successful trades response"
+    },
+    "per_token_reduction": {
+     "5pU25cDQWqWwhXw53CYVTVCmQhBVBPnsBfX16rntcFga": "no successful OHLCV and trades response",
+     "5tCju6YNxHq5zrA6tGndr6F7TK42mpUFmeE31cSFpump": "no successful OHLCV and trades response",
+     "BGSomEy7xwZcndYXxpuv1fbTnkVtyEE8XTNQygm4pump": "no successful OHLCV and trades response",
+     "BdzaE3T7uU59pBVDBHZVZh3yWrrpo4oPrXdv4nPDpump": "no successful OHLCV and trades response",
+     "D48GozLGiYdyqZa5cDkCwhfKESSr8p3BCwqnxNZnpump": "no successful OHLCV and trades response",
+     "E9bu3g16RYbN3WwVSWVNtJKLrsSxjJMJSN2TrGo3Hdfv": "no successful OHLCV and trades response",
+     "F19gvBfbT2C2hfR4K1RDfP7Xo5WrkgyP5FPs7qQc4WeK": "no successful OHLCV and trades response",
+     "Gh7RHpfvzubiz1SevSxHQosa75vv8zfdWf7niGQxTLAb": "no successful OHLCV and trades response"
+    },
+    "ratios": [
+     {
+      "denominator": 90,
+      "denominator_definition": "distinct tokens described by any discovery or poll response",
+      "not_measured_reason": null,
+      "numerator": 8,
+      "numerator_definition": "tokens picked by the seeded stratified selection and polled",
+      "share": 0.088889,
+      "step": "discovered -> attempted"
+     },
+     {
+      "denominator": 8,
+      "denominator_definition": "tokens picked by the seeded stratified selection and polled",
+      "not_measured_reason": null,
+      "numerator": 0,
+      "numerator_definition": "attempted tokens with at least one successful OHLCV and one successful trades response",
+      "share": 0.0,
+      "step": "attempted -> successful"
+     },
+     {
+      "denominator": 0,
+      "denominator_definition": "attempted tokens with at least one successful OHLCV and one successful trades response",
+      "not_measured_reason": "archive not replayable: no replay assessment exists, so evaluable and classified are not measured",
+      "numerator": null,
+      "numerator_definition": "tokens with at least one replay assessment whose price input was OK and not NO_DATA",
+      "share": null,
+      "step": "successful -> evaluable"
+     },
+     {
+      "denominator": null,
+      "denominator_definition": "tokens with at least one replay assessment whose price input was OK and not NO_DATA",
+      "not_measured_reason": "archive not replayable: no replay assessment exists, so evaluable and classified are not measured",
+      "numerator": null,
+      "numerator_definition": "tokens with at least one replay assessment whose move class was not UNCLASSIFIED",
+      "share": null,
+      "step": "evaluable -> classified"
+     }
+    ]
+   },
    "observation_raw_ids_not_in_manifest": 0,
    "observations_by_kind_state": {
     "creator_state|OBSERVED": 4,
     "holder_state|NOT_OBSERVED": 3,
     "holder_state|OBSERVED": 1,
     "liquidity_event|OBSERVED": 97
+   },
+   "phase2_checks": {
+    "clock_and_hash_violations": {
+     "hash_mismatch": 0,
+     "length_mismatch": 0,
+     "missing_body_file": 0,
+     "missing_request_ts": 0,
+     "missing_response_ts": 0,
+     "out_of_order_response": 0,
+     "response_before_request": 0
+    },
+    "informational_body_counts": {
+     "empty_body": 0,
+     "identical_body_repeats": 0,
+     "malformed_json": 0,
+     "partial_or_error_body": 0
+    },
+    "journal_audit": null,
+    "passed": true,
+    "postgres_phase2": {
+     "status": "not run: archive not replayable (no journal to load)"
+    },
+    "raw_audit": {
+     "body_files": 13,
+     "by_provider": {
+      "geckoterminal": {
+       "exchanges": 13,
+       "valid_json": 13
+      }
+     },
+     "referenced_bodies": 13,
+     "referenced_but_missing": 0,
+     "unreferenced_body_files": 0
+    }
    },
    "postgres": {
     "all_checks_pass": true,
@@ -369,6 +641,32 @@
     "pit_rows_python": 57,
     "pit_rows_sql": 57,
     "status": "LOADED"
+   },
+   "provenance": {
+    "acquisition_status": null,
+    "archive": "gt-sol-20260930b",
+    "committed_canonical": {
+     "phase2_records": null,
+     "phase3a_observations": null
+    },
+    "committed_matches_runner": null,
+    "rebuild_1": {
+     "phase2_records": "031917e87897293846524c7f2977134f0e723a65d3220cf98f175eb8f15d9f36",
+     "phase3a_observations": "0687e2b8bd58addb879fc33cb6518b3495127f74e4c3a16290b5bd7dafa68206"
+    },
+    "rebuild_2": {
+     "phase2_records": "031917e87897293846524c7f2977134f0e723a65d3220cf98f175eb8f15d9f36",
+     "phase3a_observations": "0687e2b8bd58addb879fc33cb6518b3495127f74e4c3a16290b5bd7dafa68206"
+    },
+    "rebuild_matches_runner": true,
+    "reproducible": true,
+    "runner": {
+     "phase2_records": "031917e87897293846524c7f2977134f0e723a65d3220cf98f175eb8f15d9f36",
+     "phase3a_observations": null
+    },
+    "scope": "phase2_records only (archive predates Phase 3A runner sealing)",
+    "source": "normalize_stdout.json (Phase 2 runner normalization)",
+    "verified": true
    },
    "raw_bodies_referenced_but_missing": 0,
    "replay": {
@@ -549,6 +847,67 @@
     "governed_evaluations": 187,
     "governed_stale": 185
    },
+   "funnel": {
+    "counts": {
+     "attempted": 5,
+     "classified": 2,
+     "discovered": 93,
+     "evaluable": 5,
+     "successful": 5
+    },
+    "definitions": {
+     "attempted": "tokens picked by the seeded stratified selection and polled",
+     "classified": "tokens with at least one replay assessment whose move class was not UNCLASSIFIED",
+     "discovered": "distinct tokens described by any discovery or poll response",
+     "evaluable": "tokens with at least one replay assessment whose price input was OK and not NO_DATA",
+     "successful": "attempted tokens with at least one successful OHLCV and one successful trades response"
+    },
+    "per_token_reduction": {
+     "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH": null,
+     "5siRdWGetBqDh2Qz9JqPYqFZXQg3GVogvjUhK7UNEprc": "move never classifiable: HIGH_SLIPPAGE 5/10, INSUFFICIENT_HISTORY 10/10, LOW_LIQUIDITY 5/10, STALE_DATA 8/10",
+     "6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx": null,
+     "6LVPUuNdWmgsqwdyD9aFhmS4ijHJyQRXDJ3CQeSMpump": "move never classifiable: INSUFFICIENT_HISTORY 10/10, LOW_LIQUIDITY 5/10, STALE_DATA 9/10",
+     "H3BGCayg7zqgWwaXmoy5DG6AkVbUXaN5apGyX4wHpump": "move never classifiable: INSUFFICIENT_HISTORY 10/10, LOW_LIQUIDITY 5/10, STALE_DATA 8/10"
+    },
+    "ratios": [
+     {
+      "denominator": 93,
+      "denominator_definition": "distinct tokens described by any discovery or poll response",
+      "not_measured_reason": null,
+      "numerator": 5,
+      "numerator_definition": "tokens picked by the seeded stratified selection and polled",
+      "share": 0.053763,
+      "step": "discovered -> attempted"
+     },
+     {
+      "denominator": 5,
+      "denominator_definition": "tokens picked by the seeded stratified selection and polled",
+      "not_measured_reason": null,
+      "numerator": 5,
+      "numerator_definition": "attempted tokens with at least one successful OHLCV and one successful trades response",
+      "share": 1.0,
+      "step": "attempted -> successful"
+     },
+     {
+      "denominator": 5,
+      "denominator_definition": "attempted tokens with at least one successful OHLCV and one successful trades response",
+      "not_measured_reason": null,
+      "numerator": 5,
+      "numerator_definition": "tokens with at least one replay assessment whose price input was OK and not NO_DATA",
+      "share": 1.0,
+      "step": "successful -> evaluable"
+     },
+     {
+      "denominator": 5,
+      "denominator_definition": "tokens with at least one replay assessment whose price input was OK and not NO_DATA",
+      "not_measured_reason": null,
+      "numerator": 2,
+      "numerator_definition": "tokens with at least one replay assessment whose move class was not UNCLASSIFIED",
+      "share": 0.4,
+      "step": "evaluable -> classified"
+     }
+    ]
+   },
    "observation_raw_ids_not_in_manifest": 0,
    "observations_by_kind_state": {
     "creator_state|NOT_OBSERVED": 4,
@@ -556,6 +915,85 @@
     "holder_state|NOT_OBSERVED": 5,
     "holder_state|OBSERVED": 16,
     "liquidity_event|OBSERVED": 99
+   },
+   "phase2_checks": {
+    "clock_and_hash_violations": {
+     "hash_mismatch": 0,
+     "length_mismatch": 0,
+     "missing_body_file": 0,
+     "missing_request_ts": 0,
+     "missing_response_ts": 0,
+     "out_of_order_response": 0,
+     "response_before_request": 0
+    },
+    "informational_body_counts": {
+     "empty_body": 0,
+     "identical_body_repeats": 56,
+     "malformed_json": 0,
+     "partial_or_error_body": 0
+    },
+    "journal_audit": {
+     "chain_breaks": 0,
+     "chronology_violations": 0,
+     "configuration_hashes": [
+      "417bd32cce8fb72c"
+     ],
+     "duplicate_token_steps": 0,
+     "entries": 50,
+     "hash_mismatches": 0,
+     "head_hash": "ab886aafcb9e4040b47b0f103f47505556fe4d1debed212a3fbb389873d08c6e"
+    },
+    "passed": true,
+    "postgres_phase2": {
+     "all_checks_zero": true,
+     "integrity_checks": {
+      "bars_without_raw_id": 0,
+      "coverage_beyond_seen": 0,
+      "duplicate_replay_steps": 0,
+      "journal_chain_breaks_in_db": 0,
+      "orphan_pools": 0,
+      "orphan_replay_records": 0,
+      "orphan_swaps": 0,
+      "raw_ids_not_in_manifest": 0,
+      "replay_config_hash_mismatch": 0,
+      "seen_before_event_swaps": 0,
+      "snapshots_without_raw_id": 0,
+      "swaps_without_raw_id": 0,
+      "unclosed_bars": 0
+     },
+     "postgres_version": "16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)",
+     "row_counts": {
+      "coverage": 122,
+      "holder_snapshots": 6,
+      "journal": 50,
+      "pool_snapshots": 101,
+      "pools": 5,
+      "provider_bars": 4229,
+      "raw_manifest": 225,
+      "replay_records": 50,
+      "replay_runs": 1,
+      "swaps": 2255,
+      "tokens": 5
+     },
+     "timescaledb_available": false
+    },
+    "raw_audit": {
+     "body_files": 169,
+     "by_provider": {
+      "dexscreener": {
+       "exchanges": 16,
+       "valid_json": 16
+      },
+      "geckoterminal": {
+       "exchanges": 209,
+       "identical_body_repeats": 56,
+       "valid_json": 209
+      }
+     },
+     "referenced_bodies": 169,
+     "referenced_but_missing": 0,
+     "unreferenced_body_files": 0
+    }
    },
    "postgres": {
     "all_checks_pass": true,
@@ -566,6 +1004,32 @@
     "pit_rows_python": 79,
     "pit_rows_sql": 79,
     "status": "LOADED"
+   },
+   "provenance": {
+    "acquisition_status": "COMPLETE",
+    "archive": "gt-sol-20260930c",
+    "committed_canonical": {
+     "phase2_records": null,
+     "phase3a_observations": null
+    },
+    "committed_matches_runner": null,
+    "rebuild_1": {
+     "phase2_records": "1ebe77ec9ec2e9b6f06da26cbcce17721db4504f6029baf610931f5489e71d14",
+     "phase3a_observations": "35e114f1d5ee5f6b2f067df76f9329ff3b7d644f3470d15e2bb7b7b7dfbfeefd"
+    },
+    "rebuild_2": {
+     "phase2_records": "1ebe77ec9ec2e9b6f06da26cbcce17721db4504f6029baf610931f5489e71d14",
+     "phase3a_observations": "35e114f1d5ee5f6b2f067df76f9329ff3b7d644f3470d15e2bb7b7b7dfbfeefd"
+    },
+    "rebuild_matches_runner": true,
+    "reproducible": true,
+    "runner": {
+     "phase2_records": "1ebe77ec9ec2e9b6f06da26cbcce17721db4504f6029baf610931f5489e71d14",
+     "phase3a_observations": null
+    },
+    "scope": "phase2_records only (archive predates Phase 3A runner sealing)",
+    "source": "normalize_stdout.json (Phase 2 runner normalization)",
+    "verified": true
    },
    "raw_bodies_referenced_but_missing": 0,
    "replay": {
@@ -592,12 +1056,12 @@
     "replayable": true,
     "replays": [
      {
-      "journal_sha256": "bf1a39bc651b419a2c64bac6b8a75c09a9a25ae1f3b8faf14ee0789ebdf17260",
-      "records_sha256": "c9433701845fbe8c3ca8ffdb44af370d888c96f4c86c404850f44bca90cecf6c"
+      "journal_sha256": "e70d0d54bbd5603bb342a93a5ee8d8417e0835487c792e0f0ea465aa1b04d15b",
+      "records_sha256": "c396d96f2f19cdee90ce8f1515eacbfd5f85d4c4b3dfd86f03cecb6c3848a35f"
      },
      {
-      "journal_sha256": "bf1a39bc651b419a2c64bac6b8a75c09a9a25ae1f3b8faf14ee0789ebdf17260",
-      "records_sha256": "c9433701845fbe8c3ca8ffdb44af370d888c96f4c86c404850f44bca90cecf6c"
+      "journal_sha256": "e70d0d54bbd5603bb342a93a5ee8d8417e0835487c792e0f0ea465aa1b04d15b",
+      "records_sha256": "c396d96f2f19cdee90ce8f1515eacbfd5f85d4c4b3dfd86f03cecb6c3848a35f"
      }
     ],
     "window_ms": [
@@ -669,6 +1133,218 @@
    }
   }
  ],
+ "baseline_comparison": {
+  "abc_reproduces_baseline": true,
+  "added_archives": [],
+  "baseline_archives": [
+   "gt-sol-20260930a",
+   "gt-sol-20260930b",
+   "gt-sol-20260930c"
+  ],
+  "baseline_commit": "8df2918",
+  "baseline_integrity": {
+   "contract_valid": true,
+   "evidence_integrity": true,
+   "freshness_policy_frozen": true,
+   "no_blank_cells": true,
+   "point_in_time_validity": true,
+   "replay_determinism": true,
+   "scope_clean": true,
+   "tests_green": true,
+   "traceability": true
+  },
+  "classification": "SAMPLE EXPANSION",
+  "current_integrity": {
+   "contract_valid": true,
+   "evidence_integrity": true,
+   "freshness_policy_frozen": true,
+   "no_blank_cells": true,
+   "point_in_time_validity": true,
+   "replay_determinism": true,
+   "scope_clean": true,
+   "tests_green": true,
+   "traceability": true
+  },
+  "interpretation_rule": "differences are descriptive; Phase 3A defines no statistical test, so no difference is called an improvement, and none implies predictive power or edge",
+  "lookahead_by_archive": {
+   "gt-sol-20260930a": true,
+   "gt-sol-20260930b": null,
+   "gt-sol-20260930c": true
+  },
+  "metrics": [
+   {
+    "abc_recomputed_now": 0.113537,
+    "abc_reproduces_baseline": true,
+    "abcd": 0.113537,
+    "baseline_abc_committed": 0.113537,
+    "difference_abcd_minus_baseline": 0.0,
+    "metric": "provider_error_rate"
+   },
+   {
+    "abc_recomputed_now": 0.007984,
+    "abc_reproduces_baseline": true,
+    "abcd": 0.007984,
+    "baseline_abc_committed": 0.007984,
+    "difference_abcd_minus_baseline": 0.0,
+    "metric": "freshness_compliance"
+   },
+   {
+    "abc_recomputed_now": 25,
+    "abc_reproduces_baseline": true,
+    "abcd": 25,
+    "baseline_abc_committed": 25,
+    "difference_abcd_minus_baseline": 0,
+    "metric": "universe_tokens"
+   },
+   {
+    "abc_recomputed_now": 25,
+    "abc_reproduces_baseline": true,
+    "abcd": 25,
+    "baseline_abc_committed": 25,
+    "difference_abcd_minus_baseline": 0,
+    "metric": "coverage_rows"
+   },
+   {
+    "abc_recomputed_now": 0.0,
+    "abc_reproduces_baseline": true,
+    "abcd": 0.0,
+    "baseline_abc_committed": 0.0,
+    "difference_abcd_minus_baseline": 0.0,
+    "metric": "liquidity_vault_delta_share"
+   },
+   {
+    "abc_recomputed_now": 0.0,
+    "abc_reproduces_baseline": true,
+    "abcd": 0.0,
+    "baseline_abc_committed": 0.0,
+    "difference_abcd_minus_baseline": 0.0,
+    "metric": "coverage_share.funding_transfer"
+   },
+   {
+    "abc_recomputed_now": 1.0,
+    "abc_reproduces_baseline": true,
+    "abcd": 1.0,
+    "baseline_abc_committed": 1.0,
+    "difference_abcd_minus_baseline": 0.0,
+    "metric": "coverage_share.liquidity_events"
+   },
+   {
+    "abc_recomputed_now": 0.8,
+    "abc_reproduces_baseline": true,
+    "abcd": 0.8,
+    "baseline_abc_committed": 0.8,
+    "difference_abcd_minus_baseline": 0.0,
+    "metric": "coverage_share.creator_state"
+   },
+   {
+    "abc_recomputed_now": 0.64,
+    "abc_reproduces_baseline": true,
+    "abcd": 0.64,
+    "baseline_abc_committed": 0.64,
+    "difference_abcd_minus_baseline": 0.0,
+    "metric": "coverage_share.holder_state"
+   },
+   {
+    "abc_recomputed_now": 0.0,
+    "abc_reproduces_baseline": true,
+    "abcd": 0.0,
+    "baseline_abc_committed": 0.0,
+    "difference_abcd_minus_baseline": 0.0,
+    "metric": "coverage_share.news"
+   },
+   {
+    "abc_recomputed_now": 0.0,
+    "abc_reproduces_baseline": true,
+    "abcd": 0.0,
+    "baseline_abc_committed": 0.0,
+    "difference_abcd_minus_baseline": 0.0,
+    "metric": "coverage_share.social"
+   },
+   {
+    "abc_recomputed_now": 0.84,
+    "abc_reproduces_baseline": true,
+    "abcd": 0.84,
+    "baseline_abc_committed": 0.84,
+    "difference_abcd_minus_baseline": 0.0,
+    "metric": "coverage_share.ohlcv"
+   },
+   {
+    "abc_recomputed_now": 0.68,
+    "abc_reproduces_baseline": true,
+    "abcd": 0.68,
+    "baseline_abc_committed": 0.68,
+    "difference_abcd_minus_baseline": 0.0,
+    "metric": "coverage_share.trades"
+   },
+   {
+    "abc_recomputed_now": 0.0,
+    "abc_reproduces_baseline": true,
+    "abcd": 0.0,
+    "baseline_abc_committed": 0.0,
+    "difference_abcd_minus_baseline": 0.0,
+    "metric": "coverage_share.freshness"
+   },
+   {
+    "abc_recomputed_now": 0.36,
+    "abc_reproduces_baseline": true,
+    "abcd": 0.36,
+    "baseline_abc_committed": 0.36,
+    "difference_abcd_minus_baseline": 0.0,
+    "metric": "coverage_share.provider"
+   },
+   {
+    "abc_recomputed_now": 0.68,
+    "abc_reproduces_baseline": true,
+    "abcd": 0.68,
+    "baseline_abc_committed": 0.68,
+    "difference_abcd_minus_baseline": 0.0,
+    "metric": "coverage_share.replayability"
+   },
+   {
+    "abc_recomputed_now": 1.0,
+    "abc_reproduces_baseline": true,
+    "abcd": 1.0,
+    "baseline_abc_committed": 1.0,
+    "difference_abcd_minus_baseline": 0.0,
+    "metric": "coverage_share.point_in_time_validity"
+   }
+  ],
+  "replay_identical_by_archive": {
+   "gt-sol-20260930a": true,
+   "gt-sol-20260930b": null,
+   "gt-sol-20260930c": true
+  },
+  "sample": {
+   "archives": {
+    "abc": 3,
+    "abcd": 3
+   },
+   "attempted": {
+    "abc": 25,
+    "abcd": 25
+   },
+   "classified": {
+    "abc": 5,
+    "abcd": 5
+   },
+   "coverage_rows": {
+    "abc": 25,
+    "abcd": 25
+   },
+   "discovered": {
+    "abc": 276,
+    "abcd": 276
+   },
+   "evaluable": {
+    "abc": 17,
+    "abcd": 17
+   },
+   "successful": {
+    "abc": 17,
+    "abcd": 17
+   }
+  }
+ },
  "configuration_hash": "417bd32cce8fb72c",
  "coverage": {
   "blank_cells": 0,
@@ -812,6 +1488,27 @@
    }
   ]
  },
+ "finalization": {
+  "archive_d": "p3a-sol-20261001d2",
+  "checks": {
+   "archive_d_acquisition_complete": false,
+   "archive_d_included_and_provenance_verified": false,
+   "cross_seed_identical": true,
+   "every_included_archive_provenance_verified": true,
+   "existing_phase2_checks_passed": true,
+   "lookahead_a_to_f_passed": true,
+   "phase3a_integrity": true,
+   "scope_clean": true,
+   "tests_green": true,
+   "traceability": true
+  },
+  "failed": [
+   "archive_d_included_and_provenance_verified",
+   "archive_d_acquisition_complete"
+  ],
+  "phase3b": "NOT STARTED",
+  "result": "BLOCKED"
+ },
  "freshness_policy": {
   "fingerprint": "58fe8ee8476b824fde285065d8dafbebb594f9bf1cd0df04091823d13b9881ff",
   "frozen": "58fe8ee8476b824fde285065d8dafbebb594f9bf1cd0df04091823d13b9881ff",
@@ -829,6 +1526,15 @@
    "threshold_source": "config/default.toml [data_quality] max_price_age_ms",
    "ungoverned_endpoints": "ages reported, compliance NOT_APPLICABLE (no approved threshold)"
   }
+ },
+ "inclusion": {
+  "excluded": [],
+  "included": [
+   "gt-sol-20260930a",
+   "gt-sol-20260930b",
+   "gt-sol-20260930c"
+  ],
+  "rule": "an archive enters the evidence only if data.provenance.verify() returns verified: its runner dataset hash is recorded and equals, exactly, the hash rebuilt twice from the committed raw archive (and, where the runner sealed canonical files, the hash of those committed files), and a sealed archive's acquisition reports COMPLETE; any other archive is listed as excluded with the verification result"
  },
  "integrity": {
   "contract_valid": true,
@@ -952,9 +1658,9 @@
  },
  "repository": {
   "branch": "ccr-dea9382c-vwhvi6",
-  "code_version": "cc21316e258380f300b113f079d2e61d8272c1ed",
-  "head": "cc21316e258380f300b113f079d2e61d8272c1ed",
-  "log": "cc21316 phase3a: keep evidence test free of self-reference\nbd8fa53 phase3a: add evidence verifier and renderers\ne232490 phase3a: add readiness gate\ne745865 phase3a: add coverage matrix\na935943 phase3a: add observation storage migration\nb9ecae4 phase3a: add frozen universe and chained runs\nc7a04ec phase3a: add provider freshness telemetry\nb3a4406 phase3a: add news and social provenance\n861aa43 phase3a: harden creator and holder state\na278b1f phase3a: add liquidity event coverage\n97d2247 phase3a: add funding transfer adapter\nf0eb011 phase3a: add POST transport and per-attempt telemetry\n85a06df phase3a: add observation contract",
+  "code_version": "c320848559ce87614e2adc3b9f65291408d12918",
+  "head": "c320848559ce87614e2adc3b9f65291408d12918",
+  "log": "c320848 verify: provenance inclusion, funnel, baseline comparison, finalization checks\n0d399dd data: acquire archive D with verified provenance\n33c315d test: add archive hash provenance regression coverage\nbc612b7 fix: restore runner canonical dataset hashing\n38a6cc2 phase3a: request archive D acquisition\n8df2918 phase3a: add verification artifacts\ncc21316 phase3a: keep evidence test free of self-reference\nbd8fa53 phase3a: add evidence verifier and renderers\ne232490 phase3a: add readiness gate\ne745865 phase3a: add coverage matrix\na935943 phase3a: add observation storage migration\nb9ecae4 phase3a: add frozen universe and chained runs\nc7a04ec phase3a: add provider freshness telemetry\nb3a4406 phase3a: add news and social provenance\n861aa43 phase3a: harden creator and holder state\na278b1f phase3a: add liquidity event coverage\n97d2247 phase3a: add funding transfer adapter\nf0eb011 phase3a: add POST transport and per-attempt telemetry\n85a06df phase3a: add observation contract",
   "phase2_baseline": "30fe09470872d9962c5893c9add84329579e403b"
  },
  "schema": "phase3a.evidence.1",
@@ -1007,9 +1713,9 @@
   "errors": 0,
   "exit_code": 0,
   "failed": 0,
-  "passed": 254,
+  "passed": 265,
   "skipped": 0,
-  "summary_line": "254 passed"
+  "summary_line": "265 passed"
  },
  "traceability": {
   "checked": [
