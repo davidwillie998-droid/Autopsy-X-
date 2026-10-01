@@ -83,6 +83,7 @@ class RawResponse:
     request_ts: int  # ms, local clock when the request was sent
     response_ts: int  # ms, local clock when the body was fully read (= available_time)
     attempts: int
+    attempt_log: tuple = ()  # one dict per failed attempt: status, error, wait_s, latency_ms
 
 
 @dataclass
@@ -135,47 +136,63 @@ class HttpClient:
                                                           "to_per_s": round(self.limiter.rate, 4)}})
 
     def get_raw(self, path: str) -> RawResponse:
+        return self._request(path, None)
+
+    def post_raw(self, path: str, payload: dict) -> RawResponse:
+        """POST a JSON body (JSON-RPC). Same retry, rate-limit and circuit rules as GET."""
+        return self._request(path, json.dumps(payload, sort_keys=True).encode())
+
+    def _request(self, path: str, data: bytes | None) -> RawResponse:
         url = self.base_url + path
         if not self.breaker.allow():
             log.error("circuit open", extra={"fields": {"url": url}})
-            raise ProviderError(f"circuit open for {self.base_url}", retryable=True)
+            raise ProviderError(f"circuit open for {self.base_url}", retryable=True,
+                                attempt_log=({"status": None, "error": "circuit open", "wait_s": 0.0, "latency_ms": 0},))
         delay = self.backoff_s
         last: Exception | None = None
+        attempts: list[dict] = []
+        headers = dict(self.headers, **({"Content-Type": "application/json"} if data is not None else {}))
         for attempt in range(1, self.max_retries + 2):
             self.limiter.acquire()
             t0 = self.now_ms()
+            status = None
             try:
-                req = urllib.request.Request(url, headers=self.headers)
+                req = urllib.request.Request(url, data=data, headers=headers, method="POST" if data is not None else "GET")
                 with self.opener(req, timeout=self.timeout_s) as resp:
                     body = resp.read()
                     status = getattr(resp, "status", 200)
                     ctype = resp.headers.get("Content-Type", "") if getattr(resp, "headers", None) else ""
                 self.breaker.record(True)
                 self._adapt(False)
-                return RawResponse(url, status, body, ctype, t0, self.now_ms(), attempt)
+                return RawResponse(url, status, body, ctype, t0, self.now_ms(), attempt, tuple(attempts))
             except urllib.error.HTTPError as exc:
-                last = exc
+                last, status = exc, exc.code
                 retryable = exc.code == 429 or 500 <= exc.code < 600
                 if exc.code == 429:
                     self._adapt(True)
                 if not retryable:
                     self.breaker.record(False)
+                    attempts.append({"status": status, "error": f"HTTP {status}", "wait_s": 0.0,
+                                     "latency_ms": self.now_ms() - t0})
                     log.error("non-retryable HTTP error", extra={"fields": {"url": url, "status": exc.code}})
-                    raise ProviderError(f"HTTP {exc.code} {path}", retryable=False) from exc
+                    raise ProviderError(f"HTTP {exc.code} {path}", retryable=False, attempt_log=tuple(attempts)) from exc
                 wait = _retry_after(exc) or delay
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 last = exc
                 wait = delay
             self.breaker.record(False)
+            pause = wait + wait * 0.2 * self.jitter() if attempt <= self.max_retries else 0.0
+            attempts.append({"status": status, "error": type(last).__name__ + (f" {status}" if status else ""),
+                             "wait_s": round(pause, 3), "latency_ms": self.now_ms() - t0})
             if attempt <= self.max_retries:
-                pause = wait + wait * 0.2 * self.jitter()
                 log.warning("retry", extra={"fields": {"url": url, "attempt": attempt, "wait_s": round(pause, 3),
                                                        "error": str(last)}})
                 self.sleep(pause)
                 delay *= 2
         rate = isinstance(last, urllib.error.HTTPError) and last.code == 429
         log.error("retries exhausted", extra={"fields": {"url": url, "error": str(last), "rate_limited": rate}})
-        raise ProviderError(f"exhausted retries for {path}: {last}", retryable=True, rate_limited=rate)
+        raise ProviderError(f"exhausted retries for {path}: {last}", retryable=True, rate_limited=rate,
+                            attempt_log=tuple(attempts))
 
     def get_json(self, path: str) -> Any:
         raw = self.get_raw(path)

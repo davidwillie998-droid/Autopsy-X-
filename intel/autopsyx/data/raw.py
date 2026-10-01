@@ -36,6 +36,9 @@ class ManifestEntry:
     attempts: int | None
     error: str | None
     context: dict = field(default_factory=dict)  # chain, pool, token, stratum...
+    attempt_log: list = field(default_factory=list)  # Phase 3A: per failed attempt status, error, wait_s, latency_ms
+    method: str = "GET"
+    request_body_sha256: str | None = None  # POST bodies (JSON-RPC) are stored under this hash too
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), sort_keys=True)
@@ -59,16 +62,24 @@ class RawStore:
 
     def record(self, *, provider: str, endpoint: str, url: str, request_ts: int, response_ts: int | None,
                status: int | None, body: bytes | None, attempts: int | None, error: str | None,
-               context: dict | None = None) -> ManifestEntry:
+               context: dict | None = None, attempt_log: list | tuple = (), method: str = "GET",
+               request_body: bytes | None = None) -> ManifestEntry:
         raw_id = None
         if body is not None:
             raw_id = sha256(body)
             path = self.dir / "raw" / f"{raw_id}.json.gz"
             if not path.exists():
                 path.write_bytes(gzip.compress(body, mtime=0))
+        req_id = None
+        if request_body is not None:
+            req_id = sha256(request_body)
+            path = self.dir / "raw" / f"{req_id}.json.gz"
+            if not path.exists():
+                path.write_bytes(gzip.compress(request_body, mtime=0))
         self._seq += 1
         e = ManifestEntry(self._seq, provider, endpoint, url, request_ts, response_ts, status, raw_id,
-                          len(body) if body is not None else None, attempts, error, context or {})
+                          len(body) if body is not None else None, attempts, error, context or {},
+                          [dict(a) for a in attempt_log], method, req_id)
         with open(self.dir / "manifest.jsonl", "a") as fh:
             fh.write(e.to_json() + "\n")
         return e

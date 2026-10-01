@@ -134,7 +134,7 @@ def raw_audit(run_dir: str) -> dict:
         if isinstance(doc, dict) and ("errors" in doc or ("data" not in doc and "pairs" not in doc)):
             c["partial_or_error_body"] += 1
     files = {p.name[:-8] for p in Path(run_dir, "raw").glob("*.json.gz")}
-    referenced = {e.raw_id for e in entries if e.raw_id}
+    referenced = {e.raw_id for e in entries if e.raw_id} | {e.request_body_sha256 for e in entries if e.request_body_sha256}
     return {"by_provider": {k: dict(v) for k, v in sorted(out.items())},
             "body_files": len(files), "referenced_bodies": len(referenced),
             "unreferenced_body_files": len(files - referenced), "referenced_but_missing": len(referenced - files)}

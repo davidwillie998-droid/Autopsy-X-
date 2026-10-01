@@ -61,7 +61,14 @@ class Fetcher:
         self.sleep, self.circuit_waits = sleep, circuit_waits
         self.waited = 0
 
-    def get(self, provider: str, endpoint: str, path: str, context: dict) -> tuple[ManifestEntry, bytes | None]:
+    def post(self, provider: str, endpoint: str, path: str, payload: dict,
+             context: dict) -> tuple[ManifestEntry, bytes | None]:
+        """JSON-RPC style POST; the request body is archived next to the response."""
+        import json as _json
+        return self.get(provider, endpoint, path, context, payload=_json.dumps(payload, sort_keys=True).encode())
+
+    def get(self, provider: str, endpoint: str, path: str, context: dict,
+            payload: bytes | None = None) -> tuple[ManifestEntry, bytes | None]:
         """One logical request. While the provider's circuit is open the call
         waits out the cooldown (up to ``circuit_waits`` times) instead of
         failing immediately; the first Phase 2 run lost its entire backfill
@@ -71,7 +78,7 @@ class Fetcher:
         waits = 0
         while True:
             try:
-                r = c.get_raw(path)
+                r = c.get_raw(path) if payload is None else c._request(path, payload)
                 break
             except ProviderError as exc:
                 if "circuit open" in str(exc) and waits < self.circuit_waits:
@@ -86,11 +93,14 @@ class Fetcher:
             exc = err
             e = self.raw.record(provider=provider, endpoint=endpoint, url=c.base_url + path, request_ts=t0,
                                 response_ts=None, status=None, body=None, attempts=None, error=str(exc),
-                                context=context | ({"circuit_waits": waits} if waits else {}))
+                                context=context | ({"circuit_waits": waits} if waits else {}),
+                                attempt_log=getattr(exc, "attempt_log", ()), method="POST" if payload else "GET",
+                                request_body=payload)
             return e, None
         e = self.raw.record(provider=provider, endpoint=endpoint, url=r.url, request_ts=r.request_ts,
                             response_ts=r.response_ts, status=r.status, body=r.body, attempts=r.attempts,
-                            error=None, context=context)
+                            error=None, context=context, attempt_log=r.attempt_log,
+                            method="POST" if payload else "GET", request_body=payload)
         return e, r.body
 
 

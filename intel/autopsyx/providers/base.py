@@ -74,7 +74,8 @@ class SocialProvider(Protocol):
 class ProviderError(RuntimeError):
     """Raised by adapters. Carries whether the failure is retryable."""
 
-    def __init__(self, message: str, retryable: bool = False, rate_limited: bool = False):
+    def __init__(self, message: str, retryable: bool = False, rate_limited: bool = False, attempt_log: tuple = ()):
         super().__init__(message)
         self.retryable = retryable
         self.rate_limited = rate_limited
+        self.attempt_log = attempt_log

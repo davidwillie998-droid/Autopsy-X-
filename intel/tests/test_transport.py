@@ -94,3 +94,31 @@ def test_token_bucket_does_not_livelock_on_float_rounding():
     for _ in range(50):
         b.acquire()
     assert t[0] == pytest.approx(49 / 0.11, rel=1e-6)
+
+
+def test_post_sends_json_body_and_retries_like_get():
+    sleeps = []
+    seen = []
+
+    def opener(req, timeout):
+        seen.append((req.get_method(), req.data, req.get_header("Content-type")))
+        if len(seen) == 1:
+            raise _http(429, "1")
+        return _Resp(b'{"jsonrpc":"2.0","result":1,"id":1}')
+
+    bucket = TokenBucket(1000, 10, clock=lambda: 0.0, sleep=lambda s: None)
+    c = HttpClient("https://rpc.test", bucket, sleep=sleeps.append, opener=opener)
+    r = c.post_raw("", {"jsonrpc": "2.0", "id": 1, "method": "getSlot"})
+    assert r.status == 200 and r.attempts == 2
+    assert seen[0][0] == "POST" and json.loads(seen[0][1])["method"] == "getSlot"
+    assert seen[0][2] == "application/json"
+    assert len(r.attempt_log) == 1 and r.attempt_log[0]["status"] == 429 and r.attempt_log[0]["wait_s"] >= 1
+
+
+def test_attempt_log_travels_with_final_failure():
+    c, calls = _client([_http(503)] * 5, [])
+    with pytest.raises(ProviderError) as e:
+        c.get_raw("/a")
+    log = e.value.attempt_log
+    assert [a["status"] for a in log] == [503] * 5
+    assert all(a["wait_s"] > 0 for a in log[:-1]) and log[-1]["wait_s"] == 0.0
