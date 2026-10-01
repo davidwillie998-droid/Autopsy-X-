@@ -1,0 +1,28 @@
+# Phase 3A readiness gate.
+#
+# No coverage threshold for Phase 3B readiness exists anywhere in this project,
+# and Phase 3A does not invent one. Every threshold below is UNSET and the file
+# is unapproved, so the gate returns NOT_READY until a human sets each value,
+# sets approved = true and records who approved it and when. The gate reads
+# this file mechanically; it never fills a value in.
+
+approved = false
+approved_by = ""
+approved_at = ""
+
+[thresholds]
+# Minimum share of (archive, token) rows whose cell is OBSERVED.
+funding_transfer_min_share = "UNSET"
+liquidity_vault_delta_min_share = "UNSET"
+creator_state_min_share = "UNSET"
+holder_state_min_share = "UNSET"
+news_min_share = "UNSET"
+social_min_share = "UNSET"
+# Minimum share of governed freshness evaluations within the frozen policy.
+freshness_min_compliance = "UNSET"
+# Maximum provider error rate, over all providers and archives.
+provider_max_error_rate = "UNSET"
+# Minimum span of collection, in days, across chained runs on one frozen universe.
+multi_day_min_days = "UNSET"
+# Minimum number of distinct tokens in the frozen universe(s).
+universe_min_tokens = "UNSET"
