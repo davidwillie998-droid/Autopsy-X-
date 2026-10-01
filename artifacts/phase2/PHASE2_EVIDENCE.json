@@ -1,0 +1,3308 @@
+{
+ "classification": {
+  "inputs": {
+   "archives": {
+    "gt-sol-20260930a": {
+     "assessments": 120,
+     "capability_ok_share": {
+      "creator holdings": 0.6083333333333333,
+      "funding transfers": 0.0,
+      "liquidity changes": 0.4,
+      "news": 0.0,
+      "social": 0.0
+     },
+     "classified_assessments": 27,
+     "db_all_checks_zero": true,
+     "double_replay_identical": true,
+     "lookahead_all_passed": true,
+     "raw_hash_mismatches": 0,
+     "raw_referenced_but_missing": 0,
+     "replayable": true
+    },
+    "gt-sol-20260930b": {
+     "replayable": false
+    },
+    "gt-sol-20260930c": {
+     "assessments": 50,
+     "capability_ok_share": {
+      "creator holdings": 0.58,
+      "funding transfers": 0.0,
+      "liquidity changes": 0.32,
+      "news": 0.0,
+      "social": 0.0
+     },
+     "classified_assessments": 20,
+     "db_all_checks_zero": true,
+     "double_replay_identical": true,
+     "lookahead_all_passed": true,
+     "raw_hash_mismatches": 0,
+     "raw_referenced_but_missing": 0,
+     "replayable": true
+    }
+   },
+   "primary_archive": "gt-sol-20260930a",
+   "required_ok_share": 0.5,
+   "tests_errors": 0,
+   "tests_failed": 0
+  },
+  "reasons": [
+   "rule 5: funding transfers OK in 0.0% of gt-sol-20260930a assessments (< 50%; needed by cluster independence, fresh-wallet detector)",
+   "rule 5: news OK in 0.0% of gt-sol-20260930a assessments (< 50%; needed by catalyst engine)",
+   "rule 5: social OK in 0.0% of gt-sol-20260930a assessments (< 50%; needed by attention engine)",
+   "rule 5: liquidity changes OK in 40.0% of gt-sol-20260930a assessments (< 50%; needed by Move Quality liquidity component, exits)"
+  ],
+  "result": "VERIFIED WITH LIMITATIONS",
+  "rule": [
+   "1. BLOCKED if no archive is replayable.",
+   "2. BLOCKED if any test failed or errored.",
+   "3. BLOCKED if, for any replayable archive: the look-ahead audit did not pass, the double replay was not identical, a referenced raw body is missing or fails its hash, or any database integrity check is non-zero.",
+   "4. INSUFFICIENT DATA if the primary archive (the replayable archive with the most assessments) has zero assessments that reached move classification.",
+   "5. VERIFIED WITH LIMITATIONS if, in the primary archive, any required capability is OK in fewer than REQUIRED_OK_SHARE of assessments.",
+   "6. Otherwise REAL-DATA PIPELINE VERIFIED."
+  ]
+ },
+ "configuration_hash": "417bd32cce8fb72c",
+ "repository": {
+  "branch": "ccr-dea9382c-vwhvi6",
+  "code_version": "6b1c9050da91da1447bfe957e741ea6c1a366e19",
+  "head": "6b1c9050da91da1447bfe957e741ea6c1a366e19",
+  "log": "6b1c905 Phase 2 verify: renderer reads aggregates from evidence instead of computing them\n6fb87fe Phase 2 verify: separate classified from classified-and-evaluable; acquisition labels\ne986398 Fix rule fingerprint ignoring the REQUIRED_OK_SHARE value\n327b179 Phase 2 verify: rule freeze check, denominators, funnel reduction reasons\n9ed0a3c Phase 2 raw archive: gt-sol-20260930c (acquired by workflow run 36693734617)\n08635fe Phase 2 verify: universe funnel, rule inputs, traceability check\n457a661 Fix cross-process nondeterminism in Signal.blocked_by\neb86132 Phase 2 verify: generate SYSTEM_STATUS.md from the same evidence\nbc0beb3 Phase 2 verify: evidence collector and data-driven report renderer\nd142f8b Phase 2 gate: db-validate and lookahead-audit commands\ncf92776 Phase 2 raw archive: gt-sol-20260930b (acquired by workflow run 36693486781)\n9845c6e Phase 2: acquisition request C (every input refreshed each 60 s cycle)\n3e77668 Replay universe defaults to the recorded selection\nb6c74a2 Phase 2: acquisition request B (lower load after throttling in run A)\n631fdd4 Repair acquisition failures found in archive gt-sol-20260930a\n12aa0dd Phase 2 raw archive: gt-sol-20260930a (acquired by workflow run 36687199704)\n13b082f Phase 2 gate tooling: archive audit, look-ahead audit A-F, journal audit\n85ae8e8 Phase 2: data-source matrix draft, research doc cross-links\n35b3812 Phase 2: real-data pipeline path, replay engine, integrity tests\nd80acd9 Phase 2: raw-archive acquisition layer and adapters\ne8c4f66 Add memecoin big-move intelligence engine: research docs and core",
+  "phase1_baseline": "e8c4f662757dfb0a7a1a9bc22a006d21e661b595"
+ },
+ "rule_freeze": {
+  "acquisition_incomplete_treatment": "non-replayable archives are reported and excluded from rules 3-5; rule 1 blocks if none is replayable",
+  "current_rule_sha256": "768d1b0c898ce310073a97e4bda6306d912cb22c32bc2589cd3fa1b576ba6188",
+  "frozen_commit": "08635fe3c88a2c2705011be20a514c4ccc1b40a8",
+  "frozen_rule_sha256": "768d1b0c898ce310073a97e4bda6306d912cb22c32bc2589cd3fa1b576ba6188",
+  "identical_to_frozen": true,
+  "missing_evidence_treatment": "a capability absent from the dataset scores OK share 0.0; an archive without live polls is not replayable and cannot satisfy rules 3-6",
+  "newest_archive": "gt-sol-20260930c",
+  "newest_archive_commit": "9ed0a3cc400464c79f213cdea182127a3ff3d895"
+ },
+ "runs": [
+  {
+   "acquisition": {
+    "circuit_waits": null,
+    "final_gt_rate_per_s": null,
+    "label": "ACQUISITION-LIMITED",
+    "live_polls": 13,
+    "max_poll_interval_s": 265.439,
+    "median_poll_interval_s": 226.438,
+    "planned_cycle_s": 60,
+    "provider_errors": 78,
+    "rule": "PARTIAL/CANCELLED if run.json has no COMPLETE status; ACQUISITION-LIMITED if complete but any provider error or any token without a successful backfill; otherwise COMPLETE",
+    "run_status": "COMPLETE",
+    "tokens_attempted": 12,
+    "tokens_without_backfill": 12
+   },
+   "archive_classification": {
+    "classification": "VERIFIED WITH LIMITATIONS",
+    "reasons": [
+     "rule 5: funding transfers OK in 0.0% of gt-sol-20260930a assessments (< 50%; needed by cluster independence, fresh-wallet detector)",
+     "rule 5: news OK in 0.0% of gt-sol-20260930a assessments (< 50%; needed by catalyst engine)",
+     "rule 5: social OK in 0.0% of gt-sol-20260930a assessments (< 50%; needed by attention engine)",
+     "rule 5: liquidity changes OK in 40.0% of gt-sol-20260930a assessments (< 50%; needed by Move Quality liquidity component, exits)"
+    ]
+   },
+   "coverage_adjusted": {
+    "assessments": 120,
+    "classified_assessments": 27,
+    "classified_evaluable_assessments": 27,
+    "classified_share_of_all": {
+     "denominator": 120,
+     "denominator_definition": "all replay assessments",
+     "numerator": 27,
+     "numerator_definition": "classified assessments",
+     "source": "replay journal",
+     "value": 0.225
+    },
+    "classified_share_of_evaluable": {
+     "denominator": 108,
+     "denominator_definition": "evaluable assessments",
+     "numerator": 27,
+     "numerator_definition": "classified evaluable assessments",
+     "source": "replay journal",
+     "value": 0.25
+    },
+    "creator_input_unknown_share": {
+     "denominator": 120,
+     "denominator_definition": "all assessments (every assessment evaluates the creator condition)",
+     "numerator": 47,
+     "numerator_definition": "assessments with creator input unknown",
+     "source": "replay journal",
+     "value": 0.39166666666666666
+    },
+    "evaluable_assessments": 108,
+    "evaluable_share_of_all": {
+     "denominator": 120,
+     "denominator_definition": "all replay assessments",
+     "numerator": 108,
+     "numerator_definition": "evaluable assessments",
+     "source": "replay journal",
+     "value": 0.9
+    },
+    "fresh_evaluable_assessments": 12,
+    "fresh_share_of_evaluable": {
+     "denominator": 108,
+     "denominator_definition": "evaluable assessments",
+     "numerator": 12,
+     "numerator_definition": "evaluable assessments without STALE_DATA",
+     "source": "replay journal",
+     "value": 0.1111111111111111
+    },
+    "required_data_unavailable_assessments": 103,
+    "signals_per_evaluable": {
+     "denominator": 108,
+     "denominator_definition": "evaluable assessments",
+     "numerator": 0,
+     "numerator_definition": "evaluable assessments with a signal",
+     "source": "replay journal",
+     "value": 0.0
+    }
+   },
+   "cross_machine_normalization_match": true,
+   "dataset_sha256_local": "fb7d3607fbd91c34df16fad4b77ce27119a369b6fc5740f94d45dbeb186b2d42",
+   "dataset_sha256_runner": "fb7d3607fbd91c34df16fad4b77ce27119a369b6fc5740f94d45dbeb186b2d42",
+   "determinism": {
+    "identical": true,
+    "runs": [
+     {
+      "journal_sha256": "b1a627c61b79e4f24e1acf5a956dfbe74bc17e45060119c99562751b59b0c8cd",
+      "records_sha256": "fa103fc94b52f0cc7930af9a582813ec1916f63c2ec276e74bee5e30a6f21cab"
+     },
+     {
+      "journal_sha256": "b1a627c61b79e4f24e1acf5a956dfbe74bc17e45060119c99562751b59b0c8cd",
+      "records_sha256": "fa103fc94b52f0cc7930af9a582813ec1916f63c2ec276e74bee5e30a6f21cab"
+     }
+    ]
+   },
+   "funnel": {
+    "attempted": 12,
+    "classified": 3,
+    "definitions": {
+     "attempted": "tokens picked by the seeded stratified selection and polled",
+     "classified": "tokens with at least one replay assessment whose move class was not UNCLASSIFIED",
+     "discovered": "distinct tokens described by any discovery or poll response",
+     "evaluable": "tokens with at least one replay assessment whose price input was OK and not NO_DATA",
+     "successful": "attempted tokens with at least one successful OHLCV and one successful trades response"
+    },
+    "discovered": 93,
+    "evaluable": 12,
+    "per_token": [
+     {
+      "backfill_failed": 1,
+      "backfill_ok": 0,
+      "bar_history_minutes": 1,
+      "bar_versions": 26,
+      "classified": false,
+      "data_quality_counts": {
+       "INSUFFICIENT_HISTORY": 9,
+       "LOW_LIQUIDITY": 6,
+       "STALE_DATA": 8
+      },
+      "distinct_bars": 1,
+      "evaluable": true,
+      "failed_responses": {
+       "gt.ohlcv": 2,
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 2,
+       "gt.trades": 2
+      },
+      "failed_responses_total": 7,
+      "holder_snapshots": 2,
+      "holder_snapshots_with_creator_pct": 2,
+      "ok_responses": {
+       "gt.ohlcv": 13,
+       "gt.token_info": 2,
+       "gt.trades": 13
+      },
+      "reduction_reason": "move never classifiable: INSUFFICIENT_HISTORY 9/10, LOW_LIQUIDITY 6/10, STALE_DATA 8/10",
+      "replay_steps": 10,
+      "stratum": "quiet_young",
+      "successful": true,
+      "token": "EMc7FL2B5ZKVbUk7CHxTPMk1pnTXjLmf5o1ML5Pgpump"
+     },
+     {
+      "backfill_failed": 1,
+      "backfill_ok": 0,
+      "bar_history_minutes": 12,
+      "bar_versions": 37,
+      "classified": false,
+      "data_quality_counts": {
+       "INSUFFICIENT_HISTORY": 9,
+       "LOW_LIQUIDITY": 6,
+       "STALE_DATA": 10
+      },
+      "distinct_bars": 2,
+      "evaluable": true,
+      "failed_responses": {
+       "gt.ohlcv": 2,
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 2,
+       "gt.trades": 2
+      },
+      "failed_responses_total": 7,
+      "holder_snapshots": 2,
+      "holder_snapshots_with_creator_pct": 2,
+      "ok_responses": {
+       "gt.ohlcv": 13,
+       "gt.token_info": 2,
+       "gt.trades": 13
+      },
+      "reduction_reason": "move never classifiable: INSUFFICIENT_HISTORY 9/10, LOW_LIQUIDITY 6/10, STALE_DATA 10/10",
+      "replay_steps": 10,
+      "stratum": "quiet_young",
+      "successful": true,
+      "token": "ADzAcui1WQaeM8kRV5oZFsb9tsFhaoko7Qzs2ELqpump"
+     },
+     {
+      "backfill_failed": 1,
+      "backfill_ok": 0,
+      "bar_history_minutes": 3,
+      "bar_versions": 52,
+      "classified": false,
+      "data_quality_counts": {
+       "INSUFFICIENT_HISTORY": 9,
+       "LOW_LIQUIDITY": 6,
+       "STALE_DATA": 9
+      },
+      "distinct_bars": 3,
+      "evaluable": true,
+      "failed_responses": {
+       "gt.ohlcv": 2,
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 2,
+       "gt.trades": 2
+      },
+      "failed_responses_total": 7,
+      "holder_snapshots": 2,
+      "holder_snapshots_with_creator_pct": 2,
+      "ok_responses": {
+       "gt.ohlcv": 13,
+       "gt.token_info": 2,
+       "gt.trades": 13
+      },
+      "reduction_reason": "move never classifiable: INSUFFICIENT_HISTORY 9/10, LOW_LIQUIDITY 6/10, STALE_DATA 9/10",
+      "replay_steps": 10,
+      "stratum": "young",
+      "successful": true,
+      "token": "4q1V2WZcwLHCQc9CEuLDsYyJc3Q2gN3Ad9u33EcApump"
+     },
+     {
+      "backfill_failed": 1,
+      "backfill_ok": 0,
+      "bar_history_minutes": 1,
+      "bar_versions": 26,
+      "classified": false,
+      "data_quality_counts": {
+       "HIGH_SLIPPAGE": 6,
+       "INSUFFICIENT_HISTORY": 9,
+       "LOW_LIQUIDITY": 6,
+       "STALE_DATA": 9
+      },
+      "distinct_bars": 1,
+      "evaluable": true,
+      "failed_responses": {
+       "gt.ohlcv": 2,
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 2,
+       "gt.trades": 2
+      },
+      "failed_responses_total": 7,
+      "holder_snapshots": 2,
+      "holder_snapshots_with_creator_pct": 2,
+      "ok_responses": {
+       "gt.ohlcv": 13,
+       "gt.token_info": 2,
+       "gt.trades": 13
+      },
+      "reduction_reason": "move never classifiable: HIGH_SLIPPAGE 6/10, INSUFFICIENT_HISTORY 9/10, LOW_LIQUIDITY 6/10, STALE_DATA 9/10",
+      "replay_steps": 10,
+      "stratum": "young",
+      "successful": true,
+      "token": "141bZt7hXvDezAvuKMGym1Y8wFUWxD4NNMJ82VDmbonk"
+     },
+     {
+      "backfill_failed": 1,
+      "backfill_ok": 0,
+      "bar_history_minutes": 6,
+      "bar_versions": 65,
+      "classified": false,
+      "data_quality_counts": {
+       "INSUFFICIENT_HISTORY": 9,
+       "LOW_LIQUIDITY": 6,
+       "STALE_DATA": 10
+      },
+      "distinct_bars": 5,
+      "evaluable": true,
+      "failed_responses": {
+       "gt.ohlcv": 2,
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 1,
+       "gt.trades": 2
+      },
+      "failed_responses_total": 6,
+      "holder_snapshots": 3,
+      "holder_snapshots_with_creator_pct": 3,
+      "ok_responses": {
+       "gt.ohlcv": 13,
+       "gt.token_info": 3,
+       "gt.trades": 13
+      },
+      "reduction_reason": "move never classifiable: INSUFFICIENT_HISTORY 9/10, LOW_LIQUIDITY 6/10, STALE_DATA 10/10",
+      "replay_steps": 10,
+      "stratum": "young",
+      "successful": true,
+      "token": "EeTBxBbQEafRJHUAfWTasxygTQhmcD2Mx2mRxKgQSFWe"
+     },
+     {
+      "backfill_failed": 1,
+      "backfill_ok": 0,
+      "bar_history_minutes": 4,
+      "bar_versions": 65,
+      "classified": false,
+      "data_quality_counts": {
+       "INSUFFICIENT_HISTORY": 9,
+       "LOW_LIQUIDITY": 6,
+       "STALE_DATA": 9
+      },
+      "distinct_bars": 4,
+      "evaluable": true,
+      "failed_responses": {
+       "gt.ohlcv": 2,
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 1,
+       "gt.trades": 2
+      },
+      "failed_responses_total": 6,
+      "holder_snapshots": 0,
+      "holder_snapshots_with_creator_pct": 0,
+      "ok_responses": {
+       "gt.ohlcv": 13,
+       "gt.token_info": 3,
+       "gt.trades": 13
+      },
+      "reduction_reason": "move never classifiable: INSUFFICIENT_HISTORY 9/10, LOW_LIQUIDITY 6/10, STALE_DATA 9/10",
+      "replay_steps": 10,
+      "stratum": "young",
+      "successful": true,
+      "token": "2fVHL58T1z9Pm63cCQP6wc9SWVivjzdZRY74Q8Anpump"
+     },
+     {
+      "backfill_failed": 1,
+      "backfill_ok": 0,
+      "bar_history_minutes": 48,
+      "bar_versions": 41,
+      "classified": false,
+      "data_quality_counts": {
+       "INSUFFICIENT_HISTORY": 9,
+       "STALE_DATA": 9
+      },
+      "distinct_bars": 40,
+      "evaluable": true,
+      "failed_responses": {
+       "gt.ohlcv": 2,
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 1,
+       "gt.trades": 2
+      },
+      "failed_responses_total": 6,
+      "holder_snapshots": 2,
+      "holder_snapshots_with_creator_pct": 2,
+      "ok_responses": {
+       "gt.ohlcv": 13,
+       "gt.token_info": 2,
+       "gt.trades": 13
+      },
+      "reduction_reason": "move never classifiable: INSUFFICIENT_HISTORY 9/10, STALE_DATA 9/10",
+      "replay_steps": 10,
+      "stratum": "trending",
+      "successful": true,
+      "token": "CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp"
+     },
+     {
+      "backfill_failed": 1,
+      "backfill_ok": 0,
+      "bar_history_minutes": 48,
+      "bar_versions": 49,
+      "classified": false,
+      "data_quality_counts": {
+       "INSUFFICIENT_HISTORY": 9,
+       "STALE_DATA": 9
+      },
+      "distinct_bars": 38,
+      "evaluable": true,
+      "failed_responses": {
+       "gt.ohlcv": 2,
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 1,
+       "gt.trades": 2
+      },
+      "failed_responses_total": 6,
+      "holder_snapshots": 2,
+      "holder_snapshots_with_creator_pct": 2,
+      "ok_responses": {
+       "gt.ohlcv": 13,
+       "gt.token_info": 2,
+       "gt.trades": 13
+      },
+      "reduction_reason": "move never classifiable: INSUFFICIENT_HISTORY 9/10, STALE_DATA 9/10",
+      "replay_steps": 10,
+      "stratum": "trending",
+      "successful": true,
+      "token": "Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk"
+     },
+     {
+      "backfill_failed": 1,
+      "backfill_ok": 0,
+      "bar_history_minutes": 48,
+      "bar_versions": 42,
+      "classified": false,
+      "data_quality_counts": {
+       "INSUFFICIENT_HISTORY": 9,
+       "STALE_DATA": 10
+      },
+      "distinct_bars": 41,
+      "evaluable": true,
+      "failed_responses": {
+       "gt.ohlcv": 2,
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 1,
+       "gt.trades": 2
+      },
+      "failed_responses_total": 6,
+      "holder_snapshots": 2,
+      "holder_snapshots_with_creator_pct": 2,
+      "ok_responses": {
+       "gt.ohlcv": 13,
+       "gt.token_info": 2,
+       "gt.trades": 13
+      },
+      "reduction_reason": "move never classifiable: INSUFFICIENT_HISTORY 9/10, STALE_DATA 10/10",
+      "replay_steps": 10,
+      "stratum": "trending",
+      "successful": true,
+      "token": "CbcyNo7m1amFWqEQm2m4PLv1UNvpcL3C1Ujm6AkzpKoU"
+     },
+     {
+      "backfill_failed": 1,
+      "backfill_ok": 0,
+      "bar_history_minutes": 4,
+      "bar_versions": 65,
+      "classified": true,
+      "data_quality_counts": {
+       "HIGH_SLIPPAGE": 6,
+       "LOW_LIQUIDITY": 6,
+       "STALE_DATA": 9
+      },
+      "distinct_bars": 4,
+      "evaluable": true,
+      "failed_responses": {
+       "gt.ohlcv": 2,
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 1,
+       "gt.trades": 2
+      },
+      "failed_responses_total": 6,
+      "holder_snapshots": 2,
+      "holder_snapshots_with_creator_pct": 2,
+      "ok_responses": {
+       "gt.ohlcv": 13,
+       "gt.token_info": 2,
+       "gt.trades": 13
+      },
+      "reduction_reason": null,
+      "replay_steps": 10,
+      "stratum": "established",
+      "successful": true,
+      "token": "9tib9sVufn3qCxnwszbGgfg396Jr9RcBUMsXnKGBrK4A"
+     },
+     {
+      "backfill_failed": 1,
+      "backfill_ok": 0,
+      "bar_history_minutes": 19,
+      "bar_versions": 65,
+      "classified": true,
+      "data_quality_counts": {
+       "HIGH_SLIPPAGE": 6,
+       "LOW_LIQUIDITY": 6,
+       "STALE_DATA": 8
+      },
+      "distinct_bars": 4,
+      "evaluable": true,
+      "failed_responses": {
+       "gt.ohlcv": 2,
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 1,
+       "gt.trades": 2
+      },
+      "failed_responses_total": 6,
+      "holder_snapshots": 2,
+      "holder_snapshots_with_creator_pct": 2,
+      "ok_responses": {
+       "gt.ohlcv": 13,
+       "gt.token_info": 2,
+       "gt.trades": 13
+      },
+      "reduction_reason": null,
+      "replay_steps": 10,
+      "stratum": "established",
+      "successful": true,
+      "token": "2FsgkzDB1HUQBwikTbCTxCtnrwrdf2qStFptE6TPRoCV"
+     },
+     {
+      "backfill_failed": 1,
+      "backfill_ok": 0,
+      "bar_history_minutes": 4,
+      "bar_versions": 65,
+      "classified": true,
+      "data_quality_counts": {
+       "CONFLICTING_DATA": 7,
+       "HIGH_SLIPPAGE": 6,
+       "LOW_LIQUIDITY": 6,
+       "STALE_DATA": 8
+      },
+      "distinct_bars": 4,
+      "evaluable": true,
+      "failed_responses": {
+       "gt.ohlcv": 2,
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 1,
+       "gt.trades": 2
+      },
+      "failed_responses_total": 6,
+      "holder_snapshots": 2,
+      "holder_snapshots_with_creator_pct": 2,
+      "ok_responses": {
+       "gt.ohlcv": 13,
+       "gt.token_info": 2,
+       "gt.trades": 13
+      },
+      "reduction_reason": null,
+      "replay_steps": 10,
+      "stratum": "established",
+      "successful": true,
+      "token": "GytyxXBmcNPdM4nCug4qLZSB1DHe6SyYkJwyFZed4yQN"
+     }
+    ],
+    "successful": 12,
+    "totals": {
+     "bar_versions": 598,
+     "distinct_bars": 147,
+     "tokens_with_creator_pct": 11,
+     "tokens_with_holder_snapshot": 11,
+     "tokens_with_successful_backfill": 0
+    },
+    "unclassified_or_incomplete": 9
+   },
+   "lookahead": {
+    "all_passed": true,
+    "per_time": [
+     {
+      "A_future_bar": true,
+      "B_future_trade": true,
+      "C_future_liquidity": true,
+      "D_timestamp_manipulation": true,
+      "E_truncation": true,
+      "F_determinism": true,
+      "t": 1790756073955
+     },
+     {
+      "A_future_bar": true,
+      "B_future_trade": true,
+      "C_future_liquidity": true,
+      "D_timestamp_manipulation": true,
+      "E_truncation": true,
+      "F_determinism": true,
+      "t": 1790756657059
+     },
+     {
+      "A_future_bar": true,
+      "B_future_trade": true,
+      "C_future_liquidity": true,
+      "D_timestamp_manipulation": true,
+      "E_truncation": true,
+      "F_determinism": true,
+      "t": 1790757240163
+     },
+     {
+      "A_future_bar": true,
+      "B_future_trade": true,
+      "C_future_liquidity": true,
+      "D_timestamp_manipulation": true,
+      "E_truncation": true,
+      "F_determinism": true,
+      "t": 1790757823267
+     }
+    ],
+    "summary": {
+     "A_future_bar": "4/4 passed",
+     "B_future_trade": "4/4 passed",
+     "C_future_liquidity": "4/4 passed",
+     "D_timestamp_manipulation": "4/4 passed",
+     "E_truncation": "4/4 passed",
+     "F_determinism": "4/4 passed"
+    },
+    "times": [
+     1790756073955,
+     1790756657059,
+     1790757240163,
+     1790757823267
+    ]
+   },
+   "normalization_summary": {
+    "coverage_gap_count": 3,
+    "tokens_with_coverage_gaps": 1
+   },
+   "postgres": {
+    "all_checks_zero": true,
+    "integrity_checks": {
+     "bars_without_raw_id": 0,
+     "coverage_beyond_seen": 0,
+     "duplicate_replay_steps": 0,
+     "journal_chain_breaks_in_db": 0,
+     "orphan_pools": 0,
+     "orphan_replay_records": 0,
+     "orphan_swaps": 0,
+     "raw_ids_not_in_manifest": 0,
+     "replay_config_hash_mismatch": 0,
+     "seen_before_event_swaps": 0,
+     "snapshots_without_raw_id": 0,
+     "swaps_without_raw_id": 0,
+     "unclosed_bars": 0
+    },
+    "load": "OK",
+    "migrations": "OK",
+    "postgres_version": "16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)",
+    "row_counts": {
+     "coverage": 202,
+     "holder_snapshots": 11,
+     "journal": 120,
+     "pool_snapshots": 260,
+     "pools": 14,
+     "provider_bars": 483,
+     "raw_manifest": 449,
+     "replay_records": 120,
+     "replay_runs": 1,
+     "swaps": 4997,
+     "tokens": 12
+    },
+    "statements": 33420,
+    "timescaledb_available": false
+   },
+   "raw_audit": {
+    "body_files": 250,
+    "by_provider": {
+     "dexscreener": {
+      "exchanges": 15,
+      "valid_json": 15
+     },
+     "geckoterminal": {
+      "exchanges": 434,
+      "identical_body_repeats": 121,
+      "provider_errors": 78,
+      "valid_json": 356
+     }
+    },
+    "referenced_bodies": 250,
+    "referenced_but_missing": 0,
+    "unreferenced_body_files": 0
+   },
+   "replay_window_ms": [
+    1790755490851,
+    1790758406375
+   ],
+   "replayable": true,
+   "report": {
+    "blocked_by": {
+     "CONFLICTING_DATA": 7,
+     "LOW_LIQUIDITY": 54,
+     "STALE_DATA": 108,
+     "coverage 0.22 < 0.7": 35,
+     "coverage 0.33 < 0.7": 38,
+     "coverage 0.44 < 0.7": 21,
+     "coverage 0.56 < 0.7": 14,
+     "coverage 0.67 < 0.7": 12,
+     "critical input missing: creator_concentration_ok": 47,
+     "critical input missing: execution_liquidity": 84,
+     "critical input missing: low_manipulation": 32,
+     "veto: creator_concentration_ok (creator holds 16.11%)": 6,
+     "veto: creator_concentration_ok (creator holds 22.00%)": 5,
+     "veto: execution_liquidity (liquidity $0, est. slippage 325416962559.05%)": 6,
+     "veto: execution_liquidity (liquidity $0, est. slippage 6427315488.02%)": 6,
+     "veto: execution_liquidity (liquidity $0, est. slippage 67981604.59%)": 6,
+     "veto: execution_liquidity (liquidity $21,375, est. slippage 9.66%)": 6,
+     "veto: healthy_structure (DISTRIBUTION; regime DEAD_ILLIQUID)": 1,
+     "veto: healthy_structure (EXTENDED; regime DEAD_ILLIQUID)": 18,
+     "veto: healthy_structure (HEALTHY_EXPANSION; regime DEAD_ILLIQUID)": 53,
+     "veto: low_manipulation (manipulation score 0.98)": 3,
+     "veto: low_manipulation (manipulation score 0.99)": 1,
+     "veto: low_manipulation (manipulation score 1.00)": 63
+    },
+    "decisions": {
+     "HIGH_CONVICTION_CONTINUATION": 0,
+     "NO_SIGNAL": 120,
+     "WATCH": 0,
+     "assessments_blocked_by_creator_gate_alone": 0,
+     "block_reason_occurrences": {
+      "conflicting_data": 7,
+      "creator_concentration_unavailable": 47,
+      "creator_concentration_veto": 11,
+      "execution_liquidity_unavailable": 84,
+      "insufficient_coverage": 120,
+      "low_liquidity": 78,
+      "manipulation_input_unavailable": 32,
+      "manipulation_veto": 67,
+      "stale_data": 108,
+      "structure_veto": 72
+     },
+     "blocked": 120,
+     "data_quality_rejected": 118,
+     "emergency_exits": 0,
+     "hypothetical_entries": 0,
+     "manipulation_vetoed": 67,
+     "no_signal_without_block_reason": 0,
+     "risk_rejected": 0,
+     "total_replay_assessments": 120,
+     "unclassified": 93
+    },
+    "early_life": {
+     "S1_safe": true,
+     "S1_violation_count": 0,
+     "S1_violations": [],
+     "by_age": {
+      "1-7d": {
+       "U1_classified_share": 0.45,
+       "U2_coverage_ok_share": 0.0,
+       "U3_participation_evaluable_share": 0.0,
+       "assessments": 20,
+       "high_conviction_signals": 0,
+       "insufficient_history_share": 0.45,
+       "tokens": 2
+      },
+      "6-24h": {
+       "U1_classified_share": 0.9,
+       "U2_coverage_ok_share": 0.0,
+       "U3_participation_evaluable_share": 0.0,
+       "assessments": 20,
+       "high_conviction_signals": 0,
+       "insufficient_history_share": 0.0,
+       "tokens": 2
+      },
+      "<1h": {
+       "U1_classified_share": 0.0,
+       "U2_coverage_ok_share": 0.0,
+       "U3_participation_evaluable_share": 0.0,
+       "assessments": 60,
+       "high_conviction_signals": 0,
+       "insufficient_history_share": 0.9,
+       "tokens": 6
+      },
+      ">7d": {
+       "U1_classified_share": 0.0,
+       "U2_coverage_ok_share": 0.0,
+       "U3_participation_evaluable_share": 0.0,
+       "assessments": 20,
+       "high_conviction_signals": 0,
+       "insufficient_history_share": 0.9,
+       "tokens": 2
+      }
+     },
+     "definitions": "Early-life experiment: can the system *safely* make a *useful* assessment of\na token with very little history?\n\nThis module measures; it does not classify. It adds no rule and changes no\nthreshold. Definitions, fixed before any real data was seen:\n\n  SAFE    (invariant S1) no HIGH_CONVICTION_CONTINUATION is ever emitted for an\n          assessment whose move class is UNCLASSIFIED or whose data quality\n          includes INSUFFICIENT_HISTORY.\n  USEFUL  (metric U1, per age bucket) share of assessments that yield a\n          classified move (anything but UNCLASSIFIED).\n  (metric U2) share of assessments whose Move Quality coverage reaches the\n          signal gate's min_coverage.\n  (metric U3) share of assessments whose participation baseline is available\n          (buyer_growth condition evaluable).\n\nThe answer is the table this produces on real replays. A later phase may test\na same-age cohort baseline against these numbers (docs/research/14, H-aux-1).\n"
+    },
+    "endpoints": {
+     "dexscreener:ds.pairs": {
+      "calls": 15,
+      "errors": 0,
+      "ok": 15,
+      "p50_latency_ms": 165,
+      "p95_latency_ms": 205,
+      "retried": 0
+     },
+     "geckoterminal:gt.new_pools": {
+      "calls": 3,
+      "errors": 0,
+      "ok": 3,
+      "p50_latency_ms": 58,
+      "p95_latency_ms": 148,
+      "retried": 0
+     },
+     "geckoterminal:gt.ohlcv": {
+      "calls": 192,
+      "errors": 36,
+      "ok": 156,
+      "p50_latency_ms": 251,
+      "p95_latency_ms": 667,
+      "retried": 120
+     },
+     "geckoterminal:gt.pools_multi": {
+      "calls": 15,
+      "errors": 2,
+      "ok": 13,
+      "p50_latency_ms": 244,
+      "p95_latency_ms": 411,
+      "retried": 11
+     },
+     "geckoterminal:gt.token_info": {
+      "calls": 42,
+      "errors": 16,
+      "ok": 26,
+      "p50_latency_ms": 216,
+      "p95_latency_ms": 351,
+      "retried": 18
+     },
+     "geckoterminal:gt.top_pools": {
+      "calls": 1,
+      "errors": 0,
+      "ok": 1,
+      "p50_latency_ms": 77,
+      "p95_latency_ms": 77,
+      "retried": 0
+     },
+     "geckoterminal:gt.trades": {
+      "calls": 180,
+      "errors": 24,
+      "ok": 156,
+      "p50_latency_ms": 376,
+      "p95_latency_ms": 1203,
+      "retried": 129
+     },
+     "geckoterminal:gt.trending": {
+      "calls": 1,
+      "errors": 0,
+      "ok": 1,
+      "p50_latency_ms": 58,
+      "p95_latency_ms": 58,
+      "retried": 0
+     }
+    },
+    "error_kinds": {
+     "circuit open for https": 76,
+     "exhausted retries for /networks/solana/pools/6tpuF9m2s8abaqmzRGxUdhUErRbggT8rDpF": 1,
+     "exhausted retries for /networks/solana/tokens/EMc7FL2B5ZKVbUk7CHxTPMk1pnTXjLmf5o": 1
+    },
+    "excluded": [],
+    "field_coverage": {
+     "rows": {
+      "OHLCV": {
+       "pit_ok_share": 0.225,
+       "records": 598,
+       "tokens_with": 12
+      },
+      "creator holdings": {
+       "holder_snapshots": 23,
+       "pit_ok_share": 0.6083333333333333,
+       "tokens_with_creator_identity": 26,
+       "with_creator_pct": 23
+      },
+      "funding transfers": {
+       "records": 0
+      },
+      "holder concentration": {
+       "holder_snapshots": 23,
+       "pit_ok_share": 0.6083333333333333,
+       "tokens_with": 11
+      },
+      "liquidity": {
+       "pit_ok_share": 0.6,
+       "records": 260,
+       "tokens_with": 12
+      },
+      "liquidity changes": {
+       "lp_events": 0,
+       "pit_ok_share": 0.4
+      },
+      "news": {
+       "records": 0
+      },
+      "social": {
+       "pit_ok_share": 0.0,
+       "records": 0
+      },
+      "trades": {
+       "coverage_claims": 154,
+       "full_page_claims": null,
+       "pit_ok_share": 0.975,
+       "records": 31173,
+       "tokens_with": 12
+      },
+      "wallet address": {
+       "distinct_wallets": 1561,
+       "pit_ok_share": 0.975,
+       "tokens_with": 12
+      }
+     },
+     "tokens": 12
+    },
+    "issue_samples": {
+     "COVERAGE_GAP": [
+      {
+       "action": "flagged",
+       "code": "COVERAGE_GAP",
+       "detail": "solana:CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp: 3 trade-coverage gap(s)",
+       "raw_id": null
+      }
+     ],
+     "DERIVED_FIELD": [
+      {
+       "action": "derived",
+       "code": "DERIVED_FIELD",
+       "detail": "Cberc427PuwyGh3HicbwF2msangnZiEkzWqJDzjsvUxu: total_supply = fdv_usd / price",
+       "raw_id": "5791ce72e62ae92a4ceb8feb3e94b25a83c76606e037d9700d8c244530c3c0c2"
+      },
+      {
+       "action": "derived",
+       "code": "DERIVED_FIELD",
+       "detail": "9J2jCgTiAfD9fFssmmwYMEu95Yx1VLPrRT5Co4ASpump: total_supply = fdv_usd / price",
+       "raw_id": "5791ce72e62ae92a4ceb8feb3e94b25a83c76606e037d9700d8c244530c3c0c2"
+      },
+      {
+       "action": "derived",
+       "code": "DERIVED_FIELD",
+       "detail": "GFDgm6fWbLBEjW3u9VH4EvyxQjKBEsdDi2EzR3acpump: total_supply = fdv_usd / price",
+       "raw_id": "5791ce72e62ae92a4ceb8feb3e94b25a83c76606e037d9700d8c244530c3c0c2"
+      },
+      {
+       "action": "derived",
+       "code": "DERIVED_FIELD",
+       "detail": "7o3BwjiouC4e8RvMpwG9yfwyPZPf6pJ56QdZbnNMpump: total_supply = fdv_usd / price",
+       "raw_id": "5791ce72e62ae92a4ceb8feb3e94b25a83c76606e037d9700d8c244530c3c0c2"
+      },
+      {
+       "action": "derived",
+       "code": "DERIVED_FIELD",
+       "detail": "BA7pNWLvWwNcTEXunLGXMhj7TnkWThdLSQsEh98Zpump: total_supply = fdv_usd / price",
+       "raw_id": "5791ce72e62ae92a4ceb8feb3e94b25a83c76606e037d9700d8c244530c3c0c2"
+      }
+     ],
+     "DUPLICATE_OBSERVATION": [
+      {
+       "action": "flagged",
+       "code": "DUPLICATE_OBSERVATION",
+       "detail": "26176 repeat observations of already-seen swaps (poll overlap); earliest-seen copy kept by the quality gate",
+       "raw_id": null
+      }
+     ],
+     "FORMING_BAR_DROPPED": [
+      {
+       "action": "dropped_record",
+       "code": "FORMING_BAR_DROPPED",
+       "detail": "HnhpJPJgBG2KwniMTNW8cVBHvk1hFog3RC3kjnyc23tD: 2 unclosed bar(s)",
+       "raw_id": "577985b1d17dfe47e67c54366df5fa4579f706dfe2de0d8176e02244bc41fc88"
+      },
+      {
+       "action": "dropped_record",
+       "code": "FORMING_BAR_DROPPED",
+       "detail": "Q2sPHPdUWFMg7M7wwrQKLrn619cAucfRsmhVJffodSp: 2 unclosed bar(s)",
+       "raw_id": "8b21e13083144ad87c7ab593012c4076fc9ae122be4d087c760448df2eb15e9c"
+      },
+      {
+       "action": "dropped_record",
+       "code": "FORMING_BAR_DROPPED",
+       "detail": "4JAnKFddd5fFTk5PxDj3PpTWJuTEfSWQEjZJcgKQ9KwW: 2 unclosed bar(s)",
+       "raw_id": "d2b876545125df348fd31081e811512c54cb0aa9f20f6fc697d9ef9a1b9d8aab"
+      },
+      {
+       "action": "dropped_record",
+       "code": "FORMING_BAR_DROPPED",
+       "detail": "HnhpJPJgBG2KwniMTNW8cVBHvk1hFog3RC3kjnyc23tD: 2 unclosed bar(s)",
+       "raw_id": "8bfc24667ad88f3d9d07adec2a4b71dd654247a551d17adea81c504dbdf4ffac"
+      },
+      {
+       "action": "dropped_record",
+       "code": "FORMING_BAR_DROPPED",
+       "detail": "Q2sPHPdUWFMg7M7wwrQKLrn619cAucfRsmhVJffodSp: 1 unclosed bar(s)",
+       "raw_id": "91503c056ce37b7880fb4002e0ce29197efd2dce9a01892b82385036e26132f6"
+      }
+     ],
+     "NULL_FIELD": [
+      {
+       "action": "dropped_record",
+       "code": "NULL_FIELD",
+       "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: price='1.00101242104514' reserve=None; no snapshot",
+       "raw_id": "947dbb43b32f6fec3b1977f5d211e221ee4a7ad4e8517bc8e805aa4c8ba4ad13"
+      },
+      {
+       "action": "dropped_record",
+       "code": "NULL_FIELD",
+       "detail": "8sjV1AqBFvFuADBCQHhotaRq5DFFYSjjg1jMyVWMqXvZ: price='1.00022263852749' reserve=None; no snapshot",
+       "raw_id": "947dbb43b32f6fec3b1977f5d211e221ee4a7ad4e8517bc8e805aa4c8ba4ad13"
+      },
+      {
+       "action": "dropped_record",
+       "code": "NULL_FIELD",
+       "detail": "6tpuF9m2s8abaqmzRGxUdhUErRbggT8rDpFswsKJoQJs: priceUsd='0.000003211' liquidity=None",
+       "raw_id": "6596ea28d67427ce2b84a5e232cc43f1f78b9931f6c42660e8e543d5fa39ef5f"
+      },
+      {
+       "action": "dropped_record",
+       "code": "NULL_FIELD",
+       "detail": "FGmprTjfLyWvkBcs5vuXAPqwu43kncJsgxHHH9pRDLaT: priceUsd='0.000003348' liquidity=None",
+       "raw_id": "6596ea28d67427ce2b84a5e232cc43f1f78b9931f6c42660e8e543d5fa39ef5f"
+      },
+      {
+       "action": "dropped_record",
+       "code": "NULL_FIELD",
+       "detail": "H6Xn3EUpTcMxVjRpqMwgFmCz1yhzSQKQN33VKGQin9ZL: priceUsd='0.0000003578' liquidity=None",
+       "raw_id": "6596ea28d67427ce2b84a5e232cc43f1f78b9931f6c42660e8e543d5fa39ef5f"
+      }
+     ],
+     "PAGE_FULL": [
+      {
+       "action": "flagged",
+       "code": "PAGE_FULL",
+       "detail": "2iJyUmnGDpcHbJfrUQahnVhQcxewcSxRTcFjkeKbKuqY: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+       "raw_id": "e59025a65fb46e91382078805dfd180c93f569a1b4160701860a948c603960e2"
+      },
+      {
+       "action": "flagged",
+       "code": "PAGE_FULL",
+       "detail": "HnhpJPJgBG2KwniMTNW8cVBHvk1hFog3RC3kjnyc23tD: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+       "raw_id": "e0b94b5e9a33bc7a0382caec11e38fadf94cc29f28c4a04c7e7e8da5a98710b1"
+      },
+      {
+       "action": "flagged",
+       "code": "PAGE_FULL",
+       "detail": "Q2sPHPdUWFMg7M7wwrQKLrn619cAucfRsmhVJffodSp: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+       "raw_id": "f0c2a5060f013e16480f1a77c47b02e7f833f7ade8cb6da081c83c61d8097775"
+      },
+      {
+       "action": "flagged",
+       "code": "PAGE_FULL",
+       "detail": "4JAnKFddd5fFTk5PxDj3PpTWJuTEfSWQEjZJcgKQ9KwW: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+       "raw_id": "ca3d4bc7c3662dd98ae5c17d6620fb9ae25db5767482a4d996bc1a3426f69634"
+      },
+      {
+       "action": "flagged",
+       "code": "PAGE_FULL",
+       "detail": "AxGtLoCCfgXD1STXNUT8UFowHHQn4GEFPRg4wWi3uZXq: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+       "raw_id": "1eb03d9b52ee009cdbea2cc4f2050388b4c14ff995e4deee44128d6446d1d899"
+      }
+     ],
+     "PROVIDER_ERROR": [
+      {
+       "action": "skipped_response",
+       "code": "PROVIDER_ERROR",
+       "detail": "gt.ohlcv https://api.geckoterminal.com/api/v2/networks/solana/pools/6tpuF9m2s8abaqmzRGxUdhUErRbggT8rDpFswsKJoQJs/ohlcv/minute?aggregate=1&limit=1000&currency=usd: exhausted retries for /networks/solana/pools/6tpuF9m2s8abaqmzRGxUdhUErRbggT8rDpFswsKJoQJs/ohlcv/minute?aggregate=1&limit=1000&currency=usd: HTTP Error 429: Too Many Requests",
+       "raw_id": null
+      },
+      {
+       "action": "skipped_response",
+       "code": "PROVIDER_ERROR",
+       "detail": "gt.token_info https://api.geckoterminal.com/api/v2/networks/solana/tokens/EMc7FL2B5ZKVbUk7CHxTPMk1pnTXjLmf5o1ML5Pgpump/info: exhausted retries for /networks/solana/tokens/EMc7FL2B5ZKVbUk7CHxTPMk1pnTXjLmf5o1ML5Pgpump/info: HTTP Error 429: Too Many Requests",
+       "raw_id": null
+      },
+      {
+       "action": "skipped_response",
+       "code": "PROVIDER_ERROR",
+       "detail": "gt.ohlcv https://api.geckoterminal.com/api/v2/networks/solana/pools/FGmprTjfLyWvkBcs5vuXAPqwu43kncJsgxHHH9pRDLaT/ohlcv/minute?aggregate=1&limit=1000&currency=usd: circuit open for https://api.geckoterminal.com/api/v2",
+       "raw_id": null
+      },
+      {
+       "action": "skipped_response",
+       "code": "PROVIDER_ERROR",
+       "detail": "gt.token_info https://api.geckoterminal.com/api/v2/networks/solana/tokens/ADzAcui1WQaeM8kRV5oZFsb9tsFhaoko7Qzs2ELqpump/info: circuit open for https://api.geckoterminal.com/api/v2",
+       "raw_id": null
+      },
+      {
+       "action": "skipped_response",
+       "code": "PROVIDER_ERROR",
+       "detail": "gt.ohlcv https://api.geckoterminal.com/api/v2/networks/solana/pools/H6Xn3EUpTcMxVjRpqMwgFmCz1yhzSQKQN33VKGQin9ZL/ohlcv/minute?aggregate=1&limit=1000&currency=usd: circuit open for https://api.geckoterminal.com/api/v2",
+       "raw_id": null
+      }
+     ]
+    },
+    "journal_audit": {
+     "chain_breaks": 0,
+     "chronology_violations": 0,
+     "configuration_hashes": [
+      "417bd32cce8fb72c"
+     ],
+     "duplicate_token_steps": 0,
+     "entries": 120,
+     "hash_mismatches": 0,
+     "head_hash": "96a146eed141311ff8a148bffd2b524218d908dab3b54f8e892674baf9c31f23"
+    },
+    "missingness": {
+     "buy_sell_imbalance_15": {
+      "INSUFFICIENT_HISTORY": 0.125,
+      "MISSING": 0.8416666666666667,
+      "OK": 0.03333333333333333
+     },
+     "buyer_growth": {
+      "INSUFFICIENT_HISTORY": 0.7416666666666667,
+      "MISSING": 0.025,
+      "OK": 0.23333333333333334
+     },
+     "creator_pct": {
+      "MISSING": 0.39166666666666666,
+      "OK": 0.6083333333333333
+     },
+     "cross_venue": {
+      "MISSING": 1.0
+     },
+     "est_slippage": {
+      "OK": 0.3,
+      "STALE": 0.4,
+      "UNVERIFIED": 0.3
+     },
+     "holders": {
+      "MISSING": 0.39166666666666666,
+      "OK": 0.6083333333333333
+     },
+     "independence_ratio": {
+      "MISSING": 0.7333333333333333,
+      "UNVERIFIED": 0.26666666666666666
+     },
+     "liquidity_change": {
+      "MISSING": 0.6,
+      "OK": 0.4
+     },
+     "liquidity_usd": {
+      "OK": 0.6,
+      "STALE": 0.4
+     },
+     "market_cap": {
+      "MISSING": 0.1,
+      "OK": 0.9
+     },
+     "narrative_breadth": {
+      "OK": 1.0
+     },
+     "price": {
+      "MISSING": 0.1,
+      "OK": 0.9
+     },
+     "price_z_driving": {
+      "MISSING": 0.775,
+      "OK": 0.225
+     },
+     "social_mentions": {
+      "MISSING": 1.0
+     },
+     "top10_pct": {
+      "MISSING": 0.39166666666666666,
+      "OK": 0.6083333333333333
+     },
+     "trades_z_15": {
+      "INSUFFICIENT_HISTORY": 0.325,
+      "MISSING": 0.6166666666666667,
+      "OK": 0.058333333333333334
+     },
+     "unique_buyers": {
+      "MISSING": 0.025,
+      "OK": 0.975
+     },
+     "volume_z_15": {
+      "INSUFFICIENT_HISTORY": 0.36666666666666664,
+      "MISSING": 0.4083333333333333,
+      "OK": 0.225
+     }
+    },
+    "move_class_by_token": {
+     "solana:141bZt7hXvDezAvuKMGym1Y8wFUWxD4NNMJ82VDmbonk": {
+      "UNCLASSIFIED": 10
+     },
+     "solana:2FsgkzDB1HUQBwikTbCTxCtnrwrdf2qStFptE6TPRoCV": {
+      "NORMAL": 9,
+      "UNCLASSIFIED": 1
+     },
+     "solana:2fVHL58T1z9Pm63cCQP6wc9SWVivjzdZRY74Q8Anpump": {
+      "UNCLASSIFIED": 10
+     },
+     "solana:4q1V2WZcwLHCQc9CEuLDsYyJc3Q2gN3Ad9u33EcApump": {
+      "UNCLASSIFIED": 10
+     },
+     "solana:9tib9sVufn3qCxnwszbGgfg396Jr9RcBUMsXnKGBrK4A": {
+      "NORMAL": 9,
+      "UNCLASSIFIED": 1
+     },
+     "solana:ADzAcui1WQaeM8kRV5oZFsb9tsFhaoko7Qzs2ELqpump": {
+      "UNCLASSIFIED": 10
+     },
+     "solana:CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp": {
+      "UNCLASSIFIED": 10
+     },
+     "solana:CbcyNo7m1amFWqEQm2m4PLv1UNvpcL3C1Ujm6AkzpKoU": {
+      "UNCLASSIFIED": 10
+     },
+     "solana:Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk": {
+      "UNCLASSIFIED": 10
+     },
+     "solana:EMc7FL2B5ZKVbUk7CHxTPMk1pnTXjLmf5o1ML5Pgpump": {
+      "UNCLASSIFIED": 10
+     },
+     "solana:EeTBxBbQEafRJHUAfWTasxygTQhmcD2Mx2mRxKgQSFWe": {
+      "UNCLASSIFIED": 10
+     },
+     "solana:GytyxXBmcNPdM4nCug4qLZSB1DHe6SyYkJwyFZed4yQN": {
+      "NORMAL": 9,
+      "UNCLASSIFIED": 1
+     }
+    },
+    "normalization": {
+     "coverage_gaps": {
+      "solana:CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp": [
+       [
+        1790757133860,
+        1790757732000
+       ],
+       [
+        1790757747375,
+        1790758001000
+       ],
+       [
+        1790758011149,
+        1790758137000
+       ]
+      ]
+     },
+     "dataset_sha256": "fb7d3607fbd91c34df16fad4b77ce27119a369b6fc5740f94d45dbeb186b2d42",
+     "duplicate_swaps": 26176,
+     "exchanges": 449,
+     "first_response_ms": 1790755331188,
+     "issues": {
+      "COVERAGE_GAP": 1,
+      "DERIVED_FIELD": 256,
+      "DUPLICATE_OBSERVATION": 1,
+      "FORMING_BAR_DROPPED": 38,
+      "NULL_FIELD": 95,
+      "PAGE_FULL": 91,
+      "PROVIDER_ERROR": 78
+     },
+     "last_response_ms": 1790758406375,
+     "provider_errors": 78,
+     "records": {
+      "Coverage": 310,
+      "HolderSnapshot": 23,
+      "PoolInfo": 256,
+      "PoolSnapshot": 344,
+      "ProviderBar": 598,
+      "Swap": 31173,
+      "TokenMeta": 282
+     },
+     "responses_ok": 371,
+     "run_dir": "datasets/phase2/runs/gt-sol-20260930a",
+     "tokens": 93
+    },
+    "picked": [
+     {
+      "created_ts": 1790754822000,
+      "dex": "pump-fun",
+      "h1_txns": 4,
+      "liquidity_usd": 2581.9907,
+      "pool": "6tpuF9m2s8abaqmzRGxUdhUErRbggT8rDpFswsKJoQJs",
+      "stratum": "quiet_young",
+      "token": "EMc7FL2B5ZKVbUk7CHxTPMk1pnTXjLmf5o1ML5Pgpump",
+      "total_supply": 2262198823.1894045
+     },
+     {
+      "created_ts": 1790754846000,
+      "dex": "pump-fun",
+      "h1_txns": 3,
+      "liquidity_usd": 2719.0904,
+      "pool": "FGmprTjfLyWvkBcs5vuXAPqwu43kncJsgxHHH9pRDLaT",
+      "stratum": "quiet_young",
+      "token": "ADzAcui1WQaeM8kRV5oZFsb9tsFhaoko7Qzs2ELqpump",
+      "total_supply": 999999999.9525212
+     },
+     {
+      "created_ts": 1790754804000,
+      "dex": "pump-fun",
+      "h1_txns": 239,
+      "liquidity_usd": 265.4048,
+      "pool": "H6Xn3EUpTcMxVjRpqMwgFmCz1yhzSQKQN33VKGQin9ZL",
+      "stratum": "young",
+      "token": "4q1V2WZcwLHCQc9CEuLDsYyJc3Q2gN3Ad9u33EcApump",
+      "total_supply": 2000000000.1459584
+     },
+     {
+      "created_ts": 1790754825000,
+      "dex": "meteora-dbc",
+      "h1_txns": 1,
+      "liquidity_usd": 0.0,
+      "pool": "EjrebF74cUDAvYbQHTLEh6FwkGiBRP5dXmpD6MHktdj3",
+      "stratum": "young",
+      "token": "141bZt7hXvDezAvuKMGym1Y8wFUWxD4NNMJ82VDmbonk",
+      "total_supply": 1752783855.8368819
+     },
+     {
+      "created_ts": 1790754890000,
+      "dex": "pump-fun",
+      "h1_txns": 675,
+      "liquidity_usd": 3111.6729,
+      "pool": "2iJyUmnGDpcHbJfrUQahnVhQcxewcSxRTcFjkeKbKuqY",
+      "stratum": "young",
+      "token": "EeTBxBbQEafRJHUAfWTasxygTQhmcD2Mx2mRxKgQSFWe",
+      "total_supply": 1016791629.8839643
+     },
+     {
+      "created_ts": 1790754877000,
+      "dex": "pump-fun",
+      "h1_txns": 50,
+      "liquidity_usd": 83.2015,
+      "pool": "5yBj7ZEV34fDwLHRNoUhzsvhY4Ma4aEdX7ry8auxnSAt",
+      "stratum": "young",
+      "token": "2fVHL58T1z9Pm63cCQP6wc9SWVivjzdZRY74Q8Anpump",
+      "total_supply": 2000000000.1180327
+     },
+     {
+      "created_ts": 1756493686000,
+      "dex": "raydium-clmm",
+      "h1_txns": 725,
+      "liquidity_usd": 3184354.6188,
+      "pool": "HnhpJPJgBG2KwniMTNW8cVBHvk1hFog3RC3kjnyc23tD",
+      "stratum": "trending",
+      "token": "CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp",
+      "total_supply": 1977215682.7023287
+     },
+     {
+      "created_ts": 1746886998000,
+      "dex": "raydium",
+      "h1_txns": 133,
+      "liquidity_usd": 5304633.3142,
+      "pool": "Q2sPHPdUWFMg7M7wwrQKLrn619cAucfRsmhVJffodSp",
+      "stratum": "trending",
+      "token": "Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk",
+      "total_supply": 997668633.6771467
+     },
+     {
+      "created_ts": 1790370915000,
+      "dex": "pumpswap",
+      "h1_txns": 1397,
+      "liquidity_usd": 580291.7724,
+      "pool": "4JAnKFddd5fFTk5PxDj3PpTWJuTEfSWQEjZJcgKQ9KwW",
+      "stratum": "trending",
+      "token": "CbcyNo7m1amFWqEQm2m4PLv1UNvpcL3C1Ujm6AkzpKoU",
+      "total_supply": 983389255.4449114
+     },
+     {
+      "created_ts": 1790638766000,
+      "dex": "pumpswap",
+      "h1_txns": 0,
+      "liquidity_usd": 6.145961121e-07,
+      "pool": "AxGtLoCCfgXD1STXNUT8UFowHHQn4GEFPRg4wWi3uZXq",
+      "stratum": "established",
+      "token": "9tib9sVufn3qCxnwszbGgfg396Jr9RcBUMsXnKGBrK4A",
+      "total_supply": 99449907692.99944
+     },
+     {
+      "created_ts": 1790688881000,
+      "dex": "pumpswap",
+      "h1_txns": 0,
+      "liquidity_usd": 0.002941972348,
+      "pool": "4ZLvQbQsJKUukbeADqFh7PMhmwCyWuRJMpLWnm7WedeE",
+      "stratum": "established",
+      "token": "2FsgkzDB1HUQBwikTbCTxCtnrwrdf2qStFptE6TPRoCV",
+      "total_supply": 1000000000.0354846
+     },
+     {
+      "created_ts": 1790732648000,
+      "dex": "pumpswap",
+      "h1_txns": 0,
+      "liquidity_usd": 3.11171904323294e-05,
+      "pool": "4EaE7RrNLr4Ky1rBwu69T9UhujbxhMHoiMDdz6HrDxEF",
+      "stratum": "established",
+      "token": "GytyxXBmcNPdM4nCug4qLZSB1DHe6SyYkJwyFZed4yQN",
+      "total_supply": 999999999.9596506
+     }
+    ],
+    "raw_audit": {
+     "body_files": 250,
+     "by_provider": {
+      "dexscreener": {
+       "exchanges": 15,
+       "valid_json": 15
+      },
+      "geckoterminal": {
+       "exchanges": 434,
+       "identical_body_repeats": 121,
+       "provider_errors": 78,
+       "valid_json": 356
+      }
+     },
+     "referenced_bodies": 250,
+     "referenced_but_missing": 0,
+     "unreferenced_body_files": 0
+    },
+    "replay_summary": {
+     "capabilities": {
+      "creator": true,
+      "funding": false,
+      "liquidity_events": false,
+      "news": false,
+      "social": false
+     },
+     "code_version": "6b1c9050da91da1447bfe957e741ea6c1a366e19",
+     "configuration_hash": "417bd32cce8fb72c",
+     "counts": {
+      "assessments": 120,
+      "exhaustion:DISTRIBUTION": 1,
+      "exhaustion:EXTENDED": 21,
+      "exhaustion:HEALTHY_EXPANSION": 98,
+      "failure:CONFLICTING_DATA": 7,
+      "failure:HIGH_SLIPPAGE": 24,
+      "failure:INSUFFICIENT_HISTORY": 81,
+      "failure:LOW_LIQUIDITY": 54,
+      "failure:STALE_DATA": 108,
+      "flag:coordinated_cluster": 54,
+      "flag:sniper_activity": 9,
+      "flag:volume_concentration": 49,
+      "lifecycle:EARLY_LIFE": 80,
+      "lifecycle:ESTABLISHED": 40,
+      "move:NORMAL": 27,
+      "move:UNCLASSIFIED": 93,
+      "regime:DEAD_ILLIQUID": 72,
+      "regime:NEUTRAL": 36,
+      "regime:UNKNOWN": 12,
+      "role:ISOLATED_MOVE": 120,
+      "signal:NO_SIGNAL": 120,
+      "vetoed": 82
+     },
+     "dataset_id": "gt-sol-20260930a:fb7d3607fbd91c34",
+     "end_ts": 1790758406375,
+     "records_sha256": "fa103fc94b52f0cc7930af9a582813ec1916f63c2ec276e74bee5e30a6f21cab",
+     "start_ts": 1790755490851,
+     "step_ms": 300000,
+     "steps": 10,
+     "tokens": 12
+    },
+    "run": {
+     "code_version": "d80acd9e674fdb3d2d1fc1bc23165143b6702ff2",
+     "cycles": 15,
+     "ended_ms": 1790758406395,
+     "errors": 78,
+     "exchanges": 449,
+     "execution": "none: acquisition only, no orders",
+     "plan": {
+      "backfill_pages": 2,
+      "cycle_s": 60,
+      "ds_rate_per_s": 2.0,
+      "duration_s": 3000,
+      "gt_rate_per_s": 0.45,
+      "holders_per_cycle": 2,
+      "lag_ms": 60000,
+      "network": "solana",
+      "new_pool_pages": 3,
+      "poll_ohlcv_limit": 5,
+      "seed": 20260930,
+      "strata": {
+       "established": 3,
+       "quiet_young": 2,
+       "trending": 3,
+       "young": 4
+      }
+     },
+     "runner": "GitHub Actions 1000000003",
+     "started_ms": 1790755331040,
+     "status": "COMPLETE"
+    },
+    "selection": {
+     "candidates": {
+      "established": 20,
+      "quiet_young": 10,
+      "trending": 20,
+      "young": 60
+     },
+     "seed": 20260930,
+     "strata_targets": {
+      "established": 3,
+      "quiet_young": 2,
+      "trending": 3,
+      "young": 4
+     }
+    },
+    "trade_availability_lag_ms": {
+     "n": 3918,
+     "p50": 92473,
+     "p95": 900335
+    },
+    "unique_swaps": 4997
+   },
+   "run": {
+    "code_version": "d80acd9e674fdb3d2d1fc1bc23165143b6702ff2",
+    "cycles": 15,
+    "ended_ms": 1790758406395,
+    "errors": 78,
+    "exchanges": 449,
+    "execution": "none: acquisition only, no orders",
+    "plan": {
+     "backfill_pages": 2,
+     "cycle_s": 60,
+     "ds_rate_per_s": 2.0,
+     "duration_s": 3000,
+     "gt_rate_per_s": 0.45,
+     "holders_per_cycle": 2,
+     "lag_ms": 60000,
+     "network": "solana",
+     "new_pool_pages": 3,
+     "poll_ohlcv_limit": 5,
+     "seed": 20260930,
+     "strata": {
+      "established": 3,
+      "quiet_young": 2,
+      "trending": 3,
+      "young": 4
+     }
+    },
+    "runner": "GitHub Actions 1000000003",
+    "started_ms": 1790755331040,
+    "status": "COMPLETE"
+   },
+   "run_id": "gt-sol-20260930a",
+   "selection": {
+    "candidates": {
+     "established": 20,
+     "quiet_young": 10,
+     "trending": 20,
+     "young": 60
+    },
+    "excluded": [],
+    "picked": [
+     {
+      "created_ts": 1790754822000,
+      "dex": "pump-fun",
+      "h1_txns": 4,
+      "liquidity_usd": 2581.9907,
+      "pool": "6tpuF9m2s8abaqmzRGxUdhUErRbggT8rDpFswsKJoQJs",
+      "stratum": "quiet_young",
+      "token": "EMc7FL2B5ZKVbUk7CHxTPMk1pnTXjLmf5o1ML5Pgpump",
+      "total_supply": 2262198823.1894045
+     },
+     {
+      "created_ts": 1790754846000,
+      "dex": "pump-fun",
+      "h1_txns": 3,
+      "liquidity_usd": 2719.0904,
+      "pool": "FGmprTjfLyWvkBcs5vuXAPqwu43kncJsgxHHH9pRDLaT",
+      "stratum": "quiet_young",
+      "token": "ADzAcui1WQaeM8kRV5oZFsb9tsFhaoko7Qzs2ELqpump",
+      "total_supply": 999999999.9525212
+     },
+     {
+      "created_ts": 1790754804000,
+      "dex": "pump-fun",
+      "h1_txns": 239,
+      "liquidity_usd": 265.4048,
+      "pool": "H6Xn3EUpTcMxVjRpqMwgFmCz1yhzSQKQN33VKGQin9ZL",
+      "stratum": "young",
+      "token": "4q1V2WZcwLHCQc9CEuLDsYyJc3Q2gN3Ad9u33EcApump",
+      "total_supply": 2000000000.1459584
+     },
+     {
+      "created_ts": 1790754825000,
+      "dex": "meteora-dbc",
+      "h1_txns": 1,
+      "liquidity_usd": 0.0,
+      "pool": "EjrebF74cUDAvYbQHTLEh6FwkGiBRP5dXmpD6MHktdj3",
+      "stratum": "young",
+      "token": "141bZt7hXvDezAvuKMGym1Y8wFUWxD4NNMJ82VDmbonk",
+      "total_supply": 1752783855.8368819
+     },
+     {
+      "created_ts": 1790754890000,
+      "dex": "pump-fun",
+      "h1_txns": 675,
+      "liquidity_usd": 3111.6729,
+      "pool": "2iJyUmnGDpcHbJfrUQahnVhQcxewcSxRTcFjkeKbKuqY",
+      "stratum": "young",
+      "token": "EeTBxBbQEafRJHUAfWTasxygTQhmcD2Mx2mRxKgQSFWe",
+      "total_supply": 1016791629.8839643
+     },
+     {
+      "created_ts": 1790754877000,
+      "dex": "pump-fun",
+      "h1_txns": 50,
+      "liquidity_usd": 83.2015,
+      "pool": "5yBj7ZEV34fDwLHRNoUhzsvhY4Ma4aEdX7ry8auxnSAt",
+      "stratum": "young",
+      "token": "2fVHL58T1z9Pm63cCQP6wc9SWVivjzdZRY74Q8Anpump",
+      "total_supply": 2000000000.1180327
+     },
+     {
+      "created_ts": 1756493686000,
+      "dex": "raydium-clmm",
+      "h1_txns": 725,
+      "liquidity_usd": 3184354.6188,
+      "pool": "HnhpJPJgBG2KwniMTNW8cVBHvk1hFog3RC3kjnyc23tD",
+      "stratum": "trending",
+      "token": "CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp",
+      "total_supply": 1977215682.7023287
+     },
+     {
+      "created_ts": 1746886998000,
+      "dex": "raydium",
+      "h1_txns": 133,
+      "liquidity_usd": 5304633.3142,
+      "pool": "Q2sPHPdUWFMg7M7wwrQKLrn619cAucfRsmhVJffodSp",
+      "stratum": "trending",
+      "token": "Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk",
+      "total_supply": 997668633.6771467
+     },
+     {
+      "created_ts": 1790370915000,
+      "dex": "pumpswap",
+      "h1_txns": 1397,
+      "liquidity_usd": 580291.7724,
+      "pool": "4JAnKFddd5fFTk5PxDj3PpTWJuTEfSWQEjZJcgKQ9KwW",
+      "stratum": "trending",
+      "token": "CbcyNo7m1amFWqEQm2m4PLv1UNvpcL3C1Ujm6AkzpKoU",
+      "total_supply": 983389255.4449114
+     },
+     {
+      "created_ts": 1790638766000,
+      "dex": "pumpswap",
+      "h1_txns": 0,
+      "liquidity_usd": 6.145961121e-07,
+      "pool": "AxGtLoCCfgXD1STXNUT8UFowHHQn4GEFPRg4wWi3uZXq",
+      "stratum": "established",
+      "token": "9tib9sVufn3qCxnwszbGgfg396Jr9RcBUMsXnKGBrK4A",
+      "total_supply": 99449907692.99944
+     },
+     {
+      "created_ts": 1790688881000,
+      "dex": "pumpswap",
+      "h1_txns": 0,
+      "liquidity_usd": 0.002941972348,
+      "pool": "4ZLvQbQsJKUukbeADqFh7PMhmwCyWuRJMpLWnm7WedeE",
+      "stratum": "established",
+      "token": "2FsgkzDB1HUQBwikTbCTxCtnrwrdf2qStFptE6TPRoCV",
+      "total_supply": 1000000000.0354846
+     },
+     {
+      "created_ts": 1790732648000,
+      "dex": "pumpswap",
+      "h1_txns": 0,
+      "liquidity_usd": 3.11171904323294e-05,
+      "pool": "4EaE7RrNLr4Ky1rBwu69T9UhujbxhMHoiMDdz6HrDxEF",
+      "stratum": "established",
+      "token": "GytyxXBmcNPdM4nCug4qLZSB1DHe6SyYkJwyFZed4yQN",
+      "total_supply": 999999999.9596506
+     }
+    ],
+    "procedure": "Stratified random selection, recorded in full so it can be audited.\n\n    Strata (evaluated on data available at selection time only):\n      young        random pools from the newest-pools pages\n      quiet_young  newest pools with fewer than 5 txns in the last hour\n      trending     random pools from GeckoTerminal's trending list\n      established  random pools from the top-24h-volume list\n    Tokens already picked in an earlier stratum are skipped, and non-meme\n    base assets (SOL, USDC, USDT) are excluded.\n    ",
+    "seed": 20260930,
+    "selected_at_ms": 1790755337786,
+    "strata_targets": {
+     "established": 3,
+     "quiet_young": 2,
+     "trending": 3,
+     "young": 4
+    }
+   }
+  },
+  {
+   "acquisition": {
+    "circuit_waits": null,
+    "final_gt_rate_per_s": null,
+    "label": "PARTIAL/CANCELLED",
+    "live_polls": 0,
+    "max_poll_interval_s": null,
+    "median_poll_interval_s": null,
+    "planned_cycle_s": 90,
+    "provider_errors": null,
+    "rule": "PARTIAL/CANCELLED if run.json has no COMPLETE status; ACQUISITION-LIMITED if complete but any provider error or any token without a successful backfill; otherwise COMPLETE",
+    "run_status": null,
+    "tokens_attempted": 8,
+    "tokens_without_backfill": 4
+   },
+   "archive_classification": {
+    "classification": "BLOCKED",
+    "reasons": [
+     "rule 1: no archive is replayable"
+    ]
+   },
+   "cross_machine_normalization_match": true,
+   "dataset_sha256_local": "031917e87897293846524c7f2977134f0e723a65d3220cf98f175eb8f15d9f36",
+   "dataset_sha256_runner": "031917e87897293846524c7f2977134f0e723a65d3220cf98f175eb8f15d9f36",
+   "funnel": {
+    "attempted": 8,
+    "classified": 0,
+    "definitions": {
+     "attempted": "tokens picked by the seeded stratified selection and polled",
+     "classified": "tokens with at least one replay assessment whose move class was not UNCLASSIFIED",
+     "discovered": "distinct tokens described by any discovery or poll response",
+     "evaluable": "tokens with at least one replay assessment whose price input was OK and not NO_DATA",
+     "successful": "attempted tokens with at least one successful OHLCV and one successful trades response"
+    },
+    "discovered": 90,
+    "evaluable": 0,
+    "per_token": [
+     {
+      "backfill_failed": 0,
+      "backfill_ok": 1,
+      "bar_history_minutes": 1,
+      "bar_versions": 1,
+      "classified": false,
+      "data_quality_counts": {},
+      "distinct_bars": 1,
+      "evaluable": false,
+      "failed_responses": {},
+      "failed_responses_total": 0,
+      "holder_snapshots": 0,
+      "holder_snapshots_with_creator_pct": 0,
+      "ok_responses": {
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 1
+      },
+      "reduction_reason": "no successful OHLCV and trades response",
+      "replay_steps": 0,
+      "stratum": "quiet_young",
+      "successful": false,
+      "token": "BGSomEy7xwZcndYXxpuv1fbTnkVtyEE8XTNQygm4pump"
+     },
+     {
+      "backfill_failed": 0,
+      "backfill_ok": 1,
+      "bar_history_minutes": 1,
+      "bar_versions": 1,
+      "classified": false,
+      "data_quality_counts": {},
+      "distinct_bars": 1,
+      "evaluable": false,
+      "failed_responses": {},
+      "failed_responses_total": 0,
+      "holder_snapshots": 0,
+      "holder_snapshots_with_creator_pct": 0,
+      "ok_responses": {
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 1
+      },
+      "reduction_reason": "no successful OHLCV and trades response",
+      "replay_steps": 0,
+      "stratum": "young",
+      "successful": false,
+      "token": "5pU25cDQWqWwhXw53CYVTVCmQhBVBPnsBfX16rntcFga"
+     },
+     {
+      "backfill_failed": 0,
+      "backfill_ok": 1,
+      "bar_history_minutes": 2,
+      "bar_versions": 2,
+      "classified": false,
+      "data_quality_counts": {},
+      "distinct_bars": 2,
+      "evaluable": false,
+      "failed_responses": {},
+      "failed_responses_total": 0,
+      "holder_snapshots": 0,
+      "holder_snapshots_with_creator_pct": 0,
+      "ok_responses": {
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 1
+      },
+      "reduction_reason": "no successful OHLCV and trades response",
+      "replay_steps": 0,
+      "stratum": "young",
+      "successful": false,
+      "token": "D48GozLGiYdyqZa5cDkCwhfKESSr8p3BCwqnxNZnpump"
+     },
+     {
+      "backfill_failed": 0,
+      "backfill_ok": 1,
+      "bar_history_minutes": 2,
+      "bar_versions": 2,
+      "classified": false,
+      "data_quality_counts": {},
+      "distinct_bars": 2,
+      "evaluable": false,
+      "failed_responses": {},
+      "failed_responses_total": 0,
+      "holder_snapshots": 1,
+      "holder_snapshots_with_creator_pct": 1,
+      "ok_responses": {
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 1
+      },
+      "reduction_reason": "no successful OHLCV and trades response",
+      "replay_steps": 0,
+      "stratum": "young",
+      "successful": false,
+      "token": "F19gvBfbT2C2hfR4K1RDfP7Xo5WrkgyP5FPs7qQc4WeK"
+     },
+     {
+      "backfill_failed": 0,
+      "backfill_ok": 0,
+      "bar_history_minutes": 0,
+      "bar_versions": 0,
+      "classified": false,
+      "data_quality_counts": {},
+      "distinct_bars": 0,
+      "evaluable": false,
+      "failed_responses": {},
+      "failed_responses_total": 0,
+      "holder_snapshots": 0,
+      "holder_snapshots_with_creator_pct": 0,
+      "ok_responses": {},
+      "reduction_reason": "no successful OHLCV and trades response",
+      "replay_steps": 0,
+      "stratum": "trending",
+      "successful": false,
+      "token": "5tCju6YNxHq5zrA6tGndr6F7TK42mpUFmeE31cSFpump"
+     },
+     {
+      "backfill_failed": 0,
+      "backfill_ok": 0,
+      "bar_history_minutes": 0,
+      "bar_versions": 0,
+      "classified": false,
+      "data_quality_counts": {},
+      "distinct_bars": 0,
+      "evaluable": false,
+      "failed_responses": {},
+      "failed_responses_total": 0,
+      "holder_snapshots": 0,
+      "holder_snapshots_with_creator_pct": 0,
+      "ok_responses": {},
+      "reduction_reason": "no successful OHLCV and trades response",
+      "replay_steps": 0,
+      "stratum": "trending",
+      "successful": false,
+      "token": "BdzaE3T7uU59pBVDBHZVZh3yWrrpo4oPrXdv4nPDpump"
+     },
+     {
+      "backfill_failed": 0,
+      "backfill_ok": 0,
+      "bar_history_minutes": 0,
+      "bar_versions": 0,
+      "classified": false,
+      "data_quality_counts": {},
+      "distinct_bars": 0,
+      "evaluable": false,
+      "failed_responses": {},
+      "failed_responses_total": 0,
+      "holder_snapshots": 0,
+      "holder_snapshots_with_creator_pct": 0,
+      "ok_responses": {},
+      "reduction_reason": "no successful OHLCV and trades response",
+      "replay_steps": 0,
+      "stratum": "established",
+      "successful": false,
+      "token": "E9bu3g16RYbN3WwVSWVNtJKLrsSxjJMJSN2TrGo3Hdfv"
+     },
+     {
+      "backfill_failed": 0,
+      "backfill_ok": 0,
+      "bar_history_minutes": 0,
+      "bar_versions": 0,
+      "classified": false,
+      "data_quality_counts": {},
+      "distinct_bars": 0,
+      "evaluable": false,
+      "failed_responses": {},
+      "failed_responses_total": 0,
+      "holder_snapshots": 0,
+      "holder_snapshots_with_creator_pct": 0,
+      "ok_responses": {},
+      "reduction_reason": "no successful OHLCV and trades response",
+      "replay_steps": 0,
+      "stratum": "established",
+      "successful": false,
+      "token": "Gh7RHpfvzubiz1SevSxHQosa75vv8zfdWf7niGQxTLAb"
+     }
+    ],
+    "successful": 0,
+    "totals": {
+     "bar_versions": 6,
+     "distinct_bars": 6,
+     "tokens_with_creator_pct": 1,
+     "tokens_with_holder_snapshot": 1,
+     "tokens_with_successful_backfill": 4
+    },
+    "unclassified_or_incomplete": 8
+   },
+   "normalization": {
+    "coverage_gaps": {},
+    "dataset_sha256": "031917e87897293846524c7f2977134f0e723a65d3220cf98f175eb8f15d9f36",
+    "duplicate_swaps": 0,
+    "exchanges": 13,
+    "first_response_ms": 1790758933008,
+    "issues": {
+     "DERIVED_FIELD": 100,
+     "FORMING_BAR_DROPPED": 2,
+     "NULL_FIELD": 7
+    },
+    "last_response_ms": 1790759085174,
+    "provider_errors": 0,
+    "records": {
+     "Coverage": 4,
+     "HolderSnapshot": 1,
+     "PoolInfo": 100,
+     "PoolSnapshot": 96,
+     "ProviderBar": 6,
+     "TokenMeta": 104
+    },
+    "responses_ok": 13,
+    "run_dir": "datasets/phase2/runs/gt-sol-20260930b",
+    "tokens": 90
+   },
+   "normalization_summary": {
+    "coverage_gap_count": 0,
+    "tokens_with_coverage_gaps": 0
+   },
+   "not_replayable_reason": "no live poll responses in archive (run ended during backfill)",
+   "raw_audit": {
+    "body_files": 13,
+    "by_provider": {
+     "geckoterminal": {
+      "exchanges": 13,
+      "valid_json": 13
+     }
+    },
+    "referenced_bodies": 13,
+    "referenced_but_missing": 0,
+    "unreferenced_body_files": 0
+   },
+   "replayable": false,
+   "run": {
+    "code_version": "b6c74a2937b41e9fd9b40c3c6328af340dcf3b54",
+    "execution": "none: acquisition only, no orders",
+    "plan": {
+     "backfill_pages": 2,
+     "circuit_waits": 5,
+     "cycle_s": 90,
+     "ds_rate_per_s": 2.0,
+     "duration_s": 3000,
+     "gt_min_rate_per_s": 0.03,
+     "gt_rate_per_s": 0.2,
+     "holders_per_cycle": 1,
+     "lag_ms": 60000,
+     "network": "solana",
+     "new_pool_pages": 3,
+     "ohlcv_every": 2,
+     "poll_ohlcv_limit": 5,
+     "seed": 20260930,
+     "strata": {
+      "established": 2,
+      "quiet_young": 1,
+      "trending": 2,
+      "young": 3
+     }
+    },
+    "runner": "GitHub Actions 1000000008",
+    "started_ms": 1790758932920
+   },
+   "run_id": "gt-sol-20260930b",
+   "selection": {
+    "candidates": {
+     "established": 20,
+     "quiet_young": 17,
+     "trending": 20,
+     "young": 60
+    },
+    "excluded": [],
+    "picked": [
+     {
+      "created_ts": 1790758891000,
+      "dex": "pump-fun",
+      "h1_txns": 1,
+      "liquidity_usd": 2625.14223570517,
+      "pool": "9gHSVbTnHUcFpw4f8cZSMGaCpV3BH8mVNPnqtJovvxU7",
+      "stratum": "quiet_young",
+      "token": "BGSomEy7xwZcndYXxpuv1fbTnkVtyEE8XTNQygm4pump",
+      "total_supply": 1000000000.1296474
+     },
+     {
+      "created_ts": 1790758781000,
+      "dex": "pump-fun",
+      "h1_txns": 1,
+      "liquidity_usd": 2622.76199118974,
+      "pool": "3jcrxB1VAHhK7D8LHu6WqBHMUqViZhHuKEy1rN1rXNMj",
+      "stratum": "young",
+      "token": "5pU25cDQWqWwhXw53CYVTVCmQhBVBPnsBfX16rntcFga",
+      "total_supply": 1000000000.1049515
+     },
+     {
+      "created_ts": 1790758875000,
+      "dex": "pump-fun",
+      "h1_txns": 66,
+      "liquidity_usd": 460.5922,
+      "pool": "5mB5sp98LkXnQk4d1iwyDU3JWFeiXkyRxwhcycbFT1Sj",
+      "stratum": "young",
+      "token": "D48GozLGiYdyqZa5cDkCwhfKESSr8p3BCwqnxNZnpump",
+      "total_supply": 1539768206.7452688
+     },
+     {
+      "created_ts": 1790758899000,
+      "dex": "pump-fun",
+      "h1_txns": 26,
+      "liquidity_usd": 4444.59423189381,
+      "pool": "8yRmAGxqwJPWeVyv3Qe7v1VNBWDRMRp5ZUC4NwEEu6Rc",
+      "stratum": "young",
+      "token": "F19gvBfbT2C2hfR4K1RDfP7Xo5WrkgyP5FPs7qQc4WeK",
+      "total_supply": 955048733.0343704
+     },
+     {
+      "created_ts": 1790586789000,
+      "dex": "pumpswap",
+      "h1_txns": 319,
+      "liquidity_usd": 69460.2233,
+      "pool": "8ewuF2o8ACro7fqWepZ3tKhkbBjndZU4Ldk9scRPw83d",
+      "stratum": "trending",
+      "token": "5tCju6YNxHq5zrA6tGndr6F7TK42mpUFmeE31cSFpump",
+      "total_supply": 968163914.4607309
+     },
+     {
+      "created_ts": 1790381215000,
+      "dex": "pumpswap",
+      "h1_txns": 30,
+      "liquidity_usd": 49494.818,
+      "pool": "DGvB8KyD79wFBJ7Kr7mW54qSfi7Yk3UrhJkcnTSd6frb",
+      "stratum": "trending",
+      "token": "BdzaE3T7uU59pBVDBHZVZh3yWrrpo4oPrXdv4nPDpump",
+      "total_supply": 897368200.1268934
+     },
+     {
+      "created_ts": 1790689730000,
+      "dex": "pumpswap",
+      "h1_txns": 0,
+      "liquidity_usd": 4.743620238e-07,
+      "pool": "HBJ4AJTJd4LBWGNYHFqrv93QoSzuCTpr523REkQXJcqN",
+      "stratum": "established",
+      "token": "E9bu3g16RYbN3WwVSWVNtJKLrsSxjJMJSN2TrGo3Hdfv",
+      "total_supply": 99999999990.0411
+     },
+     {
+      "created_ts": 1790739660000,
+      "dex": "pumpswap",
+      "h1_txns": 3607,
+      "liquidity_usd": 405374.5214,
+      "pool": "EeYdQrxko3AWEFfDHhzQ6wx24JnXnq48qUMNuDnFz1yt",
+      "stratum": "established",
+      "token": "Gh7RHpfvzubiz1SevSxHQosa75vv8zfdWf7niGQxTLAb",
+      "total_supply": 100077063632.3462
+     }
+    ],
+    "procedure": "Stratified random selection, recorded in full so it can be audited.\n\n    Strata (evaluated on data available at selection time only):\n      young        random pools from the newest-pools pages\n      quiet_young  newest pools with fewer than 5 txns in the last hour\n      trending     random pools from GeckoTerminal's trending list\n      established  random pools from the top-24h-volume list\n    Tokens already picked in an earlier stratum are skipped, and non-meme\n    base assets (SOL, USDC, USDT) are excluded.\n    ",
+    "seed": 20260930,
+    "selected_at_ms": 1790758947974,
+    "strata_targets": {
+     "established": 2,
+     "quiet_young": 1,
+     "trending": 2,
+     "young": 3
+    }
+   }
+  },
+  {
+   "acquisition": {
+    "circuit_waits": 0,
+    "final_gt_rate_per_s": 0.09214992523193365,
+    "label": "COMPLETE",
+    "live_polls": 16,
+    "max_poll_interval_s": 193.242,
+    "median_poll_interval_s": 172.201,
+    "planned_cycle_s": 60,
+    "provider_errors": 0,
+    "rule": "PARTIAL/CANCELLED if run.json has no COMPLETE status; ACQUISITION-LIMITED if complete but any provider error or any token without a successful backfill; otherwise COMPLETE",
+    "run_status": "COMPLETE",
+    "tokens_attempted": 5,
+    "tokens_without_backfill": 0
+   },
+   "archive_classification": {
+    "classification": "VERIFIED WITH LIMITATIONS",
+    "reasons": [
+     "rule 5: funding transfers OK in 0.0% of gt-sol-20260930c assessments (< 50%; needed by cluster independence, fresh-wallet detector)",
+     "rule 5: news OK in 0.0% of gt-sol-20260930c assessments (< 50%; needed by catalyst engine)",
+     "rule 5: social OK in 0.0% of gt-sol-20260930c assessments (< 50%; needed by attention engine)",
+     "rule 5: liquidity changes OK in 32.0% of gt-sol-20260930c assessments (< 50%; needed by Move Quality liquidity component, exits)"
+    ]
+   },
+   "coverage_adjusted": {
+    "assessments": 50,
+    "classified_assessments": 20,
+    "classified_evaluable_assessments": 19,
+    "classified_share_of_all": {
+     "denominator": 50,
+     "denominator_definition": "all replay assessments",
+     "numerator": 20,
+     "numerator_definition": "classified assessments",
+     "source": "replay journal",
+     "value": 0.4
+    },
+    "classified_share_of_evaluable": {
+     "denominator": 49,
+     "denominator_definition": "evaluable assessments",
+     "numerator": 19,
+     "numerator_definition": "classified evaluable assessments",
+     "source": "replay journal",
+     "value": 0.3877551020408163
+    },
+    "creator_input_unknown_share": {
+     "denominator": 50,
+     "denominator_definition": "all assessments (every assessment evaluates the creator condition)",
+     "numerator": 21,
+     "numerator_definition": "assessments with creator input unknown",
+     "source": "replay journal",
+     "value": 0.42
+    },
+    "evaluable_assessments": 49,
+    "evaluable_share_of_all": {
+     "denominator": 50,
+     "denominator_definition": "all replay assessments",
+     "numerator": 49,
+     "numerator_definition": "evaluable assessments",
+     "source": "replay journal",
+     "value": 0.98
+    },
+    "fresh_evaluable_assessments": 7,
+    "fresh_share_of_evaluable": {
+     "denominator": 49,
+     "denominator_definition": "evaluable assessments",
+     "numerator": 7,
+     "numerator_definition": "evaluable assessments without STALE_DATA",
+     "source": "replay journal",
+     "value": 0.14285714285714285
+    },
+    "required_data_unavailable_assessments": 50,
+    "signals_per_evaluable": {
+     "denominator": 49,
+     "denominator_definition": "evaluable assessments",
+     "numerator": 0,
+     "numerator_definition": "evaluable assessments with a signal",
+     "source": "replay journal",
+     "value": 0.0
+    }
+   },
+   "cross_machine_normalization_match": true,
+   "dataset_sha256_local": "1ebe77ec9ec2e9b6f06da26cbcce17721db4504f6029baf610931f5489e71d14",
+   "dataset_sha256_runner": "1ebe77ec9ec2e9b6f06da26cbcce17721db4504f6029baf610931f5489e71d14",
+   "determinism": {
+    "identical": true,
+    "runs": [
+     {
+      "journal_sha256": "6fd732646de665f22a43b0651ed57a575440f656742fa56e38d57c552e81dac9",
+      "records_sha256": "8a155ada09e4eb0d8f017040c51d6c2a62de71772d051cea8836df1ac4585f0c"
+     },
+     {
+      "journal_sha256": "6fd732646de665f22a43b0651ed57a575440f656742fa56e38d57c552e81dac9",
+      "records_sha256": "8a155ada09e4eb0d8f017040c51d6c2a62de71772d051cea8836df1ac4585f0c"
+     }
+    ]
+   },
+   "funnel": {
+    "attempted": 5,
+    "classified": 2,
+    "definitions": {
+     "attempted": "tokens picked by the seeded stratified selection and polled",
+     "classified": "tokens with at least one replay assessment whose move class was not UNCLASSIFIED",
+     "discovered": "distinct tokens described by any discovery or poll response",
+     "evaluable": "tokens with at least one replay assessment whose price input was OK and not NO_DATA",
+     "successful": "attempted tokens with at least one successful OHLCV and one successful trades response"
+    },
+    "discovered": 93,
+    "evaluable": 5,
+    "per_token": [
+     {
+      "backfill_failed": 0,
+      "backfill_ok": 1,
+      "bar_history_minutes": 2,
+      "bar_versions": 48,
+      "classified": false,
+      "data_quality_counts": {
+       "INSUFFICIENT_HISTORY": 10,
+       "LOW_LIQUIDITY": 5,
+       "STALE_DATA": 9
+      },
+      "distinct_bars": 2,
+      "evaluable": true,
+      "failed_responses": {},
+      "failed_responses_total": 0,
+      "holder_snapshots": 4,
+      "holder_snapshots_with_creator_pct": 4,
+      "ok_responses": {
+       "gt.ohlcv": 16,
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 5,
+       "gt.trades": 16
+      },
+      "reduction_reason": "move never classifiable: INSUFFICIENT_HISTORY 10/10, LOW_LIQUIDITY 5/10, STALE_DATA 9/10",
+      "replay_steps": 10,
+      "stratum": "quiet_young",
+      "successful": true,
+      "token": "6LVPUuNdWmgsqwdyD9aFhmS4ijHJyQRXDJ3CQeSMpump"
+     },
+     {
+      "backfill_failed": 0,
+      "backfill_ok": 1,
+      "bar_history_minutes": 2,
+      "bar_versions": 49,
+      "classified": false,
+      "data_quality_counts": {
+       "INSUFFICIENT_HISTORY": 10,
+       "LOW_LIQUIDITY": 5,
+       "STALE_DATA": 8
+      },
+      "distinct_bars": 2,
+      "evaluable": true,
+      "failed_responses": {},
+      "failed_responses_total": 0,
+      "holder_snapshots": 0,
+      "holder_snapshots_with_creator_pct": 0,
+      "ok_responses": {
+       "gt.ohlcv": 16,
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 4,
+       "gt.trades": 16
+      },
+      "reduction_reason": "move never classifiable: INSUFFICIENT_HISTORY 10/10, LOW_LIQUIDITY 5/10, STALE_DATA 8/10",
+      "replay_steps": 10,
+      "stratum": "young",
+      "successful": true,
+      "token": "H3BGCayg7zqgWwaXmoy5DG6AkVbUXaN5apGyX4wHpump"
+     },
+     {
+      "backfill_failed": 0,
+      "backfill_ok": 1,
+      "bar_history_minutes": 3,
+      "bar_versions": 67,
+      "classified": false,
+      "data_quality_counts": {
+       "HIGH_SLIPPAGE": 5,
+       "INSUFFICIENT_HISTORY": 10,
+       "LOW_LIQUIDITY": 5,
+       "STALE_DATA": 8
+      },
+      "distinct_bars": 3,
+      "evaluable": true,
+      "failed_responses": {},
+      "failed_responses_total": 0,
+      "holder_snapshots": 4,
+      "holder_snapshots_with_creator_pct": 4,
+      "ok_responses": {
+       "gt.ohlcv": 16,
+       "gt.ohlcv.backfill": 1,
+       "gt.token_info": 4,
+       "gt.trades": 16
+      },
+      "reduction_reason": "move never classifiable: HIGH_SLIPPAGE 5/10, INSUFFICIENT_HISTORY 10/10, LOW_LIQUIDITY 5/10, STALE_DATA 8/10",
+      "replay_steps": 10,
+      "stratum": "young",
+      "successful": true,
+      "token": "5siRdWGetBqDh2Qz9JqPYqFZXQg3GVogvjUhK7UNEprc"
+     },
+     {
+      "backfill_failed": 0,
+      "backfill_ok": 2,
+      "bar_history_minutes": 2157,
+      "bar_versions": 2055,
+      "classified": true,
+      "data_quality_counts": {
+       "STALE_DATA": 10
+      },
+      "distinct_bars": 2045,
+      "evaluable": true,
+      "failed_responses": {},
+      "failed_responses_total": 0,
+      "holder_snapshots": 4,
+      "holder_snapshots_with_creator_pct": 4,
+      "ok_responses": {
+       "gt.ohlcv": 16,
+       "gt.ohlcv.backfill": 2,
+       "gt.token_info": 4,
+       "gt.trades": 16
+      },
+      "reduction_reason": null,
+      "replay_steps": 10,
+      "stratum": "trending",
+      "successful": true,
+      "token": "6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx"
+     },
+     {
+      "backfill_failed": 0,
+      "backfill_ok": 2,
+      "bar_history_minutes": 2090,
+      "bar_versions": 2057,
+      "classified": true,
+      "data_quality_counts": {
+       "NO_DATA": 1,
+       "STALE_DATA": 7
+      },
+      "distinct_bars": 2042,
+      "evaluable": true,
+      "failed_responses": {},
+      "failed_responses_total": 0,
+      "holder_snapshots": 4,
+      "holder_snapshots_with_creator_pct": 0,
+      "ok_responses": {
+       "gt.ohlcv": 16,
+       "gt.ohlcv.backfill": 2,
+       "gt.token_info": 4,
+       "gt.trades": 16
+      },
+      "reduction_reason": null,
+      "replay_steps": 10,
+      "stratum": "established",
+      "successful": true,
+      "token": "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH"
+     }
+    ],
+    "successful": 5,
+    "totals": {
+     "bar_versions": 4276,
+     "distinct_bars": 4094,
+     "tokens_with_creator_pct": 3,
+     "tokens_with_holder_snapshot": 4,
+     "tokens_with_successful_backfill": 5
+    },
+    "unclassified_or_incomplete": 3
+   },
+   "lookahead": {
+    "all_passed": true,
+    "per_time": [
+     {
+      "A_future_bar": true,
+      "B_future_trade": true,
+      "C_future_liquidity": true,
+      "D_timestamp_manipulation": true,
+      "E_truncation": true,
+      "F_determinism": true,
+      "t": 1790759945650
+     },
+     {
+      "A_future_bar": true,
+      "B_future_trade": true,
+      "C_future_liquidity": true,
+      "D_timestamp_manipulation": true,
+      "E_truncation": true,
+      "F_determinism": true,
+      "t": 1790760494675
+     },
+     {
+      "A_future_bar": true,
+      "B_future_trade": true,
+      "C_future_liquidity": true,
+      "D_timestamp_manipulation": true,
+      "E_truncation": true,
+      "F_determinism": true,
+      "t": 1790761043700
+     },
+     {
+      "A_future_bar": true,
+      "B_future_trade": true,
+      "C_future_liquidity": true,
+      "D_timestamp_manipulation": true,
+      "E_truncation": true,
+      "F_determinism": true,
+      "t": 1790761592725
+     }
+    ],
+    "summary": {
+     "A_future_bar": "4/4 passed",
+     "B_future_trade": "4/4 passed",
+     "C_future_liquidity": "4/4 passed",
+     "D_timestamp_manipulation": "4/4 passed",
+     "E_truncation": "4/4 passed",
+     "F_determinism": "4/4 passed"
+    },
+    "times": [
+     1790759945650,
+     1790760494675,
+     1790761043700,
+     1790761592725
+    ]
+   },
+   "normalization_summary": {
+    "coverage_gap_count": 0,
+    "tokens_with_coverage_gaps": 0
+   },
+   "postgres": {
+    "all_checks_zero": true,
+    "integrity_checks": {
+     "bars_without_raw_id": 0,
+     "coverage_beyond_seen": 0,
+     "duplicate_replay_steps": 0,
+     "journal_chain_breaks_in_db": 0,
+     "orphan_pools": 0,
+     "orphan_replay_records": 0,
+     "orphan_swaps": 0,
+     "raw_ids_not_in_manifest": 0,
+     "replay_config_hash_mismatch": 0,
+     "seen_before_event_swaps": 0,
+     "snapshots_without_raw_id": 0,
+     "swaps_without_raw_id": 0,
+     "unclosed_bars": 0
+    },
+    "load": "OK",
+    "migrations": "OK",
+    "postgres_version": "16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)",
+    "row_counts": {
+     "coverage": 122,
+     "holder_snapshots": 6,
+     "journal": 50,
+     "pool_snapshots": 101,
+     "pools": 5,
+     "provider_bars": 4229,
+     "raw_manifest": 225,
+     "replay_records": 50,
+     "replay_runs": 1,
+     "swaps": 2255,
+     "tokens": 5
+    },
+    "statements": 19543,
+    "timescaledb_available": false
+   },
+   "raw_audit": {
+    "body_files": 169,
+    "by_provider": {
+     "dexscreener": {
+      "exchanges": 16,
+      "valid_json": 16
+     },
+     "geckoterminal": {
+      "exchanges": 209,
+      "identical_body_repeats": 56,
+      "valid_json": 209
+     }
+    },
+    "referenced_bodies": 169,
+    "referenced_but_missing": 0,
+    "unreferenced_body_files": 0
+   },
+   "replay_window_ms": [
+    1790759396625,
+    1790762141754
+   ],
+   "replayable": true,
+   "report": {
+    "blocked_by": {
+     "LOW_LIQUIDITY": 15,
+     "NO_DATA": 1,
+     "STALE_DATA": 42,
+     "coverage 0.22 < 0.7": 13,
+     "coverage 0.33 < 0.7": 13,
+     "coverage 0.44 < 0.7": 8,
+     "coverage 0.56 < 0.7": 12,
+     "coverage 0.67 < 0.7": 4,
+     "critical input missing: creator_concentration_ok": 21,
+     "critical input missing: execution_liquidity": 45,
+     "critical input missing: low_manipulation": 32,
+     "veto: execution_liquidity (liquidity $1, est. slippage 239292.00%)": 1,
+     "veto: execution_liquidity (liquidity $1, est. slippage 239779.70%)": 1,
+     "veto: execution_liquidity (liquidity $1, est. slippage 239894.75%)": 1,
+     "veto: execution_liquidity (liquidity $1, est. slippage 241022.23%)": 1,
+     "veto: execution_liquidity (liquidity $1, est. slippage 241109.40%)": 1,
+     "veto: healthy_structure (DISTRIBUTION; regime DISTRIBUTION)": 2,
+     "veto: healthy_structure (EXTENDED; regime DEAD_ILLIQUID)": 7,
+     "veto: healthy_structure (HEALTHY_EXPANSION; regime DEAD_ILLIQUID)": 25,
+     "veto: low_manipulation (manipulation score 1.00)": 18
+    },
+    "decisions": {
+     "HIGH_CONVICTION_CONTINUATION": 0,
+     "NO_SIGNAL": 50,
+     "WATCH": 0,
+     "assessments_blocked_by_creator_gate_alone": 0,
+     "block_reason_occurrences": {
+      "creator_concentration_unavailable": 21,
+      "execution_liquidity_unavailable": 45,
+      "insufficient_coverage": 50,
+      "low_liquidity": 20,
+      "manipulation_input_unavailable": 32,
+      "manipulation_veto": 18,
+      "no_data": 1,
+      "stale_data": 42,
+      "structure_veto": 34
+     },
+     "blocked": 50,
+     "data_quality_rejected": 48,
+     "emergency_exits": 0,
+     "hypothetical_entries": 0,
+     "manipulation_vetoed": 18,
+     "no_signal_without_block_reason": 0,
+     "risk_rejected": 0,
+     "total_replay_assessments": 50,
+     "unclassified": 30
+    },
+    "early_life": {
+     "S1_safe": true,
+     "S1_violation_count": 0,
+     "S1_violations": [],
+     "by_age": {
+      "<1h": {
+       "U1_classified_share": 0.0,
+       "U2_coverage_ok_share": 0.0,
+       "U3_participation_evaluable_share": 0.0,
+       "assessments": 30,
+       "high_conviction_signals": 0,
+       "insufficient_history_share": 1.0,
+       "tokens": 3
+      },
+      ">7d": {
+       "U1_classified_share": 1.0,
+       "U2_coverage_ok_share": 0.0,
+       "U3_participation_evaluable_share": 0.0,
+       "assessments": 20,
+       "high_conviction_signals": 0,
+       "insufficient_history_share": 0.0,
+       "tokens": 2
+      }
+     },
+     "definitions": "Early-life experiment: can the system *safely* make a *useful* assessment of\na token with very little history?\n\nThis module measures; it does not classify. It adds no rule and changes no\nthreshold. Definitions, fixed before any real data was seen:\n\n  SAFE    (invariant S1) no HIGH_CONVICTION_CONTINUATION is ever emitted for an\n          assessment whose move class is UNCLASSIFIED or whose data quality\n          includes INSUFFICIENT_HISTORY.\n  USEFUL  (metric U1, per age bucket) share of assessments that yield a\n          classified move (anything but UNCLASSIFIED).\n  (metric U2) share of assessments whose Move Quality coverage reaches the\n          signal gate's min_coverage.\n  (metric U3) share of assessments whose participation baseline is available\n          (buyer_growth condition evaluable).\n\nThe answer is the table this produces on real replays. A later phase may test\na same-age cohort baseline against these numbers (docs/research/14, H-aux-1).\n"
+    },
+    "endpoints": {
+     "dexscreener:ds.pairs": {
+      "calls": 16,
+      "errors": 0,
+      "ok": 16,
+      "p50_latency_ms": 185,
+      "p95_latency_ms": 226,
+      "retried": 0
+     },
+     "geckoterminal:gt.new_pools": {
+      "calls": 3,
+      "errors": 0,
+      "ok": 3,
+      "p50_latency_ms": 104,
+      "p95_latency_ms": 154,
+      "retried": 0
+     },
+     "geckoterminal:gt.ohlcv": {
+      "calls": 87,
+      "errors": 0,
+      "ok": 87,
+      "p50_latency_ms": 248,
+      "p95_latency_ms": 704,
+      "retried": 14
+     },
+     "geckoterminal:gt.pools_multi": {
+      "calls": 16,
+      "errors": 0,
+      "ok": 16,
+      "p50_latency_ms": 239,
+      "p95_latency_ms": 1234,
+      "retried": 1
+     },
+     "geckoterminal:gt.token_info": {
+      "calls": 21,
+      "errors": 0,
+      "ok": 21,
+      "p50_latency_ms": 242,
+      "p95_latency_ms": 270,
+      "retried": 0
+     },
+     "geckoterminal:gt.top_pools": {
+      "calls": 1,
+      "errors": 0,
+      "ok": 1,
+      "p50_latency_ms": 83,
+      "p95_latency_ms": 83,
+      "retried": 0
+     },
+     "geckoterminal:gt.trades": {
+      "calls": 80,
+      "errors": 0,
+      "ok": 80,
+      "p50_latency_ms": 256,
+      "p95_latency_ms": 1113,
+      "retried": 4
+     },
+     "geckoterminal:gt.trending": {
+      "calls": 1,
+      "errors": 0,
+      "ok": 1,
+      "p50_latency_ms": 57,
+      "p95_latency_ms": 57,
+      "retried": 0
+     }
+    },
+    "error_kinds": {},
+    "excluded": [],
+    "field_coverage": {
+     "rows": {
+      "OHLCV": {
+       "pit_ok_share": 0.4,
+       "records": 4276,
+       "tokens_with": 5
+      },
+      "creator holdings": {
+       "holder_snapshots": 16,
+       "pit_ok_share": 0.58,
+       "tokens_with_creator_identity": 17,
+       "with_creator_pct": 12
+      },
+      "funding transfers": {
+       "records": 0
+      },
+      "holder concentration": {
+       "holder_snapshots": 16,
+       "pit_ok_share": 0.78,
+       "tokens_with": 4
+      },
+      "liquidity": {
+       "pit_ok_share": 0.4,
+       "records": 101,
+       "tokens_with": 4
+      },
+      "liquidity changes": {
+       "lp_events": 0,
+       "pit_ok_share": 0.32
+      },
+      "news": {
+       "records": 0
+      },
+      "social": {
+       "pit_ok_share": 0.0,
+       "records": 0
+      },
+      "trades": {
+       "coverage_claims": 80,
+       "full_page_claims": null,
+       "pit_ok_share": 0.82,
+       "records": 14464,
+       "tokens_with": 5
+      },
+      "wallet address": {
+       "distinct_wallets": 527,
+       "pit_ok_share": 0.82,
+       "tokens_with": 5
+      }
+     },
+     "tokens": 5
+    },
+    "issue_samples": {
+     "DERIVED_FIELD": [
+      {
+       "action": "derived",
+       "code": "DERIVED_FIELD",
+       "detail": "J6TjYRa5yAuf3FGhRyj49yE1bePn6NMbtUiSFRbg8Vcn: total_supply = fdv_usd / price",
+       "raw_id": "ce4275d938472191e59da549ae25053989a5c10d690f8848f3c24232d2f0862a"
+      },
+      {
+       "action": "derived",
+       "code": "DERIVED_FIELD",
+       "detail": "EJCmsk8uX1ja2GNXeYaDFT2XVqNxpTUnTVw5TXYppump: total_supply = fdv_usd / price",
+       "raw_id": "ce4275d938472191e59da549ae25053989a5c10d690f8848f3c24232d2f0862a"
+      },
+      {
+       "action": "derived",
+       "code": "DERIVED_FIELD",
+       "detail": "6LVPUuNdWmgsqwdyD9aFhmS4ijHJyQRXDJ3CQeSMpump: total_supply = fdv_usd / price",
+       "raw_id": "ce4275d938472191e59da549ae25053989a5c10d690f8848f3c24232d2f0862a"
+      },
+      {
+       "action": "derived",
+       "code": "DERIVED_FIELD",
+       "detail": "8FvR5JwtnDARU9jWs81xDGrHoctx3surjyaVYcVKpump: total_supply = fdv_usd / price",
+       "raw_id": "ce4275d938472191e59da549ae25053989a5c10d690f8848f3c24232d2f0862a"
+      },
+      {
+       "action": "derived",
+       "code": "DERIVED_FIELD",
+       "detail": "G9Z6yyTHKgRpwc5AsZe8S9Lh3J8iAYnjF85eFCQGpump: total_supply = fdv_usd / price",
+       "raw_id": "ce4275d938472191e59da549ae25053989a5c10d690f8848f3c24232d2f0862a"
+      }
+     ],
+     "DUPLICATE_OBSERVATION": [
+      {
+       "action": "flagged",
+       "code": "DUPLICATE_OBSERVATION",
+       "detail": "12209 repeat observations of already-seen swaps (poll overlap); earliest-seen copy kept by the quality gate",
+       "raw_id": null
+      }
+     ],
+     "FORMING_BAR_DROPPED": [
+      {
+       "action": "dropped_record",
+       "code": "FORMING_BAR_DROPPED",
+       "detail": "25XK4DaAfuEVBVfUWApM6SysWz8S24BQ2SwdHiqn7rGL: 1 unclosed bar(s)",
+       "raw_id": "8b2451389d8d559687df53f6514d93540d30520d7aec1cd363567d3ea8186b78"
+      },
+      {
+       "action": "dropped_record",
+       "code": "FORMING_BAR_DROPPED",
+       "detail": "zxTpi4BtaWX3mgdAPoezkMD1hxx8CdeCfrqXMWvSCLX: 1 unclosed bar(s)",
+       "raw_id": "28e3f3d94baeef1ada87a33309c6e8390280d4874e77a4423b53ba9ef6ca266a"
+      },
+      {
+       "action": "dropped_record",
+       "code": "FORMING_BAR_DROPPED",
+       "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: 1 unclosed bar(s)",
+       "raw_id": "21a35516b5e635653d87dfeca4e20c9107c3ee5f4ac967f4fb63bc922838d749"
+      },
+      {
+       "action": "dropped_record",
+       "code": "FORMING_BAR_DROPPED",
+       "detail": "zxTpi4BtaWX3mgdAPoezkMD1hxx8CdeCfrqXMWvSCLX: 2 unclosed bar(s)",
+       "raw_id": "093635e92206043603eac3771f1c6752a276588ec0d908765cb61bb3897c434a"
+      },
+      {
+       "action": "dropped_record",
+       "code": "FORMING_BAR_DROPPED",
+       "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: 1 unclosed bar(s)",
+       "raw_id": "22ba642d96d0bca2503ac17caa7b7328a82541d0052d5e46027eead848493da4"
+      }
+     ],
+     "NULL_FIELD": [
+      {
+       "action": "dropped_record",
+       "code": "NULL_FIELD",
+       "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: price='0.999147082590957' reserve=None; no snapshot",
+       "raw_id": "06ad3ef3b423aeefe3270b527a485cdd622f27ecc1f3bbaada0bd71780b1289e"
+      },
+      {
+       "action": "dropped_record",
+       "code": "NULL_FIELD",
+       "detail": "8sjV1AqBFvFuADBCQHhotaRq5DFFYSjjg1jMyVWMqXvZ: price='0.998867776233695' reserve=None; no snapshot",
+       "raw_id": "06ad3ef3b423aeefe3270b527a485cdd622f27ecc1f3bbaada0bd71780b1289e"
+      },
+      {
+       "action": "dropped_record",
+       "code": "NULL_FIELD",
+       "detail": "6LVPUuNdWmgsqwdyD9aFhmS4ijHJyQRXDJ3CQeSMpump: holders unavailable",
+       "raw_id": "e9df6edd3632a4c6d6931576f36e6c7930b58f34f634120a90d60a735d715d66"
+      },
+      {
+       "action": "dropped_record",
+       "code": "NULL_FIELD",
+       "detail": "H3BGCayg7zqgWwaXmoy5DG6AkVbUXaN5apGyX4wHpump: holders unavailable",
+       "raw_id": "dff1a13b21afcadeb35e4dd90fd2063ae165911f253f2a64e58f91e215085518"
+      },
+      {
+       "action": "dropped_record",
+       "code": "NULL_FIELD",
+       "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: price='1.00020354723424' reserve=None; no snapshot",
+       "raw_id": "df97f7e8549b1f22988885cc7c845a22d31f10d7ea31ccb21411778e47992ffd"
+      }
+     ],
+     "PAGE_FULL": [
+      {
+       "action": "flagged",
+       "code": "PAGE_FULL",
+       "detail": "CUXsFJDqSv82xfqdWywyQRYyPikx76dHp3Phe87Yyg1p: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+       "raw_id": "d84775245f728f7e2b799423aec09864f58fd73f044d83708f4862a803633c30"
+      },
+      {
+       "action": "flagged",
+       "code": "PAGE_FULL",
+       "detail": "zxTpi4BtaWX3mgdAPoezkMD1hxx8CdeCfrqXMWvSCLX: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+       "raw_id": "eaa7cf99001c7dd3bd8b904285e68b33d136ae94746f69e0ac3c2ddf183a6c11"
+      },
+      {
+       "action": "flagged",
+       "code": "PAGE_FULL",
+       "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+       "raw_id": "3ec4a2698608aa4018e6304f58276b2f4530d30b75f89f49adb543e206169bea"
+      },
+      {
+       "action": "flagged",
+       "code": "PAGE_FULL",
+       "detail": "CUXsFJDqSv82xfqdWywyQRYyPikx76dHp3Phe87Yyg1p: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+       "raw_id": "d84775245f728f7e2b799423aec09864f58fd73f044d83708f4862a803633c30"
+      },
+      {
+       "action": "flagged",
+       "code": "PAGE_FULL",
+       "detail": "zxTpi4BtaWX3mgdAPoezkMD1hxx8CdeCfrqXMWvSCLX: 300 trades returned; coverage starts at oldest trade, earlier trades may be missing",
+       "raw_id": "2302f7f5951a7110004846b0742188b4434bcb2a323dde243efddebdbc8439e7"
+      }
+     ],
+     "PARTIAL_RESPONSE": [
+      {
+       "action": "flagged",
+       "code": "PARTIAL_RESPONSE",
+       "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: requested but not returned",
+       "raw_id": "6ff8d58263807036b8068b407a3d0d911e60fbb1af1621632e98e18857e343a0"
+      },
+      {
+       "action": "flagged",
+       "code": "PARTIAL_RESPONSE",
+       "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: requested but not returned",
+       "raw_id": "15c81fb415f87bc1e6e0ed132a9f215ce1e0c9a00c688c5e70175e6a58057259"
+      },
+      {
+       "action": "flagged",
+       "code": "PARTIAL_RESPONSE",
+       "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: requested but not returned",
+       "raw_id": "9bf26ff23cd1b03b4b96bd28aa9b26dbe64bca3b155ddd4d947368206b569734"
+      },
+      {
+       "action": "flagged",
+       "code": "PARTIAL_RESPONSE",
+       "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: requested but not returned",
+       "raw_id": "9bf468057c4957bf8d299953e4f628779d76b37461868c1b194920aa8c1acd22"
+      },
+      {
+       "action": "flagged",
+       "code": "PARTIAL_RESPONSE",
+       "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: requested but not returned",
+       "raw_id": "4a1256fc981ff9cc219fca22e9cac99ee4f8714d0b366668400bcd227bf7275d"
+      }
+     ]
+    },
+    "journal_audit": {
+     "chain_breaks": 0,
+     "chronology_violations": 0,
+     "configuration_hashes": [
+      "417bd32cce8fb72c"
+     ],
+     "duplicate_token_steps": 0,
+     "entries": 50,
+     "hash_mismatches": 0,
+     "head_hash": "c0ef05ddf9e358234ff8571cbe78e06126cf7a06c82cb68fe6ec65f68f1dc734"
+    },
+    "missingness": {
+     "buy_sell_imbalance_15": {
+      "INSUFFICIENT_HISTORY": 0.18,
+      "MISSING": 0.58,
+      "OK": 0.24
+     },
+     "buyer_growth": {
+      "INSUFFICIENT_HISTORY": 0.82,
+      "MISSING": 0.18
+     },
+     "creator_pct": {
+      "MISSING": 0.42,
+      "OK": 0.58
+     },
+     "cross_venue": {
+      "MISSING": 1.0
+     },
+     "est_slippage": {
+      "MISSING": 0.2,
+      "OK": 0.1,
+      "STALE": 0.4,
+      "UNVERIFIED": 0.3
+     },
+     "holders": {
+      "MISSING": 0.22,
+      "OK": 0.78
+     },
+     "independence_ratio": {
+      "MISSING": 0.6,
+      "UNVERIFIED": 0.4
+     },
+     "liquidity_change": {
+      "MISSING": 0.68,
+      "OK": 0.32
+     },
+     "liquidity_usd": {
+      "MISSING": 0.2,
+      "OK": 0.4,
+      "STALE": 0.4
+     },
+     "market_cap": {
+      "OK": 1.0
+     },
+     "narrative_breadth": {
+      "OK": 1.0
+     },
+     "price": {
+      "OK": 1.0
+     },
+     "price_z_driving": {
+      "MISSING": 0.6,
+      "OK": 0.4
+     },
+     "social_mentions": {
+      "MISSING": 1.0
+     },
+     "top10_pct": {
+      "MISSING": 0.22,
+      "OK": 0.78
+     },
+     "trades_z_15": {
+      "INSUFFICIENT_HISTORY": 0.28,
+      "MISSING": 0.72
+     },
+     "unique_buyers": {
+      "MISSING": 0.18,
+      "OK": 0.82
+     },
+     "volume_z_15": {
+      "INSUFFICIENT_HISTORY": 0.42,
+      "MISSING": 0.18,
+      "OK": 0.4
+     }
+    },
+    "move_class_by_token": {
+     "solana:2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH": {
+      "NORMAL": 7,
+      "WATCH": 3
+     },
+     "solana:5siRdWGetBqDh2Qz9JqPYqFZXQg3GVogvjUhK7UNEprc": {
+      "UNCLASSIFIED": 10
+     },
+     "solana:6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx": {
+      "EXTREME": 1,
+      "NORMAL": 3,
+      "UNUSUAL": 2,
+      "WATCH": 4
+     },
+     "solana:6LVPUuNdWmgsqwdyD9aFhmS4ijHJyQRXDJ3CQeSMpump": {
+      "UNCLASSIFIED": 10
+     },
+     "solana:H3BGCayg7zqgWwaXmoy5DG6AkVbUXaN5apGyX4wHpump": {
+      "UNCLASSIFIED": 10
+     }
+    },
+    "normalization": {
+     "coverage_gaps": {},
+     "dataset_sha256": "1ebe77ec9ec2e9b6f06da26cbcce17721db4504f6029baf610931f5489e71d14",
+     "duplicate_swaps": 12209,
+     "exchanges": 225,
+     "first_response_ms": 1790759103922,
+     "issues": {
+      "DERIVED_FIELD": 180,
+      "DUPLICATE_OBSERVATION": 1,
+      "FORMING_BAR_DROPPED": 34,
+      "NULL_FIELD": 55,
+      "PAGE_FULL": 48,
+      "PARTIAL_RESPONSE": 16
+     },
+     "last_response_ms": 1790762141754,
+     "provider_errors": 0,
+     "records": {
+      "Coverage": 167,
+      "HolderSnapshot": 16,
+      "PoolInfo": 180,
+      "PoolSnapshot": 194,
+      "ProviderBar": 4276,
+      "Swap": 14464,
+      "TokenMeta": 201
+     },
+     "responses_ok": 225,
+     "run_dir": "datasets/phase2/runs/gt-sol-20260930c",
+     "tokens": 93
+    },
+    "picked": [
+     {
+      "created_ts": 1790759082000,
+      "dex": "pump-fun",
+      "h1_txns": 1,
+      "liquidity_usd": 2655.40376680897,
+      "pool": "25XK4DaAfuEVBVfUWApM6SysWz8S24BQ2SwdHiqn7rGL",
+      "stratum": "quiet_young",
+      "token": "6LVPUuNdWmgsqwdyD9aFhmS4ijHJyQRXDJ3CQeSMpump",
+      "total_supply": 999999999.9909743
+     },
+     {
+      "created_ts": 1790759040000,
+      "dex": "pump-fun",
+      "h1_txns": 1,
+      "liquidity_usd": 2631.4871,
+      "pool": "DBSUc1o699qaJ3SS3GYMyGWVcA29SPjRrMUbbj2Hmpau",
+      "stratum": "young",
+      "token": "H3BGCayg7zqgWwaXmoy5DG6AkVbUXaN5apGyX4wHpump",
+      "total_supply": 999999999.8587623
+     },
+     {
+      "created_ts": 1790759028000,
+      "dex": "meteora-damm-v2",
+      "h1_txns": 368,
+      "liquidity_usd": 0.7927,
+      "pool": "CUXsFJDqSv82xfqdWywyQRYyPikx76dHp3Phe87Yyg1p",
+      "stratum": "young",
+      "token": "5siRdWGetBqDh2Qz9JqPYqFZXQg3GVogvjUhK7UNEprc",
+      "total_supply": 999999999.9477197
+     },
+     {
+      "created_ts": 1786531900000,
+      "dex": "meteora",
+      "h1_txns": 1484,
+      "liquidity_usd": 2586161.0508,
+      "pool": "zxTpi4BtaWX3mgdAPoezkMD1hxx8CdeCfrqXMWvSCLX",
+      "stratum": "trending",
+      "token": "6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx",
+      "total_supply": 810752206.4676154
+     },
+     {
+      "created_ts": 1776448919000,
+      "dex": "manifest",
+      "h1_txns": 860,
+      "liquidity_usd": null,
+      "pool": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF",
+      "stratum": "established",
+      "token": "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH",
+      "total_supply": 641946170.4779662
+     }
+    ],
+    "raw_audit": {
+     "body_files": 169,
+     "by_provider": {
+      "dexscreener": {
+       "exchanges": 16,
+       "valid_json": 16
+      },
+      "geckoterminal": {
+       "exchanges": 209,
+       "identical_body_repeats": 56,
+       "valid_json": 209
+      }
+     },
+     "referenced_bodies": 169,
+     "referenced_but_missing": 0,
+     "unreferenced_body_files": 0
+    },
+    "replay_summary": {
+     "capabilities": {
+      "creator": true,
+      "funding": false,
+      "liquidity_events": false,
+      "news": false,
+      "social": false
+     },
+     "code_version": "6b1c9050da91da1447bfe957e741ea6c1a366e19",
+     "configuration_hash": "417bd32cce8fb72c",
+     "counts": {
+      "assessments": 50,
+      "exhaustion:DISTRIBUTION": 2,
+      "exhaustion:EXTENDED": 7,
+      "exhaustion:HEALTHY_EXPANSION": 41,
+      "failure:HIGH_SLIPPAGE": 5,
+      "failure:INSUFFICIENT_HISTORY": 30,
+      "failure:LOW_LIQUIDITY": 15,
+      "failure:NO_DATA": 1,
+      "failure:STALE_DATA": 42,
+      "flag:coordinated_cluster": 13,
+      "flag:volume_concentration": 18,
+      "lifecycle:EARLY_LIFE": 30,
+      "lifecycle:ESTABLISHED": 20,
+      "move:EXTREME": 1,
+      "move:NORMAL": 10,
+      "move:UNCLASSIFIED": 30,
+      "move:UNUSUAL": 2,
+      "move:WATCH": 7,
+      "regime:ACCUMULATION": 2,
+      "regime:DEAD_ILLIQUID": 32,
+      "regime:DISTRIBUTION": 2,
+      "regime:NEUTRAL": 14,
+      "role:ISOLATED_MOVE": 50,
+      "signal:NO_SIGNAL": 50,
+      "vetoed": 34
+     },
+     "dataset_id": "gt-sol-20260930c:1ebe77ec9ec2e9b6",
+     "end_ts": 1790762141754,
+     "records_sha256": "8a155ada09e4eb0d8f017040c51d6c2a62de71772d051cea8836df1ac4585f0c",
+     "start_ts": 1790759396625,
+     "step_ms": 300000,
+     "steps": 10,
+     "tokens": 5
+    },
+    "run": {
+     "circuit_waits": 0,
+     "code_version": "9845c6e16d754fa992d497019fb43e9e850dc050",
+     "cycles": 16,
+     "ended_ms": 1790762141756,
+     "errors": 0,
+     "exchanges": 225,
+     "execution": "none: acquisition only, no orders",
+     "final_gt_rate_per_s": 0.09214992523193365,
+     "plan": {
+      "backfill_pages": 2,
+      "circuit_waits": 5,
+      "cycle_s": 60,
+      "ds_rate_per_s": 2.0,
+      "duration_s": 3000,
+      "gt_min_rate_per_s": 0.03,
+      "gt_rate_per_s": 0.2,
+      "holders_per_cycle": 1,
+      "lag_ms": 60000,
+      "network": "solana",
+      "new_pool_pages": 3,
+      "ohlcv_every": 1,
+      "poll_ohlcv_limit": 5,
+      "seed": 20260930,
+      "strata": {
+       "established": 1,
+       "quiet_young": 1,
+       "trending": 1,
+       "young": 2
+      }
+     },
+     "runner": "GitHub Actions 1000000010",
+     "started_ms": 1790759103818,
+     "status": "COMPLETE"
+    },
+    "selection": {
+     "candidates": {
+      "established": 20,
+      "quiet_young": 22,
+      "trending": 20,
+      "young": 60
+     },
+     "seed": 20260930,
+     "strata_targets": {
+      "established": 1,
+      "quiet_young": 1,
+      "trending": 1,
+      "young": 2
+     }
+    },
+    "trade_availability_lag_ms": {
+     "n": 2255,
+     "p50": 156566,
+     "p95": 679507
+    },
+    "unique_swaps": 2255
+   },
+   "run": {
+    "circuit_waits": 0,
+    "code_version": "9845c6e16d754fa992d497019fb43e9e850dc050",
+    "cycles": 16,
+    "ended_ms": 1790762141756,
+    "errors": 0,
+    "exchanges": 225,
+    "execution": "none: acquisition only, no orders",
+    "final_gt_rate_per_s": 0.09214992523193365,
+    "plan": {
+     "backfill_pages": 2,
+     "circuit_waits": 5,
+     "cycle_s": 60,
+     "ds_rate_per_s": 2.0,
+     "duration_s": 3000,
+     "gt_min_rate_per_s": 0.03,
+     "gt_rate_per_s": 0.2,
+     "holders_per_cycle": 1,
+     "lag_ms": 60000,
+     "network": "solana",
+     "new_pool_pages": 3,
+     "ohlcv_every": 1,
+     "poll_ohlcv_limit": 5,
+     "seed": 20260930,
+     "strata": {
+      "established": 1,
+      "quiet_young": 1,
+      "trending": 1,
+      "young": 2
+     }
+    },
+    "runner": "GitHub Actions 1000000010",
+    "started_ms": 1790759103818,
+    "status": "COMPLETE"
+   },
+   "run_id": "gt-sol-20260930c",
+   "selection": {
+    "candidates": {
+     "established": 20,
+     "quiet_young": 22,
+     "trending": 20,
+     "young": 60
+    },
+    "excluded": [],
+    "picked": [
+     {
+      "created_ts": 1790759082000,
+      "dex": "pump-fun",
+      "h1_txns": 1,
+      "liquidity_usd": 2655.40376680897,
+      "pool": "25XK4DaAfuEVBVfUWApM6SysWz8S24BQ2SwdHiqn7rGL",
+      "stratum": "quiet_young",
+      "token": "6LVPUuNdWmgsqwdyD9aFhmS4ijHJyQRXDJ3CQeSMpump",
+      "total_supply": 999999999.9909743
+     },
+     {
+      "created_ts": 1790759040000,
+      "dex": "pump-fun",
+      "h1_txns": 1,
+      "liquidity_usd": 2631.4871,
+      "pool": "DBSUc1o699qaJ3SS3GYMyGWVcA29SPjRrMUbbj2Hmpau",
+      "stratum": "young",
+      "token": "H3BGCayg7zqgWwaXmoy5DG6AkVbUXaN5apGyX4wHpump",
+      "total_supply": 999999999.8587623
+     },
+     {
+      "created_ts": 1790759028000,
+      "dex": "meteora-damm-v2",
+      "h1_txns": 368,
+      "liquidity_usd": 0.7927,
+      "pool": "CUXsFJDqSv82xfqdWywyQRYyPikx76dHp3Phe87Yyg1p",
+      "stratum": "young",
+      "token": "5siRdWGetBqDh2Qz9JqPYqFZXQg3GVogvjUhK7UNEprc",
+      "total_supply": 999999999.9477197
+     },
+     {
+      "created_ts": 1786531900000,
+      "dex": "meteora",
+      "h1_txns": 1484,
+      "liquidity_usd": 2586161.0508,
+      "pool": "zxTpi4BtaWX3mgdAPoezkMD1hxx8CdeCfrqXMWvSCLX",
+      "stratum": "trending",
+      "token": "6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx",
+      "total_supply": 810752206.4676154
+     },
+     {
+      "created_ts": 1776448919000,
+      "dex": "manifest",
+      "h1_txns": 860,
+      "liquidity_usd": null,
+      "pool": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF",
+      "stratum": "established",
+      "token": "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH",
+      "total_supply": 641946170.4779662
+     }
+    ],
+    "procedure": "Stratified random selection, recorded in full so it can be audited.\n\n    Strata (evaluated on data available at selection time only):\n      young        random pools from the newest-pools pages\n      quiet_young  newest pools with fewer than 5 txns in the last hour\n      trending     random pools from GeckoTerminal's trending list\n      established  random pools from the top-24h-volume list\n    Tokens already picked in an earlier stratum are skipped, and non-meme\n    base assets (SOL, USDC, USDT) are excluded.\n    ",
+    "seed": 20260930,
+    "selected_at_ms": 1790759118903,
+    "strata_targets": {
+     "established": 1,
+     "quiet_young": 1,
+     "trending": 1,
+     "young": 2
+    }
+   }
+  }
+ ],
+ "scope": {
+  "adapted_diff_stat": " 10 files changed, 427 insertions(+), 39 deletions(-)",
+  "adapted_files": [
+   "intel/autopsyx/assessment.py",
+   "intel/autopsyx/core/models.py",
+   "intel/autopsyx/features/bars.py",
+   "intel/autopsyx/features/liquidity.py",
+   "intel/autopsyx/features/market.py",
+   "intel/autopsyx/features/participation.py",
+   "intel/autopsyx/manipulation/detectors.py",
+   "intel/autopsyx/pipeline.py",
+   "intel/autopsyx/providers/http.py",
+   "intel/autopsyx/providers/store.py"
+  ],
+  "baseline": "e8c4f66",
+  "config_lines_added": [
+   "[data_sources]",
+   "# Which vendor's liquidity figure is authoritative when several report a pool.",
+   "# Data-contract setting, not a signal threshold.",
+   "liquidity_source_priority = [\"geckoterminal\", \"dexscreener\"]",
+   "",
+   "[lifecycle]",
+   "early_life_ms = 86_400_000  # descriptive label only; no signal reads it",
+   ""
+  ],
+  "config_lines_removed": [],
+  "config_lines_removed_count": 0,
+  "engine_changed_lines": {
+   "intel/autopsyx/signals/entry.py": {
+    "added": [
+     "    # sorted: set iteration order follows per-process string hashing, which made output differ between runs",
+     "    blocked: list[str] = sorted(f.value for f in a.failures & BLOCKING)"
+    ],
+    "removed": [
+     "    blocked: list[str] = [f.value for f in a.failures & BLOCKING]"
+    ]
+   }
+  },
+  "engine_changes_explained": {
+   "intel/autopsyx/signals/entry.py": {
+    "added": [
+     "    # sorted: set iteration order follows per-process string hashing, which made output differ between runs",
+     "    blocked: list[str] = sorted(f.value for f in a.failures & BLOCKING)"
+    ],
+    "reason": "blocked_by was built by iterating a set of FailureMode values; its order followed the per-process string-hash seed, so journals differed between processes. Sorted. No decision, threshold or gate changed (regression: test_replay_is_identical_across_processes_with_different_hash_seeds).",
+    "removed": [
+     "    blocked: list[str] = [f.value for f in a.failures & BLOCKING]"
+    ]
+   }
+  },
+  "engine_changes_unexplained": {},
+  "engine_diff_stat": "intel/autopsyx/signals/entry.py | 3 ++-\n 1 file changed, 2 insertions(+), 1 deletion(-)",
+  "forbidden_terms_present": {}
+ },
+ "tests": {
+  "errors": 0,
+  "exit_code": 0,
+  "failed": 0,
+  "passed": 155,
+  "skipped": 5,
+  "summary_line": "155 passed, 5 skipped"
+ }
+}
