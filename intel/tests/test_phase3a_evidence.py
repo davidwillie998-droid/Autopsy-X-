@@ -61,7 +61,10 @@ def test_every_archive_reproduces_its_observations(ev):
 
 @needs_evidence
 def test_evidence_covers_every_archive_on_disk(ev):
-    assert sorted(r["archive"] for r in ev["archives"]) == sorted(p.name for p in v.archives())
+    listed = [r["archive"] for r in ev["archives"]] + [x["archive"] for x in ev["inclusion"]["excluded"]]
+    assert sorted(listed) == sorted(p.name for p in v.archives())
+    assert all(r["provenance"]["verified"] for r in ev["archives"])
+    assert not any(x["verification"]["verified"] for x in ev["inclusion"]["excluded"])
 
 
 @needs_evidence
@@ -80,3 +83,13 @@ def test_renderer_never_counts():
     body = src[src.index("# ----------------------------------------------------------------- render ----"):]
     for banned in ("len(", "sum(", "Counter(", "max(", "min(", "round("):
         assert banned not in body, banned
+
+
+def test_checker_rejects_a_planted_number(ev):
+    """Regression: an invented number in a rendered document is reported."""
+    if not EV.exists():
+        pytest.skip("Phase 3A evidence not generated yet")
+    src = Path(v.__file__).read_text()
+    planted = v.render(ev) + "\n* Hit rate: 73.25% over 31415926 trades\n"
+    bad = trace_check.check(planted, ev, src)
+    assert any("73.25%" in b for b in bad) and any("31415926" in b for b in bad)

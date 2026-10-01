@@ -22,6 +22,7 @@ from ..core.config import Config
 from ..core.observation import ContractViolation, validate
 from ..data.normalize import PHASE2_CAPABILITIES, normalize, replay_window, restrict_to_selection, to_store
 from ..data.normalize3a import normalize_phase3a, observations_sha256
+from ..data import provenance
 from ..data.raw import RawStore
 from ..data.sql_export import manifest_sql, observation_sql
 from ..providers.store import EventStore
@@ -36,6 +37,12 @@ ROOT = phase2_verify.ROOT
 BASELINE = "30fe094"  # final Phase 2 commit
 HYPOTHESIS_FILES = ["docs/research/14-research-hypotheses.md"]
 NOT_CLAIMED = ["H2", "H5", "H6", "H7"]
+BASELINE_EVIDENCE_COMMIT = "8df2918"  # Phase 3A evidence over A, B, C before archive D
+INCLUSION_RULE = ("an archive enters the evidence only if data.provenance.verify() returns verified: its runner "
+                  "dataset hash is recorded and equals, exactly, the hash rebuilt twice from the committed raw "
+                  "archive (and, where the runner sealed canonical files, the hash of those committed files), and a "
+                  "sealed archive's acquisition reports COMPLETE; any other archive is listed as excluded with the "
+                  "verification result")
 ARCHIVE_DIRS = [ROOT / "intel" / "datasets" / "phase2" / "runs", ROOT / "intel" / "datasets" / "phase3a" / "runs"]
 
 # Test files changed since the Phase 2 baseline, with the reason. Phase 3A
@@ -203,20 +210,142 @@ def hypotheses_frozen() -> dict:
             "tested_in_phase3a": [], "not_claimed": NOT_CLAIMED}
 
 
-def cross_seed(seeds=(1, 2)) -> dict:
+def cross_seed(arch: list[Path], seeds=(1, 2)) -> dict:
     """Recompute observations and the coverage matrix in fresh processes with different hash seeds."""
     code = ("import json,hashlib,sys;sys.path.insert(0,'.');from autopsyx.core.config import Config;"
             "from autopsyx.research import phase3a_verify as v, phase3a_coverage as c;"
             "from autopsyx.data.normalize3a import normalize_phase3a, observations_sha256;"
-            "a=v.archives();m=c.matrix(a,{},Config.load());"
+            "from pathlib import Path;a=[Path(x) for x in sys.argv[1:]];m=c.matrix(a,{},Config.load());"
             "print(hashlib.sha256(json.dumps(m,sort_keys=True).encode()).hexdigest(),"
             "'|'.join(observations_sha256(normalize_phase3a(str(d))[0]) for d in a))")
     out = []
     for s in seeds:
-        r = subprocess.run([sys.executable, "-c", code], cwd=ROOT / "intel", capture_output=True, text=True,
+        r = subprocess.run([sys.executable, "-c", code, *map(str, arch)], cwd=ROOT / "intel", capture_output=True, text=True,
                            env=dict(os.environ, PYTHONHASHSEED=str(s)))
         out.append({"seed": s, "digest": hashlib.sha256(r.stdout.encode()).hexdigest(), "exit_code": r.returncode})
     return {"runs": out, "identical": len({x["digest"] for x in out}) == 1 and all(x["exit_code"] == 0 for x in out)}
+
+
+FUNNEL_STEPS = [("attempted", "discovered"), ("successful", "attempted"), ("evaluable", "successful"),
+                ("classified", "evaluable")]
+
+
+def funnel(d: Path, work: Path, replayable: bool) -> dict:
+    """The Phase 2 funnel (phase2_verify.funnel, unchanged definitions) with every
+    ratio stated as numerator / denominator. For an archive without a replay,
+    evaluable and classified are not measured (None), not zero."""
+    raw = RawStore(d)
+    records, _ = normalize(str(d))
+    sel = restrict_to_selection(records, raw.read_json("selection.json"))
+    j = work / d.name / "replay_1" / "journal.jsonl"
+    f = phase2_verify.funnel(raw, records, sel, j if replayable else None)
+    counts = {k: f[k] for k in ("discovered", "attempted", "successful", "evaluable", "classified")}
+    if not replayable:
+        counts["evaluable"] = counts["classified"] = None
+    ratios = []
+    for num, den in FUNNEL_STEPS:
+        n, dd = counts[num], counts[den]
+        ratios.append({"step": f"{den} -> {num}", "numerator": n, "denominator": dd,
+                       "share": round(n / dd, 6) if isinstance(n, int) and isinstance(dd, int) and dd else None,
+                       "numerator_definition": f["definitions"][num], "denominator_definition": f["definitions"][den],
+                       "not_measured_reason": None if n is not None and dd is not None else
+                       "archive not replayable: no replay assessment exists, so evaluable and classified are not measured"})
+    return {"counts": counts, "ratios": ratios, "definitions": f["definitions"],
+            "per_token_reduction": {t["token"]: t["reduction_reason"] for t in f["per_token"]}}
+
+
+def phase2_checks(d: Path, work: Path, replayable: bool, pg: list[str] | None) -> dict:
+    """Existing Phase 2 checks re-run at this commit: clock and hash audit of the
+    raw archive, journal hash chain, and the Phase 2 PostgreSQL validation."""
+    audit = phase2_report.raw_audit(str(d))
+    clocks = {k: sum(int(v.get(k, 0)) for v in audit["by_provider"].values())
+              for k in ("missing_request_ts", "missing_response_ts", "response_before_request", "out_of_order_response",
+                        "hash_mismatch", "missing_body_file", "length_mismatch")}
+    # Reported, not gated: a provider may legitimately answer with an error or non-JSON body
+    # (recorded as ERROR observations), and identical repeats are expected from quiet pools.
+    informational = {k: sum(int(v.get(k, 0)) for v in audit["by_provider"].values())
+                     for k in ("malformed_json", "partial_or_error_body", "empty_body", "identical_body_repeats")}
+    out = {"raw_audit": audit, "clock_and_hash_violations": clocks, "informational_body_counts": informational}
+    if replayable:
+        rd_ = str(work / d.name / "replay_1")
+        out["journal_audit"] = phase2_report.journal_audit(rd_)
+        if pg:
+            v = db_validate.run(str(d), rd_, pg, f"p3a_p2_{d.name.replace('-', '_')}", ROOT / "intel" / "migrations",
+                                work / d.name / "db_p2")
+            out["postgres_phase2"] = {k: v.get(k) for k in ("all_checks_zero", "integrity_checks", "row_counts",
+                                                            "postgres_version", "timescaledb_available")}
+        else:
+            out["postgres_phase2"] = {"status": "DATABASE EXECUTION UNVERIFIED: no server"}
+    else:
+        out["journal_audit"] = None
+        out["postgres_phase2"] = {"status": "not run: archive not replayable (no journal to load)"}
+    j = out["journal_audit"]
+    out["passed"] = (all(v == 0 for v in clocks.values()) and audit["referenced_but_missing"] == 0
+                     and (j is None or (j["chain_breaks"] == 0 and j["hash_mismatches"] == 0))
+                     and out["postgres_phase2"].get("all_checks_zero", True) is not False)
+    return out
+
+
+COMPARE_METRICS = ["provider_error_rate", "freshness_compliance", "universe_tokens", "coverage_rows",
+                   "liquidity_vault_delta_share"]
+
+
+def _aggregate(runs: list[dict], rows: list[dict]) -> dict:
+    T = cov.totals_of(rows)
+    req = sum(t["requests"] for r in runs for t in r["telemetry"].values())
+    err = sum(t["errors"] for r in runs for t in r["telemetry"].values())
+    gov_n = sum(r["freshness"]["governed_evaluations"] for r in runs)
+    gov_s = sum(r["freshness"]["governed_stale"] for r in runs)
+    return {"provider_requests": req, "provider_errors": err, "provider_error_rate": round(err / req, 6) if req else None,
+            "freshness_evaluations": gov_n, "freshness_stale": gov_s,
+            "freshness_compliance": round((gov_n - gov_s) / gov_n, 6) if gov_n else None,
+            "coverage_rows": len(rows), "universe_tokens": len({r["token"]["value"] for r in rows}),
+            "coverage_share": {d: T[d]["positive_share"] for d in cov.DIMENSIONS[2:]},
+            "coverage_rows_observed": {d: T[d][T[d]["positive_state"]] for d in cov.DIMENSIONS[2:]},
+            "liquidity_vault_delta_rows": T["liquidity_events"]["rows_with_vault_delta_events"],
+            "liquidity_vault_delta_share": T["liquidity_events"]["vault_delta_share"], "totals": T}
+
+
+def baseline_comparison(ev_runs: list[dict], rows: list[dict], agg_all: dict, integrity: dict) -> dict:
+    """Committed A/B/C evidence vs the same archives recomputed now vs A/B/C/D.
+
+    SAMPLE EXPANSION: the A/B/C part reproduces the committed baseline exactly
+    and the totals differ only because archive D adds rows. EVIDENCE CHANGE:
+    the A/B/C part itself no longer reproduces the baseline. Phase 3A defines no
+    statistical test, so no difference is called an improvement or a decline."""
+    src = phase2_verify.git("show", f"{BASELINE_EVIDENCE_COMMIT}:artifacts/phase3a/PHASE3A_EVIDENCE.json")
+    base = json.loads(src)
+    names = [r["archive"] for r in base["archives"]]
+    sub_runs = [r for r in ev_runs if r["archive"] in names]
+    sub_rows = [r for r in rows if r["archive"]["value"] in names]
+    abc = _aggregate(sub_runs, sub_rows)
+    b = base["aggregates"]
+    metrics = []
+    keys = COMPARE_METRICS + [f"coverage_share.{d}" for d in cov.DIMENSIONS[2:]]
+    for k in keys:
+        get = (lambda a, k=k: a["coverage_share"][k.split(".", 1)[1]]) if k.startswith("coverage_share.") else \
+              (lambda a, k=k: a[k])
+        bv, cv, nv = get(b), get(abc), get(agg_all)
+        metrics.append({"metric": k, "baseline_abc_committed": bv, "abc_recomputed_now": cv, "abcd": nv,
+                        "abc_reproduces_baseline": bv == cv,
+                        "difference_abcd_minus_baseline": round(nv - bv, 6) if isinstance(nv, (int, float))
+                        and isinstance(bv, (int, float)) else None})
+    funnel_sum = lambda rs, k: sum(r["funnel"]["counts"][k] for r in rs if isinstance(r["funnel"]["counts"][k], int))
+    sample = {k: {"abc": funnel_sum(sub_runs, k), "abcd": funnel_sum(ev_runs, k)}
+              for k in ("discovered", "attempted", "successful", "evaluable", "classified")}
+    sample["archives"] = {"abc": len(sub_runs), "abcd": len(ev_runs)}
+    sample["coverage_rows"] = {"abc": len(sub_rows), "abcd": len(rows)}
+    lookahead = {r["archive"]: r["replay"]["lookahead_all_passed"] for r in ev_runs}
+    replays = {r["archive"]: r["replay"]["identical"] for r in ev_runs}
+    reproduces = all(m["abc_reproduces_baseline"] for m in metrics)
+    return {"baseline_commit": BASELINE_EVIDENCE_COMMIT, "baseline_archives": names,
+            "added_archives": [r["archive"] for r in ev_runs if r["archive"] not in names],
+            "sample": sample, "metrics": metrics, "lookahead_by_archive": lookahead, "replay_identical_by_archive": replays,
+            "baseline_integrity": base["integrity"], "current_integrity": integrity,
+            "abc_reproduces_baseline": reproduces,
+            "classification": "SAMPLE EXPANSION" if reproduces else "EVIDENCE CHANGE",
+            "interpretation_rule": "differences are descriptive; Phase 3A defines no statistical test, so no "
+                                   "difference is called an improvement, and none implies predictive power or edge"}
 
 
 def collect(work: Path, pg: list[str] | None) -> tuple[dict, dict]:
@@ -224,7 +353,12 @@ def collect(work: Path, pg: list[str] | None) -> tuple[dict, dict]:
     head = phase2_verify.git("rev-parse", "HEAD")
     dirty = bool(phase2_verify.git("status", "--porcelain", "--", "intel/autopsyx", "intel/config", "intel/migrations"))
     code_version = head + ("-dirty" if dirty else "")
-    arch = archives()
+    candidates = archives()
+    prov = {d.name: provenance.verify(str(d)) for d in candidates}
+    arch = [d for d in candidates if prov[d.name]["verified"]]
+    excluded = [{"archive": d.name, "family": d.parent.parent.name, "verification": prov[d.name],
+                 "reason": "provenance not verifiable: " + prov[d.name]["scope"]}
+                for d in candidates if not prov[d.name]["verified"]]
     policy = tel.freshness_policy(cfg)
     runs, rp = [], {}
     for d in arch:
@@ -255,6 +389,9 @@ def collect(work: Path, pg: list[str] | None) -> tuple[dict, dict]:
             "telemetry": tel.provider_telemetry(es), "freshness": tel.freshness(es, policy),
             "assessments": assessments(d, r.get("window_ms")),
             "postgres": postgres(d, pg, work / "db"),
+            "provenance": prov[d.name],
+            "funnel": funnel(d, work, r["replayable"]),
+            "phase2_checks": phase2_checks(d, work, r["replayable"], pg),
         })
     m = cov.matrix(arch, rp, cfg)
     req = sum(t["requests"] for r in runs for t in r["telemetry"].values())
@@ -279,7 +416,7 @@ def collect(work: Path, pg: list[str] | None) -> tuple[dict, dict]:
     scope = phase2_verify.scope_audit(BASELINE)
     changed_tests = sorted(phase2_verify.git("diff", "--name-only", "--diff-filter=MD", BASELINE, "--",
                                              "intel/tests").split())
-    seeds = cross_seed()
+    seeds = cross_seed(arch)
     ev = {
         "schema": "phase3a.evidence.1",
         "repository": {"branch": phase2_verify.git("branch", "--show-current"), "head": head, "code_version": code_version,
@@ -305,6 +442,7 @@ def collect(work: Path, pg: list[str] | None) -> tuple[dict, dict]:
         "aggregates": agg,
         "cross_seed_determinism": seeds,
         "limitations": LIMITATIONS_FIXED,
+        "inclusion": {"rule": INCLUSION_RULE, "included": [d.name for d in arch], "excluded": excluded},
     }
     replayable = [r for r in runs if r["replay"]["replayable"]]
     integrity = {
@@ -325,18 +463,45 @@ def collect(work: Path, pg: list[str] | None) -> tuple[dict, dict]:
         "tests_green": ev["tests"]["failed"] == 0 and ev["tests"]["errors"] == 0 and ev["tests"]["exit_code"] == 0,
     }
     ev["integrity"] = integrity
+    ev["baseline_comparison"] = baseline_comparison(runs, m["rows"], agg, integrity)
     # Traceability is checked on a rendering of this very evidence; the result
     # adds no number to the documents, so the final rendering is checked again.
     integrity["traceability"] = True
     ev["traceability"] = {"untraceable": [], "untraceable_count": 0, "checked": []}
     ev["readiness"] = _readiness(ev)
+    ev["finalization"] = _finalization(ev)
     src = Path(__file__).read_text()
     bad = trace_check.check(render(ev), ev, src) + trace_check.check(render_status(ev), ev, src)
     integrity["traceability"] = not bad
     ev["traceability"] = {"untraceable": bad, "untraceable_count": len(bad),
                           "checked": ["docs/PHASE3A_REPORT.md", "docs/SYSTEM_STATUS.md"]}
     ev["readiness"] = _readiness(ev)
+    ev["finalization"] = _finalization(ev)
     return ev, m
+
+
+ARCHIVE_D = "p3a-sol-20261001d2"
+
+
+def _finalization(ev: dict) -> dict:
+    """The Phase 3A finalization checks, each read from executable evidence above."""
+    runs = {r["archive"]: r for r in ev["archives"]}
+    d = runs.get(ARCHIVE_D)
+    checks = {
+        "archive_d_included_and_provenance_verified": bool(d and d["provenance"]["verified"]),
+        "archive_d_acquisition_complete": bool(d and d["run_status"] == "COMPLETE"),
+        "every_included_archive_provenance_verified": all(r["provenance"]["verified"] for r in ev["archives"]),
+        "lookahead_a_to_f_passed": all(r["replay"]["lookahead_all_passed"] is not False for r in ev["archives"]),
+        "existing_phase2_checks_passed": all(r["phase2_checks"]["passed"] for r in ev["archives"]),
+        "phase3a_integrity": all(x for k, x in ev["integrity"].items() if k != "tests_green"),
+        "tests_green": ev["integrity"]["tests_green"],
+        "traceability": ev["integrity"]["traceability"],
+        "scope_clean": ev["integrity"]["scope_clean"],
+        "cross_seed_identical": ev["cross_seed_determinism"]["identical"],
+    }
+    return {"checks": checks, "result": "PASS" if all(checks.values()) else "BLOCKED",
+            "failed": [k for k, v in checks.items() if not v], "archive_d": ARCHIVE_D,
+            "phase3b": "NOT STARTED"}
 
 
 def _readiness(ev: dict) -> dict:
@@ -392,6 +557,7 @@ def status_block(ev: dict) -> list[str]:
               f"* Look-ahead: {'NONE DETECTED' if i['point_in_time_validity'] else 'DETECTED'}",
               f"* Traceability: {'VERIFIED' if i['traceability'] else 'FAILED'}",
               f"* Evidence integrity: {'VERIFIED' if i['evidence_integrity'] else 'FAILED'}",
+              f"* Finalization gate: {ev['finalization']['result']}",
               f"* Readiness: {r['result']}"]
     return lines
 
@@ -406,6 +572,66 @@ def render(ev: dict) -> str:
           "Reasons:", ""] + [f"* {x}" for x in ev["readiness"]["reasons"]] + [""]
     L += ["Hypothesis testing does not start: the gate is not READY." if ev["readiness"]["result"] != "READY"
           else "The gate is READY.", ""]
+    fz = ev["finalization"]
+    L += ["## Finalization gate", "", f"Result: **{fz['result']}**. Phase 3B: {fz['phase3b']}.", ""]
+    L += [_t([[k, "pass" if v else "FAIL"] for k, v in fz["checks"].items()], ["Check", "Result"]), ""]
+    inc = ev["inclusion"]
+    L += ["## Archive provenance and inclusion", "", f"Rule: {inc['rule']}.", ""]
+    rows = []
+    for r in ev["archives"]:
+        p_ = r["provenance"]
+        rows.append([r["archive"], "included", p_["source"], p_["scope"], p_["runner"]["phase2_records"],
+                     p_["rebuild_1"]["phase2_records"], p_["runner"]["phase3a_observations"] or "not recorded",
+                     p_["rebuild_1"]["phase3a_observations"], "yes" if p_["reproducible"] else "NO",
+                     {True: "yes", False: "NO", None: "n/a"}[p_["committed_matches_runner"]],
+                     "yes" if p_["verified"] else "NO"])
+    for x in inc["excluded"]:
+        p_ = x["verification"]
+        rows.append([x["archive"], "EXCLUDED", p_["source"], p_["scope"], "none", p_["rebuild_1"]["phase2_records"],
+                     "none", p_["rebuild_1"]["phase3a_observations"], "yes" if p_["reproducible"] else "NO", "n/a", "NO"])
+    L += [_t(rows, ["Archive", "Status", "Runner hash source", "Hash scope", "Runner phase2 hash", "Rebuilt phase2 hash",
+                    "Runner phase3a hash", "Rebuilt phase3a hash", "Rebuild twice identical",
+                    "Committed canonical = runner", "Verified"]), ""]
+    L += ["## Per-archive funnel", "",
+          "Definitions are the Phase 2 funnel's, unchanged. An archive without a replay has evaluable and classified "
+          "not measured; they are not counted as failures.", ""]
+    rows = []
+    for r in ev["archives"]:
+        for q in r["funnel"]["ratios"]:
+            rows.append([r["archive"], q["step"], "n/a" if q["numerator"] is None else q["numerator"],
+                         "n/a" if q["denominator"] is None else q["denominator"], _p(q["share"]),
+                         q["denominator_definition"], q["not_measured_reason"] or ""])
+    L += [_t(rows, ["Archive", "Step", "Numerator", "Denominator", "Share", "Denominator definition", "Not measured"]), ""]
+    bc = ev["baseline_comparison"]
+    L += ["## Baseline (A, B, C) versus A, B, C, D", "",
+          f"Baseline: Phase 3A evidence at commit `{bc['baseline_commit']}` over {', '.join(bc['baseline_archives'])}. "
+          f"Added: {', '.join(bc['added_archives']) or 'none'}.", "",
+          f"Classification of the change: **{bc['classification']}** (A, B, C recomputed now reproduce the committed "
+          f"baseline: {'yes' if bc['abc_reproduces_baseline'] else 'NO'}). {bc['interpretation_rule']}.", ""]
+    L += [_t([[k, v["abc"], v["abcd"]] for k, v in bc["sample"].items()], ["Sample", "A, B, C", "A, B, C, D"]), ""]
+    rows = [[m_["metric"], m_["baseline_abc_committed"], m_["abc_recomputed_now"], m_["abcd"],
+             "n/a" if m_["difference_abcd_minus_baseline"] is None else m_["difference_abcd_minus_baseline"],
+             "yes" if m_["abc_reproduces_baseline"] else "NO"] for m_ in bc["metrics"]]
+    L += [_t(rows, ["Metric", "Baseline committed", "A, B, C now", "A, B, C, D", "Difference (descriptive)",
+                    "A, B, C reproduces"]), ""]
+    L += [_t([[k, {True: "passed", False: "FAILED", None: "n/a"}[bc["lookahead_by_archive"][k]],
+               {True: "identical", False: "DIFFER", None: "n/a"}[bc["replay_identical_by_archive"][k]]]
+              for k in bc["lookahead_by_archive"]], ["Archive", "Look-ahead A-F", "Two replays"]), ""]
+    L += [_t([[k, "pass" if bc["baseline_integrity"].get(k) else "FAIL", "pass" if v else "FAIL"]
+              for k, v in bc["current_integrity"].items()], ["Integrity", "Baseline", "Now"]), ""]
+    L += ["## Existing Phase 2 checks at this commit", ""]
+    rows = []
+    for r in ev["archives"]:
+        c = r["phase2_checks"]
+        j = c["journal_audit"]
+        pg_ = c["postgres_phase2"]
+        rows.append([r["archive"], ", ".join(f"{k} {v}" for k, v in c["clock_and_hash_violations"].items()),
+                     c["raw_audit"]["referenced_but_missing"],
+                     "n/a" if j is None else f"{j['entries']} entries, {j['chain_breaks']} breaks, {j['hash_mismatches']} mismatches",
+                     pg_.get("status") or ("all checks zero" if pg_.get("all_checks_zero") else "FAILED"),
+                     "pass" if c["passed"] else "FAIL"])
+    L += [_t(rows, ["Archive", "Clock / hash violations", "Bodies missing", "Journal", "PostgreSQL (Phase 2 load)",
+                    "Result"]), ""]
     L += ["## Coverage matrix totals", "",
           f"{ev['coverage']['row_count']} rows (archive x token), {ev['coverage']['blank_cells']} blank cells. "
           f"Full matrix: `{ev['coverage']['file']}` (sha256 `{ev['coverage']['sha256']}`).", "",

@@ -213,6 +213,14 @@ def matrix(archives: list[Path], replay: dict[str, dict], cfg) -> dict:
                 "reason": "; ".join(why[:3]) if why else ("" if pit_ok else "archive look-ahead audit failed")}
             rows.append(row)
     blanks = [(i, d) for i, r in enumerate(rows) for d in DIMENSIONS if not r.get(d) or not r[d].get("state")]
+    totals = totals_of(rows)
+    return {"dimensions": list(DIMENSIONS), "vocabulary": VOCABULARY, "state_rule": STATE_RULE,
+            "freshness_policy_fingerprint": tel.policy_fingerprint(policy),
+            "rows": rows, "row_count": len(rows), "blank_cells": len(blanks), "totals": totals}
+
+
+def totals_of(rows: list[dict]) -> dict:
+    """Per-dimension state counts and positive share over a set of matrix rows."""
     totals = {}
     for d in DIMENSIONS[2:]:
         c = Counter(r[d]["state"] for r in rows)
@@ -228,6 +236,4 @@ def matrix(archives: list[Path], replay: dict[str, dict], cfg) -> dict:
     totals["liquidity_events"]["rows_with_vault_delta_events"] = vd
     totals["liquidity_events"]["rows_with_vault_delta_requests"] = vd_asked
     totals["liquidity_events"]["vault_delta_share"] = round(vd / len(rows), 6) if rows else None
-    return {"dimensions": list(DIMENSIONS), "vocabulary": VOCABULARY, "state_rule": STATE_RULE,
-            "freshness_policy_fingerprint": tel.policy_fingerprint(policy),
-            "rows": rows, "row_count": len(rows), "blank_cells": len(blanks), "totals": totals}
+    return totals
