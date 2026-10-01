@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Iterable
 
+from ..core.observation import Observation
 from ..core.models import (
     Coverage,
     FundingTransfer,
@@ -41,6 +42,7 @@ _KINDS = {
     "social": SocialPost,
     "bar": ProviderBar,
     "coverage": Coverage,
+    "observation": Observation,
 }
 
 
@@ -76,6 +78,7 @@ class EventStore:
     social: dict[str, _Series] = field(default_factory=dict)
     bars: dict[str, _Series] = field(default_factory=dict)
     coverage: dict[str, _Series] = field(default_factory=dict)
+    observations: dict[str, _Series] = field(default_factory=dict)  # by kind
 
     def add(self, rec) -> None:
         if isinstance(rec, TokenMeta):
@@ -101,6 +104,8 @@ class EventStore:
             self.bars.setdefault(f"{rec.chain}:{rec.token}", _Series()).add(rec)
         elif isinstance(rec, Coverage):
             self.coverage.setdefault(f"{rec.chain}:{rec.token}", _Series()).add(rec)
+        elif isinstance(rec, Observation):
+            self.observations.setdefault(rec.kind, _Series()).add(rec)
         else:
             raise TypeError(f"unsupported record {type(rec).__name__}")
 
@@ -188,6 +193,14 @@ class PointInTimeView:
         s = self._s.coverage.get(token_key)
         return [c for c in s.upto(self.as_of) if c.kind == kind] if s else []
 
+    def observations(self, kind: str, entity: str | None = None) -> list[Observation]:
+        """Phase 3A observations of one kind visible at as_of (ingestion_ts <= as_of)."""
+        s = self._s.observations.get(kind)
+        if not s:
+            return []
+        out = [o for o in s.upto(self.as_of) if entity is None or o.entity == entity]
+        return sorted(out, key=lambda o: (o.observation_ts, o.ingestion_ts, str(o.signature)))
+
     def has_real_market_data(self, token_key: str) -> bool:
         return token_key in self._s.bars or token_key in self._s.coverage
 
@@ -208,6 +221,8 @@ def decode_record(d: dict):
     d = dict(d)
     kind = d.pop("_type") if "_type" in d else d.pop("kind")  # legacy envelope used "kind"
     cls = _KINDS[kind]
+    if kind == "observation":
+        return Observation.from_dict(d)
     if kind == "token":
         d["ref"] = TokenRef(**d["ref"])
         d["narratives_hint"] = tuple(d.get("narratives_hint", ()))
