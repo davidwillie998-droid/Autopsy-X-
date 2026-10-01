@@ -1,0 +1,30 @@
+{
+  "acquisition_status": "COMPLETE",
+  "archive": "p3a-sol-20261001d2",
+  "committed_canonical": {
+    "phase2_records": "6c7ce2d8c047da3c25de5aa4291b28186d61218e33b1d47eab88cd20fe0d41d4",
+    "phase3a_observations": "ed6b9dfa3c2df27a01d2c4f5d3f9b02632efc2a807dc501eef10f2b7fcd0efd7"
+  },
+  "committed_matches_runner": true,
+  "config_hash_local": "417bd32cce8fb72c",
+  "config_hash_runner": "417bd32cce8fb72c",
+  "normalization_version_match": true,
+  "rebuild_1": {
+    "phase2_records": "6c7ce2d8c047da3c25de5aa4291b28186d61218e33b1d47eab88cd20fe0d41d4",
+    "phase3a_observations": "ed6b9dfa3c2df27a01d2c4f5d3f9b02632efc2a807dc501eef10f2b7fcd0efd7"
+  },
+  "rebuild_2": {
+    "phase2_records": "6c7ce2d8c047da3c25de5aa4291b28186d61218e33b1d47eab88cd20fe0d41d4",
+    "phase3a_observations": "ed6b9dfa3c2df27a01d2c4f5d3f9b02632efc2a807dc501eef10f2b7fcd0efd7"
+  },
+  "rebuild_matches_runner": true,
+  "reproducible": true,
+  "runner": {
+    "phase2_records": "6c7ce2d8c047da3c25de5aa4291b28186d61218e33b1d47eab88cd20fe0d41d4",
+    "phase3a_observations": "ed6b9dfa3c2df27a01d2c4f5d3f9b02632efc2a807dc501eef10f2b7fcd0efd7"
+  },
+  "scope": "phase2_records and phase3a_observations",
+  "source": "run.json provenance (sealed on runner)",
+  "verified": true,
+  "workflow_run_id": "36828884855"
+}
