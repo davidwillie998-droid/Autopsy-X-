@@ -48,6 +48,7 @@ TOKEN_PROGRAMS = {"spl-token", "spl-token-2022"}
 SYSTEM_TRANSFERS = {"transfer", "transferWithSeed"}
 TOKEN_TRANSFERS = {"transfer", "transferChecked"}
 LAMPORTS = Decimal(10) ** 9
+PURPOSE_KIND = {"funding": "funding_transfer", "liquidity": "liquidity_event"}
 
 
 def display_base(base: str) -> str:
@@ -123,11 +124,12 @@ def parse_signatures(e: ManifestEntry, body: bytes | None) -> Parsed:
     """Signature index for one address. Rows are kept in provider order."""
     out = Parsed()
     address = e.context.get("address", "")
-    ok, result = _rpc_result(e, body, address, out)
+    kind = PURPOSE_KIND.get(e.context.get("purpose", "funding"), "funding_transfer")
+    ok, result = _rpc_result(e, body, address, out, kind)
     if not ok:
         return out
     if not isinstance(result, list):
-        out.observations.append(_base_obs(e, address, A.ERROR, "malformed RPC body: result is not a list"))
+        out.observations.append(_base_obs(e, address, A.ERROR, "malformed RPC body: result is not a list", kind))
         out.issues.append(Issue(Code.MALFORMED_RECORD, e.raw_id, "signatures result not a list", "skipped_response"))
         return out
     for row in result:
@@ -270,4 +272,112 @@ def parse_transaction(e: ManifestEntry, body: bytes | None) -> Parsed:
         o = Observation(**{**common, "state": A.NOT_OBSERVED},
                         reason=f"transaction ({tx_status}) has no system/SPL transfer touching {address}")
         out.observations.append(validate(o))
+    return out
+
+
+# ------------------------------------------------------ liquidity events ----
+def parse_liquidity(e: ManifestEntry, body: bytes | None) -> Parsed:
+    """Liquidity-event observation for one transaction of a watched pool.
+
+    Program-agnostic: the pool's vaults are the token accounts whose reported
+    owner is the pool address, and the event is classified from their
+    pre/post balance deltas, never from current pool state:
+
+      vault absent before, present after   pool_create
+      base and quote vault both up         add
+      base and quote vault both down       remove
+      opposite directions                  swap (not a liquidity event: NOT_OBSERVED)
+      anything else                        unclassified (OBSERVED, deltas kept)
+
+    Venues whose vault authority is not the pool address (e.g. a separate AMM
+    authority) yield NOT_OBSERVED with that reason: the method cannot see
+    them, which is a coverage gap and not evidence of no liquidity change.
+    """
+    out = Parsed()
+    pool = e.context.get("pool") or e.context.get("address", "")
+    base = e.context.get("token")
+    sig = e.context.get("signature")
+    ok, tx = _rpc_result(e, body, pool, out, "liquidity_event")
+    if not ok:
+        return out
+    if tx is None:
+        out.observations.append(_base_obs(e, pool, A.NOT_OBSERVED, "RPC returned null: transaction not found",
+                                          "liquidity_event", sig))
+        return out
+    try:
+        keys = [k["pubkey"] if isinstance(k, dict) else k for k in tx["transaction"]["message"]["accountKeys"]]
+        tx_sig = tx["transaction"]["signatures"][0]
+        slot = tx["slot"]
+    except (KeyError, IndexError, TypeError) as exc:
+        out.observations.append(_base_obs(e, pool, A.ERROR, f"malformed transaction: missing {exc}", "liquidity_event", sig))
+        out.issues.append(Issue(Code.MALFORMED_RECORD, e.raw_id, f"transaction {sig}: missing {exc}", "skipped_response"))
+        return out
+    if sig is not None and tx_sig != sig:
+        out.observations.append(_base_obs(e, pool, A.ERROR, f"RPC answered for {tx_sig}, asked {sig}", "liquidity_event", sig))
+        out.issues.append(Issue(Code.MALFORMED_RECORD, e.raw_id, f"signature mismatch {tx_sig} != {sig}", "skipped_response"))
+        return out
+    meta = tx.get("meta")
+    tx_status = "unknown" if meta is None else ("failed" if meta.get("err") is not None else "success")
+    bt = tx.get("blockTime")
+    src_ts = bt * 1000 if isinstance(bt, int) else None
+    common = dict(kind="liquidity_event", entity=pool, chain=CHAIN, venue=e.context.get("dex"),
+                  observation_ts=src_ts if src_ts is not None else e.response_ts, source_ts=src_ts,
+                  source_ts_state=A.OBSERVED if src_ts is not None else A.NOT_OBSERVED, ingestion_ts=e.response_ts,
+                  provider=NAME, response_status=e.status, raw_id=e.raw_id, slot=slot, signature=tx_sig)
+
+    def none(reason: str) -> Parsed:
+        out.observations.append(validate(Observation(**common, state=A.NOT_OBSERVED, reason=reason)))
+        return out
+
+    if meta is None:
+        return none("transaction has no meta: balances unknown")
+    vaults: dict[str, dict] = {}
+    for when in ("pre", "post"):
+        for bal in meta.get(f"{when}TokenBalances") or []:
+            idx = bal.get("accountIndex")
+            if bal.get("owner") != pool or not isinstance(idx, int) or idx >= len(keys):
+                continue
+            amt = (bal.get("uiTokenAmount") or {}).get("amount")
+            if not isinstance(amt, str) or not amt.isdigit():
+                out.issues.append(Issue(Code.MALFORMED_RECORD, e.raw_id, f"{tx_sig} vault balance {amt!r}", "dropped_field"))
+                continue
+            v = vaults.setdefault(keys[idx], {"vault": keys[idx], "mint": bal.get("mint"), "pre": None, "post": None})
+            v[when] = int(amt)
+    if not vaults:
+        return none(f"no token account owned by the pool address in this transaction ({tx_status}); "
+                    "vault authority may differ from the pool address")
+    if tx_status == "failed":
+        return none("failed transaction: no balance change took effect")
+    deltas = []
+    for v in sorted(vaults.values(), key=lambda x: x["vault"]):
+        d = None if v["post"] is None else v["post"] - (v["pre"] or 0)
+        deltas.append({**v, "pre": None if v["pre"] is None else str(v["pre"]),
+                       "post": None if v["post"] is None else str(v["post"]),
+                       "delta_raw": None if d is None else str(d)})
+    created = any(v["pre"] is None and v["post"] is not None for v in vaults.values())
+    signs = {}
+    for v in deltas:
+        if v["delta_raw"] is not None:
+            signs.setdefault("base" if v["mint"] == base else "quote", []).append(int(v["delta_raw"]))
+    b = sum(signs.get("base", [])) if "base" in signs else None
+    q = sum(signs.get("quote", [])) if "quote" in signs else None
+    if created:
+        typ = "pool_create"
+    elif b is None or q is None or b == 0 or q == 0:
+        if (b or 0) == 0 and (q or 0) == 0:
+            return none("pool vault balances unchanged")
+        typ = "unclassified"
+    elif b > 0 and q > 0:
+        typ = "add"
+    elif b < 0 and q < 0:
+        typ = "remove"
+    else:
+        return none("vault deltas in opposite directions: swap, not a liquidity event")
+    quote_mints = sorted({v["mint"] for v in deltas if v["mint"] != base and v["mint"]})
+    value = {"event_type": typ, "pool": pool, "base_mint": base, "quote_mint": quote_mints[0] if len(quote_mints) == 1 else None,
+             "quote_mint_state": A.OBSERVED.value if len(quote_mints) == 1 else A.UNKNOWN.value,
+             "base_amount_raw": None if b is None else str(b), "base_amount_raw_state": _state(b),
+             "quote_amount_raw": None if q is None else str(q), "quote_amount_raw_state": _state(q),
+             "vault_deltas": deltas, "classification_method": "vault_balance_delta", "tx_status": tx_status}
+    out.observations.append(validate(Observation(**common, state=A.OBSERVED, value=value)))
     return out

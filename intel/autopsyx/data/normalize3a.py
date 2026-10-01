@@ -10,13 +10,55 @@ import hashlib
 import json
 
 from ..core.observation import Observation, dedupe
+from ..core.observation import Availability as A
+from ..core.observation import validate
+from .providers import geckoterminal as gt
 from .providers import solana_rpc as rpc
 from .raw import RawStore
 from .validate import Code, Issue
 
+def _rpc_transaction(e, body):
+    if e.context.get("purpose") == "liquidity":
+        return rpc.parse_liquidity(e, body)
+    return rpc.parse_transaction(e, body)
+
+
+def _pool_created(e, body):
+    """Pool-creation events from GeckoTerminal pool metadata (pool_created_at).
+
+    The provider's creation time is the source time; the event becomes
+    visible only when the response arrived. No amounts are claimed: the
+    metadata says when the pool appeared, not how much liquidity it got.
+    """
+    out = rpc.Parsed()
+    if body is None:
+        return out
+    for r in gt.parse_pools(e, body).records:
+        if type(r).__name__ != "PoolInfo":
+            continue
+        has_ts = r.created_ts is not None
+        out.observations.append(validate(Observation(
+            kind="liquidity_event", entity=r.pool, chain=r.chain, venue=r.venue, state=A.OBSERVED,
+            observation_ts=r.created_ts if has_ts else e.response_ts, source_ts=r.created_ts,
+            source_ts_state=A.OBSERVED if has_ts else A.NOT_OBSERVED, ingestion_ts=e.response_ts,
+            provider=gt.NAME, response_status=e.status, raw_id=e.raw_id,
+            value={"event_type": "pool_create", "pool": r.pool, "base_mint": r.token,
+                   "quote_mint": None, "quote_mint_state": A.NOT_OBSERVED.value,
+                   "base_amount_raw": None, "base_amount_raw_state": A.NOT_OBSERVED.value,
+                   "quote_amount_raw": None, "quote_amount_raw_state": A.NOT_OBSERVED.value,
+                   "vault_deltas": None, "vault_deltas_state": A.NOT_OBSERVED.value,
+                   "classification_method": "provider_metadata:pool_created_at",
+                   "tx_status": None, "tx_status_state": A.NOT_APPLICABLE.value})))
+    return out
+
+
 PARSERS = {
     "rpc.signatures": rpc.parse_signatures,
-    "rpc.transaction": rpc.parse_transaction,
+    "rpc.transaction": _rpc_transaction,
+    "gt.new_pools": _pool_created,
+    "gt.trending": _pool_created,
+    "gt.top_pools": _pool_created,
+    "gt.pools_multi": _pool_created,
 }
 
 
