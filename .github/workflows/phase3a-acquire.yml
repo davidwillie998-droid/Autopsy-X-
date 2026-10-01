@@ -38,6 +38,17 @@ jobs:
           RUN_ID=$(python -c "import json;print(json.load(open('datasets/phase3a/REQUEST.json'))['run_id'])")
           echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
           python -m autopsyx --log acquire --live --request datasets/phase3a/REQUEST.json --out "datasets/phase3a/runs/$RUN_ID"
+      - name: Seal canonical dataset on the runner
+        # Same normalizers the research uses (Phase 2 normalize + Phase 3A normalize3a).
+        # Writes canonical/*.jsonl.gz, normalize_stdout.json and run.json["provenance"]
+        # with the runner dataset hashes, so the committed archive can be checked against them.
+        if: always()
+        working-directory: intel
+        run: python -m autopsyx seal "datasets/phase3a/runs/$RUN_ID"
+      - name: Verify provenance on the runner
+        if: always()
+        working-directory: intel
+        run: python -m autopsyx verify-provenance "datasets/phase3a/runs/$RUN_ID" > "datasets/phase3a/runs/$RUN_ID/runner_verify.json" || true
       - name: Commit raw archive
         if: always()
         run: |

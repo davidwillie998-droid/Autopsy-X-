@@ -111,6 +111,10 @@ def main(argv: list[str] | None = None) -> int:
     p3.add_argument("--status", default="../docs/SYSTEM_STATUS.md")
     nm = sub.add_parser("normalize", help="raw archive -> normalized.jsonl + normalization_report.json")
     nm.add_argument("run_dir")
+    sl = sub.add_parser("seal", help="runner step: canonical dataset files, dataset hashes, provenance in run.json")
+    sl.add_argument("run_dir")
+    vp = sub.add_parser("verify-provenance", help="rebuild twice, decode committed canonical files, compare hashes")
+    vp.add_argument("run_dir")
     ap.add_argument("--log", action="store_true", help="emit structured JSON logs to stderr")
     args = ap.parse_args(argv)
     if args.log:
@@ -201,6 +205,15 @@ def main(argv: list[str] | None = None) -> int:
         out = phase2_report.build(args.run_dir, args.replay_dir, cfg.section("signal")["min_coverage"])
         print(json.dumps(out, indent=2, sort_keys=True, default=str))
         return 0
+    if args.cmd == "seal":
+        from .data import provenance
+        print(json.dumps(provenance.seal(args.run_dir)["runner_dataset_hash"], sort_keys=True))
+        return 0
+    if args.cmd == "verify-provenance":
+        from .data import provenance
+        out = provenance.verify(args.run_dir)
+        print(json.dumps(out, indent=2, sort_keys=True))
+        return 0 if out["verified"] else 1
     if args.cmd == "normalize":
         from .data.normalize import normalize
         records, rep = normalize(args.run_dir)
