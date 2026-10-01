@@ -17,7 +17,7 @@
   "point_in_time_validity"
  ],
  "freshness_policy_fingerprint": "58fe8ee8476b824fde285065d8dafbebb594f9bf1cd0df04091823d13b9881ff",
- "row_count": 25,
+ "row_count": 30,
  "rows": [
   {
    "archive": {
@@ -3460,6 +3460,711 @@
     "state": "OBSERVED",
     "successful": 16
    }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "universe.json",
+    "value": "p3a-sol-20261001d2"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 27,
+    "reason": "age above 120000 ms",
+    "stale": 27,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 15,
+     "OBSERVED": 125,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {
+     "success": 125
+    },
+    "reason": "",
+    "records": 140,
+    "state": "OBSERVED"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 4,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "provider answered without the fact",
+    "records": 4,
+    "state": "NOT_OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1,
+     "vault_balance_delta|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED",
+    "vault_delta_requests": 4
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 2,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "provider answered without the fact",
+    "records": 2,
+    "state": "NOT_OBSERVED"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 29,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 15
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 155,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 2,
+    "reason": "some requests failed",
+    "requests": 101,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "every request for this token failed",
+    "records": 2,
+    "state": "ERROR"
+   },
+   "token": {
+    "pool": "J2rcPuCbyJk4V3Av1Qcw5YFADjf7t475ckGdF5cc2vni",
+    "state": "IDENTITY",
+    "value": "25KTDG9Lz8Kk4s2y9QgAwSXBnrhAsNkhF8Zcxv7qpump"
+   },
+   "trades": {
+    "reason": "",
+    "records": 14,
+    "requests": 14,
+    "state": "OBSERVED",
+    "successful": 14
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "universe.json",
+    "value": "p3a-sol-20261001d2"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 3,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 27,
+    "reason": "age above 120000 ms",
+    "stale": 27,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 2,
+     "OBSERVED": 12,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {
+     "success": 12
+    },
+    "reason": "",
+    "records": 14,
+    "state": "OBSERVED"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 3,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1,
+     "vault_balance_delta|unclassified": 15
+    },
+    "counts": {
+     "ERROR": 12,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 3,
+     "OBSERVED": 16,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 31,
+    "state": "OBSERVED",
+    "vault_delta_requests": 60
+   },
+   "news": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "every request for this token failed",
+    "records": 2,
+    "state": "ERROR"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 59,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 15
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 55,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 4,
+    "reason": "some requests failed",
+    "requests": 114,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "every request for this token failed",
+    "records": 2,
+    "state": "ERROR"
+   },
+   "token": {
+    "pool": "Ds86ohcmWPeW8DEiFnuFcQak2GfzDvMcYfCp5ore6bgG",
+    "state": "IDENTITY",
+    "value": "5LiKVERgvnLsayNEeeGJrwLCB9v51KKshdCoacEKpump"
+   },
+   "trades": {
+    "reason": "",
+    "records": 420,
+    "requests": 14,
+    "state": "OBSERVED",
+    "successful": 14
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "universe.json",
+    "value": "p3a-sol-20261001d2"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 27,
+    "reason": "age above 120000 ms",
+    "stale": 27,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 29,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {
+     "success": 1
+    },
+    "reason": "",
+    "records": 30,
+    "state": "OBSERVED"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1,
+     "vault_balance_delta|add": 1,
+     "vault_balance_delta|remove": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 28,
+     "OBSERVED": 3,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 31,
+    "state": "OBSERVED",
+    "vault_delta_requests": 60
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "query not applicable for this token (recorded in the manifest)",
+    "records": 0,
+    "state": "NOT_APPLICABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 375,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 15
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 71,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 4,
+    "reason": "some requests failed",
+    "requests": 165,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "every request for this token failed",
+    "records": 2,
+    "state": "ERROR"
+   },
+   "token": {
+    "pool": "6aDM38nmF3WrAK1VF94z8pJynAnS29aB7Lkh3UmFfVmG",
+    "state": "IDENTITY",
+    "value": "6aK5YeYgnRFwkyyxKL1miHq31oxV251iGv4EHJ6rcDKF"
+   },
+   "trades": {
+    "reason": "",
+    "records": 4200,
+    "requests": 14,
+    "state": "OBSERVED",
+    "successful": 14
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "universe.json",
+    "value": "p3a-sol-20261001d2"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 27,
+    "reason": "age above 120000 ms",
+    "stale": 27,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 16,
+     "OBSERVED": 128,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {
+     "failed": 3,
+     "success": 125
+    },
+    "reason": "",
+    "records": 144,
+    "state": "OBSERVED"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1,
+     "vault_balance_delta|pool_create": 1,
+     "vault_balance_delta|unclassified": 23
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 3,
+     "OBSERVED": 25,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 28,
+    "state": "OBSERVED",
+    "vault_delta_requests": 54
+   },
+   "news": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "every request for this token failed",
+    "records": 2,
+    "state": "ERROR"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 29,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 15
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 184,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 4,
+    "reason": "some requests failed",
+    "requests": 157,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "every request for this token failed",
+    "records": 2,
+    "state": "ERROR"
+   },
+   "token": {
+    "pool": "4UgBZuUAvb7C9jqz6QRFj8PaBq7iSRU11vb1k422BUVT",
+    "state": "IDENTITY",
+    "value": "9P6XL2LPNuaj1YndWK7WhHzZG8WKLPMZ3UmBsmpapump"
+   },
+   "trades": {
+    "reason": "",
+    "records": 294,
+    "requests": 14,
+    "state": "OBSERVED",
+    "successful": 14
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "universe.json",
+    "value": "p3a-sol-20261001d2"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.035714,
+    "evaluations": 28,
+    "reason": "age above 120000 ms",
+    "stale": 27,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 20,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 14,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "provider answered without the fact",
+    "records": 34,
+    "state": "NOT_OBSERVED"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 13,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 47,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 61,
+    "state": "OBSERVED",
+    "vault_delta_requests": 60
+   },
+   "news": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "every request for this token failed",
+    "records": 2,
+    "state": "ERROR"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 2052,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 16
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 107,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 3,
+    "reason": "some requests failed",
+    "requests": 166,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "every request for this token failed",
+    "records": 2,
+    "state": "ERROR"
+   },
+   "token": {
+    "pool": "HMzvsEEmtzHhvZNw9uwbaG85HCTmFnkbhzUx16cy7ca3",
+    "state": "IDENTITY",
+    "value": "Ai66LHZG9MCzg1WKdawwqduVAXpNDUuV8M3uyq5ppump"
+   },
+   "trades": {
+    "reason": "",
+    "records": 4200,
+    "requests": 14,
+    "state": "OBSERVED",
+    "successful": 14
+   }
   }
  ],
  "state_rule": "OBSERVED if any OBSERVED record; else NOT_OBSERVED if any; else NOT_APPLICABLE if the question was not applicable; else ERROR if any; else UNKNOWN if the archive's plan included the source but this token was never asked; else UNAVAILABLE (source not in the archive's acquisition plan)",
@@ -3468,60 +4173,60 @@
    "ERROR": 0,
    "NOT_APPLICABLE": 0,
    "NOT_OBSERVED": 1,
-   "OBSERVED": 20,
+   "OBSERVED": 25,
    "STALE": 0,
    "UNAVAILABLE": 0,
    "UNKNOWN": 4,
-   "positive_share": 0.8,
+   "positive_share": 0.833333,
    "positive_state": "OBSERVED"
   },
   "freshness": {
    "NOT_OBSERVED": 8,
    "OBSERVED": 0,
-   "STALE": 17,
+   "STALE": 22,
    "positive_share": 0.0,
    "positive_state": "OBSERVED"
   },
   "funding_transfer": {
    "ERROR": 0,
    "NOT_APPLICABLE": 0,
-   "NOT_OBSERVED": 0,
-   "OBSERVED": 0,
+   "NOT_OBSERVED": 1,
+   "OBSERVED": 4,
    "STALE": 0,
    "UNAVAILABLE": 25,
    "UNKNOWN": 0,
-   "positive_share": 0.0,
+   "positive_share": 0.133333,
    "positive_state": "OBSERVED"
   },
   "holder_state": {
    "ERROR": 0,
    "NOT_APPLICABLE": 0,
-   "NOT_OBSERVED": 5,
-   "OBSERVED": 16,
+   "NOT_OBSERVED": 6,
+   "OBSERVED": 20,
    "STALE": 0,
    "UNAVAILABLE": 0,
    "UNKNOWN": 4,
-   "positive_share": 0.64,
+   "positive_share": 0.666667,
    "positive_state": "OBSERVED"
   },
   "liquidity_events": {
    "ERROR": 0,
    "NOT_APPLICABLE": 0,
    "NOT_OBSERVED": 0,
-   "OBSERVED": 25,
+   "OBSERVED": 30,
    "STALE": 0,
    "UNAVAILABLE": 0,
    "UNKNOWN": 0,
    "positive_share": 1.0,
    "positive_state": "OBSERVED",
-   "rows_with_vault_delta_events": 0,
-   "rows_with_vault_delta_requests": 0,
-   "vault_delta_share": 0.0
+   "rows_with_vault_delta_events": 4,
+   "rows_with_vault_delta_requests": 5,
+   "vault_delta_share": 0.133333
   },
   "news": {
-   "ERROR": 0,
-   "NOT_APPLICABLE": 0,
-   "NOT_OBSERVED": 0,
+   "ERROR": 3,
+   "NOT_APPLICABLE": 1,
+   "NOT_OBSERVED": 1,
    "OBSERVED": 0,
    "STALE": 0,
    "UNAVAILABLE": 25,
@@ -3533,35 +4238,35 @@
    "ERROR": 0,
    "NOT_APPLICABLE": 0,
    "NOT_OBSERVED": 0,
-   "OBSERVED": 21,
+   "OBSERVED": 26,
    "STALE": 0,
    "UNAVAILABLE": 0,
    "UNKNOWN": 4,
-   "positive_share": 0.84,
+   "positive_share": 0.866667,
    "positive_state": "OBSERVED"
   },
   "point_in_time_validity": {
    "FAILED": 0,
-   "VERIFIED": 25,
+   "VERIFIED": 30,
    "positive_share": 1.0,
    "positive_state": "VERIFIED"
   },
   "provider": {
-   "ERROR": 12,
+   "ERROR": 17,
    "NOT_OBSERVED": 4,
    "OBSERVED": 9,
-   "positive_share": 0.36,
+   "positive_share": 0.3,
    "positive_state": "OBSERVED"
   },
   "replayability": {
    "FAILED": 0,
    "NOT_REPLAYABLE": 8,
-   "VERIFIED": 17,
-   "positive_share": 0.68,
+   "VERIFIED": 22,
+   "positive_share": 0.733333,
    "positive_state": "VERIFIED"
   },
   "social": {
-   "ERROR": 0,
+   "ERROR": 5,
    "NOT_APPLICABLE": 0,
    "NOT_OBSERVED": 0,
    "OBSERVED": 0,
@@ -3575,11 +4280,11 @@
    "ERROR": 0,
    "NOT_APPLICABLE": 0,
    "NOT_OBSERVED": 0,
-   "OBSERVED": 17,
+   "OBSERVED": 22,
    "STALE": 0,
    "UNAVAILABLE": 0,
    "UNKNOWN": 8,
-   "positive_share": 0.68,
+   "positive_share": 0.733333,
    "positive_state": "OBSERVED"
   }
  },

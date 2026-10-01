@@ -1,47 +1,47 @@
 {
  "aggregates": {
-  "archives": 3,
-  "coverage_rows": 25,
+  "archives": 4,
+  "coverage_rows": 30,
   "coverage_rows_observed": {
-   "creator_state": 20,
+   "creator_state": 25,
    "freshness": 0,
-   "funding_transfer": 0,
-   "holder_state": 16,
-   "liquidity_events": 25,
+   "funding_transfer": 4,
+   "holder_state": 20,
+   "liquidity_events": 30,
    "news": 0,
-   "ohlcv": 21,
-   "point_in_time_validity": 25,
+   "ohlcv": 26,
+   "point_in_time_validity": 30,
    "provider": 9,
-   "replayability": 17,
+   "replayability": 22,
    "social": 0,
-   "trades": 17
+   "trades": 22
   },
   "coverage_share": {
-   "creator_state": 0.8,
+   "creator_state": 0.833333,
    "freshness": 0.0,
-   "funding_transfer": 0.0,
-   "holder_state": 0.64,
+   "funding_transfer": 0.133333,
+   "holder_state": 0.666667,
    "liquidity_events": 1.0,
    "news": 0.0,
-   "ohlcv": 0.84,
+   "ohlcv": 0.866667,
    "point_in_time_validity": 1.0,
-   "provider": 0.36,
-   "replayability": 0.68,
+   "provider": 0.3,
+   "replayability": 0.733333,
    "social": 0.0,
-   "trades": 0.68
+   "trades": 0.733333
   },
-  "freshness_compliance": 0.007984,
-  "freshness_evaluations": 501,
-  "freshness_stale": 497,
-  "liquidity_vault_delta_rows": 0,
-  "liquidity_vault_delta_share": 0.0,
-  "multi_day_longest_span_days": 0.035594,
+  "freshness_compliance": 0.007541,
+  "freshness_evaluations": 663,
+  "freshness_stale": 658,
+  "liquidity_vault_delta_rows": 4,
+  "liquidity_vault_delta_share": 0.133333,
+  "multi_day_longest_span_days": 0.044715,
   "multi_day_performed": false,
-  "provider_error_rate": 0.113537,
-  "provider_errors": 78,
-  "provider_requests": 687,
-  "replayable_archives": 2,
-  "universe_tokens": 25
+  "provider_error_rate": 0.065447,
+  "provider_errors": 93,
+  "provider_requests": 1421,
+  "replayable_archives": 3,
+  "universe_tokens": 30
  },
  "archives": [
   {
@@ -265,7 +265,7 @@
      "duplicate_token_steps": 0,
      "entries": 120,
      "hash_mismatches": 0,
-     "head_hash": "6c31a0cebef32e259b60e985bf36c8df5daeb6f8c8436cacae62f2bb936dc8ec"
+     "head_hash": "5676f07ea0e2249aa10df02683d8bf7336114f6e0a736bc9de7e5e9383b50574"
     },
     "passed": true,
     "postgres_phase2": {
@@ -381,12 +381,12 @@
     "replayable": true,
     "replays": [
      {
-      "journal_sha256": "eb5197c4126aea281200ff93e24c0a1438381d675c5f3938a44676b301d4362f",
-      "records_sha256": "e70f59cd7fe197c86f0ab7391593b5c7f3cbc2512a59c382a8768a2452dcb2b5"
+      "journal_sha256": "5d932fe1813694a0e9e671031e972e20d1fa83cad8b22b991f3e333fff022123",
+      "records_sha256": "4c76cdc0995a4fa75dafa119fa85248386cb5d3e483b5132514aa3c98e029ac9"
      },
      {
-      "journal_sha256": "eb5197c4126aea281200ff93e24c0a1438381d675c5f3938a44676b301d4362f",
-      "records_sha256": "e70f59cd7fe197c86f0ab7391593b5c7f3cbc2512a59c382a8768a2452dcb2b5"
+      "journal_sha256": "5d932fe1813694a0e9e671031e972e20d1fa83cad8b22b991f3e333fff022123",
+      "records_sha256": "4c76cdc0995a4fa75dafa119fa85248386cb5d3e483b5132514aa3c98e029ac9"
      }
     ],
     "window_ms": [
@@ -941,7 +941,7 @@
      "duplicate_token_steps": 0,
      "entries": 50,
      "hash_mismatches": 0,
-     "head_hash": "fc1ab768d60853337fe2a4dc258271091ca6149928e646b1a9871334429de693"
+     "head_hash": "567f3633a25b28bbacdbef00ae5ccc2e0c7b16bdba6c087e4cb67b54bb9ce437"
     },
     "passed": true,
     "postgres_phase2": {
@@ -1056,12 +1056,12 @@
     "replayable": true,
     "replays": [
      {
-      "journal_sha256": "4e6d849e90e84fa0b975079ced61ae3028a03d8b73dda2b3c0f6b6eae6a70722",
-      "records_sha256": "ad9dadbb18206b43577852b636d2aedc4a93906cea45980ed19ae6dcb0364aa4"
+      "journal_sha256": "3a5fc1a86362e7ed22a3c40efa6b4a8efae82fbb199a75b88dc0cd766a0842e5",
+      "records_sha256": "591058d60c13d391bd410951a03605a963c889ed91fb055710cd23390ecb7918"
      },
      {
-      "journal_sha256": "4e6d849e90e84fa0b975079ced61ae3028a03d8b73dda2b3c0f6b6eae6a70722",
-      "records_sha256": "ad9dadbb18206b43577852b636d2aedc4a93906cea45980ed19ae6dcb0364aa4"
+      "journal_sha256": "3a5fc1a86362e7ed22a3c40efa6b4a8efae82fbb199a75b88dc0cd766a0842e5",
+      "records_sha256": "591058d60c13d391bd410951a03605a963c889ed91fb055710cd23390ecb7918"
      }
     ],
     "window_ms": [
@@ -1131,11 +1131,560 @@
     "source": "selection.json",
     "tokens": 5
    }
+  },
+  {
+   "archive": "p3a-sol-20261001d2",
+   "assessments": {
+    "creator_state@first": {
+     "as_of": 1790841040795,
+     "hindsight": {
+      "KNOWN_AT_ASSESSMENT": 5
+     },
+     "states": {
+      "KNOWN_AT_ASSESSMENT": 5
+     }
+    },
+    "creator_state@last": {
+     "as_of": 1790844004790,
+     "hindsight": {
+      "KNOWN_AT_ASSESSMENT": 5
+     },
+     "states": {
+      "KNOWN_AT_ASSESSMENT": 5
+     }
+    },
+    "holder_state@first": {
+     "as_of": 1790841040795,
+     "hindsight": {
+      "KNOWN_AT_ASSESSMENT": 4,
+      "UNAVAILABLE_FROM_PROVIDER": 1
+     },
+     "states": {
+      "KNOWN_AT_ASSESSMENT": 4,
+      "UNAVAILABLE_FROM_PROVIDER": 1
+     }
+    },
+    "holder_state@last": {
+     "as_of": 1790844004790,
+     "hindsight": {
+      "KNOWN_AT_ASSESSMENT": 4,
+      "UNAVAILABLE_FROM_PROVIDER": 1
+     },
+     "states": {
+      "KNOWN_AT_ASSESSMENT": 4,
+      "UNAVAILABLE_FROM_PROVIDER": 1
+     }
+    }
+   },
+   "contract_violations": 0,
+   "exchanges": 736,
+   "family": "phase3a",
+   "freshness": {
+    "endpoints": {
+     "ds.pairs": {
+      "age_ms": {
+       "max": 194058,
+       "p50": 178772,
+       "p95": 194058
+      },
+      "compliance": 0.0,
+      "evaluations": 13,
+      "governed": true,
+      "stale": 13
+     },
+     "gt.new_pools": {
+      "age_ms": {
+       "max": 4813,
+       "p50": 4813,
+       "p95": 4813
+      },
+      "compliance": "NOT_APPLICABLE",
+      "evaluations": 2,
+      "governed": false,
+      "stale": null
+     },
+     "gt.ohlcv": {
+      "age_ms": {
+       "max": 703154,
+       "p50": 174035,
+       "p95": 662832
+      },
+      "compliance": 0.014085,
+      "evaluations": 71,
+      "governed": true,
+      "stale": 70
+     },
+     "gt.pools_multi": {
+      "age_ms": {
+       "max": 194008,
+       "p50": 178779,
+       "p95": 194008
+      },
+      "compliance": 0.0,
+      "evaluations": 13,
+      "governed": true,
+      "stale": 13
+     },
+     "gt.token_info": {
+      "age_ms": {
+       "max": 1358425,
+       "p50": 883355,
+       "p95": 1358425
+      },
+      "compliance": "NOT_APPLICABLE",
+      "evaluations": 14,
+      "governed": false,
+      "stale": null
+     },
+     "gt.trades": {
+      "age_ms": {
+       "max": 199950,
+       "p50": 172981,
+       "p95": 195791
+      },
+      "compliance": 0.0,
+      "evaluations": 65,
+      "governed": true,
+      "stale": 65
+     },
+     "news.gdelt": {
+      "age_ms": {
+       "max": 2969381,
+       "p50": 2969381,
+       "p95": 2969381
+      },
+      "compliance": "NOT_APPLICABLE",
+      "evaluations": 2,
+      "governed": false,
+      "stale": null
+     },
+     "rpc.signatures": {
+      "age_ms": {
+       "max": 3030527,
+       "p50": 2922542,
+       "p95": 3030527
+      },
+      "compliance": "NOT_APPLICABLE",
+      "evaluations": 20,
+      "governed": false,
+      "stale": null
+     },
+     "rpc.transaction": {
+      "age_ms": {
+       "max": 3044622,
+       "p50": 2940598,
+       "p95": 3041819
+      },
+      "compliance": "NOT_APPLICABLE",
+      "evaluations": 185,
+      "governed": false,
+      "stale": null
+     }
+    },
+    "governed_compliance": 0.006173,
+    "governed_evaluations": 162,
+    "governed_stale": 161
+   },
+   "funnel": {
+    "counts": {
+     "attempted": 5,
+     "classified": 2,
+     "discovered": 92,
+     "evaluable": 5,
+     "successful": 5
+    },
+    "definitions": {
+     "attempted": "tokens picked by the seeded stratified selection and polled",
+     "classified": "tokens with at least one replay assessment whose move class was not UNCLASSIFIED",
+     "discovered": "distinct tokens described by any discovery or poll response",
+     "evaluable": "tokens with at least one replay assessment whose price input was OK and not NO_DATA",
+     "successful": "attempted tokens with at least one successful OHLCV and one successful trades response"
+    },
+    "per_token_reduction": {
+     "25KTDG9Lz8Kk4s2y9QgAwSXBnrhAsNkhF8Zcxv7qpump": "move never classifiable: INSUFFICIENT_HISTORY 10/10, LOW_LIQUIDITY 4/10, STALE_DATA 8/10",
+     "5LiKVERgvnLsayNEeeGJrwLCB9v51KKshdCoacEKpump": "move never classifiable: INSUFFICIENT_HISTORY 10/10, LOW_LIQUIDITY 4/10, STALE_DATA 9/10",
+     "6aK5YeYgnRFwkyyxKL1miHq31oxV251iGv4EHJ6rcDKF": null,
+     "9P6XL2LPNuaj1YndWK7WhHzZG8WKLPMZ3UmBsmpapump": "move never classifiable: INSUFFICIENT_HISTORY 10/10, LOW_LIQUIDITY 4/10, STALE_DATA 10/10",
+     "Ai66LHZG9MCzg1WKdawwqduVAXpNDUuV8M3uyq5ppump": null
+    },
+    "ratios": [
+     {
+      "denominator": 92,
+      "denominator_definition": "distinct tokens described by any discovery or poll response",
+      "not_measured_reason": null,
+      "numerator": 5,
+      "numerator_definition": "tokens picked by the seeded stratified selection and polled",
+      "share": 0.054348,
+      "step": "discovered -> attempted"
+     },
+     {
+      "denominator": 5,
+      "denominator_definition": "tokens picked by the seeded stratified selection and polled",
+      "not_measured_reason": null,
+      "numerator": 5,
+      "numerator_definition": "attempted tokens with at least one successful OHLCV and one successful trades response",
+      "share": 1.0,
+      "step": "attempted -> successful"
+     },
+     {
+      "denominator": 5,
+      "denominator_definition": "attempted tokens with at least one successful OHLCV and one successful trades response",
+      "not_measured_reason": null,
+      "numerator": 5,
+      "numerator_definition": "tokens with at least one replay assessment whose price input was OK and not NO_DATA",
+      "share": 1.0,
+      "step": "successful -> evaluable"
+     },
+     {
+      "denominator": 5,
+      "denominator_definition": "tokens with at least one replay assessment whose price input was OK and not NO_DATA",
+      "not_measured_reason": null,
+      "numerator": 2,
+      "numerator_definition": "tokens with at least one replay assessment whose move class was not UNCLASSIFIED",
+      "share": 0.4,
+      "step": "evaluable -> classified"
+     }
+    ]
+   },
+   "observation_raw_ids_not_in_manifest": 0,
+   "observations_by_kind_state": {
+    "creator_state|OBSERVED": 19,
+    "funding_transfer|ERROR": 20,
+    "funding_transfer|NOT_OBSERVED": 76,
+    "funding_transfer|OBSERVED": 266,
+    "holder_state|NOT_OBSERVED": 4,
+    "holder_state|OBSERVED": 15,
+    "liquidity_event|ERROR": 26,
+    "liquidity_event|NOT_OBSERVED": 81,
+    "liquidity_event|OBSERVED": 142,
+    "news|ERROR": 6,
+    "news|NOT_OBSERVED": 2,
+    "social|ERROR": 10
+   },
+   "phase2_checks": {
+    "clock_and_hash_violations": {
+     "hash_mismatch": 0,
+     "length_mismatch": 0,
+     "missing_body_file": 0,
+     "missing_request_ts": 0,
+     "missing_response_ts": 0,
+     "out_of_order_response": 0,
+     "response_before_request": 0
+    },
+    "informational_body_counts": {
+     "empty_body": 0,
+     "identical_body_repeats": 303,
+     "malformed_json": 1,
+     "partial_or_error_body": 520
+    },
+    "journal_audit": {
+     "chain_breaks": 0,
+     "chronology_violations": 0,
+     "configuration_hashes": [
+      "417bd32cce8fb72c"
+     ],
+     "duplicate_token_steps": 0,
+     "entries": 50,
+     "hash_mismatches": 0,
+     "head_hash": "548d427cb793c4749d8c1b91ac32c3dde70d58cf720fbda0948e2ae1db90d79b"
+    },
+    "passed": true,
+    "postgres_phase2": {
+     "all_checks_zero": true,
+     "integrity_checks": {
+      "bars_without_raw_id": 0,
+      "coverage_beyond_seen": 0,
+      "duplicate_replay_steps": 0,
+      "journal_chain_breaks_in_db": 0,
+      "orphan_pools": 0,
+      "orphan_replay_records": 0,
+      "orphan_swaps": 0,
+      "raw_ids_not_in_manifest": 0,
+      "replay_config_hash_mismatch": 0,
+      "seen_before_event_swaps": 0,
+      "snapshots_without_raw_id": 0,
+      "swaps_without_raw_id": 0,
+      "unclosed_bars": 0
+     },
+     "postgres_version": "16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)",
+     "row_counts": {
+      "coverage": 94,
+      "holder_snapshots": 5,
+      "journal": 50,
+      "pool_snapshots": 103,
+      "pools": 5,
+      "provider_bars": 2486,
+      "raw_manifest": 736,
+      "replay_records": 50,
+      "replay_runs": 1,
+      "swaps": 859,
+      "tokens": 5
+     },
+     "timescaledb_available": false
+    },
+    "raw_audit": {
+     "body_files": 737,
+     "by_provider": {
+      "audit": {
+       "exchanges": 2,
+       "provider_errors": 2
+      },
+      "dexscreener": {
+       "exchanges": 14,
+       "valid_json": 14
+      },
+      "gdelt": {
+       "exchanges": 8,
+       "identical_body_repeats": 1,
+       "malformed_json": 1,
+       "partial_or_error_body": 2,
+       "provider_errors": 5,
+       "valid_json": 2
+      },
+      "geckoterminal": {
+       "exchanges": 184,
+       "identical_body_repeats": 64,
+       "valid_json": 184
+      },
+      "reddit": {
+       "exchanges": 10,
+       "provider_errors": 10
+      },
+      "solana_rpc": {
+       "exchanges": 518,
+       "identical_body_repeats": 238,
+       "partial_or_error_body": 518,
+       "valid_json": 518
+      }
+     },
+     "referenced_bodies": 737,
+     "referenced_but_missing": 0,
+     "unreferenced_body_files": 0
+    }
+   },
+   "postgres": {
+    "all_checks_pass": true,
+    "migrations": 3,
+    "observation_raw_ids_not_in_manifest": 0,
+    "observations_expected": 667,
+    "observations_loaded": 667,
+    "pit_rows_python": 334,
+    "pit_rows_sql": 334,
+    "status": "LOADED"
+   },
+   "provenance": {
+    "acquisition_status": "COMPLETE",
+    "archive": "p3a-sol-20261001d2",
+    "committed_canonical": {
+     "phase2_records": "6c7ce2d8c047da3c25de5aa4291b28186d61218e33b1d47eab88cd20fe0d41d4",
+     "phase3a_observations": "ed6b9dfa3c2df27a01d2c4f5d3f9b02632efc2a807dc501eef10f2b7fcd0efd7"
+    },
+    "committed_matches_runner": true,
+    "config_hash_local": "417bd32cce8fb72c",
+    "config_hash_runner": "417bd32cce8fb72c",
+    "normalization_version_match": true,
+    "rebuild_1": {
+     "phase2_records": "6c7ce2d8c047da3c25de5aa4291b28186d61218e33b1d47eab88cd20fe0d41d4",
+     "phase3a_observations": "ed6b9dfa3c2df27a01d2c4f5d3f9b02632efc2a807dc501eef10f2b7fcd0efd7"
+    },
+    "rebuild_2": {
+     "phase2_records": "6c7ce2d8c047da3c25de5aa4291b28186d61218e33b1d47eab88cd20fe0d41d4",
+     "phase3a_observations": "ed6b9dfa3c2df27a01d2c4f5d3f9b02632efc2a807dc501eef10f2b7fcd0efd7"
+    },
+    "rebuild_matches_runner": true,
+    "reproducible": true,
+    "runner": {
+     "phase2_records": "6c7ce2d8c047da3c25de5aa4291b28186d61218e33b1d47eab88cd20fe0d41d4",
+     "phase3a_observations": "ed6b9dfa3c2df27a01d2c4f5d3f9b02632efc2a807dc501eef10f2b7fcd0efd7"
+    },
+    "scope": "phase2_records and phase3a_observations",
+    "source": "run.json provenance (sealed on runner)",
+    "verified": true,
+    "workflow_run_id": "36828884855"
+   },
+   "raw_bodies_referenced_but_missing": 0,
+   "replay": {
+    "dataset_sha256": "6c7ce2d8c047da3c25de5aa4291b28186d61218e33b1d47eab88cd20fe0d41d4",
+    "identical": true,
+    "issues_by_code": {
+     "DUPLICATE_OBSERVATION": 354,
+     "MALFORMED_RECORD": 1,
+     "PROVIDER_ERROR": 75
+    },
+    "lookahead_all_passed": true,
+    "lookahead_checks": {
+     "A_future_bar": "4/4 passed",
+     "B_future_trade": "4/4 passed",
+     "C_future_liquidity": "4/4 passed",
+     "D_timestamp_manipulation": "4/4 passed",
+     "E_truncation": "4/4 passed",
+     "F_determinism": "4/4 passed"
+    },
+    "observation_count": 667,
+    "observations_identical": true,
+    "observations_sha256": [
+     "ed6b9dfa3c2df27a01d2c4f5d3f9b02632efc2a807dc501eef10f2b7fcd0efd7",
+     "ed6b9dfa3c2df27a01d2c4f5d3f9b02632efc2a807dc501eef10f2b7fcd0efd7"
+    ],
+    "replayable": true,
+    "replays": [
+     {
+      "journal_sha256": "99f7dedb2a096ba1ffe06fa5077a37b8cac7097209c9cedd5f2502aad78fb3b4",
+      "records_sha256": "380d92d74356c0026d971e36cc466758cd0884dcc7c0fc2ce6771a68db891300"
+     },
+     {
+      "journal_sha256": "99f7dedb2a096ba1ffe06fa5077a37b8cac7097209c9cedd5f2502aad78fb3b4",
+      "records_sha256": "380d92d74356c0026d971e36cc466758cd0884dcc7c0fc2ce6771a68db891300"
+     }
+    ],
+    "window_ms": [
+     1790841040795,
+     1790844004790
+    ]
+   },
+   "run_status": "COMPLETE",
+   "telemetry": {
+    "dexscreener": {
+     "backoff_s_total": 0,
+     "circuit_waits": 0,
+     "endpoints": {
+      "ds.pairs": 14
+     },
+     "error_rate": 0.0,
+     "errors": 0,
+     "failed_attempts_logged": 0,
+     "failures_without_attempt_log": 0,
+     "latency_ms": {
+      "max": 444,
+      "p50": 198,
+      "p95": 444
+     },
+     "rate_limited_attempts": 0,
+     "rate_limited_state": "OBSERVED",
+     "requests": 14,
+     "retries_before_success": 0,
+     "status_counts": {
+      "200": 14
+     },
+     "successes": 14
+    },
+    "gdelt": {
+     "backoff_s_total": 124.416,
+     "circuit_waits": 1,
+     "endpoints": {
+      "news.gdelt": 8
+     },
+     "error_rate": 0.625,
+     "errors": 5,
+     "failed_attempts_logged": 18,
+     "failures_without_attempt_log": 0,
+     "latency_ms": {
+      "max": 14252,
+      "p50": 12585,
+      "p95": 14252
+     },
+     "rate_limited_attempts": 18,
+     "rate_limited_state": "OBSERVED",
+     "requests": 8,
+     "retries_before_success": 3,
+     "status_counts": {
+      "200": 3,
+      "none": 5
+     },
+     "successes": 3
+    },
+    "geckoterminal": {
+     "backoff_s_total": 38.934,
+     "circuit_waits": 0,
+     "endpoints": {
+      "gt.new_pools": 3,
+      "gt.ohlcv": 76,
+      "gt.pools_multi": 14,
+      "gt.token_info": 19,
+      "gt.top_pools": 1,
+      "gt.trades": 70,
+      "gt.trending": 1
+     },
+     "error_rate": 0.0,
+     "errors": 0,
+     "failed_attempts_logged": 18,
+     "failures_without_attempt_log": 0,
+     "latency_ms": {
+      "max": 1542,
+      "p50": 254,
+      "p95": 804
+     },
+     "rate_limited_attempts": 18,
+     "rate_limited_state": "OBSERVED",
+     "requests": 184,
+     "retries_before_success": 18,
+     "status_counts": {
+      "200": 184
+     },
+     "successes": 184
+    },
+    "reddit": {
+     "backoff_s_total": 0.0,
+     "circuit_waits": 1,
+     "endpoints": {
+      "social.reddit": 10
+     },
+     "error_rate": 1.0,
+     "errors": 10,
+     "failed_attempts_logged": 10,
+     "failures_without_attempt_log": 0,
+     "latency_ms": {
+      "max": null,
+      "p50": null,
+      "p95": null
+     },
+     "rate_limited_attempts": 0,
+     "rate_limited_state": "OBSERVED",
+     "requests": 10,
+     "retries_before_success": 0,
+     "status_counts": {
+      "none": 10
+     },
+     "successes": 0
+    },
+    "solana_rpc": {
+     "backoff_s_total": 187.179,
+     "circuit_waits": 0,
+     "endpoints": {
+      "rpc.signatures": 30,
+      "rpc.transaction": 488
+     },
+     "error_rate": 0.0,
+     "errors": 0,
+     "failed_attempts_logged": 17,
+     "failures_without_attempt_log": 0,
+     "latency_ms": {
+      "max": 867,
+      "p50": 86,
+      "p95": 149
+     },
+     "rate_limited_attempts": 17,
+     "rate_limited_state": "OBSERVED",
+     "requests": 518,
+     "retries_before_success": 17,
+     "status_counts": {
+      "200": 518
+     },
+     "successes": 518
+    }
+   },
+   "universe": {
+    "fingerprint": "943305458235d7ba4331a871cb832dd2a5fc3dd23d15253eba0c111ac723a25d",
+    "source": "universe.json",
+    "tokens": 5
+   }
   }
  ],
  "baseline_comparison": {
   "abc_reproduces_baseline": true,
-  "added_archives": [],
+  "added_archives": [
+   "p3a-sol-20261001d2"
+  ],
   "baseline_archives": [
    "gt-sol-20260930a",
    "gt-sol-20260930b",
@@ -1169,55 +1718,56 @@
   "lookahead_by_archive": {
    "gt-sol-20260930a": true,
    "gt-sol-20260930b": null,
-   "gt-sol-20260930c": true
+   "gt-sol-20260930c": true,
+   "p3a-sol-20261001d2": true
   },
   "metrics": [
    {
     "abc_recomputed_now": 0.113537,
     "abc_reproduces_baseline": true,
-    "abcd": 0.113537,
+    "abcd": 0.065447,
     "baseline_abc_committed": 0.113537,
-    "difference_abcd_minus_baseline": 0.0,
+    "difference_abcd_minus_baseline": -0.04809,
     "metric": "provider_error_rate"
    },
    {
     "abc_recomputed_now": 0.007984,
     "abc_reproduces_baseline": true,
-    "abcd": 0.007984,
+    "abcd": 0.007541,
     "baseline_abc_committed": 0.007984,
-    "difference_abcd_minus_baseline": 0.0,
+    "difference_abcd_minus_baseline": -0.000443,
     "metric": "freshness_compliance"
    },
    {
     "abc_recomputed_now": 25,
     "abc_reproduces_baseline": true,
-    "abcd": 25,
+    "abcd": 30,
     "baseline_abc_committed": 25,
-    "difference_abcd_minus_baseline": 0,
+    "difference_abcd_minus_baseline": 5,
     "metric": "universe_tokens"
    },
    {
     "abc_recomputed_now": 25,
     "abc_reproduces_baseline": true,
-    "abcd": 25,
+    "abcd": 30,
     "baseline_abc_committed": 25,
-    "difference_abcd_minus_baseline": 0,
+    "difference_abcd_minus_baseline": 5,
     "metric": "coverage_rows"
    },
    {
     "abc_recomputed_now": 0.0,
     "abc_reproduces_baseline": true,
-    "abcd": 0.0,
+    "abcd": 0.133333,
     "baseline_abc_committed": 0.0,
-    "difference_abcd_minus_baseline": 0.0,
+    "difference_abcd_minus_baseline": 0.133333,
     "metric": "liquidity_vault_delta_share"
    },
    {
     "abc_recomputed_now": 0.0,
     "abc_reproduces_baseline": true,
-    "abcd": 0.0,
+    "abcd": 0.133333,
     "baseline_abc_committed": 0.0,
-    "difference_abcd_minus_baseline": 0.0,
+    "difference_abcd_minus_baseline": 0.133333,
     "metric": "coverage_share.funding_transfer"
    },
    {
@@ -1231,17 +1781,17 @@
    {
     "abc_recomputed_now": 0.8,
     "abc_reproduces_baseline": true,
-    "abcd": 0.8,
+    "abcd": 0.833333,
     "baseline_abc_committed": 0.8,
-    "difference_abcd_minus_baseline": 0.0,
+    "difference_abcd_minus_baseline": 0.033333,
     "metric": "coverage_share.creator_state"
    },
    {
     "abc_recomputed_now": 0.64,
     "abc_reproduces_baseline": true,
-    "abcd": 0.64,
+    "abcd": 0.666667,
     "baseline_abc_committed": 0.64,
-    "difference_abcd_minus_baseline": 0.0,
+    "difference_abcd_minus_baseline": 0.026667,
     "metric": "coverage_share.holder_state"
    },
    {
@@ -1263,17 +1813,17 @@
    {
     "abc_recomputed_now": 0.84,
     "abc_reproduces_baseline": true,
-    "abcd": 0.84,
+    "abcd": 0.866667,
     "baseline_abc_committed": 0.84,
-    "difference_abcd_minus_baseline": 0.0,
+    "difference_abcd_minus_baseline": 0.026667,
     "metric": "coverage_share.ohlcv"
    },
    {
     "abc_recomputed_now": 0.68,
     "abc_reproduces_baseline": true,
-    "abcd": 0.68,
+    "abcd": 0.733333,
     "baseline_abc_committed": 0.68,
-    "difference_abcd_minus_baseline": 0.0,
+    "difference_abcd_minus_baseline": 0.053333,
     "metric": "coverage_share.trades"
    },
    {
@@ -1287,17 +1837,17 @@
    {
     "abc_recomputed_now": 0.36,
     "abc_reproduces_baseline": true,
-    "abcd": 0.36,
+    "abcd": 0.3,
     "baseline_abc_committed": 0.36,
-    "difference_abcd_minus_baseline": 0.0,
+    "difference_abcd_minus_baseline": -0.06,
     "metric": "coverage_share.provider"
    },
    {
     "abc_recomputed_now": 0.68,
     "abc_reproduces_baseline": true,
-    "abcd": 0.68,
+    "abcd": 0.733333,
     "baseline_abc_committed": 0.68,
-    "difference_abcd_minus_baseline": 0.0,
+    "difference_abcd_minus_baseline": 0.053333,
     "metric": "coverage_share.replayability"
    },
    {
@@ -1312,36 +1862,37 @@
   "replay_identical_by_archive": {
    "gt-sol-20260930a": true,
    "gt-sol-20260930b": null,
-   "gt-sol-20260930c": true
+   "gt-sol-20260930c": true,
+   "p3a-sol-20261001d2": true
   },
   "sample": {
    "archives": {
     "abc": 3,
-    "abcd": 3
+    "abcd": 4
    },
    "attempted": {
     "abc": 25,
-    "abcd": 25
+    "abcd": 30
    },
    "classified": {
     "abc": 5,
-    "abcd": 5
+    "abcd": 7
    },
    "coverage_rows": {
     "abc": 25,
-    "abcd": 25
+    "abcd": 30
    },
    "discovered": {
     "abc": 276,
-    "abcd": 276
+    "abcd": 368
    },
    "evaluable": {
     "abc": 17,
-    "abcd": 17
+    "abcd": 22
    },
    "successful": {
     "abc": 17,
-    "abcd": 17
+    "abcd": 22
    }
   }
  },
@@ -1349,68 +1900,68 @@
  "coverage": {
   "blank_cells": 0,
   "file": "artifacts/phase3a/PHASE3A_COVERAGE.json",
-  "row_count": 25,
-  "sha256": "db0828e6f4156841742db776d7b3611c24ebfbbab29daf6d2724521fad71ccff",
+  "row_count": 30,
+  "sha256": "6a71678d705adc2a40958c9b91f999704ac1d3aed962e69577a8b4935f6fcde1",
   "state_rule": "OBSERVED if any OBSERVED record; else NOT_OBSERVED if any; else NOT_APPLICABLE if the question was not applicable; else ERROR if any; else UNKNOWN if the archive's plan included the source but this token was never asked; else UNAVAILABLE (source not in the archive's acquisition plan)",
   "totals": {
    "creator_state": {
     "ERROR": 0,
     "NOT_APPLICABLE": 0,
     "NOT_OBSERVED": 1,
-    "OBSERVED": 20,
+    "OBSERVED": 25,
     "STALE": 0,
     "UNAVAILABLE": 0,
     "UNKNOWN": 4,
-    "positive_share": 0.8,
+    "positive_share": 0.833333,
     "positive_state": "OBSERVED"
    },
    "freshness": {
     "NOT_OBSERVED": 8,
     "OBSERVED": 0,
-    "STALE": 17,
+    "STALE": 22,
     "positive_share": 0.0,
     "positive_state": "OBSERVED"
    },
    "funding_transfer": {
     "ERROR": 0,
     "NOT_APPLICABLE": 0,
-    "NOT_OBSERVED": 0,
-    "OBSERVED": 0,
+    "NOT_OBSERVED": 1,
+    "OBSERVED": 4,
     "STALE": 0,
     "UNAVAILABLE": 25,
     "UNKNOWN": 0,
-    "positive_share": 0.0,
+    "positive_share": 0.133333,
     "positive_state": "OBSERVED"
    },
    "holder_state": {
     "ERROR": 0,
     "NOT_APPLICABLE": 0,
-    "NOT_OBSERVED": 5,
-    "OBSERVED": 16,
+    "NOT_OBSERVED": 6,
+    "OBSERVED": 20,
     "STALE": 0,
     "UNAVAILABLE": 0,
     "UNKNOWN": 4,
-    "positive_share": 0.64,
+    "positive_share": 0.666667,
     "positive_state": "OBSERVED"
    },
    "liquidity_events": {
     "ERROR": 0,
     "NOT_APPLICABLE": 0,
     "NOT_OBSERVED": 0,
-    "OBSERVED": 25,
+    "OBSERVED": 30,
     "STALE": 0,
     "UNAVAILABLE": 0,
     "UNKNOWN": 0,
     "positive_share": 1.0,
     "positive_state": "OBSERVED",
-    "rows_with_vault_delta_events": 0,
-    "rows_with_vault_delta_requests": 0,
-    "vault_delta_share": 0.0
+    "rows_with_vault_delta_events": 4,
+    "rows_with_vault_delta_requests": 5,
+    "vault_delta_share": 0.133333
    },
    "news": {
-    "ERROR": 0,
-    "NOT_APPLICABLE": 0,
-    "NOT_OBSERVED": 0,
+    "ERROR": 3,
+    "NOT_APPLICABLE": 1,
+    "NOT_OBSERVED": 1,
     "OBSERVED": 0,
     "STALE": 0,
     "UNAVAILABLE": 25,
@@ -1422,35 +1973,35 @@
     "ERROR": 0,
     "NOT_APPLICABLE": 0,
     "NOT_OBSERVED": 0,
-    "OBSERVED": 21,
+    "OBSERVED": 26,
     "STALE": 0,
     "UNAVAILABLE": 0,
     "UNKNOWN": 4,
-    "positive_share": 0.84,
+    "positive_share": 0.866667,
     "positive_state": "OBSERVED"
    },
    "point_in_time_validity": {
     "FAILED": 0,
-    "VERIFIED": 25,
+    "VERIFIED": 30,
     "positive_share": 1.0,
     "positive_state": "VERIFIED"
    },
    "provider": {
-    "ERROR": 12,
+    "ERROR": 17,
     "NOT_OBSERVED": 4,
     "OBSERVED": 9,
-    "positive_share": 0.36,
+    "positive_share": 0.3,
     "positive_state": "OBSERVED"
    },
    "replayability": {
     "FAILED": 0,
     "NOT_REPLAYABLE": 8,
-    "VERIFIED": 17,
-    "positive_share": 0.68,
+    "VERIFIED": 22,
+    "positive_share": 0.733333,
     "positive_state": "VERIFIED"
    },
    "social": {
-    "ERROR": 0,
+    "ERROR": 5,
     "NOT_APPLICABLE": 0,
     "NOT_OBSERVED": 0,
     "OBSERVED": 0,
@@ -1464,11 +2015,11 @@
     "ERROR": 0,
     "NOT_APPLICABLE": 0,
     "NOT_OBSERVED": 0,
-    "OBSERVED": 17,
+    "OBSERVED": 22,
     "STALE": 0,
     "UNAVAILABLE": 0,
     "UNKNOWN": 8,
-    "positive_share": 0.68,
+    "positive_share": 0.733333,
     "positive_state": "OBSERVED"
    }
   }
@@ -1477,12 +2028,12 @@
   "identical": true,
   "runs": [
    {
-    "digest": "24f79087841978d2b0713a77357833149c6d8f4310357b0bdbc5b5632f2dd142",
+    "digest": "23a33c895a6eb846e6c960618b32232f31d6252c6040e2dff2528baff0aaeb5f",
     "exit_code": 0,
     "seed": 1
    },
    {
-    "digest": "24f79087841978d2b0713a77357833149c6d8f4310357b0bdbc5b5632f2dd142",
+    "digest": "23a33c895a6eb846e6c960618b32232f31d6252c6040e2dff2528baff0aaeb5f",
     "exit_code": 0,
     "seed": 2
    }
@@ -1491,8 +2042,8 @@
  "finalization": {
   "archive_d": "p3a-sol-20261001d2",
   "checks": {
-   "archive_d_acquisition_complete": false,
-   "archive_d_included_and_provenance_verified": false,
+   "archive_d_acquisition_complete": true,
+   "archive_d_included_and_provenance_verified": true,
    "cross_seed_identical": true,
    "every_included_archive_provenance_verified": true,
    "existing_phase2_checks_passed": true,
@@ -1502,12 +2053,9 @@
    "tests_green": true,
    "traceability": true
   },
-  "failed": [
-   "archive_d_included_and_provenance_verified",
-   "archive_d_acquisition_complete"
-  ],
+  "failed": [],
   "phase3b": "NOT STARTED",
-  "result": "BLOCKED"
+  "result": "PASS"
  },
  "freshness_policy": {
   "fingerprint": "58fe8ee8476b824fde285065d8dafbebb594f9bf1cd0df04091823d13b9881ff",
@@ -1559,7 +2107,8 @@
   "included": [
    "gt-sol-20260930a",
    "gt-sol-20260930b",
-   "gt-sol-20260930c"
+   "gt-sol-20260930c",
+   "p3a-sol-20261001d2"
   ],
   "rule": "an archive enters the evidence only if data.provenance.verify() returns verified: its runner dataset hash is recorded and equals, exactly, the hash rebuilt twice from the committed raw archive (and, where the runner sealed canonical files, the hash of those committed files), and a sealed archive's acquisition reports COMPLETE; any other archive is listed as excluded with the verification result"
  },
@@ -1589,6 +2138,17 @@
  "multi_day": {
   "definition": "performed = some frozen universe was collected by more than one chained run across more than one UTC date",
   "groups": [
+   {
+    "archives": [
+     "p3a-sol-20261001d2"
+    ],
+    "span_days": 0.044715,
+    "span_ms": 3863412,
+    "universe": "943305458235d7ba4331a871cb832dd2a5fc3dd23d15253eba0c111ac723a25d",
+    "utc_dates": [
+     "2026-10-01"
+    ]
+   },
    {
     "archives": [
      "gt-sol-20260930a"
@@ -1623,7 +2183,7 @@
     ]
    }
   ],
-  "longest_span_days": 0.035594,
+  "longest_span_days": 0.044715,
   "performed": false
  },
  "readiness": {
@@ -1656,38 +2216,38 @@
    "traceability": true
   },
   "metrics": {
-   "creator_state_share": 0.8,
-   "freshness_compliance": 0.007984,
-   "funding_transfer_share": 0.0,
-   "holder_state_share": 0.64,
-   "liquidity_vault_delta_share": 0.0,
-   "multi_day_days": 0.035594,
+   "creator_state_share": 0.833333,
+   "freshness_compliance": 0.007541,
+   "funding_transfer_share": 0.133333,
+   "holder_state_share": 0.666667,
+   "liquidity_vault_delta_share": 0.133333,
+   "multi_day_days": 0.044715,
    "news_share": 0.0,
-   "provider_error_rate": 0.113537,
+   "provider_error_rate": 0.065447,
    "social_share": 0.0,
-   "universe_tokens": 25
+   "universe_tokens": 30
   },
   "reasons": [
    "thresholds not approved by a human (config/phase3a_readiness.toml: approved = false)",
-   "threshold funding_transfer_min_share is UNSET (metric funding_transfer_share = 0.0)",
-   "threshold liquidity_vault_delta_min_share is UNSET (metric liquidity_vault_delta_share = 0.0)",
-   "threshold creator_state_min_share is UNSET (metric creator_state_share = 0.8)",
-   "threshold holder_state_min_share is UNSET (metric holder_state_share = 0.64)",
+   "threshold funding_transfer_min_share is UNSET (metric funding_transfer_share = 0.133333)",
+   "threshold liquidity_vault_delta_min_share is UNSET (metric liquidity_vault_delta_share = 0.133333)",
+   "threshold creator_state_min_share is UNSET (metric creator_state_share = 0.833333)",
+   "threshold holder_state_min_share is UNSET (metric holder_state_share = 0.666667)",
    "threshold news_min_share is UNSET (metric news_share = 0.0)",
    "threshold social_min_share is UNSET (metric social_share = 0.0)",
-   "threshold freshness_min_compliance is UNSET (metric freshness_compliance = 0.007984)",
-   "threshold provider_max_error_rate is UNSET (metric provider_error_rate = 0.113537)",
-   "threshold multi_day_min_days is UNSET (metric multi_day_days = 0.035594)",
-   "threshold universe_min_tokens is UNSET (metric universe_tokens = 25)"
+   "threshold freshness_min_compliance is UNSET (metric freshness_compliance = 0.007541)",
+   "threshold provider_max_error_rate is UNSET (metric provider_error_rate = 0.065447)",
+   "threshold multi_day_min_days is UNSET (metric multi_day_days = 0.044715)",
+   "threshold universe_min_tokens is UNSET (metric universe_tokens = 30)"
   ],
   "result": "NOT_READY",
   "rule": "READY only if every integrity condition holds, the readiness config is approved by a named human, every threshold is set, and every metric meets its threshold; otherwise NOT_READY with one reason per failure"
  },
  "repository": {
   "branch": "ccr-dea9382c-vwhvi6",
-  "code_version": "32624c0f5265aaed751bcc11c2c84497593d6364",
-  "head": "32624c0f5265aaed751bcc11c2c84497593d6364",
-  "log": "32624c0 verify: label the unhashed original archive D as audit/reference only\n39671d3 Phase 3A raw archive: p3a-sol-20261001d (acquired by workflow run 36825161881)\ne95ceb1 verify: interim phase 3a evidence, archive D pending\nc320848 verify: provenance inclusion, funnel, baseline comparison, finalization checks\n0d399dd data: acquire archive D with verified provenance\n33c315d test: add archive hash provenance regression coverage\nbc612b7 fix: restore runner canonical dataset hashing\n38a6cc2 phase3a: request archive D acquisition\n8df2918 phase3a: add verification artifacts\ncc21316 phase3a: keep evidence test free of self-reference\nbd8fa53 phase3a: add evidence verifier and renderers\ne232490 phase3a: add readiness gate\ne745865 phase3a: add coverage matrix\na935943 phase3a: add observation storage migration\nb9ecae4 phase3a: add frozen universe and chained runs\nc7a04ec phase3a: add provider freshness telemetry\nb3a4406 phase3a: add news and social provenance\n861aa43 phase3a: harden creator and holder state\na278b1f phase3a: add liquidity event coverage\n97d2247 phase3a: add funding transfer adapter\nf0eb011 phase3a: add POST transport and per-attempt telemetry\n85a06df phase3a: add observation contract",
+  "code_version": "4a56fc46b6f68ad42f1e460168704ff8a8a3a02c",
+  "head": "4a56fc46b6f68ad42f1e460168704ff8a8a3a02c",
+  "log": "4a56fc4 Phase 3A raw archive: p3a-sol-20261001d2 (acquired by workflow run 36828884855)\n59b25f2 verify: interim phase 3a evidence lists original archive D as audit only\n32624c0 verify: label the unhashed original archive D as audit/reference only\n39671d3 Phase 3A raw archive: p3a-sol-20261001d (acquired by workflow run 36825161881)\ne95ceb1 verify: interim phase 3a evidence, archive D pending\nc320848 verify: provenance inclusion, funnel, baseline comparison, finalization checks\n0d399dd data: acquire archive D with verified provenance\n33c315d test: add archive hash provenance regression coverage\nbc612b7 fix: restore runner canonical dataset hashing\n38a6cc2 phase3a: request archive D acquisition\n8df2918 phase3a: add verification artifacts\ncc21316 phase3a: keep evidence test free of self-reference\nbd8fa53 phase3a: add evidence verifier and renderers\ne232490 phase3a: add readiness gate\ne745865 phase3a: add coverage matrix\na935943 phase3a: add observation storage migration\nb9ecae4 phase3a: add frozen universe and chained runs\nc7a04ec phase3a: add provider freshness telemetry\nb3a4406 phase3a: add news and social provenance\n861aa43 phase3a: harden creator and holder state\na278b1f phase3a: add liquidity event coverage\n97d2247 phase3a: add funding transfer adapter\nf0eb011 phase3a: add POST transport and per-attempt telemetry\n85a06df phase3a: add observation contract",
   "phase2_baseline": "30fe09470872d9962c5893c9add84329579e403b"
  },
  "schema": "phase3a.evidence.1",

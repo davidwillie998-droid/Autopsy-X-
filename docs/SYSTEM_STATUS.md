@@ -4,40 +4,40 @@ Living status of the AUTOPSY X intelligence system, generated from `artifacts/ph
 
 ## Current phase: 3A (data-coverage hardening)
 
-* Commit: `32624c0f5265aaed751bcc11c2c84497593d6364`
+* Commit: `4a56fc46b6f68ad42f1e460168704ff8a8a3a02c`
 * Branch: `ccr-dea9382c-vwhvi6`
 * Working tree: clean for intel/autopsyx, intel/config, intel/migrations
 * Tests: Passed 265, Failed 0, Skipped 0
-* Provider error rate: 11.4% (78 of 687 requests)
-* Freshness compliance: 0.8% (501 governed evaluations, 497 stale)
-* Funding coverage: 0 of 25 archive-token rows OBSERVED (0.0%)
-* Liquidity coverage: 25 of 25 archive-token rows OBSERVED (100.0%); chain-derived add/remove in 0 rows (0.0%), the rest is provider pool-creation metadata only
-* Creator-state coverage: 20 of 25 archive-token rows OBSERVED (80.0%)
-* Holder-state coverage: 16 of 25 archive-token rows OBSERVED (64.0%)
-* News coverage: 0 of 25 archive-token rows OBSERVED (0.0%)
-* Social coverage: 0 of 25 archive-token rows OBSERVED (0.0%)
-* Multi-day collection: NOT PERFORMED (longest span on one universe 0.035594 days)
-* Universe size: 25 distinct tokens over 3 archives
+* Provider error rate: 6.5% (93 of 1421 requests)
+* Freshness compliance: 0.8% (663 governed evaluations, 658 stale)
+* Funding coverage: 4 of 30 archive-token rows OBSERVED (13.3%)
+* Liquidity coverage: 30 of 30 archive-token rows OBSERVED (100.0%); chain-derived add/remove in 4 rows (13.3%), the rest is provider pool-creation metadata only
+* Creator-state coverage: 25 of 30 archive-token rows OBSERVED (83.3%)
+* Holder-state coverage: 20 of 30 archive-token rows OBSERVED (66.7%)
+* News coverage: 0 of 30 archive-token rows OBSERVED (0.0%)
+* Social coverage: 0 of 30 archive-token rows OBSERVED (0.0%)
+* Multi-day collection: NOT PERFORMED (longest span on one universe 0.044715 days)
+* Universe size: 30 distinct tokens over 4 archives
 * Replay determinism: VERIFIED
 * Look-ahead: NONE DETECTED
 * Traceability: VERIFIED
 * Evidence integrity: VERIFIED
-* Finalization gate: BLOCKED
+* Finalization gate: PASS
 * Readiness: NOT_READY
 
 ## Readiness reasons
 
 * thresholds not approved by a human (config/phase3a_readiness.toml: approved = false)
-* threshold funding_transfer_min_share is UNSET (metric funding_transfer_share = 0.0)
-* threshold liquidity_vault_delta_min_share is UNSET (metric liquidity_vault_delta_share = 0.0)
-* threshold creator_state_min_share is UNSET (metric creator_state_share = 0.8)
-* threshold holder_state_min_share is UNSET (metric holder_state_share = 0.64)
+* threshold funding_transfer_min_share is UNSET (metric funding_transfer_share = 0.133333)
+* threshold liquidity_vault_delta_min_share is UNSET (metric liquidity_vault_delta_share = 0.133333)
+* threshold creator_state_min_share is UNSET (metric creator_state_share = 0.833333)
+* threshold holder_state_min_share is UNSET (metric holder_state_share = 0.666667)
 * threshold news_min_share is UNSET (metric news_share = 0.0)
 * threshold social_min_share is UNSET (metric social_share = 0.0)
-* threshold freshness_min_compliance is UNSET (metric freshness_compliance = 0.007984)
-* threshold provider_max_error_rate is UNSET (metric provider_error_rate = 0.113537)
-* threshold multi_day_min_days is UNSET (metric multi_day_days = 0.035594)
-* threshold universe_min_tokens is UNSET (metric universe_tokens = 25)
+* threshold freshness_min_compliance is UNSET (metric freshness_compliance = 0.007541)
+* threshold provider_max_error_rate is UNSET (metric provider_error_rate = 0.065447)
+* threshold multi_day_min_days is UNSET (metric multi_day_days = 0.044715)
+* threshold universe_min_tokens is UNSET (metric universe_tokens = 30)
 
 ## What runs
 
