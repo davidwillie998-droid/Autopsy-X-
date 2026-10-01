@@ -101,7 +101,14 @@ def main(argv: list[str] | None = None) -> int:
     pv.add_argument("--work", default="/tmp/autopsyx_phase2_verify")
     pv.add_argument("--evidence", default="../artifacts/phase2/PHASE2_EVIDENCE.json")
     pv.add_argument("--report", default="../docs/PHASE2_REPORT.md")
-    pv.add_argument("--status", default="../docs/SYSTEM_STATUS.md")
+    pv.add_argument("--status", default="../docs/PHASE2_SYSTEM_STATUS.md")
+    p3 = sub.add_parser("phase3a-verify", help="Phase 3A gates on every archive; evidence, coverage, report, status")
+    p3.add_argument("--pg", default="host=/tmp port=55432 user=postgres")
+    p3.add_argument("--work", default="/tmp/autopsyx_phase3a_verify")
+    p3.add_argument("--evidence", default="../artifacts/phase3a/PHASE3A_EVIDENCE.json")
+    p3.add_argument("--coverage", default="../artifacts/phase3a/PHASE3A_COVERAGE.json")
+    p3.add_argument("--report", default="../docs/PHASE3A_REPORT.md")
+    p3.add_argument("--status", default="../docs/SYSTEM_STATUS.md")
     nm = sub.add_parser("normalize", help="raw archive -> normalized.jsonl + normalization_report.json")
     nm.add_argument("run_dir")
     ap.add_argument("--log", action="store_true", help="emit structured JSON logs to stderr")
@@ -178,6 +185,15 @@ def main(argv: list[str] | None = None) -> int:
         Path(args.status).write_text(phase2_verify.render_status(frozen))
         print(json.dumps({"classification": ev["classification"]["result"], "why": ev["classification"]["reasons"],
                           "tests": ev["tests"]["summary_line"]}, indent=2))
+        return 0
+    if args.cmd == "phase3a-verify":
+        from pathlib import Path
+        from .research import phase3a_verify
+        conn = [f"--{'username' if k == 'user' else k}={v}" for k, v in (kv.split("=", 1) for kv in args.pg.split())]
+        ev, matrix = phase3a_verify.collect(Path(args.work), conn)
+        phase3a_verify.write(ev, matrix, Path(args.evidence), Path(args.coverage), Path(args.report), Path(args.status))
+        print(json.dumps({"readiness": ev["readiness"]["result"], "tests": ev["tests"]["summary_line"],
+                          "integrity": ev["integrity"]}, indent=2))
         return 0
     if args.cmd == "phase2-report":
         from .research import phase2_report

@@ -10,7 +10,8 @@ from autopsyx.research import phase2_verify, trace_check
 ROOT = Path(__file__).resolve().parents[2]
 EV = ROOT / "artifacts" / "phase2" / "PHASE2_EVIDENCE.json"
 REPORT = ROOT / "docs" / "PHASE2_REPORT.md"
-STATUS = ROOT / "docs" / "SYSTEM_STATUS.md"
+# Frozen Phase 2 status. docs/SYSTEM_STATUS.md is now the living Phase 3A status.
+STATUS = ROOT / "docs" / "PHASE2_SYSTEM_STATUS.md"
 
 needs_evidence = pytest.mark.skipif(not EV.exists(), reason="Phase 2 evidence not generated yet")
 

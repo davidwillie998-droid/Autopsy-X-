@@ -1,5 +1,6 @@
-"""Readiness gate and coverage matrix."""
+"""Readiness gate."""
 import json
+
 from autopsyx.research import phase3a_readiness as rd
 
 GOOD = {k: True for k in rd.INTEGRITY}
