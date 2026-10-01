@@ -30,7 +30,7 @@ class Availability(str, Enum):
     NOT_APPLICABLE = "NOT_APPLICABLE"  # the question does not apply (e.g. mint of a native SOL transfer)
 
 
-KINDS = ("funding_transfer", "liquidity_event", "creator_state", "news", "social")
+KINDS = ("funding_transfer", "liquidity_event", "creator_state", "holder_state", "news", "social")
 
 # Fields every OBSERVED value of a kind must carry (values may themselves be None only
 # where the kind documents a paired *_state field).
@@ -39,6 +39,7 @@ REQUIRED_VALUE_FIELDS: dict[str, tuple[str, ...]] = {
                          "tx_status", "signers", "fee_payer", "beneficiary", "beneficiary_status"),
     "liquidity_event": ("event_type", "pool", "vault_deltas", "classification_method", "tx_status"),
     "creator_state": ("creator", "creator_state", "creator_pct", "creator_pct_state"),
+    "holder_state": ("holder_count", "holder_count_state", "top10_share", "top10_share_state"),
     "news": ("title", "url", "domain", "content_sha256", "publication_time_state", "event_type"),
     "social": ("platform", "author", "url", "content_sha256", "publication_time_state", "event_type"),
 }
