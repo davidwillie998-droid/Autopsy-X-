@@ -53,6 +53,12 @@ class Plan:
     ohlcv_every: int = 1  # poll OHLCV every N cycles
     circuit_waits: int = 3  # times a call waits out an open circuit before being recorded as failed
     rpc_rate_per_s: float = 2.0
+    # Phase 3A enrichment (off by default so Phase 2 plans behave exactly as before)
+    phase3a: bool = False
+    universe_file: str | None = None  # reuse a frozen universe from an earlier chained run
+    rpc_page_limit: int = 100
+    rpc_max_pages: int = 3
+    rpc_max_txs: int = 40
 
 
 class Fetcher:
@@ -169,6 +175,79 @@ def collect_news_social(f: Fetcher, token: str, symbol: str, ctx: dict) -> dict:
     e, _ = f.get(ns.REDDIT, "social.reddit", ns.path_reddit(token), {**ctx, "token": token, "query": token})
     done["reddit"] = "error" if e.error else "ok"
     return done
+
+
+def _universe_fingerprint(u: dict) -> str:
+    import hashlib
+    import json as _json
+    body = {k: v for k, v in u.items() if k not in ("frozen_at_ms", "fingerprint")}
+    return hashlib.sha256(_json.dumps(body, sort_keys=True).encode()).hexdigest()
+
+
+def freeze_universe(f: Fetcher, plan: Plan) -> dict:
+    """Select once, before any collection, and write ``universe.json``.
+
+    The fingerprint covers everything except the freeze time, so the same
+    seed over the same candidate responses yields the same fingerprint.
+    Chained runs (``Plan.universe_file``) reuse the file and must match it.
+    """
+    sel = select_universe(f, plan)
+    picked = sorted(sel["picked"], key=lambda p: (p["stratum"], p["pool"]))
+    u = {"frozen_at_ms": sel["selected_at_ms"],
+         "mechanism": {"procedure": "seeded stratified random selection (acquire.select_universe)",
+                       "seed": plan.seed, "strata_targets": plan.strata, "network": plan.network,
+                       "candidate_counts": sel["candidates"]},
+         "tokens": sorted({p["token"] for p in picked}),
+         "pools": [{k: p[k] for k in ("pool", "token", "dex", "stratum", "created_ts")} for p in picked],
+         "metadata": {p["token"]: {"total_supply_at_selection": p["total_supply"],
+                                   "liquidity_usd_at_selection": p["liquidity_usd"],
+                                   "h1_txns_at_selection": p["h1_txns"]} for p in picked},
+         "exclusions": sorted(({"pool": x["pool"], "token": x["token"], "reason": x["reason"]} for x in sel["excluded"]),
+                              key=lambda x: (x["pool"], x["reason"]))}
+    u["fingerprint"] = _universe_fingerprint(u)
+    f.raw.write_json("universe.json", u)
+    return u
+
+
+def load_universe(path: str) -> dict:
+    import json as _json
+    u = _json.load(open(path))
+    if _universe_fingerprint(u) != u.get("fingerprint"):
+        raise ValueError(f"{path}: universe fingerprint mismatch; the frozen universe was edited")
+    return u
+
+
+def _latest_token_info(raw: RawStore, token: str) -> dict:
+    import json as _json
+    for e in reversed(raw.entries()):
+        if e.endpoint == "gt.token_info" and (e.context or {}).get("token") == token and e.raw_id:
+            try:
+                return _json.loads(raw.body(e.raw_id).decode())["data"]["attributes"]
+            except (ValueError, KeyError, TypeError):
+                return {}
+    return {}
+
+
+def enrich(f: Fetcher, plan: Plan, picked: list[dict], round_: int) -> list[dict]:
+    """Phase 3A evidence per token: creator funding history, pool liquidity
+    history, news and social. What could not be asked (no creator address)
+    is recorded in the returned summary, not skipped silently."""
+    out = []
+    for p in picked:
+        ctx = {"chain": plan.network, "pool": p["pool"], "token": p["token"], "dex": p.get("dex"), "round": round_}
+        info = _latest_token_info(f.raw, p["token"])
+        dev = info.get("developer_address")
+        s = {"token": p["token"], "round": round_}
+        if dev:
+            s["funding"] = collect_address_history(f, dev, ctx, page_limit=plan.rpc_page_limit,
+                                                   max_pages=plan.rpc_max_pages, max_txs=plan.rpc_max_txs, purpose="funding")
+        else:
+            s["funding"] = "not_requested: creator address not observed"
+        s["liquidity"] = collect_address_history(f, p["pool"], ctx, page_limit=plan.rpc_page_limit,
+                                                 max_pages=plan.rpc_max_pages, max_txs=plan.rpc_max_txs, purpose="liquidity")
+        s["news_social"] = collect_news_social(f, p["token"], info.get("symbol") or "", ctx)
+        out.append(s)
+    return out
 
 
 def default_clients(plan: Plan, now_ms: Callable[[], int]) -> dict[str, HttpClient]:
@@ -315,27 +394,44 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
         now_ms: Callable[[], int] = lambda: int(time.time() * 1000),
         sleep: Callable[[float], None] = time.sleep, max_cycles: int | None = None) -> dict:
     raw = RawStore(run_dir)
-    f = Fetcher(raw, clients or default_clients(plan, now_ms), now_ms, sleep, plan.circuit_waits)
+    f = Fetcher(raw, clients or default_clients(plan, now_ms), now_ms, sleep, plan.circuit_waits,
+                display={rpc.NAME: rpc.display_base(rpc.BASE)})
     started = now_ms()
     meta = {"started_ms": started, "plan": plan.__dict__, "code_version": os.environ.get("GITHUB_SHA", "local"),
             "runner": os.environ.get("RUNNER_NAME", "local"), "execution": "none: acquisition only, no orders"}
     raw.write_json("run.json", meta)
-    sel = select_universe(f, plan)
-    if not sel["picked"]:
+    if plan.universe_file:
+        u = load_universe(plan.universe_file)
+        raw.write_json("universe.json", u)
+        picked = [{**p, "total_supply": u["metadata"][p["token"]]["total_supply_at_selection"]} for p in u["pools"]]
+        meta["universe"] = {"source": "reused", "fingerprint": u["fingerprint"], "from": plan.universe_file}
+    else:
+        if plan.phase3a:
+            u = freeze_universe(f, plan)
+            meta["universe"] = {"source": "frozen_this_run", "fingerprint": u["fingerprint"]}
+            picked = [{**p, "total_supply": u["metadata"][p["token"]]["total_supply_at_selection"]} for p in u["pools"]]
+        else:
+            picked = select_universe(f, plan)["picked"]
+    if not picked:
         meta["status"] = "BLOCKED: no pools selectable (discovery failed)"
         raw.write_json("run.json", meta)
         return meta
-    backfill(f, plan, sel["picked"])
+    backfill(f, plan, picked)
+    if plan.phase3a:
+        meta["enrichment"] = enrich(f, plan, picked, 0)
+        raw.write_json("run.json", meta)
     cycle = 0
     while True:
         t0 = now_ms()
         if (t0 - started) / 1000 >= plan.duration_s or (max_cycles is not None and cycle >= max_cycles):
             break
-        poll_cycle(f, plan, sel["picked"], cycle)
+        poll_cycle(f, plan, picked, cycle)
         cycle += 1
         spent = (now_ms() - t0) / 1000
         if spent < plan.cycle_s:
             sleep(plan.cycle_s - spent)
+    if plan.phase3a:
+        meta["enrichment"] += enrich(f, plan, picked, 1)
     entries = raw.entries()
     meta.update({"ended_ms": now_ms(), "cycles": cycle, "exchanges": len(entries), "circuit_waits": f.waited,
                  "final_gt_rate_per_s": f.clients[gt.NAME].limiter.rate,

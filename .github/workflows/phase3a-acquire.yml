@@ -1,0 +1,49 @@
+name: Phase 3A data acquisition
+
+# Same pattern as the Phase 2 workflow: the repository's own acquisition code
+# runs against public, keyless endpoints (GeckoTerminal, DexScreener, the public
+# Solana RPC, GDELT, Reddit) and the raw archive is committed back to this branch.
+# Triggered only by changing the request file. Read-only acquisition: no orders,
+# no wallets, no keys. A private RPC URL, if ever configured, comes from the
+# AUTOPSYX_SOLANA_RPC_URL secret and is redacted before reaching the manifest.
+
+on:
+  push:
+    branches: [ccr-dea9382c-vwhvi6]
+    paths: ["intel/datasets/phase3a/REQUEST.json"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phase3a-acquire
+  cancel-in-progress: false
+
+jobs:
+  acquire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Acquire
+        working-directory: intel
+        env:
+          AUTOPSYX_SOLANA_RPC_URL: ${{ secrets.AUTOPSYX_SOLANA_RPC_URL }}
+        run: |
+          RUN_ID=$(python -c "import json;print(json.load(open('datasets/phase3a/REQUEST.json'))['run_id'])")
+          echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          python -m autopsyx --log acquire --live --request datasets/phase3a/REQUEST.json --out "datasets/phase3a/runs/$RUN_ID"
+      - name: Commit raw archive
+        if: always()
+        run: |
+          git config user.name "autopsyx-acquisition"
+          git config user.email "actions@users.noreply.github.com"
+          git add "intel/datasets/phase3a/runs/$RUN_ID"
+          git commit -m "Phase 3A raw archive: $RUN_ID (acquired by workflow run ${{ github.run_id }})"
+          for i in 1 2 3 4; do git pull --rebase origin "${{ github.ref_name }}" && git push origin "HEAD:${{ github.ref_name }}" && exit 0; sleep $((2**i)); done
+          exit 1
