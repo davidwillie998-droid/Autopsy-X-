@@ -147,7 +147,8 @@ def test_migrations_create_expected_schema(pgdb):
     tables = set(_psql(pgdb, "select table_name from information_schema.tables where table_schema='public'").stdout.split())
     assert {"swaps", "pool_snapshots", "provider_bars", "coverage", "raw_manifest", "replay_runs", "replay_records",
             "journal", "feature_values", "normalization_issues"} <= tables
-    assert _psql(pgdb, "select max(version) from schema_version").stdout.strip() == "2"
+    # one schema_version row per migration file (was == "2" before migration 0003 existed)
+    assert _psql(pgdb, "select max(version) from schema_version").stdout.strip() == str(len(list(MIG.glob("*.sql"))))
     idx = _psql(pgdb, "select indexname from pg_indexes where tablename='provider_bars'").stdout
     assert "provider_bars_pit_idx" in idx
 

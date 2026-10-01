@@ -1,4 +1,4 @@
-"""Normalized records and replay output -> SQL INSERT statements (migrations 0001 + 0002).
+"""Normalized records and replay output -> SQL INSERT statements (migrations 0001-0003).
 
 Used to verify the database contract by loading real archives into a
 disposable PostgreSQL instance. Literals are quoted here rather than
@@ -87,9 +87,20 @@ def record_sql(r) -> str | None:
 
 def manifest_sql(run_id: str, e: ManifestEntry) -> str:
     return (f"INSERT INTO raw_manifest (run_id,seq,provider,endpoint,url,request_ts,response_ts,status,raw_id,bytes,"
-            f"attempts,error,context) VALUES ({lit(run_id)},{e.seq},{lit(e.provider)},{lit(e.endpoint)},{lit(e.url)},"
-            f"{ts(e.request_ts)},{ts(e.response_ts)},{lit(e.status)},{lit(e.raw_id)},{lit(e.bytes)},{lit(e.attempts)},"
-            f"{lit(e.error)},{lit(e.context)});")
+            f"attempts,error,context,attempt_log,method,request_body_sha256) VALUES ({lit(run_id)},{e.seq},"
+            f"{lit(e.provider)},{lit(e.endpoint)},{lit(e.url)},{ts(e.request_ts)},{ts(e.response_ts)},{lit(e.status)},"
+            f"{lit(e.raw_id)},{lit(e.bytes)},{lit(e.attempts)},{lit(e.error)},{lit(e.context)},{lit(list(e.attempt_log))},"
+            f"{lit(e.method)},{lit(e.request_body_sha256)});")
+
+
+def observation_sql(run_id: str, o) -> str:
+    """Phase 3A observation row (migration 0003)."""
+    return (f"INSERT INTO observations (run_id,kind,entity,chain,venue,state,observation_ts,source_ts,source_ts_state,"
+            f"ingestion_ts,provider,response_status,raw_id,slot,signature,value,reason,schema_version) VALUES "
+            f"({lit(run_id)},{lit(o.kind)},{lit(o.entity)},{lit(o.chain)},{lit(o.venue)},{lit(o.state.value)},"
+            f"{ts(o.observation_ts)},{ts(o.source_ts)},{lit(o.source_ts_state.value)},{ts(o.ingestion_ts)},"
+            f"{lit(o.provider)},{lit(o.response_status)},{lit(o.raw_id)},{lit(o.slot)},{lit(o.signature)},"
+            f"{lit(o.value)},{lit(o.reason)},{lit(o.schema_version)});")
 
 
 def replay_sql(summary: dict, records: Iterable[dict]) -> list[str]:
