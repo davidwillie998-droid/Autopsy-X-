@@ -21,6 +21,7 @@ from ..providers.base import ProviderError
 from ..providers.http import CircuitBreaker, HttpClient, TokenBucket
 from .providers import dexscreener as ds
 from .providers import geckoterminal as gt
+from .providers import solana_rpc as rpc
 from .raw import ManifestEntry, RawStore
 
 log = logging.getLogger("autopsyx.acquire")
@@ -56,8 +57,12 @@ class Fetcher:
     """Wraps provider clients; every exchange lands in the raw archive, errors included."""
 
     def __init__(self, raw: RawStore, clients: dict[str, HttpClient], now_ms: Callable[[], int],
-                 sleep: Callable[[float], None] = time.sleep, circuit_waits: int = 0):
+                 sleep: Callable[[float], None] = time.sleep, circuit_waits: int = 0,
+                 display: dict[str, str] | None = None):
         self.raw, self.clients, self.now_ms = raw, clients, now_ms
+        # provider -> base URL written to the manifest in place of the real one
+        # (a private RPC URL can embed a key; the archive must never hold it)
+        self.display = display or {}
         self.sleep, self.circuit_waits = sleep, circuit_waits
         self.waited = 0
 
@@ -74,6 +79,7 @@ class Fetcher:
         failing immediately; the first Phase 2 run lost its entire backfill
         because queued calls failed in milliseconds against an open circuit."""
         c = self.clients[provider]
+        shown = self.display.get(provider, c.base_url)
         t0 = self.now_ms()
         waits = 0
         while True:
@@ -91,17 +97,58 @@ class Fetcher:
                 break
         if r is None:
             exc = err
-            e = self.raw.record(provider=provider, endpoint=endpoint, url=c.base_url + path, request_ts=t0,
+            e = self.raw.record(provider=provider, endpoint=endpoint, url=shown + path, request_ts=t0,
                                 response_ts=None, status=None, body=None, attempts=None, error=str(exc),
                                 context=context | ({"circuit_waits": waits} if waits else {}),
                                 attempt_log=getattr(exc, "attempt_log", ()), method="POST" if payload else "GET",
                                 request_body=payload)
             return e, None
-        e = self.raw.record(provider=provider, endpoint=endpoint, url=r.url, request_ts=r.request_ts,
+        e = self.raw.record(provider=provider, endpoint=endpoint, url=shown + r.url[len(c.base_url):], request_ts=r.request_ts,
                             response_ts=r.response_ts, status=r.status, body=r.body, attempts=r.attempts,
                             error=None, context=context, attempt_log=r.attempt_log,
                             method="POST" if payload else "GET", request_body=payload)
         return e, r.body
+
+
+def collect_address_history(f: Fetcher, address: str, ctx: dict, *, page_limit: int = 100, max_pages: int = 3,
+                            max_txs: int = 50, purpose: str = "funding") -> dict:
+    """Signature index (paginated with ``before``) then each transaction, newest first.
+
+    Bounded by ``max_pages`` x ``page_limit`` signatures and ``max_txs``
+    transactions; whatever the bounds cut off is recorded in the returned
+    summary (and so in run.json), never silently dropped. A failed page ends
+    pagination and is recorded as a pagination gap.
+    """
+    sigs: list[dict] = []
+    seen: set[str] = set()
+    before, pages, truncated, gap = None, 0, False, None
+    for page in range(max_pages):
+        c = {**ctx, "address": address, "limit": page_limit, "page": page, "before": before, "purpose": purpose}
+        e, b = f.post(rpc.NAME, "rpc.signatures", "", rpc.req_signatures(address, page_limit, before), c)
+        pages += 1
+        parsed = rpc.parse_signatures(e, b)
+        if b is None or parsed.observations:  # transport or RPC failure
+            gap = f"page {page} failed"
+            f.raw.record(provider="audit", endpoint="pagination_gap", url=e.url, request_ts=e.request_ts,
+                         response_ts=None, status=None, body=None, attempts=None,
+                         error=f"signatures page {page} for {address} failed; older history not fetched",
+                         context={"address": address, "page": page, "purpose": purpose})
+            break
+        for row in parsed.signatures:
+            if row["signature"] not in seen:  # pages can overlap if the chain advanced between calls
+                seen.add(row["signature"])
+                sigs.append(row)
+        before = parsed.next_before
+        if before is None:
+            break
+    else:
+        truncated = before is not None
+    for row in sigs[:max_txs]:
+        f.post(rpc.NAME, "rpc.transaction", "", rpc.req_transaction(row["signature"]),
+               {**ctx, "address": address, "signature": row["signature"], "purpose": purpose})
+    return {"address": address, "purpose": purpose, "pages": pages, "signatures": len(sigs),
+            "transactions_requested": min(len(sigs), max_txs), "signatures_not_fetched": max(0, len(sigs) - max_txs),
+            "history_truncated": truncated, "pagination_gap": gap}
 
 
 def default_clients(plan: Plan, now_ms: Callable[[], int]) -> dict[str, HttpClient]:

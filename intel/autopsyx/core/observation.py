@@ -70,10 +70,13 @@ class Observation:
 
     @property
     def uid(self) -> tuple:
-        """Identity used for deduplication across overlapping responses."""
-        return (self.kind, self.chain, self.entity, self.signature, self.value.get("url"),
-                self.value.get("source"), self.value.get("destination"), self.value.get("amount_raw"),
-                self.observation_ts if self.signature is None and not self.value.get("url") else None)
+        """Identity used for deduplication across overlapping responses (paginated
+        signature lists overlap; the same transaction can be fetched twice)."""
+        v = self.value
+        return (self.kind, self.chain, self.entity, self.state.value, self.signature, v.get("url"),
+                v.get("pool"), v.get("instruction_index"), v.get("inner_index"),
+                v.get("source"), v.get("destination"), v.get("amount_raw"),
+                self.observation_ts if self.signature is None and not v.get("url") else None)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -123,3 +126,16 @@ def validate(o: Observation) -> Observation:
         if base and base in o.value and (o.value[base] is None) == (v == Availability.OBSERVED.value):
             raise ContractViolation(f"{base}={o.value[base]!r} inconsistent with {k}={v}")
     return o
+
+
+def dedupe(obs: list[Observation]) -> tuple[list[Observation], list[Observation]]:
+    """Keep the first-ingested copy of each uid. Returns (kept, duplicates); the
+    order of ``kept`` is (ingestion_ts, observation_ts, signature) so the
+    output does not depend on input order."""
+    ordered = sorted(obs, key=lambda o: (o.ingestion_ts, o.observation_ts, str(o.signature), repr(o.uid)))
+    seen: set = set()
+    kept, dups = [], []
+    for o in ordered:
+        (dups if o.uid in seen else kept).append(o)
+        seen.add(o.uid)
+    return kept, dups
