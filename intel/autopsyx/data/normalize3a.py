@@ -11,6 +11,7 @@ import json
 
 from ..core.observation import Observation, dedupe
 from .providers import gt_phase3a as gt3
+from .providers import news_social as ns
 from .providers import solana_rpc as rpc
 from .raw import RawStore
 from .validate import Code, Issue
@@ -30,6 +31,8 @@ PARSERS = {
     "gt.top_pools": gt3.pool_created,
     "gt.pools_multi": gt3.pool_created,
     "gt.token_info": gt3.token_state,
+    "news.gdelt": ns.parse_gdelt,
+    "social.reddit": ns.parse_reddit,
 }
 
 

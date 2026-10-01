@@ -21,6 +21,7 @@ from ..providers.base import ProviderError
 from ..providers.http import CircuitBreaker, HttpClient, TokenBucket
 from .providers import dexscreener as ds
 from .providers import geckoterminal as gt
+from .providers import news_social as ns
 from .providers import solana_rpc as rpc
 from .raw import ManifestEntry, RawStore
 
@@ -51,6 +52,7 @@ class Plan:
     gt_min_rate_per_s: float = 0.05  # adaptive floor after 429s
     ohlcv_every: int = 1  # poll OHLCV every N cycles
     circuit_waits: int = 3  # times a call waits out an open circuit before being recorded as failed
+    rpc_rate_per_s: float = 2.0
 
 
 class Fetcher:
@@ -151,6 +153,24 @@ def collect_address_history(f: Fetcher, address: str, ctx: dict, *, page_limit: 
             "history_truncated": truncated, "pagination_gap": gap}
 
 
+def collect_news_social(f: Fetcher, token: str, symbol: str, ctx: dict) -> dict:
+    """One GDELT and one Reddit search per token. A query GDELT cannot take
+    (symbol under three characters) is recorded, not silently skipped."""
+    done = {}
+    q = ns.gdelt_query(symbol)
+    if q is None:
+        f.raw.record(provider="audit", endpoint="query_not_applicable", url="", request_ts=f.now_ms(), response_ts=None,
+                     status=None, body=None, attempts=None, error=f"gdelt: symbol {symbol!r} shorter than 3 characters",
+                     context={**ctx, "token": token, "provider": ns.GDELT})
+        done["gdelt"] = "not_applicable"
+    else:
+        e, _ = f.get(ns.GDELT, "news.gdelt", ns.path_gdelt(q), {**ctx, "token": token, "query": q})
+        done["gdelt"] = "error" if e.error else "ok"
+    e, _ = f.get(ns.REDDIT, "social.reddit", ns.path_reddit(token), {**ctx, "token": token, "query": token})
+    done["reddit"] = "error" if e.error else "ok"
+    return done
+
+
 def default_clients(plan: Plan, now_ms: Callable[[], int]) -> dict[str, HttpClient]:
     return {
         gt.NAME: HttpClient(gt.BASE, TokenBucket(plan.gt_rate_per_s, 2), dict(gt.HEADERS), max_retries=3,
@@ -158,6 +178,15 @@ def default_clients(plan: Plan, now_ms: Callable[[], int]) -> dict[str, HttpClie
                             adaptive_min_rate=plan.gt_min_rate_per_s, adaptive_step=0.005),
         ds.NAME: HttpClient(ds.BASE, TokenBucket(plan.ds_rate_per_s, 4), dict(ds.HEADERS), max_retries=3,
                             timeout_s=15, backoff_s=2.0, breaker=CircuitBreaker(8, 90), now_ms=now_ms),
+        # Phase 3A sources. Rates sit below each service's documented public guidance
+        # (GDELT: one request per 5 s; public Solana RPC: well under its per-IP limit).
+        rpc.NAME: HttpClient(rpc.BASE, TokenBucket(plan.rpc_rate_per_s, 2), dict(rpc.HEADERS), max_retries=3,
+                             timeout_s=20, backoff_s=2.0, breaker=CircuitBreaker(8, 90), now_ms=now_ms,
+                             adaptive_min_rate=0.2, adaptive_step=0.02),
+        ns.GDELT: HttpClient(ns.GDELT_BASE, TokenBucket(0.18, 1), dict(ns.HEADERS), max_retries=2,
+                             timeout_s=20, backoff_s=6.0, breaker=CircuitBreaker(6, 120), now_ms=now_ms),
+        ns.REDDIT: HttpClient(ns.REDDIT_BASE, TokenBucket(0.15, 1), dict(ns.HEADERS), max_retries=2,
+                              timeout_s=15, backoff_s=6.0, breaker=CircuitBreaker(6, 120), now_ms=now_ms),
     }
 
 
