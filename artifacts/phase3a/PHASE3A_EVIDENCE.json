@@ -1,0 +1,1022 @@
+{
+ "aggregates": {
+  "archives": 3,
+  "coverage_rows": 25,
+  "coverage_rows_observed": {
+   "creator_state": 20,
+   "freshness": 0,
+   "funding_transfer": 0,
+   "holder_state": 16,
+   "liquidity_events": 25,
+   "news": 0,
+   "ohlcv": 21,
+   "point_in_time_validity": 25,
+   "provider": 9,
+   "replayability": 17,
+   "social": 0,
+   "trades": 17
+  },
+  "coverage_share": {
+   "creator_state": 0.8,
+   "freshness": 0.0,
+   "funding_transfer": 0.0,
+   "holder_state": 0.64,
+   "liquidity_events": 1.0,
+   "news": 0.0,
+   "ohlcv": 0.84,
+   "point_in_time_validity": 1.0,
+   "provider": 0.36,
+   "replayability": 0.68,
+   "social": 0.0,
+   "trades": 0.68
+  },
+  "freshness_compliance": 0.007984,
+  "freshness_evaluations": 501,
+  "freshness_stale": 497,
+  "liquidity_vault_delta_rows": 0,
+  "liquidity_vault_delta_share": 0.0,
+  "multi_day_longest_span_days": 0.035594,
+  "multi_day_performed": false,
+  "provider_error_rate": 0.113537,
+  "provider_errors": 78,
+  "provider_requests": 687,
+  "replayable_archives": 2,
+  "universe_tokens": 25
+ },
+ "archives": [
+  {
+   "archive": "gt-sol-20260930a",
+   "assessments": {
+    "creator_state@first": {
+     "as_of": 1790755490851,
+     "hindsight": {
+      "OBSERVED_LATER": 12
+     },
+     "states": {
+      "UNKNOWN_AT_ASSESSMENT": 12
+     }
+    },
+    "creator_state@last": {
+     "as_of": 1790758406375,
+     "hindsight": {
+      "KNOWN_AT_ASSESSMENT": 12
+     },
+     "states": {
+      "KNOWN_AT_ASSESSMENT": 12
+     }
+    },
+    "holder_state@first": {
+     "as_of": 1790755490851,
+     "hindsight": {
+      "OBSERVED_LATER": 11,
+      "UNKNOWN_AT_ASSESSMENT": 1
+     },
+     "states": {
+      "UNKNOWN_AT_ASSESSMENT": 12
+     }
+    },
+    "holder_state@last": {
+     "as_of": 1790758406375,
+     "hindsight": {
+      "KNOWN_AT_ASSESSMENT": 11,
+      "UNAVAILABLE_FROM_PROVIDER": 1
+     },
+     "states": {
+      "KNOWN_AT_ASSESSMENT": 11,
+      "UNAVAILABLE_FROM_PROVIDER": 1
+     }
+    }
+   },
+   "contract_violations": 0,
+   "exchanges": 449,
+   "family": "phase2",
+   "freshness": {
+    "endpoints": {
+     "ds.pairs": {
+      "age_ms": {
+       "max": 265310,
+       "p50": 225964,
+       "p95": 265310
+      },
+      "compliance": 0.142857,
+      "evaluations": 14,
+      "governed": true,
+      "stale": 12
+     },
+     "gt.new_pools": {
+      "age_ms": {
+       "max": 2021,
+       "p50": 2021,
+       "p95": 2021
+      },
+      "compliance": "NOT_APPLICABLE",
+      "evaluations": 2,
+      "governed": false,
+      "stale": null
+     },
+     "gt.ohlcv": {
+      "age_ms": {
+       "max": 301107,
+       "p50": 222742,
+       "p95": 280258
+      },
+      "compliance": 0.0,
+      "evaluations": 144,
+      "governed": true,
+      "stale": 144
+     },
+     "gt.pools_multi": {
+      "age_ms": {
+       "max": 265210,
+       "p50": 226214,
+       "p95": 265210
+      },
+      "compliance": 0.0,
+      "evaluations": 12,
+      "governed": true,
+      "stale": 12
+     },
+     "gt.token_info": {
+      "age_ms": {
+       "max": 1355639,
+       "p50": 1300961,
+       "p95": 1355639
+      },
+      "compliance": "NOT_APPLICABLE",
+      "evaluations": 14,
+      "governed": false,
+      "stale": null
+     },
+     "gt.trades": {
+      "age_ms": {
+       "max": 300662,
+       "p50": 222588,
+       "p95": 282015
+      },
+      "compliance": 0.0,
+      "evaluations": 144,
+      "governed": true,
+      "stale": 144
+     }
+    },
+    "governed_compliance": 0.006369,
+    "governed_evaluations": 314,
+    "governed_stale": 312
+   },
+   "observation_raw_ids_not_in_manifest": 0,
+   "observations_by_kind_state": {
+    "creator_state|ERROR": 16,
+    "creator_state|OBSERVED": 26,
+    "holder_state|ERROR": 16,
+    "holder_state|NOT_OBSERVED": 3,
+    "holder_state|OBSERVED": 23,
+    "liquidity_event|OBSERVED": 100
+   },
+   "postgres": {
+    "all_checks_pass": true,
+    "migrations": 3,
+    "observation_raw_ids_not_in_manifest": 0,
+    "observations_expected": 184,
+    "observations_loaded": 184,
+    "pit_rows_python": 100,
+    "pit_rows_sql": 100,
+    "status": "LOADED"
+   },
+   "raw_bodies_referenced_but_missing": 0,
+   "replay": {
+    "dataset_sha256": "fb7d3607fbd91c34df16fad4b77ce27119a369b6fc5740f94d45dbeb186b2d42",
+    "identical": true,
+    "issues_by_code": {
+     "DUPLICATE_OBSERVATION": 156
+    },
+    "lookahead_all_passed": true,
+    "lookahead_checks": {
+     "A_future_bar": "4/4 passed",
+     "B_future_trade": "4/4 passed",
+     "C_future_liquidity": "4/4 passed",
+     "D_timestamp_manipulation": "4/4 passed",
+     "E_truncation": "4/4 passed",
+     "F_determinism": "4/4 passed"
+    },
+    "observation_count": 184,
+    "observations_identical": true,
+    "observations_sha256": [
+     "ad59f1cd7eea33df1b8fba9d5b58305826ad9b5087a55f351c9a4fbe4cdae35a",
+     "ad59f1cd7eea33df1b8fba9d5b58305826ad9b5087a55f351c9a4fbe4cdae35a"
+    ],
+    "replayable": true,
+    "replays": [
+     {
+      "journal_sha256": "03e4fa3954a1b96ada55c05e7736debac6ea5305950d39564365b205b84c4ce0",
+      "records_sha256": "d21457e981c2feb256bb5b4ab1e44a47c06cbd7d39f2f7bdf77c0cb0b0210d74"
+     },
+     {
+      "journal_sha256": "03e4fa3954a1b96ada55c05e7736debac6ea5305950d39564365b205b84c4ce0",
+      "records_sha256": "d21457e981c2feb256bb5b4ab1e44a47c06cbd7d39f2f7bdf77c0cb0b0210d74"
+     }
+    ],
+    "window_ms": [
+     1790755490851,
+     1790758406375
+    ]
+   },
+   "run_status": "COMPLETE",
+   "telemetry": {
+    "dexscreener": {
+     "backoff_s_total": 0,
+     "circuit_waits": 0,
+     "endpoints": {
+      "ds.pairs": 15
+     },
+     "error_rate": 0.0,
+     "errors": 0,
+     "failed_attempts_logged": 0,
+     "failures_without_attempt_log": 0,
+     "latency_ms": {
+      "max": 205,
+      "p50": 165,
+      "p95": 205
+     },
+     "rate_limited_attempts": 0,
+     "rate_limited_state": "OBSERVED",
+     "requests": 15,
+     "retries_before_success": 0,
+     "status_counts": {
+      "200": 15
+     },
+     "successes": 15
+    },
+    "geckoterminal": {
+     "backoff_s_total": 0,
+     "circuit_waits": 0,
+     "endpoints": {
+      "gt.new_pools": 3,
+      "gt.ohlcv": 192,
+      "gt.pools_multi": 15,
+      "gt.token_info": 42,
+      "gt.top_pools": 1,
+      "gt.trades": 180,
+      "gt.trending": 1
+     },
+     "error_rate": 0.179724,
+     "errors": 78,
+     "failed_attempts_logged": 0,
+     "failures_without_attempt_log": 78,
+     "latency_ms": {
+      "max": 2090,
+      "p50": 258,
+      "p95": 1130
+     },
+     "rate_limited_attempts": 0,
+     "rate_limited_state": "PARTIAL",
+     "requests": 434,
+     "retries_before_success": 606,
+     "status_counts": {
+      "200": 356,
+      "none": 78
+     },
+     "successes": 356
+    }
+   },
+   "universe": {
+    "fingerprint": null,
+    "source": "selection.json",
+    "tokens": 12
+   }
+  },
+  {
+   "archive": "gt-sol-20260930b",
+   "assessments": {
+    "creator_state@first": {
+     "as_of": 1790758932920,
+     "hindsight": {
+      "OBSERVED_LATER": 4,
+      "UNKNOWN_AT_ASSESSMENT": 4
+     },
+     "states": {
+      "UNKNOWN_AT_ASSESSMENT": 8
+     }
+    },
+    "creator_state@last": {
+     "as_of": 1790759085174,
+     "hindsight": {
+      "KNOWN_AT_ASSESSMENT": 4,
+      "UNKNOWN_AT_ASSESSMENT": 4
+     },
+     "states": {
+      "KNOWN_AT_ASSESSMENT": 4,
+      "UNKNOWN_AT_ASSESSMENT": 4
+     }
+    },
+    "holder_state@first": {
+     "as_of": 1790758932920,
+     "hindsight": {
+      "OBSERVED_LATER": 1,
+      "UNKNOWN_AT_ASSESSMENT": 7
+     },
+     "states": {
+      "UNKNOWN_AT_ASSESSMENT": 8
+     }
+    },
+    "holder_state@last": {
+     "as_of": 1790759085174,
+     "hindsight": {
+      "KNOWN_AT_ASSESSMENT": 1,
+      "UNAVAILABLE_FROM_PROVIDER": 3,
+      "UNKNOWN_AT_ASSESSMENT": 4
+     },
+     "states": {
+      "KNOWN_AT_ASSESSMENT": 1,
+      "UNAVAILABLE_FROM_PROVIDER": 3,
+      "UNKNOWN_AT_ASSESSMENT": 4
+     }
+    }
+   },
+   "contract_violations": 0,
+   "exchanges": 13,
+   "family": "phase2",
+   "freshness": {
+    "endpoints": {
+     "gt.new_pools": {
+      "age_ms": {
+       "max": 4870,
+       "p50": 4870,
+       "p95": 4870
+      },
+      "compliance": "NOT_APPLICABLE",
+      "evaluations": 2,
+      "governed": false,
+      "stale": null
+     }
+    },
+    "governed_compliance": "NOT_OBSERVED",
+    "governed_evaluations": 0,
+    "governed_stale": 0
+   },
+   "observation_raw_ids_not_in_manifest": 0,
+   "observations_by_kind_state": {
+    "creator_state|OBSERVED": 4,
+    "holder_state|NOT_OBSERVED": 3,
+    "holder_state|OBSERVED": 1,
+    "liquidity_event|OBSERVED": 97
+   },
+   "postgres": {
+    "all_checks_pass": true,
+    "migrations": 3,
+    "observation_raw_ids_not_in_manifest": 0,
+    "observations_expected": 105,
+    "observations_loaded": 105,
+    "pit_rows_python": 57,
+    "pit_rows_sql": 57,
+    "status": "LOADED"
+   },
+   "raw_bodies_referenced_but_missing": 0,
+   "replay": {
+    "dataset_sha256": "031917e87897293846524c7f2977134f0e723a65d3220cf98f175eb8f15d9f36",
+    "identical": null,
+    "issues_by_code": {
+     "DUPLICATE_OBSERVATION": 3
+    },
+    "lookahead_all_passed": null,
+    "observation_count": 105,
+    "observations_identical": true,
+    "observations_sha256": [
+     "0687e2b8bd58addb879fc33cb6518b3495127f74e4c3a16290b5bd7dafa68206",
+     "0687e2b8bd58addb879fc33cb6518b3495127f74e4c3a16290b5bd7dafa68206"
+    ],
+    "reason": "no live poll responses in archive (run ended during backfill)",
+    "replayable": false
+   },
+   "run_status": null,
+   "telemetry": {
+    "geckoterminal": {
+     "backoff_s_total": 0,
+     "circuit_waits": 0,
+     "endpoints": {
+      "gt.new_pools": 3,
+      "gt.ohlcv": 4,
+      "gt.token_info": 4,
+      "gt.top_pools": 1,
+      "gt.trending": 1
+     },
+     "error_rate": 0.0,
+     "errors": 0,
+     "failed_attempts_logged": 0,
+     "failures_without_attempt_log": 0,
+     "latency_ms": {
+      "max": 773,
+      "p50": 88,
+      "p95": 773
+     },
+     "rate_limited_attempts": 0,
+     "rate_limited_state": "OBSERVED",
+     "requests": 13,
+     "retries_before_success": 2,
+     "status_counts": {
+      "200": 13
+     },
+     "successes": 13
+    }
+   },
+   "universe": {
+    "fingerprint": null,
+    "source": "selection.json",
+    "tokens": 8
+   }
+  },
+  {
+   "archive": "gt-sol-20260930c",
+   "assessments": {
+    "creator_state@first": {
+     "as_of": 1790759396625,
+     "hindsight": {
+      "KNOWN_AT_ASSESSMENT": 4,
+      "UNAVAILABLE_FROM_PROVIDER": 1
+     },
+     "states": {
+      "KNOWN_AT_ASSESSMENT": 4,
+      "UNAVAILABLE_FROM_PROVIDER": 1
+     }
+    },
+    "creator_state@last": {
+     "as_of": 1790762141754,
+     "hindsight": {
+      "KNOWN_AT_ASSESSMENT": 4,
+      "UNAVAILABLE_FROM_PROVIDER": 1
+     },
+     "states": {
+      "KNOWN_AT_ASSESSMENT": 4,
+      "UNAVAILABLE_FROM_PROVIDER": 1
+     }
+    },
+    "holder_state@first": {
+     "as_of": 1790759396625,
+     "hindsight": {
+      "KNOWN_AT_ASSESSMENT": 3,
+      "OBSERVED_LATER": 1,
+      "UNAVAILABLE_FROM_PROVIDER": 1
+     },
+     "states": {
+      "KNOWN_AT_ASSESSMENT": 3,
+      "UNAVAILABLE_FROM_PROVIDER": 2
+     }
+    },
+    "holder_state@last": {
+     "as_of": 1790762141754,
+     "hindsight": {
+      "KNOWN_AT_ASSESSMENT": 4,
+      "UNAVAILABLE_FROM_PROVIDER": 1
+     },
+     "states": {
+      "KNOWN_AT_ASSESSMENT": 4,
+      "UNAVAILABLE_FROM_PROVIDER": 1
+     }
+    }
+   },
+   "contract_violations": 0,
+   "exchanges": 225,
+   "family": "phase2",
+   "freshness": {
+    "endpoints": {
+     "ds.pairs": {
+      "age_ms": {
+       "max": 193056,
+       "p50": 172041,
+       "p95": 193056
+      },
+      "compliance": 0.0,
+      "evaluations": 15,
+      "governed": true,
+      "stale": 15
+     },
+     "gt.new_pools": {
+      "age_ms": {
+       "max": 4740,
+       "p50": 4740,
+       "p95": 4740
+      },
+      "compliance": "NOT_APPLICABLE",
+      "evaluations": 2,
+      "governed": false,
+      "stale": null
+     },
+     "gt.ohlcv": {
+      "age_ms": {
+       "max": 228834,
+       "p50": 172213,
+       "p95": 194000
+      },
+      "compliance": 0.02439,
+      "evaluations": 82,
+      "governed": true,
+      "stale": 80
+     },
+     "gt.pools_multi": {
+      "age_ms": {
+       "max": 192995,
+       "p50": 171973,
+       "p95": 192995
+      },
+      "compliance": 0.0,
+      "evaluations": 15,
+      "governed": true,
+      "stale": 15
+     },
+     "gt.token_info": {
+      "age_ms": {
+       "max": 873346,
+       "p50": 861935,
+       "p95": 873346
+      },
+      "compliance": "NOT_APPLICABLE",
+      "evaluations": 16,
+      "governed": false,
+      "stale": null
+     },
+     "gt.trades": {
+      "age_ms": {
+       "max": 201221,
+       "p50": 170234,
+       "p95": 193642
+      },
+      "compliance": 0.0,
+      "evaluations": 75,
+      "governed": true,
+      "stale": 75
+     }
+    },
+    "governed_compliance": 0.010695,
+    "governed_evaluations": 187,
+    "governed_stale": 185
+   },
+   "observation_raw_ids_not_in_manifest": 0,
+   "observations_by_kind_state": {
+    "creator_state|NOT_OBSERVED": 4,
+    "creator_state|OBSERVED": 17,
+    "holder_state|NOT_OBSERVED": 5,
+    "holder_state|OBSERVED": 16,
+    "liquidity_event|OBSERVED": 99
+   },
+   "postgres": {
+    "all_checks_pass": true,
+    "migrations": 3,
+    "observation_raw_ids_not_in_manifest": 0,
+    "observations_expected": 141,
+    "observations_loaded": 141,
+    "pit_rows_python": 79,
+    "pit_rows_sql": 79,
+    "status": "LOADED"
+   },
+   "raw_bodies_referenced_but_missing": 0,
+   "replay": {
+    "dataset_sha256": "1ebe77ec9ec2e9b6f06da26cbcce17721db4504f6029baf610931f5489e71d14",
+    "identical": true,
+    "issues_by_code": {
+     "DUPLICATE_OBSERVATION": 81
+    },
+    "lookahead_all_passed": true,
+    "lookahead_checks": {
+     "A_future_bar": "4/4 passed",
+     "B_future_trade": "4/4 passed",
+     "C_future_liquidity": "4/4 passed",
+     "D_timestamp_manipulation": "4/4 passed",
+     "E_truncation": "4/4 passed",
+     "F_determinism": "4/4 passed"
+    },
+    "observation_count": 141,
+    "observations_identical": true,
+    "observations_sha256": [
+     "35e114f1d5ee5f6b2f067df76f9329ff3b7d644f3470d15e2bb7b7b7dfbfeefd",
+     "35e114f1d5ee5f6b2f067df76f9329ff3b7d644f3470d15e2bb7b7b7dfbfeefd"
+    ],
+    "replayable": true,
+    "replays": [
+     {
+      "journal_sha256": "bf1a39bc651b419a2c64bac6b8a75c09a9a25ae1f3b8faf14ee0789ebdf17260",
+      "records_sha256": "c9433701845fbe8c3ca8ffdb44af370d888c96f4c86c404850f44bca90cecf6c"
+     },
+     {
+      "journal_sha256": "bf1a39bc651b419a2c64bac6b8a75c09a9a25ae1f3b8faf14ee0789ebdf17260",
+      "records_sha256": "c9433701845fbe8c3ca8ffdb44af370d888c96f4c86c404850f44bca90cecf6c"
+     }
+    ],
+    "window_ms": [
+     1790759396625,
+     1790762141754
+    ]
+   },
+   "run_status": "COMPLETE",
+   "telemetry": {
+    "dexscreener": {
+     "backoff_s_total": 0,
+     "circuit_waits": 0,
+     "endpoints": {
+      "ds.pairs": 16
+     },
+     "error_rate": 0.0,
+     "errors": 0,
+     "failed_attempts_logged": 0,
+     "failures_without_attempt_log": 0,
+     "latency_ms": {
+      "max": 226,
+      "p50": 185,
+      "p95": 226
+     },
+     "rate_limited_attempts": 0,
+     "rate_limited_state": "OBSERVED",
+     "requests": 16,
+     "retries_before_success": 0,
+     "status_counts": {
+      "200": 16
+     },
+     "successes": 16
+    },
+    "geckoterminal": {
+     "backoff_s_total": 0,
+     "circuit_waits": 0,
+     "endpoints": {
+      "gt.new_pools": 3,
+      "gt.ohlcv": 87,
+      "gt.pools_multi": 16,
+      "gt.token_info": 21,
+      "gt.top_pools": 1,
+      "gt.trades": 80,
+      "gt.trending": 1
+     },
+     "error_rate": 0.0,
+     "errors": 0,
+     "failed_attempts_logged": 0,
+     "failures_without_attempt_log": 0,
+     "latency_ms": {
+      "max": 11808,
+      "p50": 244,
+      "p95": 1092
+     },
+     "rate_limited_attempts": 0,
+     "rate_limited_state": "OBSERVED",
+     "requests": 209,
+     "retries_before_success": 21,
+     "status_counts": {
+      "200": 209
+     },
+     "successes": 209
+    }
+   },
+   "universe": {
+    "fingerprint": null,
+    "source": "selection.json",
+    "tokens": 5
+   }
+  }
+ ],
+ "configuration_hash": "417bd32cce8fb72c",
+ "coverage": {
+  "blank_cells": 0,
+  "file": "artifacts/phase3a/PHASE3A_COVERAGE.json",
+  "row_count": 25,
+  "sha256": "db0828e6f4156841742db776d7b3611c24ebfbbab29daf6d2724521fad71ccff",
+  "state_rule": "OBSERVED if any OBSERVED record; else NOT_OBSERVED if any; else NOT_APPLICABLE if the question was not applicable; else ERROR if any; else UNKNOWN if the archive's plan included the source but this token was never asked; else UNAVAILABLE (source not in the archive's acquisition plan)",
+  "totals": {
+   "creator_state": {
+    "ERROR": 0,
+    "NOT_APPLICABLE": 0,
+    "NOT_OBSERVED": 1,
+    "OBSERVED": 20,
+    "STALE": 0,
+    "UNAVAILABLE": 0,
+    "UNKNOWN": 4,
+    "positive_share": 0.8,
+    "positive_state": "OBSERVED"
+   },
+   "freshness": {
+    "NOT_OBSERVED": 8,
+    "OBSERVED": 0,
+    "STALE": 17,
+    "positive_share": 0.0,
+    "positive_state": "OBSERVED"
+   },
+   "funding_transfer": {
+    "ERROR": 0,
+    "NOT_APPLICABLE": 0,
+    "NOT_OBSERVED": 0,
+    "OBSERVED": 0,
+    "STALE": 0,
+    "UNAVAILABLE": 25,
+    "UNKNOWN": 0,
+    "positive_share": 0.0,
+    "positive_state": "OBSERVED"
+   },
+   "holder_state": {
+    "ERROR": 0,
+    "NOT_APPLICABLE": 0,
+    "NOT_OBSERVED": 5,
+    "OBSERVED": 16,
+    "STALE": 0,
+    "UNAVAILABLE": 0,
+    "UNKNOWN": 4,
+    "positive_share": 0.64,
+    "positive_state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "ERROR": 0,
+    "NOT_APPLICABLE": 0,
+    "NOT_OBSERVED": 0,
+    "OBSERVED": 25,
+    "STALE": 0,
+    "UNAVAILABLE": 0,
+    "UNKNOWN": 0,
+    "positive_share": 1.0,
+    "positive_state": "OBSERVED",
+    "rows_with_vault_delta_events": 0,
+    "rows_with_vault_delta_requests": 0,
+    "vault_delta_share": 0.0
+   },
+   "news": {
+    "ERROR": 0,
+    "NOT_APPLICABLE": 0,
+    "NOT_OBSERVED": 0,
+    "OBSERVED": 0,
+    "STALE": 0,
+    "UNAVAILABLE": 25,
+    "UNKNOWN": 0,
+    "positive_share": 0.0,
+    "positive_state": "OBSERVED"
+   },
+   "ohlcv": {
+    "ERROR": 0,
+    "NOT_APPLICABLE": 0,
+    "NOT_OBSERVED": 0,
+    "OBSERVED": 21,
+    "STALE": 0,
+    "UNAVAILABLE": 0,
+    "UNKNOWN": 4,
+    "positive_share": 0.84,
+    "positive_state": "OBSERVED"
+   },
+   "point_in_time_validity": {
+    "FAILED": 0,
+    "VERIFIED": 25,
+    "positive_share": 1.0,
+    "positive_state": "VERIFIED"
+   },
+   "provider": {
+    "ERROR": 12,
+    "NOT_OBSERVED": 4,
+    "OBSERVED": 9,
+    "positive_share": 0.36,
+    "positive_state": "OBSERVED"
+   },
+   "replayability": {
+    "FAILED": 0,
+    "NOT_REPLAYABLE": 8,
+    "VERIFIED": 17,
+    "positive_share": 0.68,
+    "positive_state": "VERIFIED"
+   },
+   "social": {
+    "ERROR": 0,
+    "NOT_APPLICABLE": 0,
+    "NOT_OBSERVED": 0,
+    "OBSERVED": 0,
+    "STALE": 0,
+    "UNAVAILABLE": 25,
+    "UNKNOWN": 0,
+    "positive_share": 0.0,
+    "positive_state": "OBSERVED"
+   },
+   "trades": {
+    "ERROR": 0,
+    "NOT_APPLICABLE": 0,
+    "NOT_OBSERVED": 0,
+    "OBSERVED": 17,
+    "STALE": 0,
+    "UNAVAILABLE": 0,
+    "UNKNOWN": 8,
+    "positive_share": 0.68,
+    "positive_state": "OBSERVED"
+   }
+  }
+ },
+ "cross_seed_determinism": {
+  "identical": true,
+  "runs": [
+   {
+    "digest": "24f79087841978d2b0713a77357833149c6d8f4310357b0bdbc5b5632f2dd142",
+    "exit_code": 0,
+    "seed": 1
+   },
+   {
+    "digest": "24f79087841978d2b0713a77357833149c6d8f4310357b0bdbc5b5632f2dd142",
+    "exit_code": 0,
+    "seed": 2
+   }
+  ]
+ },
+ "freshness_policy": {
+  "fingerprint": "58fe8ee8476b824fde285065d8dafbebb594f9bf1cd0df04091823d13b9881ff",
+  "frozen": "58fe8ee8476b824fde285065d8dafbebb594f9bf1cd0df04091823d13b9881ff",
+  "identical_to_frozen": true,
+  "policy": {
+   "age_definition": "at each request to an endpoint for an entity, request_ts minus the response_ts of the latest earlier successful response for the same endpoint and entity",
+   "governed_endpoints": [
+    "gt.pools_multi",
+    "ds.pairs",
+    "gt.trades",
+    "gt.ohlcv"
+   ],
+   "max_age_ms": 120000,
+   "stale_rule": "age > max_age_ms is STALE; the first request for an entity has no age and is not counted",
+   "threshold_source": "config/default.toml [data_quality] max_price_age_ms",
+   "ungoverned_endpoints": "ages reported, compliance NOT_APPLICABLE (no approved threshold)"
+  }
+ },
+ "integrity": {
+  "contract_valid": true,
+  "evidence_integrity": true,
+  "freshness_policy_frozen": true,
+  "no_blank_cells": true,
+  "point_in_time_validity": true,
+  "replay_determinism": true,
+  "scope_clean": true,
+  "tests_green": true,
+  "traceability": true
+ },
+ "limitations": [
+  "Multi-day collection was not performed: GitHub-hosted jobs stop after hours and scheduled workflows run only on the default branch. The collector is ready for it (frozen universe, chained runs that refuse an edited universe).",
+  "Funding transfers, chain-derived liquidity events, news and social exist only where an archive was acquired with the Phase 3A plan; the Phase 2 archives report them UNAVAILABLE.",
+  "Liquidity add/remove detection sees only venues whose vault token accounts are owned by the pool address; other venues are reported as a coverage gap, never as no liquidity change.",
+  "GDELT gives crawler time, not publication time; news publication time is NOT_OBSERVED by construction.",
+  "Whether a news item or post truly concerns its token is not verified (reference_verified_state UNKNOWN).",
+  "X and Telegram are UNAVAILABLE: no credentials are held and none were substituted.",
+  "Funding beneficiaries are never inferred; every transfer carries beneficiary_status UNKNOWN.",
+  "Freshness has one approved threshold (max_price_age_ms), applied to the per-cycle market endpoints only.",
+  "Readiness thresholds do not exist yet; the gate stays NOT_READY until a human approves values.",
+  "TimescaleDB is unavailable here; hypertable calls are stubbed on PostgreSQL 16 as in Phase 2."
+ ],
+ "multi_day": {
+  "definition": "performed = some frozen universe was collected by more than one chained run across more than one UTC date",
+  "groups": [
+   {
+    "archives": [
+     "gt-sol-20260930a"
+    ],
+    "span_days": 0.035594,
+    "span_ms": 3075335,
+    "universe": "selection:gt-sol-20260930a",
+    "utc_dates": [
+     "2026-09-30"
+    ]
+   },
+   {
+    "archives": [
+     "gt-sol-20260930b"
+    ],
+    "span_days": 0.001762,
+    "span_ms": 152254,
+    "universe": "selection:gt-sol-20260930b",
+    "utc_dates": [
+     "2026-09-30"
+    ]
+   },
+   {
+    "archives": [
+     "gt-sol-20260930c"
+    ],
+    "span_days": 0.035161,
+    "span_ms": 3037936,
+    "universe": "selection:gt-sol-20260930c",
+    "utc_dates": [
+     "2026-09-30"
+    ]
+   }
+  ],
+  "longest_span_days": 0.035594,
+  "performed": false
+ },
+ "readiness": {
+  "config": {
+   "approved": false,
+   "approved_at": "",
+   "approved_by": "",
+   "thresholds": {
+    "creator_state_min_share": "UNSET",
+    "freshness_min_compliance": "UNSET",
+    "funding_transfer_min_share": "UNSET",
+    "holder_state_min_share": "UNSET",
+    "liquidity_vault_delta_min_share": "UNSET",
+    "multi_day_min_days": "UNSET",
+    "news_min_share": "UNSET",
+    "provider_max_error_rate": "UNSET",
+    "social_min_share": "UNSET",
+    "universe_min_tokens": "UNSET"
+   }
+  },
+  "config_fingerprint": "89716b3525869d1279bf7f34eaa642fdd8123a0ae6ec863694cf3211e07fab9d",
+  "integrity": {
+   "contract_valid": true,
+   "evidence_integrity": true,
+   "freshness_policy_frozen": true,
+   "no_blank_cells": true,
+   "point_in_time_validity": true,
+   "replay_determinism": true,
+   "scope_clean": true,
+   "traceability": true
+  },
+  "metrics": {
+   "creator_state_share": 0.8,
+   "freshness_compliance": 0.007984,
+   "funding_transfer_share": 0.0,
+   "holder_state_share": 0.64,
+   "liquidity_vault_delta_share": 0.0,
+   "multi_day_days": 0.035594,
+   "news_share": 0.0,
+   "provider_error_rate": 0.113537,
+   "social_share": 0.0,
+   "universe_tokens": 25
+  },
+  "reasons": [
+   "thresholds not approved by a human (config/phase3a_readiness.toml: approved = false)",
+   "threshold funding_transfer_min_share is UNSET (metric funding_transfer_share = 0.0)",
+   "threshold liquidity_vault_delta_min_share is UNSET (metric liquidity_vault_delta_share = 0.0)",
+   "threshold creator_state_min_share is UNSET (metric creator_state_share = 0.8)",
+   "threshold holder_state_min_share is UNSET (metric holder_state_share = 0.64)",
+   "threshold news_min_share is UNSET (metric news_share = 0.0)",
+   "threshold social_min_share is UNSET (metric social_share = 0.0)",
+   "threshold freshness_min_compliance is UNSET (metric freshness_compliance = 0.007984)",
+   "threshold provider_max_error_rate is UNSET (metric provider_error_rate = 0.113537)",
+   "threshold multi_day_min_days is UNSET (metric multi_day_days = 0.035594)",
+   "threshold universe_min_tokens is UNSET (metric universe_tokens = 25)"
+  ],
+  "result": "NOT_READY",
+  "rule": "READY only if every integrity condition holds, the readiness config is approved by a named human, every threshold is set, and every metric meets its threshold; otherwise NOT_READY with one reason per failure"
+ },
+ "repository": {
+  "branch": "ccr-dea9382c-vwhvi6",
+  "code_version": "cc21316e258380f300b113f079d2e61d8272c1ed",
+  "head": "cc21316e258380f300b113f079d2e61d8272c1ed",
+  "log": "cc21316 phase3a: keep evidence test free of self-reference\nbd8fa53 phase3a: add evidence verifier and renderers\ne232490 phase3a: add readiness gate\ne745865 phase3a: add coverage matrix\na935943 phase3a: add observation storage migration\nb9ecae4 phase3a: add frozen universe and chained runs\nc7a04ec phase3a: add provider freshness telemetry\nb3a4406 phase3a: add news and social provenance\n861aa43 phase3a: harden creator and holder state\na278b1f phase3a: add liquidity event coverage\n97d2247 phase3a: add funding transfer adapter\nf0eb011 phase3a: add POST transport and per-attempt telemetry\n85a06df phase3a: add observation contract",
+  "phase2_baseline": "30fe09470872d9962c5893c9add84329579e403b"
+ },
+ "schema": "phase3a.evidence.1",
+ "scope": {
+  "config_lines_removed": [],
+  "config_lines_removed_count": 0,
+  "engine_changes_unexplained": {},
+  "engine_changes_unexplained_count": 0,
+  "engine_diff_since_phase2": "(no changes)",
+  "existing_tests_changed": [
+   "intel/tests/test_phase2_evidence.py",
+   "intel/tests/test_phase2_replay.py",
+   "intel/tests/test_transport.py"
+  ],
+  "forbidden_terms_present": {},
+  "hypotheses": {
+   "files": {
+    "docs/research/14-research-hypotheses.md": {
+     "diff_since_baseline": "(no changes)",
+     "sha256": "fae345d392ff97f76af111754d7f54db5bad6e191fe0b5269a7002b3d58005d3"
+    }
+   },
+   "not_claimed": [
+    "H2",
+    "H5",
+    "H6",
+    "H7"
+   ],
+   "phase2_hypotheses_table_unchanged": true,
+   "tested_in_phase3a": []
+  },
+  "phase2_rule_freeze": {
+   "acquisition_incomplete_treatment": "non-replayable archives are reported and excluded from rules 3-5; rule 1 blocks if none is replayable",
+   "current_rule_sha256": "768d1b0c898ce310073a97e4bda6306d912cb22c32bc2589cd3fa1b576ba6188",
+   "frozen_commit": "08635fe3c88a2c2705011be20a514c4ccc1b40a8",
+   "frozen_rule_sha256": "768d1b0c898ce310073a97e4bda6306d912cb22c32bc2589cd3fa1b576ba6188",
+   "identical_to_frozen": true,
+   "missing_evidence_treatment": "a capability absent from the dataset scores OK share 0.0; an archive without live polls is not replayable and cannot satisfy rules 3-6",
+   "newest_archive": "gt-sol-20260930c",
+   "newest_archive_commit": "9ed0a3cc400464c79f213cdea182127a3ff3d895"
+  },
+  "strategy_logic_added": false,
+  "test_changes_explained": {
+   "intel/tests/test_phase2_evidence.py": "the frozen Phase 2 status rendering now lives in docs/PHASE2_SYSTEM_STATUS.md because docs/SYSTEM_STATUS.md is the living Phase 3A status; same assertion, new path",
+   "intel/tests/test_phase2_replay.py": "schema version check expects one row per migration file instead of the literal 2, since migration 0003 exists",
+   "intel/tests/test_transport.py": "two tests added (POST, attempt log); none changed"
+  }
+ },
+ "tests": {
+  "errors": 0,
+  "exit_code": 0,
+  "failed": 0,
+  "passed": 254,
+  "skipped": 0,
+  "summary_line": "254 passed"
+ },
+ "traceability": {
+  "checked": [
+   "docs/PHASE3A_REPORT.md",
+   "docs/SYSTEM_STATUS.md"
+  ],
+  "untraceable": [],
+  "untraceable_count": 0
+ }
+}
