@@ -4,7 +4,7 @@ Generated from `artifacts/phase3a/PHASE3A_EVIDENCE.json` by `intel/autopsyx/rese
 
 ## PHASE 3A STATUS
 
-* Commit: `c320848559ce87614e2adc3b9f65291408d12918`
+* Commit: `32624c0f5265aaed751bcc11c2c84497593d6364`
 * Branch: `ccr-dea9382c-vwhvi6`
 * Working tree: clean for intel/autopsyx, intel/config, intel/migrations
 * Tests: Passed 265, Failed 0, Skipped 0
@@ -71,6 +71,7 @@ Rule: an archive enters the evidence only if data.provenance.verify() returns ve
 | gt-sol-20260930a | included | normalize_stdout.json (Phase 2 runner normalization) | phase2_records only (archive predates Phase 3A runner sealing) | fb7d3607fbd91c34df16fad4b77ce27119a369b6fc5740f94d45dbeb186b2d42 | fb7d3607fbd91c34df16fad4b77ce27119a369b6fc5740f94d45dbeb186b2d42 | not recorded | ad59f1cd7eea33df1b8fba9d5b58305826ad9b5087a55f351c9a4fbe4cdae35a | yes | n/a | yes |
 | gt-sol-20260930b | included | normalize_stdout.json (Phase 2 runner normalization) | phase2_records only (archive predates Phase 3A runner sealing) | 031917e87897293846524c7f2977134f0e723a65d3220cf98f175eb8f15d9f36 | 031917e87897293846524c7f2977134f0e723a65d3220cf98f175eb8f15d9f36 | not recorded | 0687e2b8bd58addb879fc33cb6518b3495127f74e4c3a16290b5bd7dafa68206 | yes | n/a | yes |
 | gt-sol-20260930c | included | normalize_stdout.json (Phase 2 runner normalization) | phase2_records only (archive predates Phase 3A runner sealing) | 1ebe77ec9ec2e9b6f06da26cbcce17721db4504f6029baf610931f5489e71d14 | 1ebe77ec9ec2e9b6f06da26cbcce17721db4504f6029baf610931f5489e71d14 | not recorded | 35e114f1d5ee5f6b2f067df76f9329ff3b7d644f3470d15e2bb7b7b7dfbfeefd | yes | n/a | yes |
+| p3a-sol-20261001d | AUDIT / REFERENCE ONLY — PROVENANCE HASH UNAVAILABLE | none | no runner dataset hash recorded | none | e085fa92672800cb3f74e0a5a2b624e81312886099dfc742a3376a65ff4bdc42 | none | 9f24fd4bb2a23971ce17ed9497c04ca72740f1ac72c4ec742a49d96191462c74 | yes | n/a | NO |
 
 ## Per-archive funnel
 

@@ -4,7 +4,7 @@ Living status of the AUTOPSY X intelligence system, generated from `artifacts/ph
 
 ## Current phase: 3A (data-coverage hardening)
 
-* Commit: `c320848559ce87614e2adc3b9f65291408d12918`
+* Commit: `32624c0f5265aaed751bcc11c2c84497593d6364`
 * Branch: `ccr-dea9382c-vwhvi6`
 * Working tree: clean for intel/autopsyx, intel/config, intel/migrations
 * Tests: Passed 265, Failed 0, Skipped 0

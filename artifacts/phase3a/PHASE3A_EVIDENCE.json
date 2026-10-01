@@ -265,7 +265,7 @@
      "duplicate_token_steps": 0,
      "entries": 120,
      "hash_mismatches": 0,
-     "head_hash": "acc8979877e71a5b7fd1cc53dd2c10f03ecabef8144b6e55d958b44daa832a6d"
+     "head_hash": "6c31a0cebef32e259b60e985bf36c8df5daeb6f8c8436cacae62f2bb936dc8ec"
     },
     "passed": true,
     "postgres_phase2": {
@@ -381,12 +381,12 @@
     "replayable": true,
     "replays": [
      {
-      "journal_sha256": "68d4bd14fbe110caa1253400239bc59f3ebe0ab4ab2b51f4e220af968bbf3e79",
-      "records_sha256": "be5cbf472e522cf2b8c9a493fee163757d761fc5f94317b64697601a609d2ff9"
+      "journal_sha256": "eb5197c4126aea281200ff93e24c0a1438381d675c5f3938a44676b301d4362f",
+      "records_sha256": "e70f59cd7fe197c86f0ab7391593b5c7f3cbc2512a59c382a8768a2452dcb2b5"
      },
      {
-      "journal_sha256": "68d4bd14fbe110caa1253400239bc59f3ebe0ab4ab2b51f4e220af968bbf3e79",
-      "records_sha256": "be5cbf472e522cf2b8c9a493fee163757d761fc5f94317b64697601a609d2ff9"
+      "journal_sha256": "eb5197c4126aea281200ff93e24c0a1438381d675c5f3938a44676b301d4362f",
+      "records_sha256": "e70f59cd7fe197c86f0ab7391593b5c7f3cbc2512a59c382a8768a2452dcb2b5"
      }
     ],
     "window_ms": [
@@ -941,7 +941,7 @@
      "duplicate_token_steps": 0,
      "entries": 50,
      "hash_mismatches": 0,
-     "head_hash": "ab886aafcb9e4040b47b0f103f47505556fe4d1debed212a3fbb389873d08c6e"
+     "head_hash": "fc1ab768d60853337fe2a4dc258271091ca6149928e646b1a9871334429de693"
     },
     "passed": true,
     "postgres_phase2": {
@@ -1056,12 +1056,12 @@
     "replayable": true,
     "replays": [
      {
-      "journal_sha256": "e70d0d54bbd5603bb342a93a5ee8d8417e0835487c792e0f0ea465aa1b04d15b",
-      "records_sha256": "c396d96f2f19cdee90ce8f1515eacbfd5f85d4c4b3dfd86f03cecb6c3848a35f"
+      "journal_sha256": "4e6d849e90e84fa0b975079ced61ae3028a03d8b73dda2b3c0f6b6eae6a70722",
+      "records_sha256": "ad9dadbb18206b43577852b636d2aedc4a93906cea45980ed19ae6dcb0364aa4"
      },
      {
-      "journal_sha256": "e70d0d54bbd5603bb342a93a5ee8d8417e0835487c792e0f0ea465aa1b04d15b",
-      "records_sha256": "c396d96f2f19cdee90ce8f1515eacbfd5f85d4c4b3dfd86f03cecb6c3848a35f"
+      "journal_sha256": "4e6d849e90e84fa0b975079ced61ae3028a03d8b73dda2b3c0f6b6eae6a70722",
+      "records_sha256": "ad9dadbb18206b43577852b636d2aedc4a93906cea45980ed19ae6dcb0364aa4"
      }
     ],
     "window_ms": [
@@ -1528,7 +1528,34 @@
   }
  },
  "inclusion": {
-  "excluded": [],
+  "excluded": [
+   {
+    "archive": "p3a-sol-20261001d",
+    "family": "phase3a",
+    "label": "AUDIT / REFERENCE ONLY \u2014 PROVENANCE HASH UNAVAILABLE",
+    "reason": "provenance not verifiable: no runner dataset hash recorded",
+    "verification": {
+     "acquisition_status": "COMPLETE",
+     "archive": "p3a-sol-20261001d",
+     "committed_canonical": {
+      "phase2_records": null,
+      "phase3a_observations": null
+     },
+     "rebuild_1": {
+      "phase2_records": "e085fa92672800cb3f74e0a5a2b624e81312886099dfc742a3376a65ff4bdc42",
+      "phase3a_observations": "9f24fd4bb2a23971ce17ed9497c04ca72740f1ac72c4ec742a49d96191462c74"
+     },
+     "rebuild_2": {
+      "phase2_records": "e085fa92672800cb3f74e0a5a2b624e81312886099dfc742a3376a65ff4bdc42",
+      "phase3a_observations": "9f24fd4bb2a23971ce17ed9497c04ca72740f1ac72c4ec742a49d96191462c74"
+     },
+     "reproducible": true,
+     "scope": "no runner dataset hash recorded",
+     "source": "none",
+     "verified": false
+    }
+   }
+  ],
   "included": [
    "gt-sol-20260930a",
    "gt-sol-20260930b",
@@ -1658,9 +1685,9 @@
  },
  "repository": {
   "branch": "ccr-dea9382c-vwhvi6",
-  "code_version": "c320848559ce87614e2adc3b9f65291408d12918",
-  "head": "c320848559ce87614e2adc3b9f65291408d12918",
-  "log": "c320848 verify: provenance inclusion, funnel, baseline comparison, finalization checks\n0d399dd data: acquire archive D with verified provenance\n33c315d test: add archive hash provenance regression coverage\nbc612b7 fix: restore runner canonical dataset hashing\n38a6cc2 phase3a: request archive D acquisition\n8df2918 phase3a: add verification artifacts\ncc21316 phase3a: keep evidence test free of self-reference\nbd8fa53 phase3a: add evidence verifier and renderers\ne232490 phase3a: add readiness gate\ne745865 phase3a: add coverage matrix\na935943 phase3a: add observation storage migration\nb9ecae4 phase3a: add frozen universe and chained runs\nc7a04ec phase3a: add provider freshness telemetry\nb3a4406 phase3a: add news and social provenance\n861aa43 phase3a: harden creator and holder state\na278b1f phase3a: add liquidity event coverage\n97d2247 phase3a: add funding transfer adapter\nf0eb011 phase3a: add POST transport and per-attempt telemetry\n85a06df phase3a: add observation contract",
+  "code_version": "32624c0f5265aaed751bcc11c2c84497593d6364",
+  "head": "32624c0f5265aaed751bcc11c2c84497593d6364",
+  "log": "32624c0 verify: label the unhashed original archive D as audit/reference only\n39671d3 Phase 3A raw archive: p3a-sol-20261001d (acquired by workflow run 36825161881)\ne95ceb1 verify: interim phase 3a evidence, archive D pending\nc320848 verify: provenance inclusion, funnel, baseline comparison, finalization checks\n0d399dd data: acquire archive D with verified provenance\n33c315d test: add archive hash provenance regression coverage\nbc612b7 fix: restore runner canonical dataset hashing\n38a6cc2 phase3a: request archive D acquisition\n8df2918 phase3a: add verification artifacts\ncc21316 phase3a: keep evidence test free of self-reference\nbd8fa53 phase3a: add evidence verifier and renderers\ne232490 phase3a: add readiness gate\ne745865 phase3a: add coverage matrix\na935943 phase3a: add observation storage migration\nb9ecae4 phase3a: add frozen universe and chained runs\nc7a04ec phase3a: add provider freshness telemetry\nb3a4406 phase3a: add news and social provenance\n861aa43 phase3a: harden creator and holder state\na278b1f phase3a: add liquidity event coverage\n97d2247 phase3a: add funding transfer adapter\nf0eb011 phase3a: add POST transport and per-attempt telemetry\n85a06df phase3a: add observation contract",
   "phase2_baseline": "30fe09470872d9962c5893c9add84329579e403b"
  },
  "schema": "phase3a.evidence.1",
