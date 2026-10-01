@@ -66,7 +66,9 @@ def test_evidence_covers_every_archive_on_disk(ev):
 
 @needs_evidence
 def test_integrity_and_scope(ev):
-    assert all(ev["integrity"].values()), ev["integrity"]
+    # tests_green is excluded: it records the suite run that produced this file, which
+    # includes this test; asserting it here would make generation self-referential.
+    assert all(x for k, x in ev["integrity"].items() if k != "tests_green"), ev["integrity"]
     assert ev["scope"]["hypotheses"]["tested_in_phase3a"] == []
     assert set(ev["scope"]["existing_tests_changed"]) <= set(v.TEST_CHANGES_EXPLAINED)
     assert not ev["repository"]["code_version"].endswith("-dirty")
