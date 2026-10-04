@@ -1,0 +1,482 @@
+{
+ "configuration_hash": "417bd32cce8fb72c",
+ "contract_hash": "a317239dfc492486657b55f8980c463559de37edef95af21b5247420a4aee527",
+ "contract_version": "3b.1",
+ "data_audit": {
+  "archives": {
+   "gt-sol-20260930a": {
+    "duplicates_and_staleness": {
+     "phase2_coverage_gap_count": 3,
+     "phase2_duplicate_swaps": 26176,
+     "phase3a_duplicate_observations": 156,
+     "phase3a_observation_states": {
+      "creator_state|ERROR": 16,
+      "creator_state|OBSERVED": 26,
+      "holder_state|ERROR": 16,
+      "holder_state|NOT_OBSERVED": 3,
+      "holder_state|OBSERVED": 23,
+      "liquidity_event|OBSERVED": 100
+     }
+    },
+    "observation_count": 98,
+    "observation_states": {
+     "creator_state|ERROR": 16,
+     "creator_state|OBSERVED": 26,
+     "holder_state|ERROR": 16,
+     "holder_state|NOT_OBSERVED": 3,
+     "holder_state|OBSERVED": 23,
+     "liquidity_event|OBSERVED": 14
+    },
+    "provenance": {
+     "scope": "phase2_records only (archive predates Phase 3A runner sealing)",
+     "source": "normalize_stdout.json (Phase 2 runner normalization)",
+     "verified": true
+    },
+    "timestamp_coverage_ms": {
+     "max": 1790758406375,
+     "min": 1746886998000
+    },
+    "tokens_with_any_observation": 12
+   },
+   "gt-sol-20260930b": {
+    "duplicates_and_staleness": {
+     "phase2_coverage_gap_count": 0,
+     "phase2_duplicate_swaps": 0,
+     "phase3a_duplicate_observations": 3,
+     "phase3a_observation_states": {
+      "creator_state|OBSERVED": 4,
+      "holder_state|NOT_OBSERVED": 3,
+      "holder_state|OBSERVED": 1,
+      "liquidity_event|OBSERVED": 97
+     }
+    },
+    "observation_count": 16,
+    "observation_states": {
+     "creator_state|OBSERVED": 4,
+     "holder_state|NOT_OBSERVED": 3,
+     "holder_state|OBSERVED": 1,
+     "liquidity_event|OBSERVED": 8
+    },
+    "provenance": {
+     "scope": "phase2_records only (archive predates Phase 3A runner sealing)",
+     "source": "normalize_stdout.json (Phase 2 runner normalization)",
+     "verified": true
+    },
+    "timestamp_coverage_ms": {
+     "max": 1790759085174,
+     "min": 1790381215000
+    },
+    "tokens_with_any_observation": 8
+   },
+   "gt-sol-20260930c": {
+    "duplicates_and_staleness": {
+     "phase2_coverage_gap_count": 0,
+     "phase2_duplicate_swaps": 12209,
+     "phase3a_duplicate_observations": 81,
+     "phase3a_observation_states": {
+      "creator_state|NOT_OBSERVED": 4,
+      "creator_state|OBSERVED": 17,
+      "holder_state|NOT_OBSERVED": 5,
+      "holder_state|OBSERVED": 16,
+      "liquidity_event|OBSERVED": 99
+     }
+    },
+    "observation_count": 47,
+    "observation_states": {
+     "creator_state|NOT_OBSERVED": 4,
+     "creator_state|OBSERVED": 17,
+     "holder_state|NOT_OBSERVED": 5,
+     "holder_state|OBSERVED": 16,
+     "liquidity_event|OBSERVED": 5
+    },
+    "provenance": {
+     "scope": "phase2_records only (archive predates Phase 3A runner sealing)",
+     "source": "normalize_stdout.json (Phase 2 runner normalization)",
+     "verified": true
+    },
+    "timestamp_coverage_ms": {
+     "max": 1790762141754,
+     "min": 1776448919000
+    },
+    "tokens_with_any_observation": 5
+   },
+   "p3a-sol-20261001d2": {
+    "duplicates_and_staleness": {
+     "phase2_coverage_gap_count": 0,
+     "phase2_duplicate_swaps": 8269,
+     "phase3a_duplicate_observations": 354,
+     "phase3a_observation_states": {
+      "creator_state|OBSERVED": 19,
+      "funding_transfer|ERROR": 20,
+      "funding_transfer|NOT_OBSERVED": 76,
+      "funding_transfer|OBSERVED": 266,
+      "holder_state|NOT_OBSERVED": 4,
+      "holder_state|OBSERVED": 15,
+      "liquidity_event|ERROR": 26,
+      "liquidity_event|NOT_OBSERVED": 81,
+      "liquidity_event|OBSERVED": 142,
+      "news|ERROR": 6,
+      "news|NOT_OBSERVED": 2,
+      "social|ERROR": 10
+     }
+    },
+    "observation_count": 572,
+    "observation_states": {
+     "creator_state|OBSERVED": 19,
+     "funding_transfer|ERROR": 20,
+     "funding_transfer|NOT_OBSERVED": 76,
+     "funding_transfer|OBSERVED": 266,
+     "holder_state|NOT_OBSERVED": 4,
+     "holder_state|OBSERVED": 15,
+     "liquidity_event|ERROR": 26,
+     "liquidity_event|NOT_OBSERVED": 81,
+     "liquidity_event|OBSERVED": 47,
+     "news|ERROR": 6,
+     "news|NOT_OBSERVED": 2,
+     "social|ERROR": 10
+    },
+    "provenance": {
+     "scope": "phase2_records and phase3a_observations",
+     "source": "run.json provenance (sealed on runner)",
+     "verified": true
+    },
+    "timestamp_coverage_ms": {
+     "max": 1790844179444,
+     "min": 1785083563000
+    },
+    "tokens_with_any_observation": 5
+   }
+  },
+  "contract_hash": "a317239dfc492486657b55f8980c463559de37edef95af21b5247420a4aee527"
+ },
+ "eligible_archives": [
+  "gt-sol-20260930a",
+  "gt-sol-20260930b",
+  "gt-sol-20260930c",
+  "p3a-sol-20261001d2"
+ ],
+ "excluded_hypotheses": {
+  "H2": "frozen by the standing instruction carried from Phase 2 through Phase 3A: \"do not test or claim H2, H5, H6 or H7\"; Phase 3B does not lift it",
+  "H5": "frozen by the standing instruction carried from Phase 2 through Phase 3A: \"do not test or claim H2, H5, H6 or H7\"; Phase 3B does not lift it",
+  "H6": "frozen by the standing instruction carried from Phase 2 through Phase 3A: \"do not test or claim H2, H5, H6 or H7\"; Phase 3B does not lift it",
+  "H7": "frozen by the standing instruction carried from Phase 2 through Phase 3A: \"do not test or claim H2, H5, H6 or H7\"; Phase 3B does not lift it"
+ },
+ "hypotheses": [
+  {
+   "classification": "INSUFFICIENT EVIDENCE",
+   "engine_field_ok_n": 220,
+   "engine_field_ok_share": 0.0,
+   "engine_fields": [
+    "unique_buyers",
+    "independence_ratio"
+   ],
+   "feature": "funding_transfer",
+   "feature_kind": "binary_observed",
+   "horizon_steps": 3,
+   "hypothesis_id": "H1",
+   "meets_minimum_sample": false,
+   "min_sample_required": 85,
+   "n_distinct_tokens": 5,
+   "n_rows_joined": 35,
+   "reason": "n_tokens=5 (n_rows=35 before collapsing non-independent within-token repeats) < MIN_SAMPLE=85 (80% power to detect r>=0.3); statistics above are exploratory and non-confirmatory per the contract's pre-registered gate",
+   "targets": {
+    "y_classified": {
+     "n": 35,
+     "pearson_r": 0.25,
+     "permutation_null_mean": 0.004375,
+     "permutation_null_std": 0.49668864429842086,
+     "permutation_p": 1.0,
+     "permutation_p_fdr": 1.0,
+     "spearman_r": 0.25,
+     "undefined_reason": null
+    },
+    "y_direction": {
+     "n": 35,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    }
+   },
+   "tests_run": [
+    "pearson",
+    "spearman",
+    "block_permutation"
+   ]
+  },
+  {
+   "classification": "INSUFFICIENT EVIDENCE",
+   "engine_field_ok_n": 220,
+   "engine_field_ok_share": 0.0,
+   "engine_fields": [
+    "social_mentions",
+    "independence_ratio"
+   ],
+   "feature": "social",
+   "feature_kind": "binary_observed",
+   "horizon_steps": 3,
+   "hypothesis_id": "H3",
+   "meets_minimum_sample": false,
+   "min_sample_required": 85,
+   "n_distinct_tokens": 5,
+   "n_rows_joined": 35,
+   "reason": "n_tokens=5 (n_rows=35 before collapsing non-independent within-token repeats) < MIN_SAMPLE=85 (80% power to detect r>=0.3); statistics above are exploratory and non-confirmatory per the contract's pre-registered gate",
+   "targets": {
+    "y_classified": {
+     "n": 35,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    },
+    "y_direction": {
+     "n": 35,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    }
+   },
+   "tests_run": [
+    "pearson",
+    "spearman",
+    "block_permutation"
+   ]
+  },
+  {
+   "classification": "INSUFFICIENT EVIDENCE",
+   "engine_field_ok_n": 220,
+   "engine_field_ok_share": 0.0,
+   "engine_fields": [
+    "social_mentions",
+    "buyer_growth"
+   ],
+   "feature": "social",
+   "feature_kind": "binary_observed",
+   "horizon_steps": 3,
+   "hypothesis_id": "H4",
+   "meets_minimum_sample": false,
+   "min_sample_required": 85,
+   "n_distinct_tokens": 5,
+   "n_rows_joined": 35,
+   "reason": "n_tokens=5 (n_rows=35 before collapsing non-independent within-token repeats) < MIN_SAMPLE=85 (80% power to detect r>=0.3); statistics above are exploratory and non-confirmatory per the contract's pre-registered gate",
+   "targets": {
+    "y_classified": {
+     "n": 35,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    },
+    "y_direction": {
+     "n": 35,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    }
+   },
+   "tests_run": [
+    "pearson",
+    "spearman",
+    "block_permutation"
+   ]
+  },
+  {
+   "classification": "INSUFFICIENT EVIDENCE",
+   "engine_field_ok_n": 0,
+   "engine_field_ok_share": 0.0,
+   "engine_fields": [],
+   "feature": "news",
+   "feature_kind": "binary_observed",
+   "horizon_steps": 3,
+   "hypothesis_id": "H8",
+   "meets_minimum_sample": false,
+   "min_sample_required": 85,
+   "n_distinct_tokens": 4,
+   "n_rows_joined": 28,
+   "reason": "n_tokens=4 (n_rows=28 before collapsing non-independent within-token repeats) < MIN_SAMPLE=85 (80% power to detect r>=0.3); statistics above are exploratory and non-confirmatory per the contract's pre-registered gate",
+   "targets": {
+    "y_classified": {
+     "n": 28,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    },
+    "y_direction": {
+     "n": 28,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    }
+   },
+   "tests_run": [
+    "pearson",
+    "spearman",
+    "block_permutation"
+   ]
+  },
+  {
+   "classification": "INSUFFICIENT EVIDENCE",
+   "engine_field_ok_n": 220,
+   "engine_field_ok_share": 0.0,
+   "engine_fields": [
+    "cross_venue"
+   ],
+   "feature": "liquidity_event",
+   "feature_kind": "binary_observed",
+   "horizon_steps": 3,
+   "hypothesis_id": "H9",
+   "meets_minimum_sample": false,
+   "min_sample_required": 85,
+   "n_distinct_tokens": 22,
+   "n_rows_joined": 154,
+   "reason": "n_tokens=22 (n_rows=154 before collapsing non-independent within-token repeats) < MIN_SAMPLE=85 (80% power to detect r>=0.3); statistics above are exploratory and non-confirmatory per the contract's pre-registered gate",
+   "targets": {
+    "y_classified": {
+     "n": 154,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    },
+    "y_direction": {
+     "n": 154,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    }
+   },
+   "tests_run": [
+    "pearson",
+    "spearman",
+    "block_permutation"
+   ]
+  },
+  {
+   "classification": "INSUFFICIENT EVIDENCE",
+   "engine_field_ok_n": 220,
+   "engine_field_ok_share": 0.0,
+   "engine_fields": [
+    "price_z_driving",
+    "unique_buyers",
+    "social_mentions",
+    "creator_pct"
+   ],
+   "feature": "creator_state",
+   "feature_kind": "creator_pct",
+   "horizon_steps": 3,
+   "hypothesis_id": "H10",
+   "meets_minimum_sample": false,
+   "min_sample_required": 85,
+   "n_distinct_tokens": 21,
+   "n_rows_joined": 109,
+   "reason": "n_tokens=21 (n_rows=109 before collapsing non-independent within-token repeats) < MIN_SAMPLE=85 (80% power to detect r>=0.3); statistics above are exploratory and non-confirmatory per the contract's pre-registered gate",
+   "targets": {
+    "y_classified": {
+     "adversarial": {
+      "nuisance_x_step_index_spearman": 0.19750109992936649,
+      "nuisance_y_step_index_spearman": 0.051320260741905085,
+      "partial_spearman_controlling_step_index": 0.6562630396915086,
+      "raw_spearman": 0.6526244565071688
+     },
+     "n": 109,
+     "pearson_r": 0.47365892211102945,
+     "permutation_null_mean": 0.003465812378162581,
+     "permutation_null_std": 0.16539931661896223,
+     "permutation_p": 0.00024993751562109475,
+     "permutation_p_fdr": 0.0007498125468632842,
+     "robustness": {
+      "spearman_winsorized": 0.6633692210471116
+     },
+     "spearman_r": 0.6526244565071688,
+     "temporal_stability": {
+      "early": {
+       "n": 54,
+       "spearman": 0.5940469520612661
+      },
+      "late": {
+       "n": 55,
+       "spearman": 0.722889648870728
+      }
+     },
+     "undefined_reason": null
+    },
+    "y_direction": {
+     "adversarial": {
+      "nuisance_x_step_index_spearman": 0.19750109992936649,
+      "nuisance_y_step_index_spearman": -0.20735796759762487,
+      "partial_spearman_controlling_step_index": -0.058821297315764076,
+      "raw_spearman": -0.0973628107342423
+     },
+     "n": 109,
+     "pearson_r": -0.06879797113790947,
+     "permutation_null_mean": 0.0029762041008535352,
+     "permutation_null_std": 0.15767177874670665,
+     "permutation_p": 0.9380154961259685,
+     "permutation_p_fdr": 1.0,
+     "robustness": {
+      "spearman_winsorized": null
+     },
+     "spearman_r": -0.0973628107342423,
+     "temporal_stability": {
+      "early": {
+       "n": 54,
+       "spearman": -0.1196098047720791
+      },
+      "late": {
+       "n": 55,
+       "spearman": -0.07418318309487704
+      }
+     },
+     "undefined_reason": null
+    }
+   },
+   "tests_run": [
+    "pearson",
+    "spearman",
+    "block_permutation"
+   ]
+  }
+ ],
+ "overall_classification": {
+  "by_classification": {
+   "INSUFFICIENT EVIDENCE": 6
+  },
+  "hypotheses_tested": 6,
+  "result": "INSUFFICIENT EVIDENCE",
+  "statement": "NO REPRODUCIBLE INCREMENTAL INFORMATION ESTABLISHED"
+ },
+ "repository_commit": "617355f874d949431eb93d8ac2d3ecc7b6479aa3",
+ "schema": "phase3b.evidence.1"
+}
