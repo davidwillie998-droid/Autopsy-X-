@@ -49,10 +49,18 @@ def eligible_archives() -> tuple[list[Path], list[dict]]:
     return included, excluded
 
 
+def _acquisition_start(d: Path) -> int:
+    meta = RawStore(d).read_json("run.json") or {}
+    return meta.get("started_ms") or 0
+
+
 def token_overlap_across_archives(archives: list[Path]) -> dict:
     """Contamination check: the same token address must not appear in two
     different archives' universes (each archive's own live-poll window should
-    have been independent in time)."""
+    have been independent in time). Two acquisition windows requested close
+    together can legitimately rediscover the same still-live pool from
+    GeckoTerminal's listings; when that happens it is reported here, never
+    silently merged."""
     from . import phase3a_coverage as cov
     by_archive = {}
     for d in archives:
@@ -68,3 +76,29 @@ def token_overlap_across_archives(archives: list[Path]) -> dict:
                 overlaps.append({"archives": [names[i], names[j]], "shared_tokens": sorted(shared)})
     return {"per_archive_token_count": {k: len(v) for k, v in by_archive.items()}, "overlaps": overlaps,
            "contamination_free": not overlaps}
+
+
+def deduplicate_rows_across_archives(rows: list[dict], archives: list[Path]) -> tuple[list[dict], dict]:
+    """When the bare token address behind ``row['token']`` was acquired by more
+    than one archive (contamination), keep only the rows from whichever
+    archive started acquisition first for that token, dropping the rest.
+    Deterministic (by ``run.json["started_ms"]``, ties broken by archive name)
+    and decided by acquisition time alone, never by which archive's rows look
+    more favorable."""
+    start_by_archive = {d.name: _acquisition_start(d) for d in archives}
+    bare = lambda tok: tok.split(":", 1)[1] if ":" in tok else tok
+    archives_by_bare: dict[str, set[str]] = {}
+    for r in rows:
+        archives_by_bare.setdefault(bare(r["token"]), set()).add(r["archive"])
+    keep_archive = {}
+    dropped = []
+    for b, archs in archives_by_bare.items():
+        if len(archs) <= 1:
+            continue
+        winner = min(archs, key=lambda a: (start_by_archive.get(a, 0), a))
+        keep_archive[b] = winner
+        dropped.append({"token": b, "kept_archive": winner, "dropped_archives": sorted(archs - {winner})})
+    if not dropped:
+        return rows, {"dropped": [], "rows_dropped": 0}
+    kept_rows = [r for r in rows if bare(r["token"]) not in keep_archive or r["archive"] == keep_archive[bare(r["token"])]]
+    return kept_rows, {"dropped": dropped, "rows_dropped": len(rows) - len(kept_rows)}

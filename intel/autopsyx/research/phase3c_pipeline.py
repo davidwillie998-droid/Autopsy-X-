@@ -147,6 +147,12 @@ def run(work: Path) -> dict:
     audit = p3b.data_audit(included)
     all_journal = {d.name: d3b.journal_rows(d, cfg, work, code_version) for d in included}
     rows_by_h = p3b.build_rows(included, cfg, work, code_version, all_journal=all_journal)
+    dedup_report = {}
+    if not contamination["contamination_free"]:
+        for hid in list(rows_by_h):
+            rows_by_h[hid], rep = d3c.deduplicate_rows_across_archives(rows_by_h[hid], included)
+            if rep["dropped"]:
+                dedup_report[hid] = rep
 
     results = []
     raw_pvals, raw_idx = [], []
@@ -194,7 +200,7 @@ def run(work: Path) -> dict:
         "phase3a_commit": "617355f874d949431eb93d8ac2d3ecc7b6479aa3", "phase3b_commit": "f21f3bc2e18ab64d2b92e203c4202144eabf7eac",
         "contract_hash": contract.contract_hash(), "contract_version": contract.CONTRACT_VERSION,
         "included_archives": archive_names, "new_archives_excluded": excluded_new, "contamination": contamination,
-        "data_audit": audit, "hypotheses": results, "overall_classification": overall,
+        "deduplication": dedup_report, "data_audit": audit, "hypotheses": results, "overall_classification": overall,
         "min_sample": MIN_SAMPLE, "horizon_steps": contract.HORIZON_STEPS,
     }
 

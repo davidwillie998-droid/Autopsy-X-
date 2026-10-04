@@ -202,3 +202,31 @@ def test_h10_replication_audit_collapses_deterministically():
            {"archive": "a", "token": "t1", "step_index": 1, "x": 0.5, "y_classified": 0.0, "y_direction": -1.0}]
     out = p3c.h10_replication_audit(rows, ["a"])
     assert out["n_tokens_collapsed"] == 1  # one token -> one collapsed row, deterministically the earliest step
+
+
+# ------------------------------------------------------- contamination dedup ----
+def test_deduplicate_rows_keeps_earliest_acquired_archive(tmp_path, monkeypatch):
+    """Synthetic contamination: the same bare token address acquired by two
+    archives must contribute rows from only the earlier one."""
+    class FakeDir:
+        def __init__(self, name):
+            self.name = name
+
+    monkeypatch.setattr(d3c, "_acquisition_start", lambda d: {"early": 100, "late": 200}[d.name])
+    rows = [{"archive": "early", "token": "solana:TOK", "x": 1.0},
+           {"archive": "late", "token": "solana:TOK", "x": 2.0},
+           {"archive": "early", "token": "solana:OTHER", "x": 3.0}]
+    kept, report = d3c.deduplicate_rows_across_archives(rows, [FakeDir("early"), FakeDir("late")])
+    assert len(kept) == 2 and all(r["archive"] != "late" or r["token"] != "solana:TOK" for r in kept)
+    assert report["dropped"] == [{"token": "TOK", "kept_archive": "early", "dropped_archives": ["late"]}]
+    assert report["rows_dropped"] == 1
+
+
+def test_deduplicate_rows_no_op_without_overlap(tmp_path, monkeypatch):
+    class FakeDir:
+        def __init__(self, name):
+            self.name = name
+    monkeypatch.setattr(d3c, "_acquisition_start", lambda d: 0)
+    rows = [{"archive": "a", "token": "solana:X", "x": 1.0}, {"archive": "b", "token": "solana:Y", "x": 2.0}]
+    kept, report = d3c.deduplicate_rows_across_archives(rows, [FakeDir("a"), FakeDir("b")])
+    assert kept == rows and report["rows_dropped"] == 0

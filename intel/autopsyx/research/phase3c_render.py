@@ -37,6 +37,12 @@ def render_data_audit(out: dict) -> str:
         L += ["", "Overlaps found (contamination):", ""]
         for ov in out["contamination"]["overlaps"]:
             L.append(f"* {ov['archives']}: {ov['shared_tokens']}")
+        L += ["", "Resolution: deterministic deduplication by acquisition start time (`run.json[\"started_ms\"]`) "
+             "-- a token present in more than one archive contributes rows from only the earliest-acquired "
+             "archive; the rest are dropped before any statistic is computed.", ""]
+        if out.get("deduplication"):
+            for hid, rep in out["deduplication"].items():
+                L.append(f"* {hid}: {rep['rows_dropped']} rows dropped -- {rep['dropped']}")
     L += ["", "## Per-archive observation coverage", ""]
     for arch, a in out["data_audit"]["archives"].items():
         L += [f"### {arch}", "",
