@@ -1,0 +1,22 @@
+{
+  "run_id": "p3c-sol-20261004e",
+  "network": "solana",
+  "seed": 20261004,
+  "strata": {"young": 8, "quiet_young": 4, "trending": 5, "established": 5},
+  "new_pool_pages": 4,
+  "backfill_pages": 2,
+  "duration_s": 3000,
+  "cycle_s": 60,
+  "poll_ohlcv_limit": 5,
+  "ohlcv_every": 1,
+  "holders_per_cycle": 2,
+  "lag_ms": 60000,
+  "gt_rate_per_s": 0.2,
+  "gt_min_rate_per_s": 0.03,
+  "circuit_waits": 5,
+  "phase3a": true,
+  "rpc_rate_per_s": 2.0,
+  "rpc_page_limit": 100,
+  "rpc_max_pages": 2,
+  "rpc_max_txs": 30
+}
