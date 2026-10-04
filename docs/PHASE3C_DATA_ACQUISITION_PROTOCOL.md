@@ -143,6 +143,20 @@ sha256, via the same two canonical-dataset hashes Phase 3A already defines
 (unchanged) and a new Phase 3C statistical-protocol hash (frozen alongside
 this document).
 
+## Acquisition log (appended as archives land; not predictions, not edited retroactively)
+
+* **Archive E** (`p3c-sol-20261004e`, 22-token universe, `rpc_max_pages=2`, `rpc_max_txs=30`): completed
+  (`run.json["status"] == "COMPLETE"`), provenance verified exactly (runner hash = rebuild 1 = rebuild 2 =
+  committed canonical hash). However `cycles == 0`: the Phase 3A-plan enrichment pass for 22 tokens
+  (funding/liquidity/news/social collection, run once before the price-polling loop) took longer than
+  `duration_s`, so the loop's own elapsed-time check exited before a single price-polling cycle ran. The
+  archive therefore has rich observation-layer data (2974 observations across 22 tokens) but no live-poll
+  replay window, exactly like Phase 3A's archive B, and contributes zero journal/assessment rows. This is an
+  acquisition-*parameter* problem (enrichment cost scales with token count and RPC page/tx budget), not a
+  methodology change; the frozen acquisition code is unchanged. Archive F reduces `rpc_max_pages` and
+  `rpc_max_txs` and the universe size specifically to keep enrichment well inside the duration budget, decided
+  before archive F's own acquisition started and before any archive F result exists.
+
 ## Failure conditions
 
 If a requested archive's `run.json` does not report COMPLETE, or its

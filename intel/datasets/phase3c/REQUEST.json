@@ -1,9 +1,9 @@
 {
-  "run_id": "p3c-sol-20261004e",
+  "run_id": "p3c-sol-20261004f",
   "network": "solana",
-  "seed": 20261004,
-  "strata": {"young": 8, "quiet_young": 4, "trending": 5, "established": 5},
-  "new_pool_pages": 4,
+  "seed": 20261005,
+  "strata": {"young": 5, "quiet_young": 3, "trending": 3, "established": 3},
+  "new_pool_pages": 3,
   "backfill_pages": 2,
   "duration_s": 3000,
   "cycle_s": 60,
@@ -17,6 +17,6 @@
   "phase3a": true,
   "rpc_rate_per_s": 2.0,
   "rpc_page_limit": 100,
-  "rpc_max_pages": 2,
-  "rpc_max_txs": 30
+  "rpc_max_pages": 1,
+  "rpc_max_txs": 8
 }
