@@ -1,0 +1,918 @@
+{
+ "configuration_hash": "417bd32cce8fb72c",
+ "contamination": {
+  "contamination_free": false,
+  "overlaps": [
+   {
+    "archives": [
+     "p3c-sol-20261004e",
+     "p3c-sol-20261004f"
+    ],
+    "shared_tokens": [
+     "4mpyrARsWyLWncvKtHf9aoddnfv24QmVBtUFU4ic5wUp",
+     "7VertkgF9KLhxxJXHX6uaWuoYZTP9LdGj2bWmVXVpump"
+    ]
+   }
+  ],
+  "per_archive_token_count": {
+   "gt-sol-20260930a": 12,
+   "gt-sol-20260930b": 8,
+   "gt-sol-20260930c": 5,
+   "p3a-sol-20261001d2": 5,
+   "p3c-sol-20261004e": 22,
+   "p3c-sol-20261004f": 14
+  }
+ },
+ "contract_hash": "a317239dfc492486657b55f8980c463559de37edef95af21b5247420a4aee527",
+ "contract_version": "3b.1",
+ "data_audit": {
+  "archives": {
+   "gt-sol-20260930a": {
+    "duplicates_and_staleness": {
+     "phase2_coverage_gap_count": 3,
+     "phase2_duplicate_swaps": 26176,
+     "phase3a_duplicate_observations": 156,
+     "phase3a_observation_states": {
+      "creator_state|ERROR": 16,
+      "creator_state|OBSERVED": 26,
+      "holder_state|ERROR": 16,
+      "holder_state|NOT_OBSERVED": 3,
+      "holder_state|OBSERVED": 23,
+      "liquidity_event|OBSERVED": 100
+     }
+    },
+    "observation_count": 98,
+    "observation_states": {
+     "creator_state|ERROR": 16,
+     "creator_state|OBSERVED": 26,
+     "holder_state|ERROR": 16,
+     "holder_state|NOT_OBSERVED": 3,
+     "holder_state|OBSERVED": 23,
+     "liquidity_event|OBSERVED": 14
+    },
+    "provenance": {
+     "scope": "phase2_records only (archive predates Phase 3A runner sealing)",
+     "source": "normalize_stdout.json (Phase 2 runner normalization)",
+     "verified": true
+    },
+    "timestamp_coverage_ms": {
+     "max": 1790758406375,
+     "min": 1746886998000
+    },
+    "tokens_with_any_observation": 12
+   },
+   "gt-sol-20260930b": {
+    "duplicates_and_staleness": {
+     "phase2_coverage_gap_count": 0,
+     "phase2_duplicate_swaps": 0,
+     "phase3a_duplicate_observations": 3,
+     "phase3a_observation_states": {
+      "creator_state|OBSERVED": 4,
+      "holder_state|NOT_OBSERVED": 3,
+      "holder_state|OBSERVED": 1,
+      "liquidity_event|OBSERVED": 97
+     }
+    },
+    "observation_count": 16,
+    "observation_states": {
+     "creator_state|OBSERVED": 4,
+     "holder_state|NOT_OBSERVED": 3,
+     "holder_state|OBSERVED": 1,
+     "liquidity_event|OBSERVED": 8
+    },
+    "provenance": {
+     "scope": "phase2_records only (archive predates Phase 3A runner sealing)",
+     "source": "normalize_stdout.json (Phase 2 runner normalization)",
+     "verified": true
+    },
+    "timestamp_coverage_ms": {
+     "max": 1790759085174,
+     "min": 1790381215000
+    },
+    "tokens_with_any_observation": 8
+   },
+   "gt-sol-20260930c": {
+    "duplicates_and_staleness": {
+     "phase2_coverage_gap_count": 0,
+     "phase2_duplicate_swaps": 12209,
+     "phase3a_duplicate_observations": 81,
+     "phase3a_observation_states": {
+      "creator_state|NOT_OBSERVED": 4,
+      "creator_state|OBSERVED": 17,
+      "holder_state|NOT_OBSERVED": 5,
+      "holder_state|OBSERVED": 16,
+      "liquidity_event|OBSERVED": 99
+     }
+    },
+    "observation_count": 47,
+    "observation_states": {
+     "creator_state|NOT_OBSERVED": 4,
+     "creator_state|OBSERVED": 17,
+     "holder_state|NOT_OBSERVED": 5,
+     "holder_state|OBSERVED": 16,
+     "liquidity_event|OBSERVED": 5
+    },
+    "provenance": {
+     "scope": "phase2_records only (archive predates Phase 3A runner sealing)",
+     "source": "normalize_stdout.json (Phase 2 runner normalization)",
+     "verified": true
+    },
+    "timestamp_coverage_ms": {
+     "max": 1790762141754,
+     "min": 1776448919000
+    },
+    "tokens_with_any_observation": 5
+   },
+   "p3a-sol-20261001d2": {
+    "duplicates_and_staleness": {
+     "phase2_coverage_gap_count": 0,
+     "phase2_duplicate_swaps": 8269,
+     "phase3a_duplicate_observations": 354,
+     "phase3a_observation_states": {
+      "creator_state|OBSERVED": 19,
+      "funding_transfer|ERROR": 20,
+      "funding_transfer|NOT_OBSERVED": 76,
+      "funding_transfer|OBSERVED": 266,
+      "holder_state|NOT_OBSERVED": 4,
+      "holder_state|OBSERVED": 15,
+      "liquidity_event|ERROR": 26,
+      "liquidity_event|NOT_OBSERVED": 81,
+      "liquidity_event|OBSERVED": 142,
+      "news|ERROR": 6,
+      "news|NOT_OBSERVED": 2,
+      "social|ERROR": 10
+     }
+    },
+    "observation_count": 572,
+    "observation_states": {
+     "creator_state|OBSERVED": 19,
+     "funding_transfer|ERROR": 20,
+     "funding_transfer|NOT_OBSERVED": 76,
+     "funding_transfer|OBSERVED": 266,
+     "holder_state|NOT_OBSERVED": 4,
+     "holder_state|OBSERVED": 15,
+     "liquidity_event|ERROR": 26,
+     "liquidity_event|NOT_OBSERVED": 81,
+     "liquidity_event|OBSERVED": 47,
+     "news|ERROR": 6,
+     "news|NOT_OBSERVED": 2,
+     "social|ERROR": 10
+    },
+    "provenance": {
+     "scope": "phase2_records and phase3a_observations",
+     "source": "run.json provenance (sealed on runner)",
+     "verified": true
+    },
+    "timestamp_coverage_ms": {
+     "max": 1790844179444,
+     "min": 1785083563000
+    },
+    "tokens_with_any_observation": 5
+   },
+   "p3c-sol-20261004e": {
+    "duplicates_and_staleness": {
+     "phase2_coverage_gap_count": 0,
+     "phase2_duplicate_swaps": 0,
+     "phase3a_duplicate_observations": 1878,
+     "phase3a_observation_states": {
+      "creator_state|OBSERVED": 22,
+      "funding_transfer|ERROR": 8,
+      "funding_transfer|NOT_OBSERVED": 278,
+      "funding_transfer|OBSERVED": 1794,
+      "holder_state|NOT_OBSERVED": 11,
+      "holder_state|OBSERVED": 11,
+      "liquidity_event|ERROR": 76,
+      "liquidity_event|NOT_OBSERVED": 395,
+      "liquidity_event|OBSERVED": 291,
+      "news|ERROR": 28,
+      "news|NOT_OBSERVED": 16,
+      "social|ERROR": 44
+     }
+    },
+    "observation_count": 2952,
+    "observation_states": {
+     "creator_state|OBSERVED": 22,
+     "funding_transfer|ERROR": 9,
+     "funding_transfer|NOT_OBSERVED": 289,
+     "funding_transfer|OBSERVED": 1853,
+     "holder_state|NOT_OBSERVED": 11,
+     "holder_state|OBSERVED": 11,
+     "liquidity_event|ERROR": 76,
+     "liquidity_event|NOT_OBSERVED": 395,
+     "liquidity_event|OBSERVED": 198,
+     "news|ERROR": 28,
+     "news|NOT_OBSERVED": 16,
+     "social|ERROR": 44
+    },
+    "provenance": {
+     "scope": "phase2_records and phase3a_observations",
+     "source": "run.json provenance (sealed on runner)",
+     "verified": true
+    },
+    "timestamp_coverage_ms": {
+     "max": 1791113378702,
+     "min": 1789088105000
+    },
+    "tokens_with_any_observation": 22
+   },
+   "p3c-sol-20261004f": {
+    "duplicates_and_staleness": {
+     "phase2_coverage_gap_count": 1,
+     "phase2_duplicate_swaps": 1747,
+     "phase3a_duplicate_observations": 287,
+     "phase3a_observation_states": {
+      "creator_state|OBSERVED": 18,
+      "funding_transfer|ERROR": 3,
+      "funding_transfer|NOT_OBSERVED": 66,
+      "funding_transfer|OBSERVED": 278,
+      "holder_state|ERROR": 1,
+      "holder_state|NOT_OBSERVED": 2,
+      "holder_state|OBSERVED": 15,
+      "liquidity_event|ERROR": 16,
+      "liquidity_event|NOT_OBSERVED": 69,
+      "liquidity_event|OBSERVED": 133,
+      "news|ERROR": 17,
+      "news|NOT_OBSERVED": 11,
+      "social|ERROR": 28
+     }
+    },
+    "observation_count": 580,
+    "observation_states": {
+     "creator_state|OBSERVED": 18,
+     "funding_transfer|ERROR": 3,
+     "funding_transfer|NOT_OBSERVED": 66,
+     "funding_transfer|OBSERVED": 278,
+     "holder_state|ERROR": 1,
+     "holder_state|NOT_OBSERVED": 2,
+     "holder_state|OBSERVED": 15,
+     "liquidity_event|ERROR": 16,
+     "liquidity_event|NOT_OBSERVED": 69,
+     "liquidity_event|OBSERVED": 56,
+     "news|ERROR": 17,
+     "news|NOT_OBSERVED": 11,
+     "social|ERROR": 28
+    },
+    "provenance": {
+     "scope": "phase2_records and phase3a_observations",
+     "source": "run.json provenance (sealed on runner)",
+     "verified": true
+    },
+    "timestamp_coverage_ms": {
+     "max": 1791119014681,
+     "min": 1790894555000
+    },
+    "tokens_with_any_observation": 14
+   }
+  },
+  "contract_hash": "a317239dfc492486657b55f8980c463559de37edef95af21b5247420a4aee527"
+ },
+ "deduplication": {},
+ "horizon_steps": 3,
+ "hypotheses": [
+  {
+   "classification": "INSUFFICIENT EVIDENCE",
+   "engine_field_ok_n": 374,
+   "engine_field_ok_share": 0.0,
+   "engine_fields": [
+    "unique_buyers",
+    "independence_ratio"
+   ],
+   "feature": "funding_transfer",
+   "feature_kind": "binary_observed",
+   "horizon_steps": 3,
+   "hypothesis_id": "H1",
+   "meets_minimum_sample": false,
+   "min_sample_required": 85,
+   "n_distinct_tokens": 19,
+   "n_rows_joined": 147,
+   "oos": {},
+   "per_archive": {
+    "y_classified": {
+     "p3a-sol-20261001d2": {
+      "n_rows": 35,
+      "n_tokens": 5,
+      "permutation_p": 1.0,
+      "spearman": 0.25
+     },
+     "p3c-sol-20261004f": {
+      "n_rows": 112,
+      "n_tokens": 14,
+      "permutation_p": 1.0,
+      "spearman": 0.14484136487558028
+     }
+    },
+    "y_direction": {
+     "p3a-sol-20261001d2": {
+      "n_rows": 35,
+      "n_tokens": 5,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "p3c-sol-20261004f": {
+      "n_rows": 112,
+      "n_tokens": 14,
+      "permutation_p": null,
+      "spearman": null
+     }
+    }
+   },
+   "reason": "n_tokens=19 (n_rows=147) < MIN_SAMPLE=85; the frozen Phase 3B threshold is not relaxed for Phase 3C",
+   "targets": {
+    "y_classified": {
+     "adversarial": {
+      "nuisance_x_step_index_spearman": 0.016817019106718883,
+      "nuisance_y_step_index_spearman": 0.0013865299713704737,
+      "partial_spearman_controlling_step_index": 0.1742666329643155,
+      "raw_spearman": 0.1742651386766548
+     },
+     "n": 147,
+     "pearson_r": 0.17426513867665502,
+     "permutation_null_mean": 0.0012541468528632727,
+     "permutation_null_std": 0.21444031465322744,
+     "permutation_p": 0.8512871782054486,
+     "permutation_p_fdr": 0.8777805548612848,
+     "robustness": {
+      "spearman_winsorized": null
+     },
+     "spearman_r": 0.1742651386766548,
+     "temporal_stability": {
+      "early": {
+       "n": 73,
+       "spearman": 0.1854495467547289
+      },
+      "late": {
+       "n": 74,
+       "spearman": 0.15261692391683992
+      }
+     },
+     "undefined_reason": null
+    },
+    "y_direction": {
+     "n": 147,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    }
+   },
+   "tests_run": [
+    "pearson",
+    "spearman",
+    "block_permutation"
+   ]
+  },
+  {
+   "classification": "INSUFFICIENT EVIDENCE",
+   "engine_field_ok_n": 374,
+   "engine_field_ok_share": 0.0,
+   "engine_fields": [
+    "social_mentions",
+    "independence_ratio"
+   ],
+   "feature": "social",
+   "feature_kind": "binary_observed",
+   "horizon_steps": 3,
+   "hypothesis_id": "H3",
+   "meets_minimum_sample": false,
+   "min_sample_required": 85,
+   "n_distinct_tokens": 19,
+   "n_rows_joined": 147,
+   "oos": {},
+   "per_archive": {
+    "y_classified": {
+     "p3a-sol-20261001d2": {
+      "n_rows": 35,
+      "n_tokens": 5,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "p3c-sol-20261004f": {
+      "n_rows": 112,
+      "n_tokens": 14,
+      "permutation_p": null,
+      "spearman": null
+     }
+    },
+    "y_direction": {
+     "p3a-sol-20261001d2": {
+      "n_rows": 35,
+      "n_tokens": 5,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "p3c-sol-20261004f": {
+      "n_rows": 112,
+      "n_tokens": 14,
+      "permutation_p": null,
+      "spearman": null
+     }
+    }
+   },
+   "reason": "n_tokens=19 (n_rows=147) < MIN_SAMPLE=85; the frozen Phase 3B threshold is not relaxed for Phase 3C",
+   "targets": {
+    "y_classified": {
+     "n": 147,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    },
+    "y_direction": {
+     "n": 147,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    }
+   },
+   "tests_run": [
+    "pearson",
+    "spearman",
+    "block_permutation"
+   ]
+  },
+  {
+   "classification": "INSUFFICIENT EVIDENCE",
+   "engine_field_ok_n": 374,
+   "engine_field_ok_share": 0.0,
+   "engine_fields": [
+    "social_mentions",
+    "buyer_growth"
+   ],
+   "feature": "social",
+   "feature_kind": "binary_observed",
+   "horizon_steps": 3,
+   "hypothesis_id": "H4",
+   "meets_minimum_sample": false,
+   "min_sample_required": 85,
+   "n_distinct_tokens": 19,
+   "n_rows_joined": 147,
+   "oos": {},
+   "per_archive": {
+    "y_classified": {
+     "p3a-sol-20261001d2": {
+      "n_rows": 35,
+      "n_tokens": 5,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "p3c-sol-20261004f": {
+      "n_rows": 112,
+      "n_tokens": 14,
+      "permutation_p": null,
+      "spearman": null
+     }
+    },
+    "y_direction": {
+     "p3a-sol-20261001d2": {
+      "n_rows": 35,
+      "n_tokens": 5,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "p3c-sol-20261004f": {
+      "n_rows": 112,
+      "n_tokens": 14,
+      "permutation_p": null,
+      "spearman": null
+     }
+    }
+   },
+   "reason": "n_tokens=19 (n_rows=147) < MIN_SAMPLE=85; the frozen Phase 3B threshold is not relaxed for Phase 3C",
+   "targets": {
+    "y_classified": {
+     "n": 147,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    },
+    "y_direction": {
+     "n": 147,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    }
+   },
+   "tests_run": [
+    "pearson",
+    "spearman",
+    "block_permutation"
+   ]
+  },
+  {
+   "classification": "INSUFFICIENT EVIDENCE",
+   "engine_field_ok_n": 0,
+   "engine_field_ok_share": 0.0,
+   "engine_fields": [],
+   "feature": "news",
+   "feature_kind": "binary_observed",
+   "horizon_steps": 3,
+   "hypothesis_id": "H8",
+   "meets_minimum_sample": false,
+   "min_sample_required": 85,
+   "n_distinct_tokens": 18,
+   "n_rows_joined": 140,
+   "oos": {},
+   "per_archive": {
+    "y_classified": {
+     "p3a-sol-20261001d2": {
+      "n_rows": 28,
+      "n_tokens": 4,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "p3c-sol-20261004f": {
+      "n_rows": 112,
+      "n_tokens": 14,
+      "permutation_p": null,
+      "spearman": null
+     }
+    },
+    "y_direction": {
+     "p3a-sol-20261001d2": {
+      "n_rows": 28,
+      "n_tokens": 4,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "p3c-sol-20261004f": {
+      "n_rows": 112,
+      "n_tokens": 14,
+      "permutation_p": null,
+      "spearman": null
+     }
+    }
+   },
+   "reason": "n_tokens=18 (n_rows=140) < MIN_SAMPLE=85; the frozen Phase 3B threshold is not relaxed for Phase 3C",
+   "targets": {
+    "y_classified": {
+     "n": 140,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    },
+    "y_direction": {
+     "n": 140,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    }
+   },
+   "tests_run": [
+    "pearson",
+    "spearman",
+    "block_permutation"
+   ]
+  },
+  {
+   "classification": "INSUFFICIENT EVIDENCE",
+   "engine_field_ok_n": 374,
+   "engine_field_ok_share": 0.0,
+   "engine_fields": [
+    "cross_venue"
+   ],
+   "feature": "liquidity_event",
+   "feature_kind": "binary_observed",
+   "horizon_steps": 3,
+   "hypothesis_id": "H9",
+   "meets_minimum_sample": false,
+   "min_sample_required": 85,
+   "n_distinct_tokens": 36,
+   "n_rows_joined": 266,
+   "oos": {},
+   "per_archive": {
+    "y_classified": {
+     "gt-sol-20260930a": {
+      "n_rows": 84,
+      "n_tokens": 12,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "gt-sol-20260930c": {
+      "n_rows": 35,
+      "n_tokens": 5,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "p3a-sol-20261001d2": {
+      "n_rows": 35,
+      "n_tokens": 5,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "p3c-sol-20261004f": {
+      "n_rows": 112,
+      "n_tokens": 14,
+      "permutation_p": null,
+      "spearman": null
+     }
+    },
+    "y_direction": {
+     "gt-sol-20260930a": {
+      "n_rows": 84,
+      "n_tokens": 12,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "gt-sol-20260930c": {
+      "n_rows": 35,
+      "n_tokens": 5,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "p3a-sol-20261001d2": {
+      "n_rows": 35,
+      "n_tokens": 5,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "p3c-sol-20261004f": {
+      "n_rows": 112,
+      "n_tokens": 14,
+      "permutation_p": null,
+      "spearman": null
+     }
+    }
+   },
+   "reason": "n_tokens=36 (n_rows=266) < MIN_SAMPLE=85; the frozen Phase 3B threshold is not relaxed for Phase 3C",
+   "targets": {
+    "y_classified": {
+     "n": 266,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    },
+    "y_direction": {
+     "n": 266,
+     "pearson_r": null,
+     "permutation_null_mean": null,
+     "permutation_null_std": null,
+     "permutation_p": null,
+     "permutation_p_fdr": null,
+     "spearman_r": null,
+     "undefined_reason": "zero variance in candidate feature or target across the joined sample; no correlation is computable"
+    }
+   },
+   "tests_run": [
+    "pearson",
+    "spearman",
+    "block_permutation"
+   ]
+  },
+  {
+   "classification": "INSUFFICIENT EVIDENCE",
+   "engine_field_ok_n": 374,
+   "engine_field_ok_share": 0.0,
+   "engine_fields": [
+    "price_z_driving",
+    "unique_buyers",
+    "social_mentions",
+    "creator_pct"
+   ],
+   "feature": "creator_state",
+   "feature_kind": "creator_pct",
+   "horizon_steps": 3,
+   "hypothesis_id": "H10",
+   "meets_minimum_sample": false,
+   "min_sample_required": 85,
+   "n_distinct_tokens": 35,
+   "n_rows_joined": 221,
+   "oos": {},
+   "per_archive": {
+    "y_classified": {
+     "gt-sol-20260930a": {
+      "n_rows": 46,
+      "n_tokens": 12,
+      "permutation_p": 0.011497125718570358,
+      "spearman": 0.6630234915627343
+     },
+     "gt-sol-20260930c": {
+      "n_rows": 28,
+      "n_tokens": 4,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "p3a-sol-20261001d2": {
+      "n_rows": 35,
+      "n_tokens": 5,
+      "permutation_p": 0.2079480129967508,
+      "spearman": 1.0
+     },
+     "p3c-sol-20261004f": {
+      "n_rows": 112,
+      "n_tokens": 14,
+      "permutation_p": 0.5351162209447639,
+      "spearman": 0.19129123994352415
+     }
+    },
+    "y_direction": {
+     "gt-sol-20260930a": {
+      "n_rows": 46,
+      "n_tokens": 12,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "gt-sol-20260930c": {
+      "n_rows": 28,
+      "n_tokens": 4,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "p3a-sol-20261001d2": {
+      "n_rows": 35,
+      "n_tokens": 5,
+      "permutation_p": null,
+      "spearman": null
+     },
+     "p3c-sol-20261004f": {
+      "n_rows": 112,
+      "n_tokens": 14,
+      "permutation_p": null,
+      "spearman": null
+     }
+    }
+   },
+   "reason": "n_tokens=35 (n_rows=221) < MIN_SAMPLE=85; the frozen Phase 3B threshold is not relaxed for Phase 3C",
+   "replication_audit": {
+    "n_tokens_collapsed": 35,
+    "per_target": {
+     "y_classified": {
+      "partial_spearman_controlling_archive_identity": 0.4094319148951686,
+      "per_archive": {
+       "gt-sol-20260930a": {
+        "n_rows": 46,
+        "n_tokens": 12,
+        "permutation_p": 0.011497125718570358,
+        "spearman": 0.6630234915627343
+       },
+       "gt-sol-20260930c": {
+        "n_rows": 28,
+        "n_tokens": 4,
+        "permutation_p": null,
+        "spearman": null
+       },
+       "p3a-sol-20261001d2": {
+        "n_rows": 35,
+        "n_tokens": 5,
+        "permutation_p": 0.2079480129967508,
+        "spearman": 1.0
+       },
+       "p3c-sol-20261004f": {
+        "n_rows": 112,
+        "n_tokens": 14,
+        "permutation_p": 0.5351162209447639,
+        "spearman": 0.19129123994352415
+       }
+      },
+      "spearman_one_row_per_token": 0.40590747824662426
+     },
+     "y_direction": {
+      "partial_spearman_controlling_archive_identity": -0.11692730578008982,
+      "per_archive": {
+       "gt-sol-20260930a": {
+        "n_rows": 46,
+        "n_tokens": 12,
+        "permutation_p": null,
+        "spearman": null
+       },
+       "gt-sol-20260930c": {
+        "n_rows": 28,
+        "n_tokens": 4,
+        "permutation_p": null,
+        "spearman": null
+       },
+       "p3a-sol-20261001d2": {
+        "n_rows": 35,
+        "n_tokens": 5,
+        "permutation_p": null,
+        "spearman": null
+       },
+       "p3c-sol-20261004f": {
+        "n_rows": 112,
+        "n_tokens": 14,
+        "permutation_p": null,
+        "spearman": null
+       }
+      },
+      "spearman_one_row_per_token": -0.12036370399343589
+     }
+    }
+   },
+   "targets": {
+    "y_classified": {
+     "adversarial": {
+      "nuisance_x_step_index_spearman": 0.06629333320187053,
+      "nuisance_y_step_index_spearman": 0.023175082579249856,
+      "partial_spearman_controlling_step_index": 0.3834420622297409,
+      "raw_spearman": 0.3840321535102363
+     },
+     "n": 221,
+     "pearson_r": 0.05315657313453719,
+     "permutation_null_mean": -0.001539308033335752,
+     "permutation_null_std": 0.14305754960060332,
+     "permutation_p": 0.004498875281179705,
+     "permutation_p_fdr": 0.013496625843539115,
+     "robustness": {
+      "spearman_winsorized": 0.40336041988674903
+     },
+     "spearman_r": 0.3840321535102363,
+     "temporal_stability": {
+      "early": {
+       "n": 110,
+       "spearman": 0.6536644158207412
+      },
+      "late": {
+       "n": 111,
+       "spearman": 0.18762736161082355
+      }
+     },
+     "undefined_reason": null
+    },
+    "y_direction": {
+     "adversarial": {
+      "nuisance_x_step_index_spearman": 0.06629333320187053,
+      "nuisance_y_step_index_spearman": -0.13101277893442645,
+      "partial_spearman_controlling_step_index": -0.08248521877818986,
+      "raw_spearman": -0.0902796372014539
+     },
+     "n": 221,
+     "pearson_r": -0.044805658127821814,
+     "permutation_null_mean": 0.001287855146042462,
+     "permutation_null_std": 0.12471039478777178,
+     "permutation_p": 0.8777805548612847,
+     "permutation_p_fdr": 0.8777805548612848,
+     "robustness": {
+      "spearman_winsorized": null
+     },
+     "spearman_r": -0.0902796372014539,
+     "temporal_stability": {
+      "early": {
+       "n": 110,
+       "spearman": -0.09636596147458425
+      },
+      "late": {
+       "n": 111,
+       "spearman": null
+      }
+     },
+     "undefined_reason": null
+    }
+   },
+   "tests_run": [
+    "pearson",
+    "spearman",
+    "block_permutation"
+   ]
+  }
+ ],
+ "included_archives": [
+  "gt-sol-20260930a",
+  "gt-sol-20260930b",
+  "gt-sol-20260930c",
+  "p3a-sol-20261001d2",
+  "p3c-sol-20261004e",
+  "p3c-sol-20261004f"
+ ],
+ "min_sample": 85,
+ "new_archives_excluded": [],
+ "overall_classification": {
+  "by_classification": {
+   "INSUFFICIENT EVIDENCE": 6
+  },
+  "hypotheses_tested": 6,
+  "result": "INSUFFICIENT EVIDENCE"
+ },
+ "phase3a_commit": "617355f874d949431eb93d8ac2d3ecc7b6479aa3",
+ "phase3b_commit": "f21f3bc2e18ab64d2b92e203c4202144eabf7eac",
+ "repository_commit": "2b1100f4b9adaf52b236d7b5b12bce889e7f7f03",
+ "schema": "phase3c.evidence.1"
+}
