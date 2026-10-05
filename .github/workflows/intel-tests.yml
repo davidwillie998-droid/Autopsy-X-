@@ -46,7 +46,7 @@ jobs:
           from pathlib import Path
           from autopsyx.research import phase2_verify
 
-          evidence = json.loads(Path("artifacts/phase2/PHASE2_EVIDENCE.json").read_text())
+          evidence = json.loads(Path("../artifacts/phase2/PHASE2_EVIDENCE.json").read_text())
           Path("../docs/PHASE2_REPORT.md").write_text(phase2_verify.render(evidence))
           Path("../docs/PHASE2_SYSTEM_STATUS.md").write_text(phase2_verify.render_status(evidence))
           PY
