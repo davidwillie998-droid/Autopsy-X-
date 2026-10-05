@@ -7,6 +7,7 @@ name: Phase 3C.1 data acquisition
 on:
   push:
     branches: [phase3c1-acquisition-repair]
+    paths: ["intel/datasets/phase3c/REQUEST.json"]
 
 permissions:
   contents: write
