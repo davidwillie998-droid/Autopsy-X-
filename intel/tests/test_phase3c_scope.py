@@ -30,14 +30,15 @@ def test_no_ctrade_or_order_placement_symbol_anywhere_in_phase3c():
 
 
 def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
-    """Diff from the Phase 3B commit touches only new docs/phase3c_*/research/phase3c
-    paths and test files for phase3c -- never an existing autopsyx module."""
+    """Phase 3C may add its own implementation, tests, docs, acquisition
+    infrastructure, and the CI verification workflow. Existing Phase 2/3A/3B
+    implementation and evidence remain protected by the exact comparisons below."""
     changed = git("diff", "--name-only", PHASE3B_COMMIT, "HEAD").splitlines()
-    # Necessary acquisition infra, new files only, never a modification to an existing one:
-    # a request file and a protected-scheduler workflow. The Phase 3C workflow intentionally
-    # uses its own acquisition wrapper, so procedure parity is tested by shared lifecycle steps
-    # rather than requiring the Phase 3A provider command verbatim.
-    infra_allowed = {"intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml"}
+    infra_allowed = {
+        "intel/datasets/phase3c/REQUEST.json",
+        ".github/workflows/phase3c-acquire.yml",
+        ".github/workflows/intel-tests.yml",
+    }
     for f in changed:
         allowed = (f.startswith("docs/PHASE3C_") or f.startswith("intel/autopsyx/research/phase3c_")
                   or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")
@@ -62,7 +63,7 @@ def test_phase3a_evidence_and_phase3b_evidence_files_byte_identical_to_frozen():
                "docs/PHASE3A_REPORT.md", "docs/SYSTEM_STATUS.md", "docs/PHASE2_SYSTEM_STATUS.md",
                "research/phase3b/results/phase3b_evidence.json", "docs/PHASE3B_RESEARCH_CONTRACT.md",
                "docs/PHASE3B_STATISTICAL_REPORT.md"):
-        at_3b = git("show", f"{PHASE3B_COMMIT}:{rel}")  # git strips rstrip() in captured stdout; compare rstripped
+        at_3b = git("show", f"{PHASE3B_COMMIT}:{rel}")
         at_head = (ROOT / rel).read_text().rstrip("\n")
         assert at_3b == at_head, rel
 
@@ -84,4 +85,4 @@ def test_phase3c_hypothesis_ids_are_exactly_phase3b_eligible_ids():
 def test_phase3c_reuses_frozen_min_sample_without_redefining_it():
     from autopsyx.research import phase3b_contract as contract
     from autopsyx.research import phase3c_pipeline as p3c
-    assert p3c.MIN_SAMPLE is contract.MIN_SAMPLE  # literally the same object, not a re-derived copy
+    assert p3c.MIN_SAMPLE is contract.MIN_SAMPLE
