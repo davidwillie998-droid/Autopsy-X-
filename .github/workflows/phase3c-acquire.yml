@@ -1,24 +1,19 @@
-name: Phase 3C data acquisition
+name: Phase 3C.1 data acquisition
 
-# Identical acquisition code and procedure to the Phase 3A workflow
-# (phase3a-acquire.yml): the repository's own acquisition code runs against
-# public, keyless endpoints and the raw archive is committed back to this
-# branch. Nothing about acquire/seal/verify-provenance is forked or
-# reimplemented for Phase 3C; only the watched request path and the archive
-# directory differ, so new Phase 3C archives are independently acquired and
-# independently provenance-verified under the exact same frozen procedure
-# D2 already used. Read-only acquisition: no orders, no wallets, no keys.
+# Phase 3C.1 keeps the frozen Phase 3C acquisition implementation but wraps
+# scheduling with a protected replay allocation. The workflow remains read-only:
+# no orders, wallets, or private keys are used by acquisition itself.
 
 on:
   push:
-    branches: [ccr-dea9382c-vwhvi6]
+    branches: [phase3c1-acquisition-repair]
     paths: ["intel/datasets/phase3c/REQUEST.json"]
 
 permissions:
   contents: write
 
 concurrency:
-  group: phase3c-acquire
+  group: phase3c1-acquire
   cancel-in-progress: false
 
 jobs:
@@ -32,14 +27,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Acquire
+      - name: Acquire with protected replay window
         working-directory: intel
         env:
           AUTOPSYX_SOLANA_RPC_URL: ${{ secrets.AUTOPSYX_SOLANA_RPC_URL }}
         run: |
           RUN_ID=$(python -c "import json;print(json.load(open('datasets/phase3c/REQUEST.json'))['run_id'])")
           echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
-          python -m autopsyx --log acquire --live --request datasets/phase3c/REQUEST.json --out "datasets/phase3c/runs/$RUN_ID"
+          python -m autopsyx.phase3c_acquire --request datasets/phase3c/REQUEST.json --out "datasets/phase3c/runs/$RUN_ID"
       - name: Seal canonical dataset on the runner
         if: always()
         working-directory: intel
@@ -54,6 +49,6 @@ jobs:
           git config user.name "autopsyx-acquisition"
           git config user.email "actions@users.noreply.github.com"
           git add "intel/datasets/phase3c/runs/$RUN_ID"
-          git commit -m "Phase 3C raw archive: $RUN_ID (acquired by workflow run ${{ github.run_id }})"
+          git commit -m "Phase 3C.1 raw archive: $RUN_ID (acquired by workflow run ${{ github.run_id }})"
           for i in 1 2 3 4; do git pull --rebase origin "${{ github.ref_name }}" && git push origin "HEAD:${{ github.ref_name }}" && exit 0; sleep $((2**i)); done
           exit 1
