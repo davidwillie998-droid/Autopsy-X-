@@ -1,0 +1,48 @@
+name: Phase 3C.1 evidence finalization
+
+on:
+  push:
+    branches: [phase3c1-acquisition-repair]
+    paths:
+      - "intel/datasets/phase3c/runs/**"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phase3c1-finalize
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test runner
+        working-directory: intel
+        run: pip install pytest
+      - name: Full test suite
+        working-directory: intel
+        run: python -m pytest -q -rs
+      - name: Phase 3C.1 deterministic evidence finalization
+        working-directory: intel
+        run: python -m autopsyx.phase3c1_finalize
+      - name: Commit final evidence
+        run: |
+          git config user.name "autopsyx-evidence"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/PHASE3C_DATA_AUDIT.md \
+                  docs/PHASE3C_PROVENANCE_REPORT.md \
+                  docs/PHASE3C_STATISTICAL_REPORT.md \
+                  docs/PHASE3C_REPLICATION_REPORT.md \
+                  docs/PHASE3C_SYSTEM_STATUS.md \
+                  research/phase3c/evidence.json \
+                  research/phase3c/phase3c_research_ledger.csv
+          git diff --cached --quiet || git commit -m "Phase 3C.1 final evidence: deterministic replication"
+          git push origin "HEAD:${{ github.ref_name }}"
