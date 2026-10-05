@@ -1,5 +1,5 @@
 {
-  "run_id": "p3c1-sol-20261005a",
+  "run_id": "p3c1-sol-20261005b",
   "network": "solana",
   "seed": 20261005,
   "strata": {"young": 7, "quiet_young": 5, "trending": 5, "established": 3},
