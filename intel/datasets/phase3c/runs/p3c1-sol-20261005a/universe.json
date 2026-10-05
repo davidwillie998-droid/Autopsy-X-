@@ -1,0 +1,288 @@
+{
+  "exclusions": [],
+  "fingerprint": "ea33d12b6cce72bb74fe1e41c0b1e3e056ce8a2c259933ead34469c0afd5e89a",
+  "frozen_at_ms": 1791198529459,
+  "mechanism": {
+    "candidate_counts": {
+      "established": 20,
+      "quiet_young": 22,
+      "trending": 20,
+      "young": 60
+    },
+    "network": "solana",
+    "procedure": "seeded stratified random selection (acquire.select_universe)",
+    "seed": 20261005,
+    "strata_targets": {
+      "established": 3,
+      "quiet_young": 5,
+      "trending": 5,
+      "young": 7
+    }
+  },
+  "metadata": {
+    "4AFZFP2b7Ty6hgsbKQ3VDiWFt719R1gZbzcrVMmFEWt8": {
+      "h1_txns_at_selection": 0,
+      "liquidity_usd_at_selection": 4.05992546e-06,
+      "total_supply_at_selection": 999999945.7082543
+    },
+    "4MkSkp2WFhsSrCYo4s9ZLA2bdJyMjyiNXiQczKCepump": {
+      "h1_txns_at_selection": 4,
+      "liquidity_usd_at_selection": 2683.7671,
+      "total_supply_at_selection": 993735402.4863415
+    },
+    "6WpM97BUNgjViXeQsUs21Qz9FaaWxYk2CftqTbGCpump": {
+      "h1_txns_at_selection": 1,
+      "liquidity_usd_at_selection": 2680.69347428142,
+      "total_supply_at_selection": 999999999.9599667
+    },
+    "7VertkgF9KLhxxJXHX6uaWuoYZTP9LdGj2bWmVXVpump": {
+      "h1_txns_at_selection": 1437,
+      "liquidity_usd_at_selection": 578127.1202,
+      "total_supply_at_selection": 965995267.607821
+    },
+    "8MKSEZnHH3tytQgGZhATYzk7hcaBz2wfAHNHv9ANpump": {
+      "h1_txns_at_selection": 43,
+      "liquidity_usd_at_selection": 102.4821,
+      "total_supply_at_selection": 2000000000.349381
+    },
+    "8nPoBHiBM6pybxMws9PA2JRb9BjkppBfqcZGmot4DMBC": {
+      "h1_txns_at_selection": 1821,
+      "liquidity_usd_at_selection": 142453.3697,
+      "total_supply_at_selection": 984745088.8881433
+    },
+    "ANn7VcyyZaCh5McwKhit3BEhUK2MvWEZaBPZqbkvpump": {
+      "h1_txns_at_selection": 1,
+      "liquidity_usd_at_selection": 2698.44386539833,
+      "total_supply_at_selection": 999999999.8900352
+    },
+    "AmiXW8C5QidoShM9UvTFXErtRX48g18mx2oMYpsdf3YR": {
+      "h1_txns_at_selection": 1,
+      "liquidity_usd_at_selection": 0.0,
+      "total_supply_at_selection": 1000000000.0396804
+    },
+    "Ap8j6nu6cbn5PX2dbiKLxrf28Qgv45jfDsMHWv7VAGKZ": {
+      "h1_txns_at_selection": 4,
+      "liquidity_usd_at_selection": 2917.4913,
+      "total_supply_at_selection": 1040092472.0516732
+    },
+    "BmJbB6uH4kJGY8KeRCRr5zXwk8rMabkoVLL8Nge5M2WZ": {
+      "h1_txns_at_selection": 0,
+      "liquidity_usd_at_selection": 3.880171858e-05,
+      "total_supply_at_selection": 1002025450.3294789
+    },
+    "DoVAVzViX8Bjy3r15nwikSaSbzE6dV4ovd28aWpJpump": {
+      "h1_txns_at_selection": 842,
+      "liquidity_usd_at_selection": 137882.3565,
+      "total_supply_at_selection": 999965883.8171734
+    },
+    "FNCt8WYDHWdkjPBjxy7CY5B1CfGoyWhBrR3ji9eDpump": {
+      "h1_txns_at_selection": 1,
+      "liquidity_usd_at_selection": 2673.55325334167,
+      "total_supply_at_selection": 1000000000.1124603
+    },
+    "FbpMP7wDNQevC4QJGqd7vhxdQtj76LSTnDfYsLMF9GGC": {
+      "h1_txns_at_selection": 14926,
+      "liquidity_usd_at_selection": 133547.2623,
+      "total_supply_at_selection": 999218774.1686901
+    },
+    "FtMGBcb3m9hU1cUKMDpzs4ePqfBYESEuJCxgr6yNpump": {
+      "h1_txns_at_selection": 3,
+      "liquidity_usd_at_selection": 3378.89707,
+      "total_supply_at_selection": 1000000000.0793773
+    },
+    "HFXT4boSnxstCjMN6jQ1kF8g9u34HeXaaZhJ3Qejf3hL": {
+      "h1_txns_at_selection": 1,
+      "liquidity_usd_at_selection": 2674.85996642019,
+      "total_supply_at_selection": 1000000000.1082339
+    },
+    "Hg5Ja55T5wESq4vyFoiVCMeHXtGyVA69X2UHq8hgpump": {
+      "h1_txns_at_selection": 44,
+      "liquidity_usd_at_selection": 670194.5153,
+      "total_supply_at_selection": 998737301.1169037
+    },
+    "HptSfN3T3RqF6QqA4MHuKkGwA4yZTsYtAns8Fk9FYD6i": {
+      "h1_txns_at_selection": 63,
+      "liquidity_usd_at_selection": 2690.7897,
+      "total_supply_at_selection": 1000000000.135955
+    },
+    "RfigbPZT93bSLbGLohtPMYvkWtMJEMg4FWmGqVMpump": {
+      "h1_txns_at_selection": 1,
+      "liquidity_usd_at_selection": 2673.04017797597,
+      "total_supply_at_selection": 1000000000.0610284
+    },
+    "W6wf7YMTSFFTtZT5F5cUkTNA3BhkcFa9VDNmeqXpump": {
+      "h1_txns_at_selection": 485,
+      "liquidity_usd_at_selection": 6.5523,
+      "total_supply_at_selection": 1999999999.9650707
+    },
+    "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn": {
+      "h1_txns_at_selection": 535,
+      "liquidity_usd_at_selection": 28049961.2214,
+      "total_supply_at_selection": 829666173688.6212
+    }
+  },
+  "pools": [
+    {
+      "created_ts": 1791125859000,
+      "dex": "pumpswap",
+      "pool": "4wbGLDprr8tBHWDwwcrvHGPtwVtrm7cMTnyTNyERNEaY",
+      "stratum": "established",
+      "token": "4AFZFP2b7Ty6hgsbKQ3VDiWFt719R1gZbzcrVMmFEWt8"
+    },
+    {
+      "created_ts": 1791187292000,
+      "dex": "pumpswap",
+      "pool": "A6hioD11eEqnD4Z48sjfQHN8fHXDu2ZQEKL1WQ1gcNKH",
+      "stratum": "established",
+      "token": "FbpMP7wDNQevC4QJGqd7vhxdQtj76LSTnDfYsLMF9GGC"
+    },
+    {
+      "created_ts": 1791139448000,
+      "dex": "pumpswap",
+      "pool": "Dya1Axw2YTPkjzTzg4VajqCeoCtSukX3U7YxJWh86jyf",
+      "stratum": "established",
+      "token": "BmJbB6uH4kJGY8KeRCRr5zXwk8rMabkoVLL8Nge5M2WZ"
+    },
+    {
+      "created_ts": 1791198367000,
+      "dex": "pump-fun",
+      "pool": "3hb6pYCWs2xmA8KdFXWZzBieygrGWgK57Y951rgc5JrX",
+      "stratum": "quiet_young",
+      "token": "HFXT4boSnxstCjMN6jQ1kF8g9u34HeXaaZhJ3Qejf3hL"
+    },
+    {
+      "created_ts": 1791198470000,
+      "dex": "meteora-dbc",
+      "pool": "4wFZ5bYyFfm67HEXTuGsL8wndnHN84enorQbPQPy5bmT",
+      "stratum": "quiet_young",
+      "token": "AmiXW8C5QidoShM9UvTFXErtRX48g18mx2oMYpsdf3YR"
+    },
+    {
+      "created_ts": 1791198387000,
+      "dex": "pump-fun",
+      "pool": "7qsivt15YD5anZwTVa5Qg6eZBehnPpU6ChxHhAGNKnff",
+      "stratum": "quiet_young",
+      "token": "ANn7VcyyZaCh5McwKhit3BEhUK2MvWEZaBPZqbkvpump"
+    },
+    {
+      "created_ts": 1791198470000,
+      "dex": "pump-fun",
+      "pool": "8MJqavcPzXqExG93U3aUGZavL8X8H1Xg7TKPMJJnMaRD",
+      "stratum": "quiet_young",
+      "token": "Ap8j6nu6cbn5PX2dbiKLxrf28Qgv45jfDsMHWv7VAGKZ"
+    },
+    {
+      "created_ts": 1791198490000,
+      "dex": "pump-fun",
+      "pool": "8kNYwRqw6WYqyZXfGFdM2uW9KkBeHkbYT9exzmBdijZN",
+      "stratum": "quiet_young",
+      "token": "FtMGBcb3m9hU1cUKMDpzs4ePqfBYESEuJCxgr6yNpump"
+    },
+    {
+      "created_ts": 1752512154000,
+      "dex": "pumpswap",
+      "pool": "2uF4Xh61rDwxnG9woyxsVQP7zuA6kLFpb3NvnRQeoiSd",
+      "stratum": "trending",
+      "token": "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn"
+    },
+    {
+      "created_ts": 1791117376000,
+      "dex": "pumpswap",
+      "pool": "BFrSZakeqNzVtM3EFhroo4eRhagmmWN8BRntiQKFH6Ru",
+      "stratum": "trending",
+      "token": "DoVAVzViX8Bjy3r15nwikSaSbzE6dV4ovd28aWpJpump"
+    },
+    {
+      "created_ts": 1788985935000,
+      "dex": "pumpswap",
+      "pool": "Cb7ZRgPLhji3Th7htXyKEqbXvNjPpeTvckXuWakBUhXu",
+      "stratum": "trending",
+      "token": "Hg5Ja55T5wESq4vyFoiVCMeHXtGyVA69X2UHq8hgpump"
+    },
+    {
+      "created_ts": 1790894555000,
+      "dex": "pumpswap",
+      "pool": "CyJwKnLiiY4fmiwqMCSWFSHxo7T9Ubshgs2uRAuJCrk5",
+      "stratum": "trending",
+      "token": "7VertkgF9KLhxxJXHX6uaWuoYZTP9LdGj2bWmVXVpump"
+    },
+    {
+      "created_ts": 1791146340000,
+      "dex": "pumpswap",
+      "pool": "FB2Dw7CBcc2D1hKyf21kXKexESQFvsBNTVDjaUoGMRws",
+      "stratum": "trending",
+      "token": "8nPoBHiBM6pybxMws9PA2JRb9BjkppBfqcZGmot4DMBC"
+    },
+    {
+      "created_ts": 1791198385000,
+      "dex": "pump-fun",
+      "pool": "2WRp6cDt1BVoGbrcKszqCT2cttW1trUmjcqxApTBNWNB",
+      "stratum": "young",
+      "token": "4MkSkp2WFhsSrCYo4s9ZLA2bdJyMjyiNXiQczKCepump"
+    },
+    {
+      "created_ts": 1791198461000,
+      "dex": "pump-fun",
+      "pool": "2aDB5SiymxrhjNUaJ8yf6YsqXLfmthAUuXyEf3hKR4Fv",
+      "stratum": "young",
+      "token": "RfigbPZT93bSLbGLohtPMYvkWtMJEMg4FWmGqVMpump"
+    },
+    {
+      "created_ts": 1791198488000,
+      "dex": "pump-fun",
+      "pool": "5v73CNRkB9H1JRFdbnQU5WEj3rbYiq8uy4bQCahcBA9s",
+      "stratum": "young",
+      "token": "FNCt8WYDHWdkjPBjxy7CY5B1CfGoyWhBrR3ji9eDpump"
+    },
+    {
+      "created_ts": 1791198370000,
+      "dex": "pump-fun",
+      "pool": "AKpL6ox6F12PSDZVHWSKYbRBoYqd6Jd5Tk8jmo8K8ir8",
+      "stratum": "young",
+      "token": "6WpM97BUNgjViXeQsUs21Qz9FaaWxYk2CftqTbGCpump"
+    },
+    {
+      "created_ts": 1791198403000,
+      "dex": "pump-fun",
+      "pool": "BHsdTCZGXc3CR6yAoU8yXT7eBSNZ9VMu7jmcy5FPzke9",
+      "stratum": "young",
+      "token": "8MKSEZnHH3tytQgGZhATYzk7hcaBz2wfAHNHv9ANpump"
+    },
+    {
+      "created_ts": 1791198405000,
+      "dex": "pumpswap",
+      "pool": "BkPMeEpKef4t2GH2NirkQHaJTEwbK5NjKPwG2m4MP6V5",
+      "stratum": "young",
+      "token": "W6wf7YMTSFFTtZT5F5cUkTNA3BhkcFa9VDNmeqXpump"
+    },
+    {
+      "created_ts": 1791198375000,
+      "dex": "pump-fun",
+      "pool": "FtcmhhaYywAcGutVYpaA1cbgV3KkHroUUrDgs2TjwjhK",
+      "stratum": "young",
+      "token": "HptSfN3T3RqF6QqA4MHuKkGwA4yZTsYtAns8Fk9FYD6i"
+    }
+  ],
+  "tokens": [
+    "4AFZFP2b7Ty6hgsbKQ3VDiWFt719R1gZbzcrVMmFEWt8",
+    "4MkSkp2WFhsSrCYo4s9ZLA2bdJyMjyiNXiQczKCepump",
+    "6WpM97BUNgjViXeQsUs21Qz9FaaWxYk2CftqTbGCpump",
+    "7VertkgF9KLhxxJXHX6uaWuoYZTP9LdGj2bWmVXVpump",
+    "8MKSEZnHH3tytQgGZhATYzk7hcaBz2wfAHNHv9ANpump",
+    "8nPoBHiBM6pybxMws9PA2JRb9BjkppBfqcZGmot4DMBC",
+    "ANn7VcyyZaCh5McwKhit3BEhUK2MvWEZaBPZqbkvpump",
+    "AmiXW8C5QidoShM9UvTFXErtRX48g18mx2oMYpsdf3YR",
+    "Ap8j6nu6cbn5PX2dbiKLxrf28Qgv45jfDsMHWv7VAGKZ",
+    "BmJbB6uH4kJGY8KeRCRr5zXwk8rMabkoVLL8Nge5M2WZ",
+    "DoVAVzViX8Bjy3r15nwikSaSbzE6dV4ovd28aWpJpump",
+    "FNCt8WYDHWdkjPBjxy7CY5B1CfGoyWhBrR3ji9eDpump",
+    "FbpMP7wDNQevC4QJGqd7vhxdQtj76LSTnDfYsLMF9GGC",
+    "FtMGBcb3m9hU1cUKMDpzs4ePqfBYESEuJCxgr6yNpump",
+    "HFXT4boSnxstCjMN6jQ1kF8g9u34HeXaaZhJ3Qejf3hL",
+    "Hg5Ja55T5wESq4vyFoiVCMeHXtGyVA69X2UHq8hgpump",
+    "HptSfN3T3RqF6QqA4MHuKkGwA4yZTsYtAns8Fk9FYD6i",
+    "RfigbPZT93bSLbGLohtPMYvkWtMJEMg4FWmGqVMpump",
+    "W6wf7YMTSFFTtZT5F5cUkTNA3BhkcFa9VDNmeqXpump",
+    "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn"
+  ]
+}
