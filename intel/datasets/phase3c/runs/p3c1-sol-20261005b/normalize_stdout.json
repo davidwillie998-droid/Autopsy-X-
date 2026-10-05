@@ -1,0 +1,24 @@
+{
+  "dataset_sha256": "7a80fac8a1b1cd9456aae3c10ef1b270abbdfaf2cdf6f89098c5e3d1d099a712",
+  "issues": {
+    "COVERAGE_GAP": 1,
+    "DERIVED_FIELD": 200,
+    "DUPLICATE_OBSERVATION": 1,
+    "FORMING_BAR_DROPPED": 23,
+    "IMPOSSIBLE_COUNT": 1,
+    "MALFORMED_RECORD": 91,
+    "NULL_FIELD": 66,
+    "PAGE_FULL": 40,
+    "PARTIAL_RESPONSE": 5,
+    "PROVIDER_ERROR": 11
+  },
+  "records": {
+    "Coverage": 225,
+    "HolderSnapshot": 17,
+    "PoolInfo": 200,
+    "PoolSnapshot": 241,
+    "ProviderBar": 9496,
+    "Swap": 12925,
+    "TokenMeta": 230
+  }
+}
