@@ -31,12 +31,13 @@ def test_no_ctrade_or_order_placement_symbol_anywhere_in_phase3c():
 
 def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     """Phase 3C may add its own implementation, tests, docs, acquisition
-    infrastructure, and the CI verification workflow. Existing Phase 2/3A/3B
+    infrastructure, and the CI verification workflows. Existing Phase 2/3A/3B
     implementation and evidence remain protected by the exact comparisons below."""
     changed = git("diff", "--name-only", PHASE3B_COMMIT, "HEAD").splitlines()
     infra_allowed = {
         "intel/datasets/phase3c/REQUEST.json",
         ".github/workflows/phase3c-acquire.yml",
+        ".github/workflows/phase3c1-finalize.yml",
         ".github/workflows/intel-tests.yml",
     }
     for f in changed:
