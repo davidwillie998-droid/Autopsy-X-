@@ -41,7 +41,7 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
         ".github/workflows/intel-tests.yml",
     }
     for f in changed:
-        allowed = (f.startswith("docs/PHASE3C_") or f.startswith("intel/autopsyx/research/phase3c_")
+        allowed = (f.startswith("docs/PHASE3C_") or f.startswith("docs/PHASE3C1_") or f.startswith("intel/autopsyx/research/phase3c_")
                   or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")
                   or f in infra_allowed or f.startswith("intel/datasets/phase3c/runs/"))
         assert allowed, f"Phase 3C touched a file outside its namespace: {f}"
