@@ -18,24 +18,24 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_PASSWORD: postgres
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      AUTOPSYX_PG: "host=localhost port=5432 user=postgres"
+      AUTOPSYX_PG: "host=localhost port=5432 user=postgres password=postgres"
     defaults:
       run:
         working-directory: intel
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # Phase 2 rule-freeze and Phase 3B immutability tests inspect historical commits.
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-      - run: pip install pytest
+      - run: pip install "pytest==9.1.1"
       - name: Re-render derived Phase 2 documents for verification
         # Phase 2 evidence/report artifacts remain frozen in git. The renderer changed
         # after those artifacts were generated, so CI regenerates only the derived
