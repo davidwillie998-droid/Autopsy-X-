@@ -26,8 +26,7 @@ jobs:
           const fs = require('fs');
           const html = fs.readFileSync('index.html', 'utf8');
           const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
-            .map(m => m[1])
-            .filter(s => s.trim());
+            .map(m => m[1]).filter(s => s.trim());
           if (!scripts.length) throw new Error('No inline JavaScript found');
           scripts.forEach((script, i) => {
             try { new Function(script); }
@@ -87,17 +86,17 @@ jobs:
           node <<'NODE'
           const fs = require('fs');
           const doc = fs.readFileSync('docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md', 'utf8');
-          const required = [
-            'read-only',
-            'UNAVAILABLE',
-            'does not constitute MT5 compilation',
-            'Strategy Tester',
-            'does not create orders'
+          const requiredConcepts = [
+            { label: 'read-only', pattern: /read-only/i },
+            { label: 'UNAVAILABLE', pattern: /UNAVAILABLE/ },
+            { label: 'MT5 compilation boundary', pattern: /does not constitute MT5 compilation/i },
+            { label: 'Strategy Tester boundary', pattern: /Strategy Tester/i },
+            { label: 'no order creation', pattern: /does not:\s*\n(?:\s*-\s*[^\n]+\n)*\s*-\s*create orders/i }
           ];
-          const missing = required.filter(x => !doc.toLowerCase().includes(x.toLowerCase()));
+          const missing = requiredConcepts.filter(x => !x.pattern.test(doc));
           if (missing.length) {
-            console.error('Missing boundary statements:');
-            console.error(missing.join('\n'));
+            console.error('Missing boundary concepts:');
+            missing.forEach(x => console.error(x.label));
             process.exit(1);
           }
           console.log('Runtime boundary documentation: PASS');
