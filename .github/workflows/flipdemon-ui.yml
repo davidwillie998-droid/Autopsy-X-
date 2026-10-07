@@ -1,0 +1,103 @@
+name: FLIPDEMON UI checks
+
+on:
+  pull_request:
+    branches:
+      - claude/install-ui-ux-pro-max-ooxkv2
+    paths:
+      - "index.html"
+      - "docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md"
+      - ".github/workflows/flipdemon-ui.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  ui-validation:
+    name: FLIPDEMON dashboard validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate JavaScript syntax
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const html = fs.readFileSync('index.html', 'utf8');
+          const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
+            .map(m => m[1]).filter(s => s.trim());
+          if (!scripts.length) throw new Error('No inline JavaScript found');
+          scripts.forEach((script, i) => {
+            try { new Function(script); }
+            catch (err) { throw new Error('Script ' + (i + 1) + ' syntax error: ' + err.message); }
+          });
+          console.log('JavaScript syntax: PASS (' + scripts.length + ' inline script block(s))');
+          NODE
+
+      - name: Validate required intelligence surface
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const html = fs.readFileSync('index.html', 'utf8');
+          const required = [
+            'FLIPDEMON EXTREME',
+            'Decision Intelligence Command Surface',
+            'Market State',
+            'Confidence Separation',
+            'Evidence Families',
+            'Risk Shield',
+            'Execution Intelligence',
+            'Decision Trace',
+            'System Health',
+            'fdxRenderState',
+            'MT5 PERMISSION ENGINE',
+            'NO EXECUTION PERMISSION EXPOSED',
+            'UNAVAILABLE'
+          ];
+          const missing = required.filter(x => !html.includes(x));
+          if (missing.length) {
+            console.error('Missing required markers:');
+            console.error(missing.join('\n'));
+            process.exit(1);
+          }
+          console.log('Required intelligence surface: PASS');
+          NODE
+
+      - name: Detect duplicate HTML IDs
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const html = fs.readFileSync('index.html', 'utf8');
+          const ids = [...html.matchAll(/\bid=["']([^"']+)["']/gi)].map(m => m[1]);
+          const counts = new Map();
+          for (const id of ids) counts.set(id, (counts.get(id) || 0) + 1);
+          const dupes = [...counts].filter(([, count]) => count > 1);
+          if (dupes.length) {
+            console.error('Duplicate IDs detected:');
+            dupes.forEach(([id, count]) => console.error(id + ': ' + count));
+            process.exit(1);
+          }
+          console.log('Duplicate HTML IDs: PASS (' + ids.length + ' unique IDs)');
+          NODE
+
+      - name: Validate dashboard documentation boundary
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const doc = fs.readFileSync('docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md', 'utf8');
+          const requiredConcepts = [
+            { label: 'read-only', pattern: /read-only/i },
+            { label: 'UNAVAILABLE', pattern: /UNAVAILABLE/ },
+            { label: 'MT5 compilation boundary', pattern: /does not constitute MT5 compilation/i },
+            { label: 'Strategy Tester boundary', pattern: /Strategy Tester/i },
+            { label: 'no order creation', pattern: /does not:\s*\n(?:\s*-\s*[^\n]+\n)*\s*-\s*create orders/i }
+          ];
+          const missing = requiredConcepts.filter(x => !x.pattern.test(doc));
+          if (missing.length) {
+            console.error('Missing boundary concepts:');
+            missing.forEach(x => console.error(x.label));
+            process.exit(1);
+          }
+          console.log('Runtime boundary documentation: PASS');
+          NODE
