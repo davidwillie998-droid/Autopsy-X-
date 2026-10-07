@@ -39,6 +39,7 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
         ".github/workflows/phase3c-acquire.yml",
         ".github/workflows/phase3c1-finalize.yml",
         ".github/workflows/intel-tests.yml",
+        ".github/workflows/phase3d-validation.yml",
     }
     for f in changed:
         allowed = (f.startswith("docs/PHASE3C_") or f.startswith("docs/PHASE3C1_") or f.startswith("intel/autopsyx/research/phase3c_") or f == "intel/autopsyx/phase3c1_finalize.py" or f == "intel/autopsyx/phase3c_acquire.py"
