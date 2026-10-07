@@ -23,7 +23,7 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      AUTOPSYX_PG: "host=localhost port=5432 user=postgres password=postgres"
+      AUTOPSYX_PG: "host=localhost port=5432 user=postgres"\n      PGPASSWORD: "postgres"
     defaults:
       run:
         working-directory: intel
