@@ -1,0 +1,48 @@
+name: Phase 3D validation
+
+on:
+  push:
+    branches:
+      - phase3d-independent-validation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validation-gate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: intel
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependency
+        run: pip install "pytest==9.1.1"
+
+      - name: Run Phase 3D scope tests
+        run: python -m pytest -q tests/test_phase3d_scope.py
+
+      - name: Verify Phase 3C.1 parent commit
+        run: |
+          git rev-parse HEAD
+          git cat-file -e 796426ef21181612e763b12d272b542024e08706^{commit}
+
+      - name: Confirm validation-only state
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = json.loads(Path("datasets/phase3d/REQUEST.json").read_text())
+          assert p["production_integration"] is False
+          assert p["wallet_signing"] is False
+          assert p["order_placement"] is False
+          assert p["hypothesis_ids"] == ["H10"]
+          assert p["min_distinct_tokens"] == 85
+          print("Phase 3D validation gate: PASS")
+          PY
