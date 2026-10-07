@@ -719,6 +719,50 @@
   .empty-state p{color:var(--grey);font-size:13px;font-family:'IBM Plex Mono',monospace;}
 
   footer{max-width:1180px;margin:60px auto 0;padding:var(--sp-6) 48px 0;border-top:1px solid var(--hairline);font-family:'IBM Plex Mono',monospace;font-size:var(--fs-label);color:var(--grey);line-height:1.8;}
+
+  /* FLIPDEMON EXTREME intelligence architecture dashboard */
+  :root{
+    --fdx-obsidian:#080B10;--fdx-graphite:#0D121A;--fdx-gunmetal:#131A24;--fdx-steel:#26313D;
+    --fdx-white:#F2F5F7;--fdx-slate:#8B98A8;--fdx-gold:#D6A84F;--fdx-gold-hi:#F2C75C;
+    --fdx-emerald:#16C784;--fdx-crimson:#FF4D5A;--fdx-cyan:#22D3EE;--fdx-violet:#A855F7;
+    --fdx-amber:#F59E0B;--fdx-teal:#14B8A6;
+  }
+  .fdx-intel{margin-top:var(--sp-5);background:var(--fdx-obsidian);border:1px solid var(--fdx-steel);box-shadow:var(--shadow-panel);}
+  .fdx-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;padding:20px 24px;border-bottom:1px solid var(--fdx-steel);background:var(--fdx-graphite);}
+  .fdx-kicker{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.7px;color:var(--fdx-gold);text-transform:uppercase;}
+  .fdx-title{font-family:'Fraunces',serif;font-size:22px;color:var(--fdx-white);margin-top:4px;}
+  .fdx-sub{font-size:11.5px;color:var(--fdx-slate);line-height:1.55;max-width:650px;margin-top:5px;}
+  .fdx-live-note{font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--fdx-slate);border:1px solid var(--fdx-steel);padding:7px 10px;background:var(--fdx-gunmetal);}
+  .fdx-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:1px;background:var(--fdx-steel);}
+  @media(max-width:900px){.fdx-grid{grid-template-columns:1fr;}}
+  .fdx-panel{background:var(--fdx-graphite);padding:18px 20px;min-width:0;}
+  .fdx-panel-title{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.65px;color:var(--fdx-gold);text-transform:uppercase;margin-bottom:13px;}
+  .fdx-state-row{display:grid;grid-template-columns:145px 1fr auto;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.045);font-family:'IBM Plex Mono',monospace;font-size:10.5px;}
+  .fdx-state-row:last-child{border-bottom:0;}
+  .fdx-state-name{color:var(--fdx-slate);}.fdx-state-value{color:var(--fdx-white);font-weight:600;}.fdx-state-meta{color:var(--fdx-slate);font-size:9px;text-align:right;}
+  .fdx-badge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--fdx-steel);padding:3px 7px;font-size:9px;letter-spacing:.35px;white-space:nowrap;}
+  .fdx-badge.good{color:var(--fdx-emerald);border-color:rgba(22,199,132,.35);background:rgba(22,199,132,.07);}
+  .fdx-badge.bad{color:var(--fdx-crimson);border-color:rgba(255,77,90,.35);background:rgba(255,77,90,.07);}
+  .fdx-badge.warn{color:var(--fdx-amber);border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.07);}
+  .fdx-badge.gold{color:var(--fdx-gold-hi);border-color:rgba(242,199,92,.35);background:rgba(242,199,92,.07);}
+  .fdx-badge.neutral{color:var(--fdx-slate);}
+  .fdx-conf-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+  .fdx-conf{background:var(--fdx-gunmetal);border:1px solid var(--fdx-steel);padding:13px;}
+  .fdx-conf-label{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--fdx-slate);letter-spacing:.5px;text-transform:uppercase;}
+  .fdx-conf-value{font-family:'IBM Plex Mono',monospace;font-size:22px;color:var(--fdx-gold-hi);margin-top:5px;font-weight:600;}
+  .fdx-conf-note{font-size:10px;color:var(--fdx-slate);margin-top:4px;line-height:1.4;}
+  .fdx-evidence{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;}
+  .fdx-family{background:var(--fdx-gunmetal);border:1px solid var(--fdx-steel);padding:10px;min-width:0;}
+  .fdx-family-name{font-family:'IBM Plex Mono',monospace;font-size:8.5px;color:var(--fdx-slate);letter-spacing:.45px;text-transform:uppercase;}
+  .fdx-family-state{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .fdx-family-state.pos{color:var(--fdx-emerald);}.fdx-family-state.neg{color:var(--fdx-crimson);}.fdx-family-state.neutral{color:var(--fdx-white);}.fdx-family-state.na{color:var(--fdx-slate);}
+  .fdx-trace{background:var(--fdx-graphite);}
+  .fdx-trace-row{display:grid;grid-template-columns:26px 155px 1fr;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.045);font-family:'IBM Plex Mono',monospace;font-size:10px;}
+  .fdx-trace-row:last-child{border-bottom:0;}.fdx-trace-n{color:var(--fdx-slate);}.fdx-trace-key{color:var(--fdx-slate);}.fdx-trace-val{color:var(--fdx-white);font-weight:600;}.fdx-trace-val.pass{color:var(--fdx-emerald);}.fdx-trace-val.block{color:var(--fdx-crimson);}.fdx-trace-val.warn{color:var(--fdx-amber);}.fdx-trace-val.gold{color:var(--fdx-gold-hi);}
+  .fdx-final{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:14px;padding:14px 16px;background:var(--fdx-gunmetal);border:1px solid var(--fdx-gold);}
+  .fdx-final-label{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--fdx-slate);letter-spacing:.6px;text-transform:uppercase;}.fdx-final-value{font-family:'Fraunces',serif;font-size:27px;color:var(--fdx-gold-hi);}.fdx-final-note{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--fdx-slate);text-align:right;}
+  .fdx-foot{padding:10px 20px;border-top:1px solid var(--fdx-steel);font-size:9.5px;color:var(--fdx-slate);line-height:1.5;background:#070A0E;}
+  @media(max-width:600px){.fdx-state-row{grid-template-columns:1fr auto;}.fdx-state-meta{grid-column:1/-1;text-align:left;margin-top:-4px;}.fdx-evidence{grid-template-columns:1fr;}.fdx-trace-row{grid-template-columns:24px 110px 1fr;}.fdx-conf-grid{grid-template-columns:1fr 1fr;}}
 </style>
 </head>
 <body>
@@ -1068,7 +1112,51 @@
         <tbody id="dashRow"></tbody>
       </table>
 
-      <div class="section-head"><span class="idx">6</span><h2>Currency Strength Matrix</h2><div class="rule"></div></div>
+
+      <div class="section-head"><span class="idx">30</span><h2>Intelligence Architecture</h2><div class="rule"></div></div>
+      <section class="fdx-intel" id="fdxIntelligence" aria-label="FLIPDEMON EXTREME intelligence architecture">
+        <div class="fdx-head">
+          <div>
+            <div class="fdx-kicker">FLIPDEMON EXTREME · OBSERVABILITY LAYER</div>
+            <div class="fdx-title">Decision Intelligence Command Surface</div>
+            <div class="fdx-sub">DATA → QUALITY → STATE → EVIDENCE → SIGNAL → PERMISSION → RISK → EXECUTION. This surface exposes existing engine outputs; it does not create trading permission or new signals.</div>
+          </div>
+          <div class="fdx-live-note" id="fdxRuntimeNote">WEB ANALYSIS CLIENT · READ ONLY</div>
+        </div>
+        <div class="fdx-grid">
+          <div class="fdx-panel">
+            <div class="fdx-panel-title">Market State</div>
+            <div id="fdxMarketState"></div>
+          </div>
+          <div class="fdx-panel">
+            <div class="fdx-panel-title">Confidence Separation</div>
+            <div class="fdx-conf-grid" id="fdxConfidence"></div>
+            <div class="fdx-panel-title" style="margin-top:15px;">Evidence Families</div>
+            <div class="fdx-evidence" id="fdxEvidenceFamilies"></div>
+          </div>
+        </div>
+        <div class="fdx-grid">
+          <div class="fdx-panel">
+            <div class="fdx-panel-title">Risk Shield · Model Risk</div>
+            <div id="fdxRiskShield"></div>
+          </div>
+          <div class="fdx-panel">
+            <div class="fdx-panel-title">Execution Intelligence</div>
+            <div id="fdxExecution"></div>
+          </div>
+        </div>
+        <div class="fdx-panel fdx-trace">
+          <div class="fdx-panel-title">Decision Trace</div>
+          <div id="fdxDecisionTrace"></div>
+          <div class="fdx-final"><div><div class="fdx-final-label">Final Decision</div><div class="fdx-final-value" id="fdxFinalDecision">—</div></div><div class="fdx-final-note" id="fdxFinalNote">Waiting for analysis</div></div>
+        </div>
+        <div class="fdx-panel">
+          <div class="fdx-panel-title">System Health</div>
+          <div id="fdxSystemHealth"></div>
+        </div>
+        <div class="fdx-foot">Evidence families are intentionally grouped to avoid visually double-counting correlated observations. Data confidence is never fabricated from a model score. Missing runtime capabilities remain UNAVAILABLE.</div>
+      </section>
+\n      <div class="section-head"><span class="idx">6</span><h2>Currency Strength Matrix</h2><div class="rule"></div></div>
       <div class="strength-panel" id="strengthPanel"></div>
 
       <div class="section-head"><span class="idx">26 / 27</span><h2>Trade Card &amp; Autopsy Narrative</h2><div class="rule"></div></div>
@@ -2185,7 +2273,7 @@ function showResult(p){
   renderStrength(p);
   renderAlignment(p);
   renderRiskCountdown(p);
-  renderSynthesis(p);
+  renderSynthesis(p);\n  fdxRenderState(p);
   updateStickyVerdict(p);
   prefillOrderForm(p);
   results.classList.add('active');
