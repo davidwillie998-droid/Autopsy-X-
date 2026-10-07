@@ -113,19 +113,10 @@ PG = os.environ.get("AUTOPSYX_PG", "host=/tmp port=55432 user=postgres")
 
 
 def _psql(db, sql=None, file=None):
-    parts = dict(kv.split("=", 1) for kv in PG.split() if "=" in kv)
-    cmd = ["psql"]
-    env = os.environ.copy()
-    for key, value in parts.items():
-        if key == "user":
-            cmd += ["--username", value]
-        elif key == "password":
-            env["PGPASSWORD"] = value
-        else:
-            cmd += [f"--{key}", value]
-    cmd += ["-d", db, "-v", "ON_ERROR_STOP=1", "-qAt"]
+    cmd = ["psql", *[f"--{k}={v}" if k != "user" else f"--username={v}" for k, v in
+                     (kv.split("=") for kv in PG.split())], "-d", db, "-v", "ON_ERROR_STOP=1", "-qAt"]
     cmd += ["-f", file] if file else ["-c", sql]
-    return subprocess.run(cmd, capture_output=True, text=True, env=env)
+    return subprocess.run(cmd, capture_output=True, text=True)
 
 
 def _pg_available():
