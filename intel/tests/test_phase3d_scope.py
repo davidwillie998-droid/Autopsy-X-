@@ -48,11 +48,11 @@ def test_phase3d_does_not_modify_frozen_phase3c1_implementation():
         text=True,
         check=True,
     ).stdout.splitlines()
-    allowed = (
-        f.startswith("docs/PHASE3D_")
-        or f.startswith("intel/datasets/phase3d/")
-        or f.startswith("intel/tests/test_phase3d_")
-        or f.startswith(".github/workflows/phase3d-")
-    )
     for f in changed:
+        allowed = (
+            f.startswith("docs/PHASE3D_")
+            or f.startswith("intel/datasets/phase3d/")
+            or f.startswith("intel/tests/test_phase3d_")
+            or f.startswith(".github/workflows/phase3d-")
+        )
         assert allowed, f"Phase 3D touched an unexpected path: {f}"
