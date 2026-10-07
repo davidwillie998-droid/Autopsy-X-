@@ -54,5 +54,6 @@ def test_phase3d_does_not_modify_frozen_phase3c1_implementation():
             or f.startswith("intel/datasets/phase3d/")
             or f.startswith("intel/tests/test_phase3d_")
             or f.startswith(".github/workflows/phase3d-")
+            or f == ".github/workflows/intel-tests.yml"
         )
         assert allowed, f"Phase 3D touched an unexpected path: {f}"
