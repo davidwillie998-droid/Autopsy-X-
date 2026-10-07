@@ -105,7 +105,7 @@ H10 may be classified as VALIDATED only if all of the following hold:
 
 Otherwise the result is INSUFFICIENT EVIDENCE or FAILED VALIDATION, as appropriate.
 
-## Production boundary
+## Production Boundary
 
 Phase 3D contains no order placement, wallet signing, strategy execution, EA integration, or live trading.
 
