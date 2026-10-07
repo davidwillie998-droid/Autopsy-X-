@@ -35,7 +35,11 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-      - run: pip install "pytest==9.1.1"
+      - name: Install test dependencies
+        run: |
+          pip install "pytest==9.1.1"
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
       - name: Re-render derived Phase 2 documents for verification
         # Phase 2 evidence/report artifacts remain frozen in git. The renderer changed
         # after those artifacts were generated, so CI regenerates only the derived
