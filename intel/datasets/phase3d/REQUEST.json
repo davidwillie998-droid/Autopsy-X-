@@ -1,0 +1,21 @@
+{
+  "schema": "phase3d.request.1",
+  "phase": "3D",
+  "purpose": "independent_validation",
+  "parent_commit": "796426ef21181612e763b12d272b542024e08706",
+  "hypothesis_ids": ["H10"],
+  "min_distinct_tokens": 85,
+  "required_independent_windows": 2,
+  "horizon_steps": 3,
+  "exclude_phase3c_archives": [
+    "gt-sol-20260930a",
+    "gt-sol-20260930b",
+    "gt-sol-20260930c",
+    "p3a-sol-20261001d2",
+    "p3c-sol-20261004e",
+    "p3c-sol-20261004f"
+  ],
+  "production_integration": false,
+  "wallet_signing": false,
+  "order_placement": false
+}
