@@ -23,5 +23,3 @@ services:
         generateValue: true
       - key: ANTHROPIC_MODEL
         value: claude-sonnet-5
-      - key: ALLOWED_ORIGIN
-        value: https://autopsy-x-dashboard.onrender.com
