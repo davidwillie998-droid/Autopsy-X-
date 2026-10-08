@@ -60,14 +60,18 @@ public:
 
    //--- confirm actual open position matches expectation; never trust the send() return alone ---
    bool              ConfirmPosition(const string symbol,ENUM_AX_DIR expectedDir,const double expectedLots,
-                                      ulong &ticketOut,double &fillPriceOut) const
+                                      ulong &ticketOut,double &fillPriceOut,double &actualLotsOut) const
      {
+      actualLotsOut=0.0;
       if(!PositionSelect(symbol)) return(expectedDir==AX_DIR_NONE);
       long type = PositionGetInteger(POSITION_TYPE);
       ENUM_AX_DIR actualDir = (type==POSITION_TYPE_BUY) ? AX_DIR_BUY : AX_DIR_SELL;
       if(actualDir!=expectedDir) return(false);
       double vol = PositionGetDouble(POSITION_VOLUME);
-      if(MathAbs(vol-expectedLots) > (expectedLots*0.05+0.0001)) return(false);
+      // A market deal may be partially filled. A smaller confirmed position is safe to
+      // manage and must not be treated as a failed entry. An overfill is never accepted.
+      if(vol<=0.0 || vol>expectedLots+0.0000001) return(false);
+      actualLotsOut = vol;
       ticketOut    = (ulong)PositionGetInteger(POSITION_TICKET);
       fillPriceOut = PositionGetDouble(POSITION_PRICE_OPEN);
       return(true);
@@ -92,10 +96,11 @@ public:
    bool              OpenMarket(const string symbol,const ENUM_AX_DIR dir,const double lots,
                                  const double slPrice,const double tpPrice,const string comment,
                                  ulong &ticketOut,double &fillPriceOut,string &errorReason,
-                                 int &latencyMsOut)
+                                 int &latencyMsOut,double &actualLotsOut)
      {
       uint startTick = GetTickCount();
       latencyMsOut = 0;
+      actualLotsOut = 0.0;
       if(dir==AX_DIR_NONE || lots<=0) { errorReason="Invalid direction/lots"; return(false); }
 
       bool ok=false;
@@ -115,7 +120,7 @@ public:
          if(ok)
            {
             latencyMsOut = (int)(GetTickCount()-startTick);
-            if(ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut))
+            if(ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut,actualLotsOut))
               {
                errorReason="";
                return(true);
@@ -159,20 +164,37 @@ public:
       return(!PositionSelect(symbol));
      }
 
-   //--- close part of an open position (scale-out); confirms the remaining volume shrank ---
+   //--- close part of an open position (scale-out). This EA runs on NETTING accounts, where
+   //--- CTrade::PositionClosePartial() is a hedging-only helper. On netting we reduce the
+   //--- existing position with an opposite market deal for the exact requested volume.
    bool              ClosePartial(const string symbol,const double volumeToClose,string &errorReason)
      {
       if(!PositionSelect(symbol)) { errorReason="No position to partially close"; return(false); }
       double before = PositionGetDouble(POSITION_VOLUME);
       if(volumeToClose<=0 || volumeToClose>=before) { errorReason="Invalid partial close volume"; return(false); }
 
+      long marginMode = AccountInfoInteger(ACCOUNT_MARGIN_MODE);
+      bool isHedging = (marginMode==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING);
       bool ok=false;
       for(int attempt=0; attempt<=m_maxRetries; attempt++)
         {
          if(attempt>0) Sleep(m_retryDelayMs);
          if(!PositionSelect(symbol)) { errorReason="Position closed before partial could execute"; return(false); }
-         ok = m_trade.PositionClosePartial(symbol,volumeToClose);
-         if(ok)
+
+         if(isHedging)
+           ok = m_trade.PositionClosePartial((ulong)PositionGetInteger(POSITION_TICKET),volumeToClose);
+         else
+           {
+            long type = PositionGetInteger(POSITION_TYPE);
+            // Netting reduction: an opposite deal decreases the one existing position.
+            if(type==POSITION_TYPE_BUY) ok = m_trade.Sell(volumeToClose,symbol,0.0,0.0,0.0,"AXFDX|PARTIAL");
+            else if(type==POSITION_TYPE_SELL) ok = m_trade.Buy(volumeToClose,symbol,0.0,0.0,0.0,"AXFDX|PARTIAL");
+            else { errorReason="Unknown position type"; return(false); }
+           }
+
+         uint retcode = m_trade.ResultRetcode();
+         bool serverAccepted = (retcode==TRADE_RETCODE_DONE || retcode==TRADE_RETCODE_DONE_PARTIAL);
+         if(ok && serverAccepted)
            {
             if(!PositionSelect(symbol))
               {
@@ -180,11 +202,11 @@ public:
                return(false);
               }
             double after = PositionGetDouble(POSITION_VOLUME);
-            if(after < before-0.0000001) { errorReason=""; return(true); }
-            errorReason="Partial close reported success but volume did not shrink";
+            if(after < before-0.0000001 && after>0.0) { errorReason=""; return(true); }
+            errorReason="Partial close did not leave the expected reduced open position";
             return(false);
            }
-         uint retcode = m_trade.ResultRetcode();
+
          errorReason = StringFormat("Partial close failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
          if(!RetryableRetcode(retcode)) return(false);
         }
@@ -198,16 +220,18 @@ public:
      {
       if(!ClosePosition(symbol,errorReason)) return(false);
       int latencyMs;
-      return(OpenMarket(symbol,newDir,lots,slPrice,tpPrice,comment,ticketOut,fillPriceOut,errorReason,latencyMs));
+      double actualLots;
+      return(OpenMarket(symbol,newDir,lots,slPrice,tpPrice,comment,ticketOut,fillPriceOut,errorReason,latencyMs,actualLots));
      }
 
    bool              ModifyStops(const string symbol,const double slPrice,const double tpPrice,string &errorReason)
      {
       if(!PositionSelect(symbol)) { errorReason="No position to modify"; return(false); }
       bool ok = m_trade.PositionModify(symbol,slPrice,tpPrice);
-      if(!ok)
+      uint retcode = m_trade.ResultRetcode();
+      if(!ok || retcode!=TRADE_RETCODE_DONE)
         {
-         errorReason = StringFormat("Modify failed: %u %s",m_trade.ResultRetcode(),m_trade.ResultRetcodeDescription());
+         errorReason = StringFormat("Modify failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
          return(false);
         }
       errorReason="";
