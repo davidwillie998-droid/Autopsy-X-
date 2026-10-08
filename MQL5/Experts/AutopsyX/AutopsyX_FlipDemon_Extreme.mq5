@@ -808,8 +808,8 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    g_exec.SetDeviationPoints(deviationPts);
 
    string entryReason = AxBuildEntryReason(score,dir)+" "+tag;
-   ulong newTicket; double fillPrice; string execErr; int fillLatencyMs;
-   if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr,fillLatencyMs))
+   ulong newTicket; double fillPrice; double actualLots; string execErr; int fillLatencyMs;
+   if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr,fillLatencyMs,actualLots))
      {
       g_consecutiveExecFailures++;
       g_risk.RegisterExecutionFailure(); // feeds CRiskEngine's own MaxExecutionFailures circuit breaker
@@ -822,6 +822,9 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    g_consecutiveExecFailures = 0;
    g_risk.RegisterExecutionSuccess();
 
+   // Use the confirmed filled volume, not the requested volume. A legitimate partial
+   // fill is a real position and must be managed at its actual exposure.
+   lots = actualLots;
    AxInitPositionState(newTicket,dir,lots,fillPrice,slPrice,tpPrice,score,entryReason,flipSeq,intendedPrice);
    // AFE's readings at the moment of this entry, carried through to the closed-trade autopsy record
    g_posState.afeCapitalState   = g_afe.State();
