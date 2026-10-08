@@ -68,14 +68,20 @@ jobs:
         if: always()
         working-directory: intel
         run: |
-          python -m autopsyx seal datasets/phase3d/runs/p3d-sol-20261008a
-          python -m autopsyx seal datasets/phase3d/runs/p3d-sol-20261008b
+          for run in p3d-sol-20261008a p3d-sol-20261008b; do
+            if [ -f "datasets/phase3d/runs/$run/run.json" ]; then
+              python -m autopsyx seal "datasets/phase3d/runs/$run"
+            fi
+          done
       - name: Verify provenance
         if: always()
         working-directory: intel
         run: |
-          python -m autopsyx verify-provenance datasets/phase3d/runs/p3d-sol-20261008a > datasets/phase3d/runs/p3d-sol-20261008a/runner_verify.json || true
-          python -m autopsyx verify-provenance datasets/phase3d/runs/p3d-sol-20261008b > datasets/phase3d/runs/p3d-sol-20261008b/runner_verify.json || true
+          for run in p3d-sol-20261008a p3d-sol-20261008b; do
+            if [ -f "datasets/phase3d/runs/$run/run.json" ]; then
+              python -m autopsyx verify-provenance "datasets/phase3d/runs/$run" > "datasets/phase3d/runs/$run/runner_verify.json" || true
+            fi
+          done
       - name: Upload acquisition artifacts
         if: always()
         uses: actions/upload-artifact@v4
