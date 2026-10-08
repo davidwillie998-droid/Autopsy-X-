@@ -722,6 +722,19 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
 
    double lots = g_risk.CalculateLotSize(g_md,actualSlDistPts);
 
+   // A broker minimum lot can otherwise force a position larger than the configured
+   // account-risk budget. Fail closed instead of allowing the minimum volume to
+   // override the risk ceiling.
+   if(lots>0.0 && AccountInfoDouble(ACCOUNT_EQUITY)>0.0 &&
+      g_md.Point()>0.0 && g_md.TickSize()>0.0 && g_md.TickValue()>0.0)
+     {
+      double projectedLoss = (actualSlDistPts*g_md.Point()/g_md.TickSize())*
+                             g_md.TickValue()*lots;
+      double projectedRiskPct = projectedLoss/AccountInfoDouble(ACCOUNT_EQUITY)*100.0;
+      if(projectedRiskPct > g_risk.RiskPercent()+0.0001)
+         lots = 0.0;
+     }
+
    // Adaptive Flip Engine: capital-protection gate + position-size scaler, applied unconditionally
    // like every other gate above - a flip re-entry gets no exemption from risk-of-ruin/drawdown
    // protection just because it's defensive in nature. Runs here (AFTER stops/base lot size are
