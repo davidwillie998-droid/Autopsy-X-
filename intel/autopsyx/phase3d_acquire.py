@@ -52,7 +52,7 @@ def run(request_path, window, out_root):
     cfg=req["windows"][window]
     out=Path(out_root)/cfg["run_id"]; out.mkdir(parents=True,exist_ok=True)
     forbidden=forbidden_tokens(window,out_root)
-    plan=acquire.Plan(**{**req["plan"],"seed":int(cfg["seed"])})
+    plan=acquire.Plan(**{k:v for k,v in req["plan"].items() if k in acquire.Plan.__dataclass_fields__}, seed=int(cfg["seed"]))
     u=_select(plan,forbidden)
     if len(u["tokens"])<req["min_distinct_tokens"] or forbidden & set(u["tokens"]):
         raise RuntimeError("Phase 3D universe gate failed")
