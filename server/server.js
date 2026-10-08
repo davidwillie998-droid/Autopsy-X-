@@ -10,7 +10,6 @@ const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 // host like Render/Railway (they route to the container's PORT, not just
 // localhost). Set HOST=127.0.0.1 to restrict to local-machine-only use.
 const HOST = process.env.HOST || '0.0.0.0';
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://autopsy-x-dashboard.onrender.com';
 
 if (!ANTHROPIC_API_KEY) {
   console.warn('WARNING: ANTHROPIC_API_KEY is not set. /analyze will return an error until it is.');
@@ -20,17 +19,8 @@ if (!BRIDGE_KEY) {
 }
 
 const app = express();
-app.use(cors({ origin: ALLOWED_ORIGIN }));
+app.use(cors());
 app.use(express.json({ limit: '256kb' }));
-
-const analyzeHits = new Map();
-function analysisRateLimit(req, res, next) {
-  const key = req.ip || 'unknown';
-  const now = Date.now();
-  const hits = (analyzeHits.get(key) || []).filter(t => now - t < 60_000);
-  if (hits.length >= 12) return res.status(429).json({ error: 'Analysis rate limit reached. Try again shortly.' });
-  hits.push(now); analyzeHits.set(key, hits); next();
-}
 
 // In-memory only — restarts clear it. This is a bridge, not a database.
 const state = {
@@ -83,7 +73,7 @@ app.post('/ingest/account', requireBridgeKey, (req, res) => {
 
 // Proxies to Claude so the API key never reaches the browser.
 // Body: { system, prompt, useSearch }
-app.post('/analyze', analysisRateLimit, async (req, res) => {
+app.post('/analyze', requireBridgeKey, async (req, res) => {
   if (!ANTHROPIC_API_KEY) {
     return res.status(500).json({ error: 'Server has no ANTHROPIC_API_KEY configured.' });
   }
