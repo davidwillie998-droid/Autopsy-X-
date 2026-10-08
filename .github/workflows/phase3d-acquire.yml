@@ -1,0 +1,93 @@
+name: Phase 3D independent acquisition
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [phase3d-independent-validation]
+    paths:
+      - "intel/datasets/phase3d/ACQUISITION_REQUEST.json"
+      - "intel/autopsyx/phase3d_acquire.py"
+      - ".github/workflows/phase3d-acquire.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: phase3d-independent-acquisition
+  cancel-in-progress: false
+
+jobs:
+  acquire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Acquire Window A
+        working-directory: intel
+        env:
+          AUTOPSYX_SOLANA_RPC_URL: \${{ secrets.AUTOPSYX_SOLANA_RPC_URL }}
+        run: python -m autopsyx.phase3d_acquire --request datasets/phase3d/ACQUISITION_REQUEST.json --window A --out-root datasets/phase3d/runs
+      - name: Verify Window A
+        working-directory: intel
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("datasets/phase3d/runs/p3d-sol-20261008a")
+          u=json.loads((p/"universe.json").read_text()); m=json.loads((p/"run.json").read_text())
+          assert len(u["tokens"]) >= 85
+          assert m["status"] == "COMPLETE"
+          assert m["phase3d"]["contamination_check"] is True
+          PY
+      - name: Acquire Window B
+        working-directory: intel
+        env:
+          AUTOPSYX_SOLANA_RPC_URL: \${{ secrets.AUTOPSYX_SOLANA_RPC_URL }}
+        run: python -m autopsyx.phase3d_acquire --request datasets/phase3d/ACQUISITION_REQUEST.json --window B --out-root datasets/phase3d/runs
+      - name: Verify independence
+        working-directory: intel
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          a=Path("datasets/phase3d/runs/p3d-sol-20261008a"); b=Path("datasets/phase3d/runs/p3d-sol-20261008b")
+          ua=set(json.loads((a/"universe.json").read_text())["tokens"]); ub=set(json.loads((b/"universe.json").read_text())["tokens"])
+          mb=json.loads((b/"run.json").read_text())
+          assert len(ua) >= 85 and len(ub) >= 85
+          assert not (ua & ub), f"Phase 3D token overlap: {len(ua & ub)}"
+          assert mb["status"] == "COMPLETE"
+          assert mb["phase3d"]["contamination_check"] is True
+          print(f"Phase 3D acquisition PASS: A={len(ua)}, B={len(ub)}")
+          PY
+      - name: Seal canonical datasets
+        if: always()
+        working-directory: intel
+        run: |
+          python -m autopsyx seal datasets/phase3d/runs/p3d-sol-20261008a
+          python -m autopsyx seal datasets/phase3d/runs/p3d-sol-20261008b
+      - name: Verify provenance
+        if: always()
+        working-directory: intel
+        run: |
+          python -m autopsyx verify-provenance datasets/phase3d/runs/p3d-sol-20261008a > datasets/phase3d/runs/p3d-sol-20261008a/runner_verify.json || true
+          python -m autopsyx verify-provenance datasets/phase3d/runs/p3d-sol-20261008b > datasets/phase3d/runs/p3d-sol-20261008b/runner_verify.json || true
+      - name: Upload acquisition artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase3d-acquisition-\${{ github.run_id }}
+          path: intel/datasets/phase3d/runs
+          retention-days: 30
+      - name: Commit acquisition archives
+        if: always()
+        run: |
+          git config user.name "autopsyx-acquisition"
+          git config user.email "actions@users.noreply.github.com"
+          git add intel/datasets/phase3d/runs
+          git commit -m "Phase 3D independent acquisition: windows A and B (workflow \${{ github.run_id }})" || true
+          git push origin "HEAD:\${{ github.ref_name }}"
