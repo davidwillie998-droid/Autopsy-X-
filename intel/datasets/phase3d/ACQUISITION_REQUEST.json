@@ -1,0 +1,39 @@
+{
+  "schema": "phase3d.acquisition.request.1",
+  "phase": "3D",
+  "purpose": "independent_validation_acquisition",
+  "hypothesis_ids": ["H10"],
+  "min_distinct_tokens": 85,
+  "required_independent_windows": 2,
+  "horizon_steps": 3,
+  "exclude_phase3c_archives": ["gt-sol-20260930a","gt-sol-20260930b","gt-sol-20260930c","p3a-sol-20261001d2","p3c-sol-20261004e","p3c-sol-20261004f"],
+  "plan": {
+    "network": "solana",
+    "strata": {"young": 30, "quiet_young": 5, "trending": 30, "established": 30},
+    "new_pool_pages": 3,
+    "backfill_pages": 2,
+    "duration_s": 3000,
+    "cycle_s": 60,
+    "poll_ohlcv_limit": 5,
+    "holders_per_cycle": 2,
+    "lag_ms": 60000,
+    "gt_rate_per_s": 0.2,
+    "gt_min_rate_per_s": 0.03,
+    "ohlcv_every": 1,
+    "circuit_waits": 5,
+    "phase3a": true,
+    "rpc_rate_per_s": 2.0,
+    "rpc_page_limit": 100,
+    "rpc_max_pages": 1,
+    "rpc_max_txs": 8,
+    "phase3c1_replay_reserve_s": 1800,
+    "phase3c1_enrichment_guard_s": 180
+  },
+  "windows": {
+    "A": {"run_id": "p3d-sol-20261008a", "seed": 20261008},
+    "B": {"run_id": "p3d-sol-20261008b", "seed": 20261009}
+  },
+  "production_integration": false,
+  "wallet_signing": false,
+  "order_placement": false
+}
