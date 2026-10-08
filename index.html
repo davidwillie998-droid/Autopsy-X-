@@ -945,7 +945,7 @@
       <div class="mt5-form" id="bridgeConnectForm">
         <div class="mt5-field">
           <label for="bridgeUrl">BRIDGE SERVER URL</label>
-          <input id="bridgeUrl" type="text" value="http://127.0.0.1:8787">
+          <input id="bridgeUrl" type="text" value="https://autopsy-x-bridge.onrender.com">
         </div>
         <div class="mt5-field">
           <label for="bridgeKey">BRIDGE KEY</label>
@@ -959,7 +959,7 @@
         <div class="mt5-account-grid" id="bridgeTicker"></div>
         <div class="mt5-form" style="margin-top:16px;">
           <div class="mt5-field" style="flex-direction:row;align-items:center;gap:8px;">
-            <input id="bridgeRouteAnalysis" type="checkbox" style="width:auto;">
+            <input id="bridgeRouteAnalysis" type="checkbox" style="width:auto;" checked>
             <label for="bridgeRouteAnalysis" style="font-size:11px;">Route analysis through this bridge's /analyze (keeps your Anthropic key server-side)</label>
           </div>
         </div>
@@ -1831,6 +1831,8 @@ async function sendOrder(){
   }
 }
 
+window.addEventListener('DOMContentLoaded',()=>{ setTimeout(()=>{ if(!bridge.connected) connectBridge().catch(()=>{}); },250); });
+
 let runHistory=[];
 
 function directionDotClass(d){
@@ -2361,14 +2363,16 @@ async function analyzeAsset(asset, onStatus){
   const status=onStatus||function(){};
   status('Pulling current data for '+asset+'...');
 
-  const useBridge = bridge.connected && document.getElementById('bridgeRouteAnalysis') && document.getElementById('bridgeRouteAnalysis').checked;
+  const useBridge = document.getElementById('bridgeRouteAnalysis') && document.getElementById('bridgeRouteAnalysis').checked;
+  if(useBridge && !bridge.connected) await connectBridge();
+  const bridgeReady = useBridge && bridge.connected;
   const livePrice=getBridgeLivePrice(asset);
   const userContent = livePrice!==null
     ? 'Analyze '+asset+'. Live bridge feed shows current bid '+livePrice+' — treat this as the authoritative current price and reconcile any web-sourced price against it rather than the other way around.'
     : 'Analyze '+asset+'.';
 
   let data;
-  if(useBridge){
+  if(bridgeReady){
     status('Routing through your bridge server...');
     const res=await fetch(bridge.url+'/analyze',{
       method:'POST',
