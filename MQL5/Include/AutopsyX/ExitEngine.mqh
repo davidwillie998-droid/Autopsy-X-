@@ -70,9 +70,13 @@ public:
          double atrDist = currentAtr*m_atrMultiplier;
          if(atrDist>slDist) slDist = atrDist;
         }
-      double tpDist = slDist*m_dynamicTpRR;
       int minStop = md.MinStopDistancePts();
       if(slDist < minStop*point) slDist = minStop*point;
+
+      // TP must be derived from the FINAL protective-stop distance. If the broker's
+      // minimum stop/freeze distance forces SL wider, recomputing TP here preserves
+      // the configured reward:risk ratio instead of silently degrading it.
+      double tpDist = slDist*m_dynamicTpRR;
 
       if(dir==AX_DIR_BUY)
         {
