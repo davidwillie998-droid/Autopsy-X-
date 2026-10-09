@@ -236,6 +236,17 @@ public:
       return(usagePct<m_maxMarginUsagePercent);
      }
 
+   // Evaluate margin after adding the proposed order, not merely current account usage.
+   bool              ProjectedMarginAcceptable(const double additionalMargin) const
+     {
+      if(additionalMargin<0.0) return(false);
+      double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+      double freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+      if(equity<=0.0 || freeMargin<additionalMargin) return(false);
+      double projectedUsage=((AccountInfoDouble(ACCOUNT_MARGIN)+additionalMargin)/equity)*100.0;
+      return(projectedUsage<m_maxMarginUsagePercent);
+     }
+
    //--- consecutive execution failures (order send rejected, fill never confirmed) - distinct from  ---
    //--- AFE's poor-FILL-quality tracking (slippage/latency on orders that DID fill). A string of raw ---
    //--- failures to even get an order accepted is a different, more basic signal that something is   ---
