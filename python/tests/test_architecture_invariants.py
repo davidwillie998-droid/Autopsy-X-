@@ -219,3 +219,33 @@ def test_no_python_mql5_ipc_bridge():
             if re.search(r"\bsocket\.|named.?pipe|DllImport|zmq|subprocess\.|os\.system\(", text, re.IGNORECASE):
                 offenders.append(str(path.relative_to(REPO_ROOT)))
     assert not offenders, f"Potential Python<->MQL5 IPC bridge found in: {offenders}"
+
+
+def test_live_entry_gate_uses_account_wide_exposure_and_blocks_foreign_symbol_positions():
+    ea = EA_FILE.read_text(errors="replace")
+    assert "AxCountRealPositions(accountPositions,accountExposureLots,realPositionsForSymbol," in ea
+    assert "PreTradeAllowed(accountPositions,accountExposureLots" in ea
+    assert "if(foreignPositionOnSymbol)" in ea
+    assert "PreTradeAllowed(0,0.0" not in ea
+
+
+def test_live_position_sizing_uses_broker_account_currency_profit_calculation():
+    ea = EA_FILE.read_text(errors="replace")
+    assert "OrderCalcProfit(orderType,_Symbol,lots,intendedPrice,slPrice,projectedProfitAtStop)" in ea
+    assert "if(!riskCalcOk || projectedProfitAtStop>=0.0 || projectedLoss>riskBudget+0.01)" in ea
+
+
+def test_execution_requires_owned_position_and_confirmed_server_fill():
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    assert "PositionGetInteger(POSITION_MAGIC)!=m_magic" in execution
+    assert "Existing position on symbol; refusing to merge or take ownership" in execution
+    assert "retcode==TRADE_RETCODE_DONE || retcode==TRADE_RETCODE_DONE_PARTIAL" in execution
+
+
+def test_partial_close_accounting_uses_actual_reduced_volume():
+    ea = EA_FILE.read_text(errors="replace")
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    assert "double &actualVolumeClosed" in execution
+    assert "actualVolumeClosed=reduced;" in execution
+    assert "AxRecordPartialClose(actualVolumeClosed," in ea
+    assert "AxRecordPartialClose(volumeToClose," not in ea
