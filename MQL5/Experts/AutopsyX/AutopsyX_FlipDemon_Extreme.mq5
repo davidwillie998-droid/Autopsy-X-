@@ -828,6 +828,29 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
            }
         }
      }
+   // Re-check risk and margin on the FINAL volume after adaptive scaling, broker normalization,
+   // and affordability clamps. The earlier base-lot check alone cannot constrain a later multiplier.
+   if(lots>0.0)
+     {
+      double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+      double finalStopProfit=0.0,requiredMargin=0.0;
+      ENUM_ORDER_TYPE finalOrderType=(dir==AX_DIR_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+      bool finalRiskOk=(equity>0.0 &&
+                        OrderCalcProfit(finalOrderType,_Symbol,lots,intendedPrice,slPrice,finalStopProfit));
+      double finalRiskBudget=equity*g_risk.RiskPercent()/100.0;
+      bool finalMarginOk=OrderCalcMargin(finalOrderType,_Symbol,lots,intendedPrice,requiredMargin) &&
+                         g_risk.ProjectedMarginAcceptable(requiredMargin);
+      if(!finalRiskOk || finalStopProfit>=0.0 ||
+         MathAbs(finalStopProfit)>finalRiskBudget+0.01 || !finalMarginOk)
+        {
+         if(InpVerboseLogging)
+            PrintFormat("AUTOPSY X: final size rejected by projected risk/margin gate (risk_ok=%s, margin_ok=%s, stop_loss=%.2f, budget=%.2f, margin=%.2f)",
+                        finalRiskOk ? "true":"false",finalMarginOk ? "true":"false",
+                        MathAbs(finalStopProfit),finalRiskBudget,requiredMargin);
+         lots=0.0;
+        }
+     }
+
    if(lots<=0)
      {
       if(InpVerboseLogging) Print("AUTOPSY X: computed lot size is zero - entry skipped");
