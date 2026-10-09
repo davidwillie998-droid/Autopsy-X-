@@ -30,9 +30,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # The provenance/scope tests compare against immutable historical
-          # Phase 2/3A/3B commits. A shallow clone makes those commits
-          # unavailable and causes git show/log to return empty output.
+          # For pull requests, test the PR branch itself rather than GitHub's
+          # synthetic merge commit. Historical scope checks must not mistake
+          # files present only on the base branch for PR changes.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # Historical provenance/scope tests need immutable Phase 2/3A/3B
+          # commits available locally.
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
