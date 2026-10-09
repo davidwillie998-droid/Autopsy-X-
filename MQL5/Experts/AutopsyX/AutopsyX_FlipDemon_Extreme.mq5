@@ -1108,6 +1108,13 @@ void OnTick(void)
    g_risk.OnTickHousekeeping();
    g_afe.OnTickHousekeeping();
 
+
+   // Recover a same-magic position that appears after an ambiguous server acknowledgement.
+   // This prevents a delayed fill from remaining unmanaged just because OpenMarket returned false.
+   if(!g_haveOpenPosition && g_exec.HasOpenPosition(_Symbol))
+      AxReconcileExistingPosition();
+
+
    //--- roll the "poor fills today" counter at broker midnight, same day boundary RiskEngine uses ---
    MqlDateTime dtNow; TimeToStruct(TimeCurrent(),dtNow);
    datetime today = TimeCurrent()-(dtNow.hour*3600+dtNow.min*60+dtNow.sec);
