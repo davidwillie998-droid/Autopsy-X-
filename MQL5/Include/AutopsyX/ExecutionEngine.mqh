@@ -82,12 +82,14 @@ public:
 
    bool              HasOpenPosition(const string symbol) const
      {
-      return(PositionSelect(symbol));
+      if(!PositionSelect(symbol)) return(false);
+      return((ulong)PositionGetInteger(POSITION_MAGIC)==m_magic);
      }
 
    ENUM_AX_DIR       CurrentPositionDir(const string symbol) const
      {
       if(!PositionSelect(symbol)) return(AX_DIR_NONE);
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic) return(AX_DIR_NONE);
       long type = PositionGetInteger(POSITION_TYPE);
       return((type==POSITION_TYPE_BUY) ? AX_DIR_BUY : AX_DIR_SELL);
      }
@@ -152,12 +154,16 @@ public:
    bool              ClosePosition(const string symbol,string &errorReason)
      {
       if(!PositionSelect(symbol)) { errorReason=""; return(true); } // already flat
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+        { errorReason="Refusing to close a position not owned by this EA"; return(false); }
 
       bool ok=false;
       for(int attempt=0; attempt<=m_maxRetries; attempt++)
         {
          if(attempt>0) Sleep(m_retryDelayMs);
          if(!PositionSelect(symbol)) { errorReason=""; return(true); }
+         if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+           { errorReason="Position ownership changed; refusing further close attempts"; return(false); }
          ok = m_trade.PositionClose(symbol);
          if(ok)
            {
@@ -183,6 +189,8 @@ public:
      {
       actualVolumeClosed=0.0;
       if(!PositionSelect(symbol)) { errorReason="No position to partially close"; return(false); }
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+        { errorReason="Refusing to partially close a position not owned by this EA"; return(false); }
       double before = PositionGetDouble(POSITION_VOLUME);
       if(volumeToClose<=0 || volumeToClose>=before) { errorReason="Invalid partial close volume"; return(false); }
 
@@ -194,7 +202,19 @@ public:
          if(attempt>0) Sleep(m_retryDelayMs);
          if(!PositionSelect(symbol)) { errorReason="Position closed before partial could execute"; return(false); }
 
-         if(isHedging)
+          if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+            { errorReason="Position ownership changed; refusing partial close"; return(false); }
+          // A timeout or connection error can be ambiguous. If the prior attempt reduced volume,
+          // reconcile it instead of submitting a duplicate scale-out.
+          double currentVolume=PositionGetDouble(POSITION_VOLUME);
+          if(currentVolume<before-0.0000001)
+            {
+             actualVolumeClosed=before-currentVolume;
+             if(currentVolume>0.0) { errorReason=""; return(true); }
+             errorReason="Partial request fully closed the position; reconcile as a full close";
+             return(false);
+            }
+          if(isHedging)
            ok = m_trade.PositionClosePartial((ulong)PositionGetInteger(POSITION_TICKET),volumeToClose);
          else
            {
@@ -252,6 +272,8 @@ public:
    bool              ModifyStops(const string symbol,const double slPrice,const double tpPrice,string &errorReason)
      {
       if(!PositionSelect(symbol)) { errorReason="No position to modify"; return(false); }
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+        { errorReason="Refusing to modify stops on a position not owned by this EA"; return(false); }
       bool ok = m_trade.PositionModify(symbol,slPrice,tpPrice);
       uint retcode = m_trade.ResultRetcode();
       if(!ok || retcode!=TRADE_RETCODE_DONE)
