@@ -1304,9 +1304,19 @@ void OnTick(void)
                  {
                   g_posState.modifyFailCount++;
                   if(InpVerboseLogging) PrintFormat("AUTOPSY X: stop modify failed (%s) - streak=%d",modErr,g_posState.modifyFailCount);
-                  // stops that can't be reliably managed are unsafe to hold - cut rather than run naked
                   if(g_posState.modifyFailCount>=InpMaxModifyFailures)
-                     AxCloseAndRecord(AX_EXIT_EXECUTION_QUALITY);
+                    {
+                     // A failed trailing/breakeven modification does not mean the position is
+                     // naked: the broker may still hold the original protective stop-loss.
+                     if(PositionSelect(_Symbol) && PositionGetDouble(POSITION_SL)>0.0)
+                       {
+                        if(InpVerboseLogging)
+                           Print("AUTOPSY X: stop update streak reached, but broker protective SL remains active; retaining position");
+                        g_posState.modifyFailCount=0;
+                       }
+                     else
+                        AxCloseAndRecord(AX_EXIT_EXECUTION_QUALITY);
+                    }
                  }
               }
            }
