@@ -15,6 +15,7 @@ class CExecutionEngine
 private:
    CTrade            m_trade;
    string            m_symbol;
+   ulong             m_magic;
    int               m_maxRetries;
    int               m_retryDelayMs;
 
@@ -38,11 +39,12 @@ private:
      }
 
 public:
-                     CExecutionEngine(void) { m_maxRetries=2; m_retryDelayMs=200; }
+                     CExecutionEngine(void) { m_magic=0; m_maxRetries=2; m_retryDelayMs=200; }
 
    void              Init(const string symbol,const ulong magic,const int deviationPts,const int maxRetries=2)
      {
       m_symbol = symbol;
+      m_magic = magic;
       m_trade.SetExpertMagicNumber(magic);
       m_trade.SetDeviationInPoints(deviationPts);
       m_trade.SetTypeFilling(DetectFillingMode(symbol));
@@ -64,6 +66,7 @@ public:
      {
       actualLotsOut=0.0;
       if(!PositionSelect(symbol)) return(expectedDir==AX_DIR_NONE);
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic) return(false);
       long type = PositionGetInteger(POSITION_TYPE);
       ENUM_AX_DIR actualDir = (type==POSITION_TYPE_BUY) ? AX_DIR_BUY : AX_DIR_SELL;
       if(actualDir!=expectedDir) return(false);
@@ -102,6 +105,11 @@ public:
       latencyMsOut = 0;
       actualLotsOut = 0.0;
       if(dir==AX_DIR_NONE || lots<=0) { errorReason="Invalid direction/lots"; return(false); }
+      if(PositionSelect(symbol))
+        {
+         errorReason="Existing position on symbol; refusing to merge or take ownership";
+         return(false);
+        }
 
       bool ok=false;
       for(int attempt=0; attempt<=m_maxRetries; attempt++)
@@ -117,7 +125,9 @@ public:
          else
             ok = m_trade.Sell(lots,symbol,0.0,slPrice,tpPrice,comment);
 
-         if(ok)
+         uint retcode = m_trade.ResultRetcode();
+         bool serverConfirmedFill=(retcode==TRADE_RETCODE_DONE || retcode==TRADE_RETCODE_DONE_PARTIAL);
+         if(ok && serverConfirmedFill)
            {
             latencyMsOut = (int)(GetTickCount()-startTick);
             if(ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut,actualLotsOut))
@@ -125,11 +135,12 @@ public:
                errorReason="";
                return(true);
               }
-            errorReason="Send reported success but position state did not confirm";
+            errorReason="Trade server reported a fill but owned position state did not confirm";
             return(false);
            }
-
-         uint retcode = m_trade.ResultRetcode();
+         if(ok && !serverConfirmedFill)
+            errorReason=StringFormat("Trade request returned success without confirmed fill: %u %s",
+                                     retcode,m_trade.ResultRetcodeDescription());
          errorReason = StringFormat("OrderSend failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
          if(!RetryableRetcode(retcode)) { latencyMsOut=(int)(GetTickCount()-startTick); return(false); }
         }
@@ -167,8 +178,10 @@ public:
    //--- close part of an open position (scale-out). This EA runs on NETTING accounts, where
    //--- CTrade::PositionClosePartial() is a hedging-only helper. On netting we reduce the
    //--- existing position with an opposite market deal for the exact requested volume.
-   bool              ClosePartial(const string symbol,const double volumeToClose,string &errorReason)
+   bool              ClosePartial(const string symbol,const double volumeToClose,
+                                    double &actualVolumeClosed,string &errorReason)
      {
+      actualVolumeClosed=0.0;
       if(!PositionSelect(symbol)) { errorReason="No position to partially close"; return(false); }
       double before = PositionGetDouble(POSITION_VOLUME);
       if(volumeToClose<=0 || volumeToClose>=before) { errorReason="Invalid partial close volume"; return(false); }
@@ -202,8 +215,20 @@ public:
                return(false);
               }
             double after = PositionGetDouble(POSITION_VOLUME);
-            if(after < before-0.0000001 && after>0.0) { errorReason=""; return(true); }
-            errorReason="Partial close did not leave the expected reduced open position";
+            double reduced=before-after;
+            if(reduced>0.0000001 && after>0.0)
+              {
+               actualVolumeClosed=reduced;
+               errorReason="";
+               return(true);
+              }
+            if(reduced>0.0000001 && after<=0.0)
+              {
+               actualVolumeClosed=before;
+               errorReason="Scale-out unexpectedly closed the entire position; caller must reconcile full close";
+               return(false);
+              }
+            errorReason="Partial close did not reduce the open position volume";
             return(false);
            }
 
