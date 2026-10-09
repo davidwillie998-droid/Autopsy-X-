@@ -249,3 +249,19 @@ def test_partial_close_accounting_uses_actual_reduced_volume():
     assert "actualVolumeClosed=reduced;" in execution
     assert "AxRecordPartialClose(actualVolumeClosed," in ea
     assert "AxRecordPartialClose(volumeToClose," not in ea
+
+
+def test_execution_never_mutates_foreign_positions_or_retries_ambiguous_entries():
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    assert "Refusing to close a position not owned by this EA" in execution
+    assert "Refusing to partially close a position not owned by this EA" in execution
+    assert "Refusing to modify stops on a position not owned by this EA" in execution
+    assert "Ambiguous order result, not retried" in execution
+    assert "retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION" in execution
+
+
+def test_stop_update_failures_do_not_force_exit_while_protective_stop_remains():
+    ea = EA_FILE.read_text(errors="replace")
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    assert "TRADE_RETCODE_NO_CHANGES" in execution
+    assert "broker protective SL remains active; retaining position" in ea
