@@ -623,11 +623,11 @@ void AxRegisterFillQuality(const double slippagePts,const int latencyMs)
   }
 
 //--- Account-wide exposure accounting and strict symbol ownership protection.
-void AxCountRealPositions(int &accountPositionsOut,double &accountExposureLotsOut,
+void AxCountRealPositions(int &accountPositionsOut,double &symbolExposureLotsOut,
                           int &positionsForSymbolOut,double &directionalExposureLotsOut,
                           bool &foreignPositionOnSymbolOut,const ENUM_AX_DIR dir)
   {
-   accountPositionsOut=0; accountExposureLotsOut=0.0;
+   accountPositionsOut=0; symbolExposureLotsOut=0.0;
    positionsForSymbolOut=0; directionalExposureLotsOut=0.0;
    foreignPositionOnSymbolOut=false;
    int total=PositionsTotal();
@@ -637,8 +637,8 @@ void AxCountRealPositions(int &accountPositionsOut,double &accountExposureLotsOu
       if(ticket==0) continue;
       accountPositionsOut++;
       double volume=PositionGetDouble(POSITION_VOLUME);
-      accountExposureLotsOut+=volume;
       if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      symbolExposureLotsOut+=volume;
       if((ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber)
         { foreignPositionOnSymbolOut=true; continue; }
       positionsForSymbolOut++;
@@ -664,9 +664,9 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       return(false);
      }
    int accountPositions,realPositionsForSymbol;
-   double accountExposureLots,realDirectionalExposure;
+   double symbolExposureLots,realDirectionalExposure;
    bool foreignPositionOnSymbol=false;
-   AxCountRealPositions(accountPositions,accountExposureLots,realPositionsForSymbol,
+   AxCountRealPositions(accountPositions,symbolExposureLots,realPositionsForSymbol,
                         realDirectionalExposure,foreignPositionOnSymbol,dir);
    if(foreignPositionOnSymbol)
      {
@@ -674,7 +674,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
          Print("AUTOPSY X: entry blocked because a position on this symbol is owned by another EA or manual trading");
       return(false);
      }
-   if(!g_risk.PreTradeAllowed(accountPositions,accountExposureLots,g_md.CurrentSpreadPts(),gateReason,
+   if(!g_risk.PreTradeAllowed(accountPositions,symbolExposureLots,g_md.CurrentSpreadPts(),gateReason,
                                realPositionsForSymbol,realDirectionalExposure))
      {
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
