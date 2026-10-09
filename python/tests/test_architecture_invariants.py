@@ -273,3 +273,14 @@ def test_ambiguous_execution_outcomes_are_not_retried_and_owned_positions_are_re
     assert "ambiguous outcome not retried" in execution
     assert "if(!g_haveOpenPosition && g_exec.HasOpenPosition(_Symbol))" in ea
     assert "AxReconcileExistingPosition();" in ea
+
+
+def test_final_scaled_volume_is_rechecked_for_stop_risk_and_projected_margin():
+    ea = EA_FILE.read_text(errors="replace")
+    risk = (INCLUDE_DIR / "RiskEngine.mqh").read_text(errors="replace")
+    assert "OrderCalcProfit(finalOrderType,_Symbol,lots,intendedPrice,slPrice,finalStopProfit)" in ea
+    assert "MathAbs(finalStopProfit)>finalRiskBudget+0.01" in ea
+    assert "OrderCalcMargin(finalOrderType,_Symbol,lots,intendedPrice,requiredMargin)" in ea
+    assert "g_risk.ProjectedMarginAcceptable(requiredMargin)" in ea
+    assert "bool              ProjectedMarginAcceptable(const double additionalMargin) const" in risk
+    assert "projectedUsage<m_maxMarginUsagePercent" in risk
