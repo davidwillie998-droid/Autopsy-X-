@@ -287,6 +287,20 @@ public:
         { errorReason="Refusing to modify stops on a position not owned by this EA"; return(false); }
       bool ok = m_trade.PositionModify(symbol,slPrice,tpPrice);
       uint retcode = m_trade.ResultRetcode();
+      if(ok && retcode==TRADE_RETCODE_NO_CHANGES)
+        {
+         // Some servers return NO_CHANGES when the requested protection is already installed.
+         // Confirm actual SL/TP before treating that response as success.
+         if(PositionSelect(symbol))
+           {
+            double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+            double tolerance=(point>0.0) ? point*0.5 : 0.0000001;
+            double actualSl=PositionGetDouble(POSITION_SL);
+            double actualTp=PositionGetDouble(POSITION_TP);
+            if(MathAbs(actualSl-slPrice)<=tolerance && MathAbs(actualTp-tpPrice)<=tolerance)
+              { errorReason=""; return(true); }
+           }
+        }
       if(!ok || retcode!=TRADE_RETCODE_DONE)
         {
          errorReason = StringFormat("Modify failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
