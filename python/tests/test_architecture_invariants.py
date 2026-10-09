@@ -223,8 +223,8 @@ def test_no_python_mql5_ipc_bridge():
 
 def test_live_entry_gate_uses_account_wide_exposure_and_blocks_foreign_symbol_positions():
     ea = EA_FILE.read_text(errors="replace")
-    assert "AxCountRealPositions(accountPositions,accountExposureLots,realPositionsForSymbol," in ea
-    assert "PreTradeAllowed(accountPositions,accountExposureLots" in ea
+    assert "AxCountRealPositions(accountPositions,symbolExposureLots,realPositionsForSymbol," in ea
+    assert "PreTradeAllowed(accountPositions,symbolExposureLots" in ea
     assert "if(foreignPositionOnSymbol)" in ea
     assert "PreTradeAllowed(0,0.0" not in ea
 
