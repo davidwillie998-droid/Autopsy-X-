@@ -264,7 +264,21 @@ public:
            }
 
          errorReason = StringFormat("Partial close failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
-         if(!RetryableRetcode(retcode)) return(false);
+         if(retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION)
+           {
+            // Ambiguous acknowledgement: inspect current exposure once, but never resend a
+            // scale-out whose first execution may still be in flight.
+            if(PositionSelect(symbol) &&
+               (ulong)PositionGetInteger(POSITION_MAGIC)==m_magic)
+              {
+               double observedVolume=PositionGetDouble(POSITION_VOLUME);
+               if(observedVolume<before-0.0000001 && observedVolume>0.0)
+                 { actualVolumeClosed=before-observedVolume; errorReason=""; return(true); }
+              }
+            errorReason+="; ambiguous outcome not retried";
+            return(false);
+           }
+          if(!RetryableRetcode(retcode)) return(false);
         }
       return(false);
      }
