@@ -141,9 +141,20 @@ public:
             return(false);
            }
          if(ok && !serverConfirmedFill)
-            errorReason=StringFormat("Trade request returned success without confirmed fill: %u %s",
+           {
+            // The request was accepted by CTrade but no definitive market fill was reported.
+            // Do not retry an ambiguous send: the first deal may still have reached the server.
+            errorReason=StringFormat("Ambiguous order result, not retried: %u %s",
                                      retcode,m_trade.ResultRetcodeDescription());
+            latencyMsOut=(int)(GetTickCount()-startTick);
+            return(false);
+           }
+
          errorReason = StringFormat("OrderSend failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         // A timeout/connection loss is ambiguous for a market order. Retrying can duplicate
+         // exposure if the first request executed but the acknowledgement was lost.
+         if(retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION)
+           { latencyMsOut=(int)(GetTickCount()-startTick); return(false); }
          if(!RetryableRetcode(retcode)) { latencyMsOut=(int)(GetTickCount()-startTick); return(false); }
         }
       latencyMsOut = (int)(GetTickCount()-startTick);
