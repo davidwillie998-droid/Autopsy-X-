@@ -265,3 +265,11 @@ def test_stop_update_failures_do_not_force_exit_while_protective_stop_remains():
     execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
     assert "TRADE_RETCODE_NO_CHANGES" in execution
     assert "broker protective SL remains active; retaining position" in ea
+
+
+def test_ambiguous_execution_outcomes_are_not_retried_and_owned_positions_are_recovered():
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    ea = EA_FILE.read_text(errors="replace")
+    assert "ambiguous outcome not retried" in execution
+    assert "if(!g_haveOpenPosition && g_exec.HasOpenPosition(_Symbol))" in ea
+    assert "AxReconcileExistingPosition();" in ea
