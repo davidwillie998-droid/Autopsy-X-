@@ -478,9 +478,12 @@ void AxRecordPartialClose(const double volumeClosed,const double closePrice,cons
 void AxExecutePartialClose(const double volumeToClose)
   {
    string partErr;
-   if(!g_exec.ClosePartial(_Symbol,volumeToClose,partErr))
+   double actualVolumeClosed=0.0;
+   if(!g_exec.ClosePartial(_Symbol,volumeToClose,actualVolumeClosed,partErr))
      {
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: partial close failed (%s)",partErr);
+      if(!g_exec.HasOpenPosition(_Symbol) && g_haveOpenPosition)
+         AxRecordExternalClose();
       return;
      }
    // the closing deal can occasionally be a beat behind ClosePartial()'s return in MT5's history
@@ -500,7 +503,7 @@ void AxExecutePartialClose(const double volumeToClose)
       pTime = TimeCurrent();
       if(InpVerboseLogging) Print("AUTOPSY X: partial-close financials unavailable after retries - logged with zeroed P&L, deal boundary held");
      }
-   AxRecordPartialClose(volumeToClose,pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket);
+   AxRecordPartialClose(actualVolumeClosed,pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket);
   }
 
 void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double lots,const double fillPrice,
@@ -619,28 +622,32 @@ void AxRegisterFillQuality(const double slippagePts,const int latencyMs)
       g_consecutivePoorFills = 0;
   }
 
-//--- real, broker-backed position/exposure counts for THIS symbol+magic, scanned by index (never   ---
-//--- PositionSelect(symbol) alone - see DuplicateGuard.mqh's own comment on why that alone misses    ---
-//--- positions on a hedging account). Used to feed CRiskEngine::PreTradeAllowed()'s per-symbol/     ---
-//--- directional-exposure circuit breakers with real numbers instead of the hardcoded 0/0.0 that     ---
-//--- call site used before Phase 8 (code-review finding: those two new breakers were otherwise       ---
-//--- silently unreachable, always seeing 0 regardless of real exposure). ---
-void AxCountRealPositions(int &positionsForSymbolOut,double &directionalExposureLotsOut,const ENUM_AX_DIR dir)
+//--- Account-wide exposure accounting and strict symbol ownership protection.
+void AxCountRealPositions(int &accountPositionsOut,double &symbolExposureLotsOut,
+                          int &positionsForSymbolOut,double &directionalExposureLotsOut,
+                          bool &foreignPositionOnSymbolOut,const ENUM_AX_DIR dir)
   {
+   accountPositionsOut=0; symbolExposureLotsOut=0.0;
    positionsForSymbolOut=0; directionalExposureLotsOut=0.0;
-   int total = PositionsTotal();
+   foreignPositionOnSymbolOut=false;
+   int total=PositionsTotal();
    for(int i=0;i<total;i++)
      {
-      ulong ticket = PositionGetTicket(i);
+      ulong ticket=PositionGetTicket(i);
       if(ticket==0) continue;
+      accountPositionsOut++;
+      double volume=PositionGetDouble(POSITION_VOLUME);
       if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
-      if((ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber) continue;
+      symbolExposureLotsOut+=volume;
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber)
+        { foreignPositionOnSymbolOut=true; continue; }
       positionsForSymbolOut++;
-      long type = PositionGetInteger(POSITION_TYPE);
-      ENUM_AX_DIR posDir = (type==POSITION_TYPE_BUY) ? AX_DIR_BUY : AX_DIR_SELL;
-      if(posDir==dir) directionalExposureLotsOut += PositionGetDouble(POSITION_VOLUME);
+      long type=PositionGetInteger(POSITION_TYPE);
+      ENUM_AX_DIR posDir=(type==POSITION_TYPE_BUY) ? AX_DIR_BUY : AX_DIR_SELL;
+      if(posDir==dir) directionalExposureLotsOut+=volume;
      }
   }
+
 
 //--- every entry (fresh or flip re-entry) funnels through here, so risk/chop/HTF gates apply ---
 //--- unconditionally - a confirmed flip is always allowed to CLOSE the losing side, but the   ---
@@ -656,9 +663,18 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
       return(false);
      }
-   int realPositionsForSymbol; double realDirectionalExposure;
-   AxCountRealPositions(realPositionsForSymbol,realDirectionalExposure,dir);
-   if(!g_risk.PreTradeAllowed(0,0.0,g_md.CurrentSpreadPts(),gateReason,
+   int accountPositions,realPositionsForSymbol;
+   double symbolExposureLots,realDirectionalExposure;
+   bool foreignPositionOnSymbol=false;
+   AxCountRealPositions(accountPositions,symbolExposureLots,realPositionsForSymbol,
+                        realDirectionalExposure,foreignPositionOnSymbol,dir);
+   if(foreignPositionOnSymbol)
+     {
+      if(InpVerboseLogging)
+         Print("AUTOPSY X: entry blocked because a position on this symbol is owned by another EA or manual trading");
+      return(false);
+     }
+   if(!g_risk.PreTradeAllowed(accountPositions,symbolExposureLots,g_md.CurrentSpreadPts(),gateReason,
                                realPositionsForSymbol,realDirectionalExposure))
      {
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
@@ -725,14 +741,18 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    // A broker minimum lot can otherwise force a position larger than the configured
    // account-risk budget. Fail closed instead of allowing the minimum volume to
    // override the risk ceiling.
-   if(lots>0.0 && AccountInfoDouble(ACCOUNT_EQUITY)>0.0 &&
-      g_md.Point()>0.0 && g_md.TickSize()>0.0 && g_md.TickValue()>0.0)
+   if(lots>0.0)
      {
-      double projectedLoss = (actualSlDistPts*g_md.Point()/g_md.TickSize())*
-                             g_md.TickValue()*lots;
-      double projectedRiskPct = projectedLoss/AccountInfoDouble(ACCOUNT_EQUITY)*100.0;
-      if(projectedRiskPct > g_risk.RiskPercent()+0.0001)
-         lots = 0.0;
+      double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+      double projectedProfitAtStop=0.0;
+      ENUM_ORDER_TYPE orderType=(dir==AX_DIR_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+      bool riskCalcOk=(equity>0.0 &&
+                       OrderCalcProfit(orderType,_Symbol,lots,intendedPrice,slPrice,projectedProfitAtStop));
+      double projectedLoss=riskCalcOk ? MathAbs(projectedProfitAtStop) : 0.0;
+      double riskBudget=equity*g_risk.RiskPercent()/100.0;
+      // Fail closed when broker/account-currency loss calculation is unavailable or exceeds budget.
+      if(!riskCalcOk || projectedProfitAtStop>=0.0 || projectedLoss>riskBudget+0.01)
+         lots=0.0;
      }
 
    // Adaptive Flip Engine: capital-protection gate + position-size scaler, applied unconditionally
@@ -808,6 +828,31 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
            }
         }
      }
+   // Re-check risk and margin on the FINAL volume after adaptive scaling, broker normalization,
+   // and affordability clamps. The earlier base-lot check alone cannot constrain a later multiplier.
+   if(lots>0.0)
+     {
+      double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+      double finalStopProfit=0.0,requiredMargin=0.0;
+      ENUM_ORDER_TYPE finalOrderType=(dir==AX_DIR_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+      bool finalRiskOk=(equity>0.0 &&
+                        OrderCalcProfit(finalOrderType,_Symbol,lots,intendedPrice,slPrice,finalStopProfit));
+      double finalRiskBudget=equity*g_risk.RiskPercent()/100.0;
+      bool finalMarginOk=OrderCalcMargin(finalOrderType,_Symbol,lots,intendedPrice,requiredMargin) &&
+                         g_risk.ProjectedMarginAcceptable(requiredMargin);
+      bool finalExposureOk=g_risk.ProjectedExposureAcceptable(symbolExposureLots,
+                                                               realDirectionalExposure,lots);
+      if(!finalRiskOk || finalStopProfit>=0.0 ||
+         MathAbs(finalStopProfit)>finalRiskBudget+0.01 || !finalMarginOk || !finalExposureOk)
+        {
+         if(InpVerboseLogging)
+            PrintFormat("AUTOPSY X: final size rejected by projected risk/margin/exposure gate (risk_ok=%s, margin_ok=%s, exposure_ok=%s, stop_loss=%.2f, budget=%.2f, margin=%.2f)",
+                        finalRiskOk ? "true":"false",finalMarginOk ? "true":"false",
+                        finalExposureOk ? "true":"false",MathAbs(finalStopProfit),finalRiskBudget,requiredMargin);
+         lots=0.0;
+        }
+     }
+
    if(lots<=0)
      {
       if(InpVerboseLogging) Print("AUTOPSY X: computed lot size is zero - entry skipped");
@@ -1088,6 +1133,13 @@ void OnTick(void)
    g_risk.OnTickHousekeeping();
    g_afe.OnTickHousekeeping();
 
+
+   // Recover a same-magic position that appears after an ambiguous server acknowledgement.
+   // This prevents a delayed fill from remaining unmanaged just because OpenMarket returned false.
+   if(!g_haveOpenPosition && g_exec.HasOpenPosition(_Symbol))
+      AxReconcileExistingPosition();
+
+
    //--- roll the "poor fills today" counter at broker midnight, same day boundary RiskEngine uses ---
    MqlDateTime dtNow; TimeToStruct(TimeCurrent(),dtNow);
    datetime today = TimeCurrent()-(dtNow.hour*3600+dtNow.min*60+dtNow.sec);
@@ -1284,9 +1336,19 @@ void OnTick(void)
                  {
                   g_posState.modifyFailCount++;
                   if(InpVerboseLogging) PrintFormat("AUTOPSY X: stop modify failed (%s) - streak=%d",modErr,g_posState.modifyFailCount);
-                  // stops that can't be reliably managed are unsafe to hold - cut rather than run naked
                   if(g_posState.modifyFailCount>=InpMaxModifyFailures)
-                     AxCloseAndRecord(AX_EXIT_EXECUTION_QUALITY);
+                    {
+                     // A failed trailing/breakeven modification does not mean the position is
+                     // naked: the broker may still hold the original protective stop-loss.
+                     if(PositionSelect(_Symbol) && PositionGetDouble(POSITION_SL)>0.0)
+                       {
+                        if(InpVerboseLogging)
+                           Print("AUTOPSY X: stop update streak reached, but broker protective SL remains active; retaining position");
+                        g_posState.modifyFailCount=0;
+                       }
+                     else
+                        AxCloseAndRecord(AX_EXIT_EXECUTION_QUALITY);
+                    }
                  }
               }
            }

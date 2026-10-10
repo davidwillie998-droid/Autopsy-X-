@@ -219,3 +219,106 @@ def test_no_python_mql5_ipc_bridge():
             if re.search(r"\bsocket\.|named.?pipe|DllImport|zmq|subprocess\.|os\.system\(", text, re.IGNORECASE):
                 offenders.append(str(path.relative_to(REPO_ROOT)))
     assert not offenders, f"Potential Python<->MQL5 IPC bridge found in: {offenders}"
+
+
+def test_live_entry_gate_uses_account_wide_exposure_and_blocks_foreign_symbol_positions():
+    ea = EA_FILE.read_text(errors="replace")
+    assert "AxCountRealPositions(accountPositions,symbolExposureLots,realPositionsForSymbol," in ea
+    assert "PreTradeAllowed(accountPositions,symbolExposureLots" in ea
+    assert "if(foreignPositionOnSymbol)" in ea
+    assert "PreTradeAllowed(0,0.0" not in ea
+
+
+def test_live_position_sizing_uses_broker_account_currency_profit_calculation():
+    ea = EA_FILE.read_text(errors="replace")
+    assert "OrderCalcProfit(orderType,_Symbol,lots,intendedPrice,slPrice,projectedProfitAtStop)" in ea
+    assert "if(!riskCalcOk || projectedProfitAtStop>=0.0 || projectedLoss>riskBudget+0.01)" in ea
+
+
+def test_execution_requires_owned_position_and_confirmed_server_fill():
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    assert "PositionGetInteger(POSITION_MAGIC)!=m_magic" in execution
+    assert "Existing position on symbol; refusing to merge or take ownership" in execution
+    assert "retcode==TRADE_RETCODE_DONE || retcode==TRADE_RETCODE_DONE_PARTIAL" in execution
+
+
+def test_partial_close_accounting_uses_actual_reduced_volume():
+    ea = EA_FILE.read_text(errors="replace")
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    assert "double &actualVolumeClosed" in execution
+    assert "actualVolumeClosed=reduced;" in execution
+    assert "AxRecordPartialClose(actualVolumeClosed," in ea
+    assert "AxRecordPartialClose(volumeToClose," not in ea
+
+
+def test_execution_never_mutates_foreign_positions_or_retries_ambiguous_entries():
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    assert "Refusing to close a position not owned by this EA" in execution
+    assert "Refusing to partially close a position not owned by this EA" in execution
+    assert "Refusing to modify stops on a position not owned by this EA" in execution
+    assert "Ambiguous order result, not retried" in execution
+    assert "retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION" in execution
+
+
+def test_stop_update_failures_do_not_force_exit_while_protective_stop_remains():
+    ea = EA_FILE.read_text(errors="replace")
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    assert "TRADE_RETCODE_NO_CHANGES" in execution
+    assert "broker protective SL remains active; retaining position" in ea
+
+
+def test_ambiguous_execution_outcomes_are_not_retried_and_owned_positions_are_recovered():
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    ea = EA_FILE.read_text(errors="replace")
+    assert "ambiguous outcome not retried" in execution
+    assert "if(!g_haveOpenPosition && g_exec.HasOpenPosition(_Symbol))" in ea
+    assert "AxReconcileExistingPosition();" in ea
+
+
+def test_final_scaled_volume_is_rechecked_for_stop_risk_and_projected_margin():
+    ea = EA_FILE.read_text(errors="replace")
+    risk = (INCLUDE_DIR / "RiskEngine.mqh").read_text(errors="replace")
+    assert "OrderCalcProfit(finalOrderType,_Symbol,lots,intendedPrice,slPrice,finalStopProfit)" in ea
+    assert "MathAbs(finalStopProfit)>finalRiskBudget+0.01" in ea
+    assert "OrderCalcMargin(finalOrderType,_Symbol,lots,intendedPrice,requiredMargin)" in ea
+    assert "g_risk.ProjectedMarginAcceptable(requiredMargin)" in ea
+    assert "bool              ProjectedMarginAcceptable(const double additionalMargin) const" in risk
+    assert "projectedUsage<m_maxMarginUsagePercent" in risk
+
+
+def test_final_volume_cannot_breach_symbol_or_directional_exposure_caps():
+    ea = EA_FILE.read_text(errors="replace")
+    risk = (INCLUDE_DIR / "RiskEngine.mqh").read_text(errors="replace")
+    assert "g_risk.ProjectedExposureAcceptable(symbolExposureLots" in ea
+    assert "currentSymbolLots+proposedLots>m_maxExposureLots" in risk
+    assert "currentDirectionalLots+proposedLots>m_maxDirectionalExposureLots" in risk
+
+
+
+def test_close_position_does_not_retry_ambiguous_or_unconfirmed_server_results():
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    close_block = execution.split("bool              ClosePosition", 1)[1].split(
+        "bool              ClosePartial", 1
+    )[0]
+    assert "TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION" in close_block
+    assert 'errorReason+="; ambiguous outcome not retried"' in close_block
+    assert "serverConfirmedClose" in close_block
+    assert "volumeAfter<volumeBefore-0.0000001" in close_block
+
+
+def test_pending_entry_does_not_retry_ambiguous_server_acknowledgement():
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    pending_block = execution.split("bool              OpenPendingStop", 1)[1].split(
+        "bool              CancelPendingOrder", 1
+    )[0]
+    assert "possibleTicket=m_trade.ResultOrder()" in pending_block
+    assert 'errorReason+="; ambiguous outcome not retried"' in pending_block
+    assert "TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION" in pending_block
+
+
+def test_partial_close_rechecks_position_ownership_after_server_fill():
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    partial_block = execution.split("bool              ClosePartial", 1)[1].split(
+        "bool              Flip", 1
+    )[0]
+    assert "Position ownership changed during partial close" in partial_block

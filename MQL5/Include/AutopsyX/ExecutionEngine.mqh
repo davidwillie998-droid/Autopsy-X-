@@ -15,6 +15,7 @@ class CExecutionEngine
 private:
    CTrade            m_trade;
    string            m_symbol;
+   ulong             m_magic;
    int               m_maxRetries;
    int               m_retryDelayMs;
 
@@ -38,11 +39,12 @@ private:
      }
 
 public:
-                     CExecutionEngine(void) { m_maxRetries=2; m_retryDelayMs=200; }
+                     CExecutionEngine(void) { m_magic=0; m_maxRetries=2; m_retryDelayMs=200; }
 
    void              Init(const string symbol,const ulong magic,const int deviationPts,const int maxRetries=2)
      {
       m_symbol = symbol;
+      m_magic = magic;
       m_trade.SetExpertMagicNumber(magic);
       m_trade.SetDeviationInPoints(deviationPts);
       m_trade.SetTypeFilling(DetectFillingMode(symbol));
@@ -64,6 +66,7 @@ public:
      {
       actualLotsOut=0.0;
       if(!PositionSelect(symbol)) return(expectedDir==AX_DIR_NONE);
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic) return(false);
       long type = PositionGetInteger(POSITION_TYPE);
       ENUM_AX_DIR actualDir = (type==POSITION_TYPE_BUY) ? AX_DIR_BUY : AX_DIR_SELL;
       if(actualDir!=expectedDir) return(false);
@@ -79,12 +82,14 @@ public:
 
    bool              HasOpenPosition(const string symbol) const
      {
-      return(PositionSelect(symbol));
+      if(!PositionSelect(symbol)) return(false);
+      return((ulong)PositionGetInteger(POSITION_MAGIC)==m_magic);
      }
 
    ENUM_AX_DIR       CurrentPositionDir(const string symbol) const
      {
       if(!PositionSelect(symbol)) return(AX_DIR_NONE);
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic) return(AX_DIR_NONE);
       long type = PositionGetInteger(POSITION_TYPE);
       return((type==POSITION_TYPE_BUY) ? AX_DIR_BUY : AX_DIR_SELL);
      }
@@ -102,6 +107,11 @@ public:
       latencyMsOut = 0;
       actualLotsOut = 0.0;
       if(dir==AX_DIR_NONE || lots<=0) { errorReason="Invalid direction/lots"; return(false); }
+      if(PositionSelect(symbol))
+        {
+         errorReason="Existing position on symbol; refusing to merge or take ownership";
+         return(false);
+        }
 
       bool ok=false;
       for(int attempt=0; attempt<=m_maxRetries; attempt++)
@@ -117,7 +127,9 @@ public:
          else
             ok = m_trade.Sell(lots,symbol,0.0,slPrice,tpPrice,comment);
 
-         if(ok)
+         uint retcode = m_trade.ResultRetcode();
+         bool serverConfirmedFill=(retcode==TRADE_RETCODE_DONE || retcode==TRADE_RETCODE_DONE_PARTIAL);
+         if(ok && serverConfirmedFill)
            {
             latencyMsOut = (int)(GetTickCount()-startTick);
             if(ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut,actualLotsOut))
@@ -125,12 +137,24 @@ public:
                errorReason="";
                return(true);
               }
-            errorReason="Send reported success but position state did not confirm";
+            errorReason="Trade server reported a fill but owned position state did not confirm";
+            return(false);
+           }
+         if(ok && !serverConfirmedFill)
+           {
+            // The request was accepted by CTrade but no definitive market fill was reported.
+            // Do not retry an ambiguous send: the first deal may still have reached the server.
+            errorReason=StringFormat("Ambiguous order result, not retried: %u %s",
+                                     retcode,m_trade.ResultRetcodeDescription());
+            latencyMsOut=(int)(GetTickCount()-startTick);
             return(false);
            }
 
-         uint retcode = m_trade.ResultRetcode();
          errorReason = StringFormat("OrderSend failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         // A timeout/connection loss is ambiguous for a market order. Retrying can duplicate
+         // exposure if the first request executed but the acknowledgement was lost.
+         if(retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION)
+           { latencyMsOut=(int)(GetTickCount()-startTick); return(false); }
          if(!RetryableRetcode(retcode)) { latencyMsOut=(int)(GetTickCount()-startTick); return(false); }
         }
       latencyMsOut = (int)(GetTickCount()-startTick);
@@ -141,25 +165,51 @@ public:
    bool              ClosePosition(const string symbol,string &errorReason)
      {
       if(!PositionSelect(symbol)) { errorReason=""; return(true); } // already flat
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+        { errorReason="Refusing to close a position not owned by this EA"; return(false); }
 
       bool ok=false;
       for(int attempt=0; attempt<=m_maxRetries; attempt++)
         {
          if(attempt>0) Sleep(m_retryDelayMs);
          if(!PositionSelect(symbol)) { errorReason=""; return(true); }
+         if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+           { errorReason="Position ownership changed; refusing further close attempts"; return(false); }
+         double volumeBefore=PositionGetDouble(POSITION_VOLUME);
          ok = m_trade.PositionClose(symbol);
-         if(ok)
+         uint retcode = m_trade.ResultRetcode();
+
+         // The terminal-side CTrade boolean is not proof of a server-side close. First reconcile
+         // the actual position state; never issue another close after an ambiguous acknowledgement.
+         if(!PositionSelect(symbol)) { errorReason=""; return(true); }
+         if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+           { errorReason="Position ownership changed during close; refusing further action"; return(false); }
+
+         double volumeAfter=PositionGetDouble(POSITION_VOLUME);
+         bool serverConfirmedClose=(retcode==TRADE_RETCODE_DONE ||
+                                    retcode==TRADE_RETCODE_DONE_PARTIAL);
+         if(serverConfirmedClose)
            {
-            if(!PositionSelect(symbol)) { errorReason=""; return(true); }
-            errorReason="Close reported success but position still open";
+            if(volumeAfter<volumeBefore-0.0000001)
+              {
+               // A confirmed partial fill reduced exposure. Leave the remainder for the next
+               // management tick rather than issuing a second close in the same call.
+               errorReason="Close partially filled; remaining position requires reconciliation";
+               return(false);
+              }
+            errorReason=StringFormat("Close was acknowledged but exposure remains unchanged: %u %s",
+                                     retcode,m_trade.ResultRetcodeDescription());
+            return(false);
            }
-         else
+
+         errorReason = StringFormat("Close failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         if(retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION)
            {
-            uint retcode = m_trade.ResultRetcode();
-            errorReason = StringFormat("Close failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
-            if(!RetryableRetcode(retcode)) return(false);
-            continue;
+            errorReason+="; ambiguous outcome not retried";
+            return(false);
            }
+         if(ok || !RetryableRetcode(retcode)) return(false);
+         // Only retry an explicitly rejected/requoted request with no ambiguous server outcome.
         }
       return(!PositionSelect(symbol));
      }
@@ -167,9 +217,13 @@ public:
    //--- close part of an open position (scale-out). This EA runs on NETTING accounts, where
    //--- CTrade::PositionClosePartial() is a hedging-only helper. On netting we reduce the
    //--- existing position with an opposite market deal for the exact requested volume.
-   bool              ClosePartial(const string symbol,const double volumeToClose,string &errorReason)
+   bool              ClosePartial(const string symbol,const double volumeToClose,
+                                    double &actualVolumeClosed,string &errorReason)
      {
+      actualVolumeClosed=0.0;
       if(!PositionSelect(symbol)) { errorReason="No position to partially close"; return(false); }
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+        { errorReason="Refusing to partially close a position not owned by this EA"; return(false); }
       double before = PositionGetDouble(POSITION_VOLUME);
       if(volumeToClose<=0 || volumeToClose>=before) { errorReason="Invalid partial close volume"; return(false); }
 
@@ -181,7 +235,19 @@ public:
          if(attempt>0) Sleep(m_retryDelayMs);
          if(!PositionSelect(symbol)) { errorReason="Position closed before partial could execute"; return(false); }
 
-         if(isHedging)
+          if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+            { errorReason="Position ownership changed; refusing partial close"; return(false); }
+          // A timeout or connection error can be ambiguous. If the prior attempt reduced volume,
+          // reconcile it instead of submitting a duplicate scale-out.
+          double currentVolume=PositionGetDouble(POSITION_VOLUME);
+          if(currentVolume<before-0.0000001)
+            {
+             actualVolumeClosed=before-currentVolume;
+             if(currentVolume>0.0) { errorReason=""; return(true); }
+             errorReason="Partial request fully closed the position; reconcile as a full close";
+             return(false);
+            }
+          if(isHedging)
            ok = m_trade.PositionClosePartial((ulong)PositionGetInteger(POSITION_TICKET),volumeToClose);
          else
            {
@@ -198,17 +264,49 @@ public:
            {
             if(!PositionSelect(symbol))
               {
-               errorReason="Partial close left the position fully closed unexpectedly";
+               actualVolumeClosed=before;
+               errorReason="Partial request closed the entire position; caller must reconcile full close";
+               return(false);
+              }
+            if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+              {
+               errorReason="Position ownership changed during partial close; refusing to account it as ours";
                return(false);
               }
             double after = PositionGetDouble(POSITION_VOLUME);
-            if(after < before-0.0000001 && after>0.0) { errorReason=""; return(true); }
-            errorReason="Partial close did not leave the expected reduced open position";
+            double reduced=before-after;
+            if(reduced>0.0000001 && after>0.0)
+              {
+               actualVolumeClosed=reduced;
+               errorReason="";
+               return(true);
+              }
+            if(reduced>0.0000001 && after<=0.0)
+              {
+               actualVolumeClosed=before;
+               errorReason="Scale-out unexpectedly closed the entire position; caller must reconcile full close";
+               return(false);
+              }
+            errorReason="Partial close did not reduce the open position volume";
             return(false);
            }
 
          errorReason = StringFormat("Partial close failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
-         if(!RetryableRetcode(retcode)) return(false);
+         if(retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION)
+           {
+            // Ambiguous acknowledgement: inspect current exposure once, but never resend a
+            // scale-out whose first execution may still be in flight.
+            if(PositionSelect(symbol) &&
+               (ulong)PositionGetInteger(POSITION_MAGIC)==m_magic)
+              {
+               double observedVolume=PositionGetDouble(POSITION_VOLUME);
+               if(observedVolume<before-0.0000001 && observedVolume>0.0)
+                 { actualVolumeClosed=before-observedVolume; errorReason=""; return(true); }
+              }
+            errorReason+="; ambiguous outcome not retried";
+            return(false);
+           }
+          if(!RetryableRetcode(retcode)) return(false);
         }
       return(false);
      }
@@ -227,8 +325,24 @@ public:
    bool              ModifyStops(const string symbol,const double slPrice,const double tpPrice,string &errorReason)
      {
       if(!PositionSelect(symbol)) { errorReason="No position to modify"; return(false); }
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+        { errorReason="Refusing to modify stops on a position not owned by this EA"; return(false); }
       bool ok = m_trade.PositionModify(symbol,slPrice,tpPrice);
       uint retcode = m_trade.ResultRetcode();
+      if(ok && retcode==TRADE_RETCODE_NO_CHANGES)
+        {
+         // Some servers return NO_CHANGES when the requested protection is already installed.
+         // Confirm actual SL/TP before treating that response as success.
+         if(PositionSelect(symbol))
+           {
+            double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+            double tolerance=(point>0.0) ? point*0.5 : 0.0000001;
+            double actualSl=PositionGetDouble(POSITION_SL);
+            double actualTp=PositionGetDouble(POSITION_TP);
+            if(MathAbs(actualSl-slPrice)<=tolerance && MathAbs(actualTp-tpPrice)<=tolerance)
+              { errorReason=""; return(true); }
+           }
+        }
       if(!ok || retcode!=TRADE_RETCODE_DONE)
         {
          errorReason = StringFormat("Modify failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
@@ -276,6 +390,15 @@ public:
 
          uint retcode = m_trade.ResultRetcode();
          errorReason = StringFormat("Pending order send failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         // A timeout or connection loss may mean the pending order was accepted even though its
+         // acknowledgement was lost. Retrying could create duplicate live orders, so fail closed.
+         if(retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION)
+           {
+            ulong possibleTicket=m_trade.ResultOrder();
+            if(possibleTicket>0) ticketOut=possibleTicket;
+            errorReason+="; ambiguous outcome not retried";
+            return(false);
+           }
          if(!RetryableRetcode(retcode)) return(false);
         }
       return(false);
