@@ -307,7 +307,7 @@ def test_close_position_does_not_retry_ambiguous_or_unconfirmed_server_results()
 
 
 def test_pending_entry_does_not_retry_ambiguous_server_acknowledgement():
-    execution = (INCLUDE_DIR / "AutopsyX/ExecutionEngine.mqh").read_text(errors="replace")
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
     pending_block = execution.split("bool              OpenPendingStop", 1)[1].split(
         "bool              CancelPendingOrder", 1
     )[0]
@@ -317,7 +317,7 @@ def test_pending_entry_does_not_retry_ambiguous_server_acknowledgement():
 
 
 def test_partial_close_rechecks_position_ownership_after_server_fill():
-    execution = (INCLUDE_DIR / "AutopsyX/ExecutionEngine.mqh").read_text(errors="replace")
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
     partial_block = execution.split("bool              ClosePartial", 1)[1].split(
         "bool              Flip", 1
     )[0]
