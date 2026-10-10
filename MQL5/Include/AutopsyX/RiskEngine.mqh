@@ -239,8 +239,7 @@ public:
    // Reject a proposed order that would breach symbol or directional lot caps after fill.
    bool              ProjectedExposureAcceptable(const double currentSymbolLots,
                                                    const double currentDirectionalLots,
-                                                   const double proposedLots,
-                                                   const ENUM_AX_DIR direction) const
+                                                   const double proposedLots) const
      {
       if(currentSymbolLots<0.0 || currentDirectionalLots<0.0 || proposedLots<=0.0) return(false);
       if(currentSymbolLots+proposedLots>m_maxExposureLots+1e-8) return(false);
