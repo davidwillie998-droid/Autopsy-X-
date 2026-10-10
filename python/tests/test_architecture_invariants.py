@@ -284,3 +284,11 @@ def test_final_scaled_volume_is_rechecked_for_stop_risk_and_projected_margin():
     assert "g_risk.ProjectedMarginAcceptable(requiredMargin)" in ea
     assert "bool              ProjectedMarginAcceptable(const double additionalMargin) const" in risk
     assert "projectedUsage<m_maxMarginUsagePercent" in risk
+
+
+def test_final_volume_cannot_breach_symbol_or_directional_exposure_caps():
+    ea = EA_FILE.read_text(errors="replace")
+    risk = (INCLUDE_DIR / "RiskEngine.mqh").read_text(errors="replace")
+    assert "g_risk.ProjectedExposureAcceptable(symbolExposureLots" in ea
+    assert "currentSymbolLots+proposedLots>m_maxExposureLots" in risk
+    assert "currentDirectionalLots+proposedLots>m_maxDirectionalExposureLots" in risk
