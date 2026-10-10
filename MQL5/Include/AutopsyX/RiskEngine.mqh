@@ -236,6 +236,18 @@ public:
       return(usagePct<m_maxMarginUsagePercent);
      }
 
+   // Reject a proposed order that would breach symbol or directional lot caps after fill.
+   bool              ProjectedExposureAcceptable(const double currentSymbolLots,
+                                                   const double currentDirectionalLots,
+                                                   const double proposedLots,
+                                                   const ENUM_AX_DIR direction) const
+     {
+      if(currentSymbolLots<0.0 || currentDirectionalLots<0.0 || proposedLots<=0.0) return(false);
+      if(currentSymbolLots+proposedLots>m_maxExposureLots+1e-8) return(false);
+      if(currentDirectionalLots+proposedLots>m_maxDirectionalExposureLots+1e-8) return(false);
+      return(true);
+     }
+
    // Evaluate margin after adding the proposed order, not merely current account usage.
    bool              ProjectedMarginAcceptable(const double additionalMargin) const
      {
