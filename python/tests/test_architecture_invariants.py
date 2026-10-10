@@ -292,3 +292,33 @@ def test_final_volume_cannot_breach_symbol_or_directional_exposure_caps():
     assert "g_risk.ProjectedExposureAcceptable(symbolExposureLots" in ea
     assert "currentSymbolLots+proposedLots>m_maxExposureLots" in risk
     assert "currentDirectionalLots+proposedLots>m_maxDirectionalExposureLots" in risk
+
+
+
+def test_close_position_does_not_retry_ambiguous_or_unconfirmed_server_results():
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    close_block = execution.split("bool              ClosePosition", 1)[1].split(
+        "bool              ClosePartial", 1
+    )[0]
+    assert "TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION" in close_block
+    assert 'errorReason+="; ambiguous outcome not retried"' in close_block
+    assert "serverConfirmedClose" in close_block
+    assert "volumeAfter<volumeBefore-0.0000001" in close_block
+
+
+def test_pending_entry_does_not_retry_ambiguous_server_acknowledgement():
+    execution = (INCLUDE_DIR / "AutopsyX/ExecutionEngine.mqh").read_text(errors="replace")
+    pending_block = execution.split("bool              OpenPendingStop", 1)[1].split(
+        "bool              CancelPendingOrder", 1
+    )[0]
+    assert "possibleTicket=m_trade.ResultOrder()" in pending_block
+    assert 'errorReason+="; ambiguous outcome not retried"' in pending_block
+    assert "TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION" in pending_block
+
+
+def test_partial_close_rechecks_position_ownership_after_server_fill():
+    execution = (INCLUDE_DIR / "AutopsyX/ExecutionEngine.mqh").read_text(errors="replace")
+    partial_block = execution.split("bool              ClosePartial", 1)[1].split(
+        "bool              Flip", 1
+    )[0]
+    assert "Position ownership changed during partial close" in partial_block
