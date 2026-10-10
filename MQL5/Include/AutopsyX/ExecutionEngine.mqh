@@ -175,19 +175,41 @@ public:
          if(!PositionSelect(symbol)) { errorReason=""; return(true); }
          if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
            { errorReason="Position ownership changed; refusing further close attempts"; return(false); }
+         double volumeBefore=PositionGetDouble(POSITION_VOLUME);
          ok = m_trade.PositionClose(symbol);
-         if(ok)
+         uint retcode = m_trade.ResultRetcode();
+
+         // The terminal-side CTrade boolean is not proof of a server-side close. First reconcile
+         // the actual position state; never issue another close after an ambiguous acknowledgement.
+         if(!PositionSelect(symbol)) { errorReason=""; return(true); }
+         if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+           { errorReason="Position ownership changed during close; refusing further action"; return(false); }
+
+         double volumeAfter=PositionGetDouble(POSITION_VOLUME);
+         bool serverConfirmedClose=(retcode==TRADE_RETCODE_DONE ||
+                                    retcode==TRADE_RETCODE_DONE_PARTIAL);
+         if(serverConfirmedClose)
            {
-            if(!PositionSelect(symbol)) { errorReason=""; return(true); }
-            errorReason="Close reported success but position still open";
+            if(volumeAfter<volumeBefore-0.0000001)
+              {
+               // A confirmed partial fill reduced exposure. Leave the remainder for the next
+               // management tick rather than issuing a second close in the same call.
+               errorReason="Close partially filled; remaining position requires reconciliation";
+               return(false);
+              }
+            errorReason=StringFormat("Close was acknowledged but exposure remains unchanged: %u %s",
+                                     retcode,m_trade.ResultRetcodeDescription());
+            return(false);
            }
-         else
+
+         errorReason = StringFormat("Close failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         if(retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION)
            {
-            uint retcode = m_trade.ResultRetcode();
-            errorReason = StringFormat("Close failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
-            if(!RetryableRetcode(retcode)) return(false);
-            continue;
+            errorReason+="; ambiguous outcome not retried";
+            return(false);
            }
+         if(ok || !RetryableRetcode(retcode)) return(false);
+         // Only retry an explicitly rejected/requoted request with no ambiguous server outcome.
         }
       return(!PositionSelect(symbol));
      }
@@ -242,7 +264,13 @@ public:
            {
             if(!PositionSelect(symbol))
               {
-               errorReason="Partial close left the position fully closed unexpectedly";
+               actualVolumeClosed=before;
+               errorReason="Partial request closed the entire position; caller must reconcile full close";
+               return(false);
+              }
+            if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+              {
+               errorReason="Position ownership changed during partial close; refusing to account it as ours";
                return(false);
               }
             double after = PositionGetDouble(POSITION_VOLUME);
@@ -362,6 +390,15 @@ public:
 
          uint retcode = m_trade.ResultRetcode();
          errorReason = StringFormat("Pending order send failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         // A timeout or connection loss may mean the pending order was accepted even though its
+         // acknowledgement was lost. Retrying could create duplicate live orders, so fail closed.
+         if(retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION)
+           {
+            ulong possibleTicket=m_trade.ResultOrder();
+            if(possibleTicket>0) ticketOut=possibleTicket;
+            errorReason+="; ambiguous outcome not retried";
+            return(false);
+           }
          if(!RetryableRetcode(retcode)) return(false);
         }
       return(false);
