@@ -1,0 +1,45 @@
+name: Intelligence engine tests
+
+on:
+  push:
+    paths: ["intel/**", "docs/**", ".github/workflows/intel-tests.yml"]
+  pull_request:
+    paths: ["intel/**", "docs/**", ".github/workflows/intel-tests.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      # Plain PostgreSQL 16. TimescaleDB is not installed; the tests stub
+      # create_hypertable, so hypertable behaviour itself is not exercised here.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      AUTOPSYX_PG: "host=localhost port=5432 user=postgres"
+    defaults:
+      run:
+        working-directory: intel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # For pull requests, test the PR branch itself rather than GitHub's
+          # synthetic merge commit. Historical scope checks must not mistake
+          # files present only on the base branch for PR changes.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # Historical provenance/scope tests need immutable Phase 2/3A/3B
+          # commits available locally.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pytest
+      - run: python -m pytest -q -rs
+      - run: python -m autopsyx demo

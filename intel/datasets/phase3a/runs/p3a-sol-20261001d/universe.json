@@ -1,0 +1,93 @@
+{
+  "exclusions": [],
+  "fingerprint": "a8e139f21e08201106776f7d510144ad8570818ef0bcbd17223c34cdb803657a",
+  "frozen_at_ms": 1790836263739,
+  "mechanism": {
+    "candidate_counts": {
+      "established": 20,
+      "quiet_young": 18,
+      "trending": 20,
+      "young": 60
+    },
+    "network": "solana",
+    "procedure": "seeded stratified random selection (acquire.select_universe)",
+    "seed": 20261001,
+    "strata_targets": {
+      "established": 1,
+      "quiet_young": 1,
+      "trending": 1,
+      "young": 2
+    }
+  },
+  "metadata": {
+    "2aLC5A64zYb1DFTacnf4TTVWi6pFY2Y9eXrbsvy5pump": {
+      "h1_txns_at_selection": 1,
+      "liquidity_usd_at_selection": 2649.85,
+      "total_supply_at_selection": 1000000000.0413616
+    },
+    "5D4jc25dWoqJ4fBGmnAXV8VZ7EjAyABJoYzW9NFbUuXG": {
+      "h1_txns_at_selection": 10,
+      "liquidity_usd_at_selection": 1.601,
+      "total_supply_at_selection": 429643977.61788595
+    },
+    "Fe42hPRumcFkRft9wyHTWQbkXqdnma8VHFxnEvomefJ3": {
+      "h1_txns_at_selection": 0,
+      "liquidity_usd_at_selection": 1.20206741449686e-06,
+      "total_supply_at_selection": 1006894353.9334446
+    },
+    "HjNEkmPCRK9AxZEojzp5mrRhsyAYsRXGqtz6Te7rjco1": {
+      "h1_txns_at_selection": 496,
+      "liquidity_usd_at_selection": 23873.292,
+      "total_supply_at_selection": 943368210.0441124
+    },
+    "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn": {
+      "h1_txns_at_selection": 509,
+      "liquidity_usd_at_selection": 27902920.4132,
+      "total_supply_at_selection": 830667170374.3949
+    }
+  },
+  "pools": [
+    {
+      "created_ts": 1790752801000,
+      "dex": "pumpswap",
+      "pool": "52d4PkACBKyyi2XYWVwKX8vFSC86gpM1Rt8b998c83eA",
+      "stratum": "established",
+      "token": "Fe42hPRumcFkRft9wyHTWQbkXqdnma8VHFxnEvomefJ3"
+    },
+    {
+      "created_ts": 1790836176000,
+      "dex": "pump-fun",
+      "pool": "5DWZuXmfrVfQz4kx5Y5AzszVxVu8pVFHcoJiLSZLJrBr",
+      "stratum": "quiet_young",
+      "token": "2aLC5A64zYb1DFTacnf4TTVWi6pFY2Y9eXrbsvy5pump"
+    },
+    {
+      "created_ts": 1752512154000,
+      "dex": "pumpswap",
+      "pool": "2uF4Xh61rDwxnG9woyxsVQP7zuA6kLFpb3NvnRQeoiSd",
+      "stratum": "trending",
+      "token": "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn"
+    },
+    {
+      "created_ts": 1790836137000,
+      "dex": "meteora-damm-v2",
+      "pool": "95kWHUEFXy186T2Shqe79NFmYoVMUpS7WiMPrhDHckpW",
+      "stratum": "young",
+      "token": "5D4jc25dWoqJ4fBGmnAXV8VZ7EjAyABJoYzW9NFbUuXG"
+    },
+    {
+      "created_ts": 1790836121000,
+      "dex": "meteora-damm-v2",
+      "pool": "AB3eb6LBeAMFTY4mw8uv82yxhPpHj4PcHpsqvD8Pq923",
+      "stratum": "young",
+      "token": "HjNEkmPCRK9AxZEojzp5mrRhsyAYsRXGqtz6Te7rjco1"
+    }
+  ],
+  "tokens": [
+    "2aLC5A64zYb1DFTacnf4TTVWi6pFY2Y9eXrbsvy5pump",
+    "5D4jc25dWoqJ4fBGmnAXV8VZ7EjAyABJoYzW9NFbUuXG",
+    "Fe42hPRumcFkRft9wyHTWQbkXqdnma8VHFxnEvomefJ3",
+    "HjNEkmPCRK9AxZEojzp5mrRhsyAYsRXGqtz6Te7rjco1",
+    "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn"
+  ]
+}

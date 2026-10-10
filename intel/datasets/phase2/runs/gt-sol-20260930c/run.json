@@ -1,0 +1,35 @@
+{
+  "circuit_waits": 0,
+  "code_version": "9845c6e16d754fa992d497019fb43e9e850dc050",
+  "cycles": 16,
+  "ended_ms": 1790762141756,
+  "errors": 0,
+  "exchanges": 225,
+  "execution": "none: acquisition only, no orders",
+  "final_gt_rate_per_s": 0.09214992523193365,
+  "plan": {
+    "backfill_pages": 2,
+    "circuit_waits": 5,
+    "cycle_s": 60,
+    "ds_rate_per_s": 2.0,
+    "duration_s": 3000,
+    "gt_min_rate_per_s": 0.03,
+    "gt_rate_per_s": 0.2,
+    "holders_per_cycle": 1,
+    "lag_ms": 60000,
+    "network": "solana",
+    "new_pool_pages": 3,
+    "ohlcv_every": 1,
+    "poll_ohlcv_limit": 5,
+    "seed": 20260930,
+    "strata": {
+      "established": 1,
+      "quiet_young": 1,
+      "trending": 1,
+      "young": 2
+    }
+  },
+  "runner": "GitHub Actions 1000000010",
+  "started_ms": 1790759103818,
+  "status": "COMPLETE"
+}

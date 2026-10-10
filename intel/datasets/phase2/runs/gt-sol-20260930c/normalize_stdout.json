@@ -1,0 +1,1 @@
+{"records": {"Coverage": 167, "HolderSnapshot": 16, "PoolInfo": 180, "PoolSnapshot": 194, "ProviderBar": 4276, "Swap": 14464, "TokenMeta": 201}, "issues": {"DERIVED_FIELD": 180, "DUPLICATE_OBSERVATION": 1, "FORMING_BAR_DROPPED": 34, "NULL_FIELD": 55, "PAGE_FULL": 48, "PARTIAL_RESPONSE": 16}, "dataset_sha256": "1ebe77ec9ec2e9b6f06da26cbcce17721db4504f6029baf610931f5489e71d14"}

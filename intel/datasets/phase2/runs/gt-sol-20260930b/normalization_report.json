@@ -1,0 +1,105 @@
+{
+  "coverage_gaps": {},
+  "dataset_sha256": "031917e87897293846524c7f2977134f0e723a65d3220cf98f175eb8f15d9f36",
+  "duplicate_swaps": 0,
+  "exchanges": 13,
+  "first_response_ms": 1790758933008,
+  "issue_samples": {
+    "DERIVED_FIELD": [
+      {
+        "action": "derived",
+        "code": "DERIVED_FIELD",
+        "detail": "u4H5ZfLazfWWLGUngiQzNsdEtjN81ErUH5jtgzqpump: total_supply = fdv_usd / price",
+        "raw_id": "3eb92543d72e436fa460cdf90989eede1e8db2da3303c41b51e22ce68eee583a"
+      },
+      {
+        "action": "derived",
+        "code": "DERIVED_FIELD",
+        "detail": "HykgrX11kZv1U3neeXArjKSfgy7DHT3QBQwAkSxTpump: total_supply = fdv_usd / price",
+        "raw_id": "3eb92543d72e436fa460cdf90989eede1e8db2da3303c41b51e22ce68eee583a"
+      },
+      {
+        "action": "derived",
+        "code": "DERIVED_FIELD",
+        "detail": "7MgRjrdKyG8q61Xe1JwAphbco81RYjpn3pq5d5Hzpump: total_supply = fdv_usd / price",
+        "raw_id": "3eb92543d72e436fa460cdf90989eede1e8db2da3303c41b51e22ce68eee583a"
+      },
+      {
+        "action": "derived",
+        "code": "DERIVED_FIELD",
+        "detail": "SNDKbwMUQvZhnLnxLduradgLHG5KrPuKwpnrkkGRhfH: total_supply = fdv_usd / price",
+        "raw_id": "3eb92543d72e436fa460cdf90989eede1e8db2da3303c41b51e22ce68eee583a"
+      },
+      {
+        "action": "derived",
+        "code": "DERIVED_FIELD",
+        "detail": "5QUtPdK4LFzht36iGHpdvwp1mBrF2oGVjqmpNwyzBAGS: total_supply = fdv_usd / price",
+        "raw_id": "3eb92543d72e436fa460cdf90989eede1e8db2da3303c41b51e22ce68eee583a"
+      }
+    ],
+    "FORMING_BAR_DROPPED": [
+      {
+        "action": "dropped_record",
+        "code": "FORMING_BAR_DROPPED",
+        "detail": "5mB5sp98LkXnQk4d1iwyDU3JWFeiXkyRxwhcycbFT1Sj: 1 unclosed bar(s)",
+        "raw_id": "da2ef6f5cebea20c35165ab8969674c93e96b6502e4c966d02c1448400d2ba9e"
+      },
+      {
+        "action": "dropped_record",
+        "code": "FORMING_BAR_DROPPED",
+        "detail": "8yRmAGxqwJPWeVyv3Qe7v1VNBWDRMRp5ZUC4NwEEu6Rc: 2 unclosed bar(s)",
+        "raw_id": "52bf379f5a016b006782aa5360bfd97fc94fd2f233cc7aaddedb65e6299c05c7"
+      }
+    ],
+    "NULL_FIELD": [
+      {
+        "action": "dropped_record",
+        "code": "NULL_FIELD",
+        "detail": "5YYzQPjqs7CJ8naR15vyhj9sFhoxocbSGi3kuCWA6FC3: price='0.00000000000537378487146806728070840708076529161485198230162729988322146326' reserve=None; no snapshot",
+        "raw_id": "3eb92543d72e436fa460cdf90989eede1e8db2da3303c41b51e22ce68eee583a"
+      },
+      {
+        "action": "dropped_record",
+        "code": "NULL_FIELD",
+        "detail": "5bJYbVbSfjnTecVNx27opatG8VsXmFgnYQS4wxDvvac: price='0.00000140083577416665522352839403881781515371808148915306423360634808' reserve=None; no snapshot",
+        "raw_id": "3eb92543d72e436fa460cdf90989eede1e8db2da3303c41b51e22ce68eee583a"
+      },
+      {
+        "action": "dropped_record",
+        "code": "NULL_FIELD",
+        "detail": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF: price='0.999261786237296' reserve=None; no snapshot",
+        "raw_id": "aa5b425f75b3c99e78db8b7a658dfc1e85d5fb46e161a65c9cdc0e03f7d2f733"
+      },
+      {
+        "action": "dropped_record",
+        "code": "NULL_FIELD",
+        "detail": "8sjV1AqBFvFuADBCQHhotaRq5DFFYSjjg1jMyVWMqXvZ: price='0.998644652553826' reserve=None; no snapshot",
+        "raw_id": "aa5b425f75b3c99e78db8b7a658dfc1e85d5fb46e161a65c9cdc0e03f7d2f733"
+      },
+      {
+        "action": "dropped_record",
+        "code": "NULL_FIELD",
+        "detail": "BGSomEy7xwZcndYXxpuv1fbTnkVtyEE8XTNQygm4pump: holders unavailable",
+        "raw_id": "3186c8dd09a9ca12afc450210c0c25bf7efd193c630e071a3925f3418e7610e4"
+      }
+    ]
+  },
+  "issues": {
+    "DERIVED_FIELD": 100,
+    "FORMING_BAR_DROPPED": 2,
+    "NULL_FIELD": 7
+  },
+  "last_response_ms": 1790759085174,
+  "provider_errors": 0,
+  "records": {
+    "Coverage": 4,
+    "HolderSnapshot": 1,
+    "PoolInfo": 100,
+    "PoolSnapshot": 96,
+    "ProviderBar": 6,
+    "TokenMeta": 104
+  },
+  "responses_ok": 13,
+  "run_dir": "datasets/phase2/runs/gt-sol-20260930b",
+  "tokens": 90
+}

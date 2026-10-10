@@ -1,0 +1,162 @@
+{
+ "archives": {
+  "gt-sol-20260930a": {
+   "duplicates_and_staleness": {
+    "phase2_coverage_gap_count": 3,
+    "phase2_duplicate_swaps": 26176,
+    "phase3a_duplicate_observations": 156,
+    "phase3a_observation_states": {
+     "creator_state|ERROR": 16,
+     "creator_state|OBSERVED": 26,
+     "holder_state|ERROR": 16,
+     "holder_state|NOT_OBSERVED": 3,
+     "holder_state|OBSERVED": 23,
+     "liquidity_event|OBSERVED": 100
+    }
+   },
+   "observation_count": 98,
+   "observation_states": {
+    "creator_state|ERROR": 16,
+    "creator_state|OBSERVED": 26,
+    "holder_state|ERROR": 16,
+    "holder_state|NOT_OBSERVED": 3,
+    "holder_state|OBSERVED": 23,
+    "liquidity_event|OBSERVED": 14
+   },
+   "provenance": {
+    "scope": "phase2_records only (archive predates Phase 3A runner sealing)",
+    "source": "normalize_stdout.json (Phase 2 runner normalization)",
+    "verified": true
+   },
+   "timestamp_coverage_ms": {
+    "max": 1790758406375,
+    "min": 1746886998000
+   },
+   "tokens_with_any_observation": 12
+  },
+  "gt-sol-20260930b": {
+   "duplicates_and_staleness": {
+    "phase2_coverage_gap_count": 0,
+    "phase2_duplicate_swaps": 0,
+    "phase3a_duplicate_observations": 3,
+    "phase3a_observation_states": {
+     "creator_state|OBSERVED": 4,
+     "holder_state|NOT_OBSERVED": 3,
+     "holder_state|OBSERVED": 1,
+     "liquidity_event|OBSERVED": 97
+    }
+   },
+   "observation_count": 16,
+   "observation_states": {
+    "creator_state|OBSERVED": 4,
+    "holder_state|NOT_OBSERVED": 3,
+    "holder_state|OBSERVED": 1,
+    "liquidity_event|OBSERVED": 8
+   },
+   "provenance": {
+    "scope": "phase2_records only (archive predates Phase 3A runner sealing)",
+    "source": "normalize_stdout.json (Phase 2 runner normalization)",
+    "verified": true
+   },
+   "timestamp_coverage_ms": {
+    "max": 1790759085174,
+    "min": 1790381215000
+   },
+   "tokens_with_any_observation": 8
+  },
+  "gt-sol-20260930c": {
+   "duplicates_and_staleness": {
+    "phase2_coverage_gap_count": 0,
+    "phase2_duplicate_swaps": 12209,
+    "phase3a_duplicate_observations": 81,
+    "phase3a_observation_states": {
+     "creator_state|NOT_OBSERVED": 4,
+     "creator_state|OBSERVED": 17,
+     "holder_state|NOT_OBSERVED": 5,
+     "holder_state|OBSERVED": 16,
+     "liquidity_event|OBSERVED": 99
+    }
+   },
+   "observation_count": 47,
+   "observation_states": {
+    "creator_state|NOT_OBSERVED": 4,
+    "creator_state|OBSERVED": 17,
+    "holder_state|NOT_OBSERVED": 5,
+    "holder_state|OBSERVED": 16,
+    "liquidity_event|OBSERVED": 5
+   },
+   "provenance": {
+    "scope": "phase2_records only (archive predates Phase 3A runner sealing)",
+    "source": "normalize_stdout.json (Phase 2 runner normalization)",
+    "verified": true
+   },
+   "timestamp_coverage_ms": {
+    "max": 1790762141754,
+    "min": 1776448919000
+   },
+   "tokens_with_any_observation": 5
+  },
+  "p3a-sol-20261001d2": {
+   "duplicates_and_staleness": {
+    "phase2_coverage_gap_count": 0,
+    "phase2_duplicate_swaps": 8269,
+    "phase3a_duplicate_observations": 354,
+    "phase3a_observation_states": {
+     "creator_state|OBSERVED": 19,
+     "funding_transfer|ERROR": 20,
+     "funding_transfer|NOT_OBSERVED": 76,
+     "funding_transfer|OBSERVED": 266,
+     "holder_state|NOT_OBSERVED": 4,
+     "holder_state|OBSERVED": 15,
+     "liquidity_event|ERROR": 26,
+     "liquidity_event|NOT_OBSERVED": 81,
+     "liquidity_event|OBSERVED": 142,
+     "news|ERROR": 6,
+     "news|NOT_OBSERVED": 2,
+     "social|ERROR": 10
+    }
+   },
+   "observation_count": 572,
+   "observation_states": {
+    "creator_state|OBSERVED": 19,
+    "funding_transfer|ERROR": 20,
+    "funding_transfer|NOT_OBSERVED": 76,
+    "funding_transfer|OBSERVED": 266,
+    "holder_state|NOT_OBSERVED": 4,
+    "holder_state|OBSERVED": 15,
+    "liquidity_event|ERROR": 26,
+    "liquidity_event|NOT_OBSERVED": 81,
+    "liquidity_event|OBSERVED": 47,
+    "news|ERROR": 6,
+    "news|NOT_OBSERVED": 2,
+    "social|ERROR": 10
+   },
+   "provenance": {
+    "scope": "phase2_records and phase3a_observations",
+    "source": "run.json provenance (sealed on runner)",
+    "verified": true
+   },
+   "timestamp_coverage_ms": {
+    "max": 1790844179444,
+    "min": 1785083563000
+   },
+   "tokens_with_any_observation": 5
+  }
+ },
+ "configuration_hash": "417bd32cce8fb72c",
+ "contract_hash": "a317239dfc492486657b55f8980c463559de37edef95af21b5247420a4aee527",
+ "contract_version": "3b.1",
+ "eligible_archives": [
+  "gt-sol-20260930a",
+  "gt-sol-20260930b",
+  "gt-sol-20260930c",
+  "p3a-sol-20261001d2"
+ ],
+ "excluded_hypotheses": {
+  "H2": "frozen by the standing instruction carried from Phase 2 through Phase 3A: \"do not test or claim H2, H5, H6 or H7\"; Phase 3B does not lift it",
+  "H5": "frozen by the standing instruction carried from Phase 2 through Phase 3A: \"do not test or claim H2, H5, H6 or H7\"; Phase 3B does not lift it",
+  "H6": "frozen by the standing instruction carried from Phase 2 through Phase 3A: \"do not test or claim H2, H5, H6 or H7\"; Phase 3B does not lift it",
+  "H7": "frozen by the standing instruction carried from Phase 2 through Phase 3A: \"do not test or claim H2, H5, H6 or H7\"; Phase 3B does not lift it"
+ },
+ "repository_commit": "617355f874d949431eb93d8ac2d3ecc7b6479aa3"
+}

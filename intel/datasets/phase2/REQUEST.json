@@ -1,0 +1,17 @@
+{
+  "run_id": "gt-sol-20260930c",
+  "network": "solana",
+  "seed": 20260930,
+  "strata": {"young": 2, "quiet_young": 1, "trending": 1, "established": 1},
+  "new_pool_pages": 3,
+  "backfill_pages": 2,
+  "duration_s": 3000,
+  "cycle_s": 60,
+  "poll_ohlcv_limit": 5,
+  "ohlcv_every": 1,
+  "holders_per_cycle": 1,
+  "lag_ms": 60000,
+  "gt_rate_per_s": 0.2,
+  "gt_min_rate_per_s": 0.03,
+  "circuit_waits": 5
+}

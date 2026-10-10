@@ -1,0 +1,4390 @@
+{
+ "blank_cells": 0,
+ "dimensions": [
+  "archive",
+  "token",
+  "funding_transfer",
+  "liquidity_events",
+  "creator_state",
+  "holder_state",
+  "news",
+  "social",
+  "ohlcv",
+  "trades",
+  "freshness",
+  "provider",
+  "replayability",
+  "point_in_time_validity"
+ ],
+ "freshness_policy_fingerprint": "58fe8ee8476b824fde285065d8dafbebb594f9bf1cd0df04091823d13b9881ff",
+ "row_count": 30,
+ "rows": [
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930a"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 24,
+    "reason": "age above 120000 ms",
+    "stale": 24,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 3
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 3,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 26,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 13
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 11,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 7,
+    "reason": "some requests failed",
+    "requests": 35,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "EjrebF74cUDAvYbQHTLEh6FwkGiBRP5dXmpD6MHktdj3",
+    "state": "IDENTITY",
+    "value": "141bZt7hXvDezAvuKMGym1Y8wFUWxD4NNMJ82VDmbonk"
+   },
+   "trades": {
+    "reason": "",
+    "records": 13,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 13
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930a"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 24,
+    "reason": "age above 120000 ms",
+    "stale": 24,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 65,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 13
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 7,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 6,
+    "reason": "some requests failed",
+    "requests": 34,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "4ZLvQbQsJKUukbeADqFh7PMhmwCyWuRJMpLWnm7WedeE",
+    "state": "IDENTITY",
+    "value": "2FsgkzDB1HUQBwikTbCTxCtnrwrdf2qStFptE6TPRoCV"
+   },
+   "trades": {
+    "reason": "",
+    "records": 3900,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 13
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930a"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 3,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 24,
+    "reason": "age above 120000 ms",
+    "stale": 24,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 3,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "provider answered without the fact",
+    "records": 4,
+    "state": "NOT_OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 65,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 13
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 9,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 6,
+    "reason": "some requests failed",
+    "requests": 35,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "5yBj7ZEV34fDwLHRNoUhzsvhY4Ma4aEdX7ry8auxnSAt",
+    "state": "IDENTITY",
+    "value": "2fVHL58T1z9Pm63cCQP6wc9SWVivjzdZRY74Q8Anpump"
+   },
+   "trades": {
+    "reason": "",
+    "records": 650,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 13
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930a"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 24,
+    "reason": "age above 120000 ms",
+    "stale": 24,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 52,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 13
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 9,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 7,
+    "reason": "some requests failed",
+    "requests": 35,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "H6Xn3EUpTcMxVjRpqMwgFmCz1yhzSQKQN33VKGQin9ZL",
+    "state": "IDENTITY",
+    "value": "4q1V2WZcwLHCQc9CEuLDsYyJc3Q2gN3Ad9u33EcApump"
+   },
+   "trades": {
+    "reason": "",
+    "records": 3107,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 13
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930a"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 24,
+    "reason": "age above 120000 ms",
+    "stale": 24,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 65,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 13
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 7,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 6,
+    "reason": "some requests failed",
+    "requests": 34,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "AxGtLoCCfgXD1STXNUT8UFowHHQn4GEFPRg4wWi3uZXq",
+    "state": "IDENTITY",
+    "value": "9tib9sVufn3qCxnwszbGgfg396Jr9RcBUMsXnKGBrK4A"
+   },
+   "trades": {
+    "reason": "",
+    "records": 3900,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 13
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930a"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 24,
+    "reason": "age above 120000 ms",
+    "stale": 24,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 37,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 13
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 9,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 7,
+    "reason": "some requests failed",
+    "requests": 35,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "FGmprTjfLyWvkBcs5vuXAPqwu43kncJsgxHHH9pRDLaT",
+    "state": "IDENTITY",
+    "value": "ADzAcui1WQaeM8kRV5oZFsb9tsFhaoko7Qzs2ELqpump"
+   },
+   "trades": {
+    "reason": "",
+    "records": 51,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 13
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930a"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 24,
+    "reason": "age above 120000 ms",
+    "stale": 24,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 41,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 13
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 7,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 6,
+    "reason": "some requests failed",
+    "requests": 34,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "HnhpJPJgBG2KwniMTNW8cVBHvk1hFog3RC3kjnyc23tD",
+    "state": "IDENTITY",
+    "value": "CARDSccUMFKoPRZxt5vt3ksUbxEFEcnZ3H2pd3dKxYjp"
+   },
+   "trades": {
+    "reason": "",
+    "records": 3900,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 13
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930a"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 24,
+    "reason": "age above 120000 ms",
+    "stale": 24,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 42,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 13
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 7,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 6,
+    "reason": "some requests failed",
+    "requests": 34,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "4JAnKFddd5fFTk5PxDj3PpTWJuTEfSWQEjZJcgKQ9KwW",
+    "state": "IDENTITY",
+    "value": "CbcyNo7m1amFWqEQm2m4PLv1UNvpcL3C1Ujm6AkzpKoU"
+   },
+   "trades": {
+    "reason": "",
+    "records": 3900,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 13
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930a"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 24,
+    "reason": "age above 120000 ms",
+    "stale": 24,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 49,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 13
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 7,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 6,
+    "reason": "some requests failed",
+    "requests": 34,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "Q2sPHPdUWFMg7M7wwrQKLrn619cAucfRsmhVJffodSp",
+    "state": "IDENTITY",
+    "value": "Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk"
+   },
+   "trades": {
+    "reason": "",
+    "records": 3900,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 13
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930a"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 24,
+    "reason": "age above 120000 ms",
+    "stale": 24,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 26,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 13
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 9,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 7,
+    "reason": "some requests failed",
+    "requests": 35,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "6tpuF9m2s8abaqmzRGxUdhUErRbggT8rDpFswsKJoQJs",
+    "state": "IDENTITY",
+    "value": "EMc7FL2B5ZKVbUk7CHxTPMk1pnTXjLmf5o1ML5Pgpump"
+   },
+   "trades": {
+    "reason": "",
+    "records": 52,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 13
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930a"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 3,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 24,
+    "reason": "age above 120000 ms",
+    "stale": 24,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 3,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 65,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 13
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 9,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 6,
+    "reason": "some requests failed",
+    "requests": 35,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "2iJyUmnGDpcHbJfrUQahnVhQcxewcSxRTcFjkeKbKuqY",
+    "state": "IDENTITY",
+    "value": "EeTBxBbQEafRJHUAfWTasxygTQhmcD2Mx2mRxKgQSFWe"
+   },
+   "trades": {
+    "reason": "",
+    "records": 3900,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 13
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930a"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 24,
+    "reason": "age above 120000 ms",
+    "stale": 24,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 65,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 13
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 7,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 6,
+    "reason": "some requests failed",
+    "requests": 34,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "4EaE7RrNLr4Ky1rBwu69T9UhujbxhMHoiMDdz6HrDxEF",
+    "state": "IDENTITY",
+    "value": "GytyxXBmcNPdM4nCug4qLZSB1DHe6SyYkJwyFZed4yQN"
+   },
+   "trades": {
+    "reason": "",
+    "records": 3900,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 13
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930b"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "evaluations": 0,
+    "reason": "no repeated market polls for this token",
+    "stale": 0,
+    "state": "NOT_OBSERVED"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 1,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "provider answered without the fact",
+    "records": 1,
+    "state": "NOT_OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 1,
+    "requests": 1,
+    "state": "OBSERVED",
+    "successful": 1
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "NOT_RUN (archive not replayable)",
+    "observation_checks": 3,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 0,
+    "reason": "",
+    "requests": 2,
+    "state": "OBSERVED"
+   },
+   "replayability": {
+    "reason": "no live poll responses in archive (run ended during backfill)",
+    "state": "NOT_REPLAYABLE"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "3jcrxB1VAHhK7D8LHu6WqBHMUqViZhHuKEy1rN1rXNMj",
+    "state": "IDENTITY",
+    "value": "5pU25cDQWqWwhXw53CYVTVCmQhBVBPnsBfX16rntcFga"
+   },
+   "trades": {
+    "reason": "never requested for this token",
+    "records": 0,
+    "requests": 0,
+    "state": "UNKNOWN",
+    "successful": 0
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930b"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source in the archive's plan, but never asked for this token",
+    "records": 0,
+    "state": "UNKNOWN"
+   },
+   "freshness": {
+    "evaluations": 0,
+    "reason": "no repeated market polls for this token",
+    "stale": 0,
+    "state": "NOT_OBSERVED"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source in the archive's plan, but never asked for this token",
+    "records": 0,
+    "state": "UNKNOWN"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "never requested for this token",
+    "records": 0,
+    "requests": 0,
+    "state": "UNKNOWN",
+    "successful": 0
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "NOT_RUN (archive not replayable)",
+    "observation_checks": 1,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 0,
+    "reason": "no requests",
+    "requests": 0,
+    "state": "NOT_OBSERVED"
+   },
+   "replayability": {
+    "reason": "no live poll responses in archive (run ended during backfill)",
+    "state": "NOT_REPLAYABLE"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "8ewuF2o8ACro7fqWepZ3tKhkbBjndZU4Ldk9scRPw83d",
+    "state": "IDENTITY",
+    "value": "5tCju6YNxHq5zrA6tGndr6F7TK42mpUFmeE31cSFpump"
+   },
+   "trades": {
+    "reason": "never requested for this token",
+    "records": 0,
+    "requests": 0,
+    "state": "UNKNOWN",
+    "successful": 0
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930b"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "evaluations": 0,
+    "reason": "no repeated market polls for this token",
+    "stale": 0,
+    "state": "NOT_OBSERVED"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 1,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "provider answered without the fact",
+    "records": 1,
+    "state": "NOT_OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 1,
+    "requests": 1,
+    "state": "OBSERVED",
+    "successful": 1
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "NOT_RUN (archive not replayable)",
+    "observation_checks": 3,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 0,
+    "reason": "",
+    "requests": 2,
+    "state": "OBSERVED"
+   },
+   "replayability": {
+    "reason": "no live poll responses in archive (run ended during backfill)",
+    "state": "NOT_REPLAYABLE"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "9gHSVbTnHUcFpw4f8cZSMGaCpV3BH8mVNPnqtJovvxU7",
+    "state": "IDENTITY",
+    "value": "BGSomEy7xwZcndYXxpuv1fbTnkVtyEE8XTNQygm4pump"
+   },
+   "trades": {
+    "reason": "never requested for this token",
+    "records": 0,
+    "requests": 0,
+    "state": "UNKNOWN",
+    "successful": 0
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930b"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source in the archive's plan, but never asked for this token",
+    "records": 0,
+    "state": "UNKNOWN"
+   },
+   "freshness": {
+    "evaluations": 0,
+    "reason": "no repeated market polls for this token",
+    "stale": 0,
+    "state": "NOT_OBSERVED"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source in the archive's plan, but never asked for this token",
+    "records": 0,
+    "state": "UNKNOWN"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "never requested for this token",
+    "records": 0,
+    "requests": 0,
+    "state": "UNKNOWN",
+    "successful": 0
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "NOT_RUN (archive not replayable)",
+    "observation_checks": 1,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 0,
+    "reason": "no requests",
+    "requests": 0,
+    "state": "NOT_OBSERVED"
+   },
+   "replayability": {
+    "reason": "no live poll responses in archive (run ended during backfill)",
+    "state": "NOT_REPLAYABLE"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "DGvB8KyD79wFBJ7Kr7mW54qSfi7Yk3UrhJkcnTSd6frb",
+    "state": "IDENTITY",
+    "value": "BdzaE3T7uU59pBVDBHZVZh3yWrrpo4oPrXdv4nPDpump"
+   },
+   "trades": {
+    "reason": "never requested for this token",
+    "records": 0,
+    "requests": 0,
+    "state": "UNKNOWN",
+    "successful": 0
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930b"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "evaluations": 0,
+    "reason": "no repeated market polls for this token",
+    "stale": 0,
+    "state": "NOT_OBSERVED"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 1,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "provider answered without the fact",
+    "records": 1,
+    "state": "NOT_OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 2,
+    "requests": 1,
+    "state": "OBSERVED",
+    "successful": 1
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "NOT_RUN (archive not replayable)",
+    "observation_checks": 3,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 0,
+    "reason": "",
+    "requests": 2,
+    "state": "OBSERVED"
+   },
+   "replayability": {
+    "reason": "no live poll responses in archive (run ended during backfill)",
+    "state": "NOT_REPLAYABLE"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "5mB5sp98LkXnQk4d1iwyDU3JWFeiXkyRxwhcycbFT1Sj",
+    "state": "IDENTITY",
+    "value": "D48GozLGiYdyqZa5cDkCwhfKESSr8p3BCwqnxNZnpump"
+   },
+   "trades": {
+    "reason": "never requested for this token",
+    "records": 0,
+    "requests": 0,
+    "state": "UNKNOWN",
+    "successful": 0
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930b"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source in the archive's plan, but never asked for this token",
+    "records": 0,
+    "state": "UNKNOWN"
+   },
+   "freshness": {
+    "evaluations": 0,
+    "reason": "no repeated market polls for this token",
+    "stale": 0,
+    "state": "NOT_OBSERVED"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source in the archive's plan, but never asked for this token",
+    "records": 0,
+    "state": "UNKNOWN"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "never requested for this token",
+    "records": 0,
+    "requests": 0,
+    "state": "UNKNOWN",
+    "successful": 0
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "NOT_RUN (archive not replayable)",
+    "observation_checks": 1,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 0,
+    "reason": "no requests",
+    "requests": 0,
+    "state": "NOT_OBSERVED"
+   },
+   "replayability": {
+    "reason": "no live poll responses in archive (run ended during backfill)",
+    "state": "NOT_REPLAYABLE"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "HBJ4AJTJd4LBWGNYHFqrv93QoSzuCTpr523REkQXJcqN",
+    "state": "IDENTITY",
+    "value": "E9bu3g16RYbN3WwVSWVNtJKLrsSxjJMJSN2TrGo3Hdfv"
+   },
+   "trades": {
+    "reason": "never requested for this token",
+    "records": 0,
+    "requests": 0,
+    "state": "UNKNOWN",
+    "successful": 0
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930b"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "evaluations": 0,
+    "reason": "no repeated market polls for this token",
+    "stale": 0,
+    "state": "NOT_OBSERVED"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 2,
+    "requests": 1,
+    "state": "OBSERVED",
+    "successful": 1
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "NOT_RUN (archive not replayable)",
+    "observation_checks": 3,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 0,
+    "reason": "",
+    "requests": 2,
+    "state": "OBSERVED"
+   },
+   "replayability": {
+    "reason": "no live poll responses in archive (run ended during backfill)",
+    "state": "NOT_REPLAYABLE"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "8yRmAGxqwJPWeVyv3Qe7v1VNBWDRMRp5ZUC4NwEEu6Rc",
+    "state": "IDENTITY",
+    "value": "F19gvBfbT2C2hfR4K1RDfP7Xo5WrkgyP5FPs7qQc4WeK"
+   },
+   "trades": {
+    "reason": "never requested for this token",
+    "records": 0,
+    "requests": 0,
+    "state": "UNKNOWN",
+    "successful": 0
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930b"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source in the archive's plan, but never asked for this token",
+    "records": 0,
+    "state": "UNKNOWN"
+   },
+   "freshness": {
+    "evaluations": 0,
+    "reason": "no repeated market polls for this token",
+    "stale": 0,
+    "state": "NOT_OBSERVED"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source in the archive's plan, but never asked for this token",
+    "records": 0,
+    "state": "UNKNOWN"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "never requested for this token",
+    "records": 0,
+    "requests": 0,
+    "state": "UNKNOWN",
+    "successful": 0
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "NOT_RUN (archive not replayable)",
+    "observation_checks": 1,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 0,
+    "reason": "no requests",
+    "requests": 0,
+    "state": "NOT_OBSERVED"
+   },
+   "replayability": {
+    "reason": "no live poll responses in archive (run ended during backfill)",
+    "state": "NOT_REPLAYABLE"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "EeYdQrxko3AWEFfDHhzQ6wx24JnXnq48qUMNuDnFz1yt",
+    "state": "IDENTITY",
+    "value": "Gh7RHpfvzubiz1SevSxHQosa75vv8zfdWf7niGQxTLAb"
+   },
+   "trades": {
+    "reason": "never requested for this token",
+    "records": 0,
+    "requests": 0,
+    "state": "UNKNOWN",
+    "successful": 0
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930c"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 4,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "provider answered without the fact",
+    "records": 4,
+    "state": "NOT_OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.03125,
+    "evaluations": 32,
+    "reason": "age above 120000 ms",
+    "stale": 31,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 2057,
+    "requests": 18,
+    "state": "OBSERVED",
+    "successful": 18
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 9,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 0,
+    "reason": "",
+    "requests": 38,
+    "state": "OBSERVED"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "EXMcKF76kmBUH8xZ5fi1jv3ezh3eVQCeL4rQbpjCRxvF",
+    "state": "IDENTITY",
+    "value": "2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH"
+   },
+   "trades": {
+    "reason": "",
+    "records": 4800,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 16
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930c"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 31,
+    "reason": "age above 120000 ms",
+    "stale": 31,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 67,
+    "requests": 17,
+    "state": "OBSERVED",
+    "successful": 17
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 9,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 0,
+    "reason": "",
+    "requests": 37,
+    "state": "OBSERVED"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "CUXsFJDqSv82xfqdWywyQRYyPikx76dHp3Phe87Yyg1p",
+    "state": "IDENTITY",
+    "value": "5siRdWGetBqDh2Qz9JqPYqFZXQg3GVogvjUhK7UNEprc"
+   },
+   "trades": {
+    "reason": "",
+    "records": 4800,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 16
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930c"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.03125,
+    "evaluations": 32,
+    "reason": "age above 120000 ms",
+    "stale": 31,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 2055,
+    "requests": 18,
+    "state": "OBSERVED",
+    "successful": 18
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 9,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 0,
+    "reason": "",
+    "requests": 38,
+    "state": "OBSERVED"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "zxTpi4BtaWX3mgdAPoezkMD1hxx8CdeCfrqXMWvSCLX",
+    "state": "IDENTITY",
+    "value": "6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx"
+   },
+   "trades": {
+    "reason": "",
+    "records": 4800,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 16
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930c"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 5,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 5,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 31,
+    "reason": "age above 120000 ms",
+    "stale": 31,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 1,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 5,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 48,
+    "requests": 17,
+    "state": "OBSERVED",
+    "successful": 17
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 11,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 0,
+    "reason": "",
+    "requests": 38,
+    "state": "OBSERVED"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "25XK4DaAfuEVBVfUWApM6SysWz8S24BQ2SwdHiqn7rGL",
+    "state": "IDENTITY",
+    "value": "6LVPUuNdWmgsqwdyD9aFhmS4ijHJyQRXDJ3CQeSMpump"
+   },
+   "trades": {
+    "reason": "",
+    "records": 32,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 16
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "selection.json",
+    "value": "gt-sol-20260930c"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 31,
+    "reason": "age above 120000 ms",
+    "stale": 31,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 4,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "provider answered without the fact",
+    "records": 4,
+    "state": "NOT_OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 1,
+    "state": "OBSERVED",
+    "vault_delta_requests": 0
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 49,
+    "requests": 17,
+    "state": "OBSERVED",
+    "successful": 17
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 9,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 0,
+    "reason": "",
+    "requests": 37,
+    "state": "OBSERVED"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "source not in this archive's acquisition plan",
+    "records": 0,
+    "state": "UNAVAILABLE"
+   },
+   "token": {
+    "pool": "DBSUc1o699qaJ3SS3GYMyGWVcA29SPjRrMUbbj2Hmpau",
+    "state": "IDENTITY",
+    "value": "H3BGCayg7zqgWwaXmoy5DG6AkVbUXaN5apGyX4wHpump"
+   },
+   "trades": {
+    "reason": "",
+    "records": 32,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 16
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "universe.json",
+    "value": "p3a-sol-20261001d2"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 27,
+    "reason": "age above 120000 ms",
+    "stale": 27,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 15,
+     "OBSERVED": 125,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {
+     "success": 125
+    },
+    "reason": "",
+    "records": 140,
+    "state": "OBSERVED"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 4,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "provider answered without the fact",
+    "records": 4,
+    "state": "NOT_OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1,
+     "vault_balance_delta|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 1,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 2,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED",
+    "vault_delta_requests": 4
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 2,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "provider answered without the fact",
+    "records": 2,
+    "state": "NOT_OBSERVED"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 29,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 15
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 155,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 2,
+    "reason": "some requests failed",
+    "requests": 101,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "every request for this token failed",
+    "records": 2,
+    "state": "ERROR"
+   },
+   "token": {
+    "pool": "J2rcPuCbyJk4V3Av1Qcw5YFADjf7t475ckGdF5cc2vni",
+    "state": "IDENTITY",
+    "value": "25KTDG9Lz8Kk4s2y9QgAwSXBnrhAsNkhF8Zcxv7qpump"
+   },
+   "trades": {
+    "reason": "",
+    "records": 14,
+    "requests": 14,
+    "state": "OBSERVED",
+    "successful": 14
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "universe.json",
+    "value": "p3a-sol-20261001d2"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 3,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 27,
+    "reason": "age above 120000 ms",
+    "stale": 27,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 2,
+     "OBSERVED": 12,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {
+     "success": 12
+    },
+    "reason": "",
+    "records": 14,
+    "state": "OBSERVED"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 3,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 3,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1,
+     "vault_balance_delta|unclassified": 15
+    },
+    "counts": {
+     "ERROR": 12,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 3,
+     "OBSERVED": 16,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 31,
+    "state": "OBSERVED",
+    "vault_delta_requests": 60
+   },
+   "news": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "every request for this token failed",
+    "records": 2,
+    "state": "ERROR"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 59,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 15
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 55,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 4,
+    "reason": "some requests failed",
+    "requests": 114,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "every request for this token failed",
+    "records": 2,
+    "state": "ERROR"
+   },
+   "token": {
+    "pool": "Ds86ohcmWPeW8DEiFnuFcQak2GfzDvMcYfCp5ore6bgG",
+    "state": "IDENTITY",
+    "value": "5LiKVERgvnLsayNEeeGJrwLCB9v51KKshdCoacEKpump"
+   },
+   "trades": {
+    "reason": "",
+    "records": 420,
+    "requests": 14,
+    "state": "OBSERVED",
+    "successful": 14
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "universe.json",
+    "value": "p3a-sol-20261001d2"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 27,
+    "reason": "age above 120000 ms",
+    "stale": 27,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 29,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {
+     "success": 1
+    },
+    "reason": "",
+    "records": 30,
+    "state": "OBSERVED"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1,
+     "vault_balance_delta|add": 1,
+     "vault_balance_delta|remove": 1
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 28,
+     "OBSERVED": 3,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 31,
+    "state": "OBSERVED",
+    "vault_delta_requests": 60
+   },
+   "news": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "query not applicable for this token (recorded in the manifest)",
+    "records": 0,
+    "state": "NOT_APPLICABLE"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 375,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 15
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 71,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 4,
+    "reason": "some requests failed",
+    "requests": 165,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "every request for this token failed",
+    "records": 2,
+    "state": "ERROR"
+   },
+   "token": {
+    "pool": "6aDM38nmF3WrAK1VF94z8pJynAnS29aB7Lkh3UmFfVmG",
+    "state": "IDENTITY",
+    "value": "6aK5YeYgnRFwkyyxKL1miHq31oxV251iGv4EHJ6rcDKF"
+   },
+   "trades": {
+    "reason": "",
+    "records": 4200,
+    "requests": 14,
+    "state": "OBSERVED",
+    "successful": 14
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "universe.json",
+    "value": "p3a-sol-20261001d2"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.0,
+    "evaluations": 27,
+    "reason": "age above 120000 ms",
+    "stale": 27,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 16,
+     "OBSERVED": 128,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {
+     "failed": 3,
+     "success": 125
+    },
+    "reason": "",
+    "records": 144,
+    "state": "OBSERVED"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1,
+     "vault_balance_delta|pool_create": 1,
+     "vault_balance_delta|unclassified": 23
+    },
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 3,
+     "OBSERVED": 25,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 28,
+    "state": "OBSERVED",
+    "vault_delta_requests": 54
+   },
+   "news": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "every request for this token failed",
+    "records": 2,
+    "state": "ERROR"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 29,
+    "requests": 15,
+    "state": "OBSERVED",
+    "successful": 15
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 184,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 4,
+    "reason": "some requests failed",
+    "requests": 157,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "every request for this token failed",
+    "records": 2,
+    "state": "ERROR"
+   },
+   "token": {
+    "pool": "4UgBZuUAvb7C9jqz6QRFj8PaBq7iSRU11vb1k422BUVT",
+    "state": "IDENTITY",
+    "value": "9P6XL2LPNuaj1YndWK7WhHzZG8WKLPMZ3UmBsmpapump"
+   },
+   "trades": {
+    "reason": "",
+    "records": 294,
+    "requests": 14,
+    "state": "OBSERVED",
+    "successful": 14
+   }
+  },
+  {
+   "archive": {
+    "state": "IDENTITY",
+    "universe_source": "universe.json",
+    "value": "p3a-sol-20261001d2"
+   },
+   "creator_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "freshness": {
+    "compliance": 0.035714,
+    "evaluations": 28,
+    "reason": "age above 120000 ms",
+    "stale": 27,
+    "state": "STALE"
+   },
+   "funding_transfer": {
+    "counts": {
+     "ERROR": 20,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 14,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "observed_by_tx_status": {},
+    "reason": "provider answered without the fact",
+    "records": 34,
+    "state": "NOT_OBSERVED"
+   },
+   "holder_state": {
+    "counts": {
+     "ERROR": 0,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 4,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 4,
+    "state": "OBSERVED"
+   },
+   "liquidity_events": {
+    "by_method_and_type": {
+     "provider_metadata:pool_created_at|pool_create": 1
+    },
+    "counts": {
+     "ERROR": 13,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 47,
+     "OBSERVED": 1,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "",
+    "records": 61,
+    "state": "OBSERVED",
+    "vault_delta_requests": 60
+   },
+   "news": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "every request for this token failed",
+    "records": 2,
+    "state": "ERROR"
+   },
+   "ohlcv": {
+    "reason": "",
+    "records": 2052,
+    "requests": 16,
+    "state": "OBSERVED",
+    "successful": 16
+   },
+   "point_in_time_validity": {
+    "archive_lookahead_audit": "PASSED",
+    "observation_checks": 107,
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "provider": {
+    "errors": 3,
+    "reason": "some requests failed",
+    "requests": 166,
+    "state": "ERROR"
+   },
+   "replayability": {
+    "reason": "",
+    "state": "VERIFIED"
+   },
+   "social": {
+    "counts": {
+     "ERROR": 2,
+     "NOT_APPLICABLE": 0,
+     "NOT_OBSERVED": 0,
+     "OBSERVED": 0,
+     "STALE": 0,
+     "UNAVAILABLE": 0,
+     "UNKNOWN": 0
+    },
+    "reason": "every request for this token failed",
+    "records": 2,
+    "state": "ERROR"
+   },
+   "token": {
+    "pool": "HMzvsEEmtzHhvZNw9uwbaG85HCTmFnkbhzUx16cy7ca3",
+    "state": "IDENTITY",
+    "value": "Ai66LHZG9MCzg1WKdawwqduVAXpNDUuV8M3uyq5ppump"
+   },
+   "trades": {
+    "reason": "",
+    "records": 4200,
+    "requests": 14,
+    "state": "OBSERVED",
+    "successful": 14
+   }
+  }
+ ],
+ "state_rule": "OBSERVED if any OBSERVED record; else NOT_OBSERVED if any; else NOT_APPLICABLE if the question was not applicable; else ERROR if any; else UNKNOWN if the archive's plan included the source but this token was never asked; else UNAVAILABLE (source not in the archive's acquisition plan)",
+ "totals": {
+  "creator_state": {
+   "ERROR": 0,
+   "NOT_APPLICABLE": 0,
+   "NOT_OBSERVED": 1,
+   "OBSERVED": 25,
+   "STALE": 0,
+   "UNAVAILABLE": 0,
+   "UNKNOWN": 4,
+   "positive_share": 0.833333,
+   "positive_state": "OBSERVED"
+  },
+  "freshness": {
+   "NOT_OBSERVED": 8,
+   "OBSERVED": 0,
+   "STALE": 22,
+   "positive_share": 0.0,
+   "positive_state": "OBSERVED"
+  },
+  "funding_transfer": {
+   "ERROR": 0,
+   "NOT_APPLICABLE": 0,
+   "NOT_OBSERVED": 1,
+   "OBSERVED": 4,
+   "STALE": 0,
+   "UNAVAILABLE": 25,
+   "UNKNOWN": 0,
+   "positive_share": 0.133333,
+   "positive_state": "OBSERVED"
+  },
+  "holder_state": {
+   "ERROR": 0,
+   "NOT_APPLICABLE": 0,
+   "NOT_OBSERVED": 6,
+   "OBSERVED": 20,
+   "STALE": 0,
+   "UNAVAILABLE": 0,
+   "UNKNOWN": 4,
+   "positive_share": 0.666667,
+   "positive_state": "OBSERVED"
+  },
+  "liquidity_events": {
+   "ERROR": 0,
+   "NOT_APPLICABLE": 0,
+   "NOT_OBSERVED": 0,
+   "OBSERVED": 30,
+   "STALE": 0,
+   "UNAVAILABLE": 0,
+   "UNKNOWN": 0,
+   "positive_share": 1.0,
+   "positive_state": "OBSERVED",
+   "rows_with_vault_delta_events": 4,
+   "rows_with_vault_delta_requests": 5,
+   "vault_delta_share": 0.133333
+  },
+  "news": {
+   "ERROR": 3,
+   "NOT_APPLICABLE": 1,
+   "NOT_OBSERVED": 1,
+   "OBSERVED": 0,
+   "STALE": 0,
+   "UNAVAILABLE": 25,
+   "UNKNOWN": 0,
+   "positive_share": 0.0,
+   "positive_state": "OBSERVED"
+  },
+  "ohlcv": {
+   "ERROR": 0,
+   "NOT_APPLICABLE": 0,
+   "NOT_OBSERVED": 0,
+   "OBSERVED": 26,
+   "STALE": 0,
+   "UNAVAILABLE": 0,
+   "UNKNOWN": 4,
+   "positive_share": 0.866667,
+   "positive_state": "OBSERVED"
+  },
+  "point_in_time_validity": {
+   "FAILED": 0,
+   "VERIFIED": 30,
+   "positive_share": 1.0,
+   "positive_state": "VERIFIED"
+  },
+  "provider": {
+   "ERROR": 17,
+   "NOT_OBSERVED": 4,
+   "OBSERVED": 9,
+   "positive_share": 0.3,
+   "positive_state": "OBSERVED"
+  },
+  "replayability": {
+   "FAILED": 0,
+   "NOT_REPLAYABLE": 8,
+   "VERIFIED": 22,
+   "positive_share": 0.733333,
+   "positive_state": "VERIFIED"
+  },
+  "social": {
+   "ERROR": 5,
+   "NOT_APPLICABLE": 0,
+   "NOT_OBSERVED": 0,
+   "OBSERVED": 0,
+   "STALE": 0,
+   "UNAVAILABLE": 25,
+   "UNKNOWN": 0,
+   "positive_share": 0.0,
+   "positive_state": "OBSERVED"
+  },
+  "trades": {
+   "ERROR": 0,
+   "NOT_APPLICABLE": 0,
+   "NOT_OBSERVED": 0,
+   "OBSERVED": 22,
+   "STALE": 0,
+   "UNAVAILABLE": 0,
+   "UNKNOWN": 8,
+   "positive_share": 0.733333,
+   "positive_state": "OBSERVED"
+  }
+ },
+ "vocabulary": {
+  "archive": [
+   "IDENTITY"
+  ],
+  "creator_state": [
+   "OBSERVED",
+   "NOT_OBSERVED",
+   "UNAVAILABLE",
+   "STALE",
+   "ERROR",
+   "UNKNOWN",
+   "NOT_APPLICABLE"
+  ],
+  "freshness": [
+   "OBSERVED",
+   "STALE",
+   "NOT_OBSERVED"
+  ],
+  "funding_transfer": [
+   "OBSERVED",
+   "NOT_OBSERVED",
+   "UNAVAILABLE",
+   "STALE",
+   "ERROR",
+   "UNKNOWN",
+   "NOT_APPLICABLE"
+  ],
+  "holder_state": [
+   "OBSERVED",
+   "NOT_OBSERVED",
+   "UNAVAILABLE",
+   "STALE",
+   "ERROR",
+   "UNKNOWN",
+   "NOT_APPLICABLE"
+  ],
+  "liquidity_events": [
+   "OBSERVED",
+   "NOT_OBSERVED",
+   "UNAVAILABLE",
+   "STALE",
+   "ERROR",
+   "UNKNOWN",
+   "NOT_APPLICABLE"
+  ],
+  "news": [
+   "OBSERVED",
+   "NOT_OBSERVED",
+   "UNAVAILABLE",
+   "STALE",
+   "ERROR",
+   "UNKNOWN",
+   "NOT_APPLICABLE"
+  ],
+  "ohlcv": [
+   "OBSERVED",
+   "NOT_OBSERVED",
+   "UNAVAILABLE",
+   "STALE",
+   "ERROR",
+   "UNKNOWN",
+   "NOT_APPLICABLE"
+  ],
+  "point_in_time_validity": [
+   "VERIFIED",
+   "FAILED"
+  ],
+  "provider": [
+   "OBSERVED",
+   "ERROR",
+   "NOT_OBSERVED"
+  ],
+  "replayability": [
+   "VERIFIED",
+   "FAILED",
+   "NOT_REPLAYABLE"
+  ],
+  "social": [
+   "OBSERVED",
+   "NOT_OBSERVED",
+   "UNAVAILABLE",
+   "STALE",
+   "ERROR",
+   "UNKNOWN",
+   "NOT_APPLICABLE"
+  ],
+  "token": [
+   "IDENTITY"
+  ],
+  "trades": [
+   "OBSERVED",
+   "NOT_OBSERVED",
+   "UNAVAILABLE",
+   "STALE",
+   "ERROR",
+   "UNKNOWN",
+   "NOT_APPLICABLE"
+  ]
+ }
+}

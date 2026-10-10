@@ -1,0 +1,142 @@
+# AUTOPSY X intelligence engine: default research configuration.
+#
+# Every threshold and weight here is a STARTING HYPOTHESIS, not a validated
+# parameter. Change them through the research loop (docs/research/08, 14),
+# record the config hash with every backtest, never tune on the test split.
+
+[meta]
+config_version = "0.1.0"
+
+[data_quality]
+max_price_age_ms = 120_000          # older than this -> STALE_DATA
+max_clock_skew_ms = 5_000           # ts may not exceed seen_ts by more than this
+cross_source_price_tolerance = 0.03 # relative diff between sources -> CONFLICTING_DATA
+min_confirmations = { solana = 32, ethereum = 12, base = 12, bsc = 15 }
+
+[data_sources]
+# Which vendor's liquidity figure is authoritative when several report a pool.
+# Data-contract setting, not a signal threshold.
+liquidity_source_priority = ["geckoterminal", "dexscreener"]
+
+[lifecycle]
+early_life_ms = 86_400_000  # descriptive label only; no signal reads it
+
+[bars]
+interval_ms = 60_000
+
+[move]
+# Windows in bars (1 bar = bars.interval_ms)
+windows = [1, 3, 5, 15, 30, 60, 240, 1440]
+baseline_bars = 1440        # history used to build each coin's own distribution
+min_baseline_samples = 60   # below this -> INSUFFICIENT_HISTORY
+atr_bars = 14
+# Composite abnormality thresholds (robust-z units)
+thresholds = { watch = 2.0, unusual = 3.0, significant = 4.5, extreme = 6.5 }
+
+[move_quality]
+# Weights are research placeholders; see docs/research/04 and H10.
+weights.price_momentum = 1.0
+weights.volume_confirmation = 1.0
+weights.wallet_participation = 1.0
+weights.liquidity_confirmation = 1.0
+weights.market_breadth = 0.5
+weights.catalyst_confirmation = 0.5
+weights.cross_venue_confirmation = 0.5
+penalties.manipulation_risk = 1.5
+penalties.concentration_risk = 1.0
+penalties.liquidity_risk = 1.0
+
+[participation]
+window_bars = 15
+baseline_windows = 8
+top_k = 10
+
+[liquidity]
+reference_trade_usd = 1_000.0
+window_bars = 15
+
+[clusters]
+shared_funding_window_ms = 21_600_000   # 6h: wallets first funded by same source within this
+sync_tolerance_ms = 2_000                # buys within this gap count as synchronized
+min_sync_repeats = 3                     # synchronized pairs must recur this often
+fresh_wallet_ms = 86_400_000             # wallet funded < 24h before first buy
+
+[manipulation]
+wash_round_trip_ratio = 0.8     # |net| / gross below (1 - ratio) marks round-trip
+wash_min_gross_usd = 5_000.0
+concentration_top_k = 5
+concentration_share = 0.5
+sniper_blocks = 3
+sniper_supply_share = 0.2
+creator_sell_share = 0.1        # creator sold > 10% of starting holdings in window
+fresh_wallet_share = 0.6
+single_lp_share = 0.9
+
+[news]
+before_window_ms = 3_600_000
+after_window_ms = 900_000
+simultaneity_ms = 60_000
+confirmed_tiers = [1, 2]
+min_independent_tier3 = 2
+
+[social]
+window_ms = 3_600_000
+baseline_windows = 6
+near_duplicate_jaccard = 0.8
+new_account_ms = 2_592_000_000  # 30 days
+
+[narrative]
+min_members = 3
+breadth_move_class = "WATCH"
+
+[leadlag]
+max_lag_bars = 15
+min_corr = 0.3
+# lagged corr must beat same-bar corr by this much; shared trends inflate both
+min_lag_advantage = 0.1
+
+[regime]
+dead_min_liquidity_usd = 5_000.0
+dead_min_trades_per_hour = 5
+parabolic_z = 6.5
+collapse_return_1h = -0.35
+breakout_range_bars = 60
+
+[exhaustion]
+extended_flags = 2
+exhaustion_flags = 4
+
+[alerts]
+min_flag_confidence = 0.3
+large_trade_usd = 5_000.0
+
+[signal]
+min_move_class = "UNUSUAL"
+min_conditions_passed = 6
+max_manipulation_score = 0.4
+max_creator_pct = 0.15
+max_top10_pct = 0.6
+min_coverage = 0.7
+
+[exit]
+emergency_liquidity_drop = 0.3
+exit_liquidity_drop = 0.15
+creator_sell_emergency_share = 0.05
+
+[risk]
+account_equity_usd = 10_000.0
+max_risk_per_position = 0.005     # fraction of equity lost if stop hits
+max_portfolio_exposure = 0.25
+max_narrative_exposure = 0.10
+max_chain_exposure = 0.20
+max_daily_loss = 0.02
+max_consecutive_losses = 4
+max_slippage = 0.02
+min_liquidity_usd = 50_000.0
+max_pool_share = 0.01             # position notional <= 1% of pool liquidity
+exit_slippage_multiplier = 2.0    # assume exits cost this multiple of entry slippage
+
+[backtest]
+fee_bps = 30.0
+latency_bars = 1                  # fill no earlier than the bar after the decision
+priority_fee_usd = 0.5
