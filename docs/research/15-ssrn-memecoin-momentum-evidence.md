@@ -164,3 +164,69 @@ SSRN is a repository, not a guarantee of peer review. Give higher initial weight
 The Phase 3C protocol explicitly freezes collector code. Do not change it inside this research PR. The Phase 3C archive E log states the enrichment pass consumed the duration budget before any polling cycle ran, and archive F changed request parameters in advance to keep enrichment inside the budget. Therefore the next acquisition task is **instrumentation and protocol-compliant validation**, not a speculative retry tweak: record stage timings, first-poll start time, cycle completion, per-provider latency/error/retry/cooldown, observation freshness and missingness. Preserve frozen archive evidence; implement any production change only in a separate, reviewed phase with regression tests and a predeclared protocol.
 
 **Current status:** these are literature-derived hypotheses and a proposed validation contract. No new feature has yet been demonstrated to improve Autopsy-X lead time or profitability on the repository's own data.
+
+
+## Second-pass research (2026-10-11): microstructure, manipulation timing, and survivorship
+
+This pass focuses on what changes before a move, how manipulators can manufacture signals, and whether a backtest observes the universe it claims to study. Abstract-level results remain hypotheses until independently reproduced.
+
+### Additional SSRN papers
+
+- **Fracassi & Kogan, “Pure Momentum in Cryptocurrency Markets.”** [SSRN 4138685](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4138685). Reports a behavioral “pure momentum” effect arising from predictable changes in displayed rolling 24-hour returns, even without new fundamental information. **Test:** compare fixed, non-overlapping clock-window returns with rolling-24h display changes, to detect mechanical false acceleration.
+- **Grobys & Shahzad, “Cryptocurrency momentum: Is it an illusion?”** [SSRN 4633099](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4633099). Argues that momentum portfolio variance may be heavy-tailed enough to undermine conventional Sharpe/t-statistic interpretation under the paper's assumptions. **Test:** report tail losses, robust inference, median outcomes and top-trade contribution, not Sharpe alone.
+- **Fantazzini & Xiao, “Detecting Pump-and-Dumps with Crypto-Assets: Dealing with Imbalanced Datasets and Insiders’ Anticipated Purchases.”** [SSRN 4557281](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4557281). Uses 30-second data and rolling one-hour features in a historical Binance pump-signal setting, considering early detection and class imbalance. **Test:** use precision-recall, false alerts per day, and lead-time distributions; separate pre-announcement patterns from post-announcement reaction. Venue differs from Solana.
+- **Dhawan & Putniņš, “A New Wolf in Town? Pump-and-Dump Manipulation in Cryptocurrency Markets.”** [SSRN 3670714](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3670714). Studies openly announced pumps, distorted prices, abnormal volume and wealth transfer. **Test:** treat coordinated public pumps as a separate event class, and do not assume the announcement is the earliest information timestamp.
+- **Li, Shin & Wang, “Cryptocurrency Pump-and-Dump Schemes.”** [SSRN 3267041](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3267041). Reports that historical pump episodes can peak within minutes and reverse quickly. **Test:** record alert, peak, reversal and executable exit times rather than end-of-day return alone.
+- **Hamrick et al., “The Economics of Cryptocurrency Pump and Dump Schemes.”** [SSRN 3310307](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3310307). Documents Telegram/Discord pump announcements and finds low-volume obscure coins more susceptible in its historical sample. **Test:** attach source/coordination metadata to social signals; treat thin liquidity as risk, not automatic opportunity.
+- **Anastasopoulos et al., “Order Flow and Cryptocurrency Returns.”** [SSRN 5020002](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5020002). Reports predictive content in global order flow for cross-sectional crypto returns. **Test:** assess whether net-flow features add value beyond price/volume; do not assume global fiat flow maps directly to per-pool Solana flows.
+- **Alexander et al., “Order Flow Impact and Price Formation in Centralized Crypto Exchanges.”** [SSRN 4867599](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4867599). Examines order types and cross-venue price formation, with high-frequency integration weakening at times. **Test:** record source event time and ingestion time; stale data can erase apparent lead. CEX order books differ from AMMs.
+- **Vafin, “Order-Flow Imbalance and Short-Horizon Return Predictability in Cryptocurrency Markets.”** [SSRN 6938742](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6938742). Recent short review/proposal for distinguishing predictive order-flow content from the mechanical effect of trades on price. **Test:** use lagged features and avoid circular same-interval predictors. Treat as a proposed framework, not conclusive evidence.
+- **Kamat, “Pump.fun Graduation Regime Windows: Survival Analysis of 832,941 Token Launches and the Social-Presence Effect.”** [SSRN 6915560](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6915560). The SSRN record includes a corrigendum withdrawing a graduation-threshold sensitivity analysis after direct checks found 0 of 100 sampled mints confirmed graduated. **Use:** verify event labels against authoritative on-chain/program state and inspect corrections; do not use the withdrawn analysis.
+- **Kamat, “Do Two On-Chain Observation Pipelines See the Same Tokens?”** [SSRN 7128818](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7128818). Reports very low overlap between two observation pipelines and notes a major collection gap in one window. **Test:** report eligible-universe coverage, timestamped gaps and pipeline overlap; incomplete windows make raw overlap counts misleading.
+- **Kamat, “Hour-Aware Adaptive Risk Management for Autonomous Memecoin Trading on Solana DEXs.”** [SSRN 6564803](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6564803). Abstract describes 190 paper trades over 15 days; removing the top three trades flips cumulative returns unprofitable, while an exploratory hour-group result is not statistically significant. **Use:** contribution concentration, ablation and longer out-of-sample tests; this is a small author-produced deployment note, not independent validation.
+- **Albers et al., “The Price Impact of Nothing: Rejected Orders as Predictors of Future Returns.”** [SSRN 6250378](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6250378). Studies whether rejected orders/liquidity changes in limit-order-book markets carry information. **Test:** log rejected quotes, failed swaps/routes and failed transactions as separate event types. LOB findings do not prove a Solana edge.
+- **Kroner, Mohammed & Vega, “How Do Cryptocurrencies Price Economic News?”** [SSRN 6447644](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6447644). Reports elevated volatility, volume and spreads around US macro announcements and responses associated with yield/risk-off surprises. **Test:** control for market-wide SOL/BTC impulses so token-specific signals are not credited for broad-market moves.
+
+### Supplementary non-SSRN cross-checks
+
+The project remains SSRN-first. These are additional validation leads, not replacements for the SSRN corpus.
+
+- **MemeTrans: A Dataset for Detecting High-Risk Memecoin Launches on Solana.** [arXiv 2602.13480](https://arxiv.org/abs/2602.13480). Abstract describes 40k+ launches that migrated to DEX, 122 features and bundle-level clues, and reports reduced financial loss in its experimental setup. Inspect inclusion rules, labels, license and temporal split before reuse; a migrated-token sample can omit early failed launches.
+- **A Midsummer Meme’s Dream: Investigating Market Manipulations in the Meme Coin Ecosystem.** [arXiv 2507.01963](https://arxiv.org/abs/2507.01963). Abstract describes multi-chain manipulation patterns including wash trading and liquidity-pool-based price inflation. Treat headline rates as sample/label dependent and reproduce before use.
+- **Detecting rug pulls in decentralized exchanges: The rise of meme coins.** [Journal article, 2026](https://www.sciencedirect.com/science/article/pii/S2096720925000636). Ethereum DEX study with an exploratory fraud-label definition. Borrow candidate features and audit questions, not its prevalence estimate for Solana.
+
+### New synthesis: three clocks determine whether an alert is early
+
+1. **Market clock:** when the event occurred on-chain (slot/block and transaction order where available).
+2. **Collector clock:** when our system first received enough information to identify it.
+3. **Decision/execution clock:** when the alert could be emitted and a realistic transaction could reach the venue.
+
+A backtest must never pretend it knew an event at market time if the collector received it later. An apparent lead that disappears after collection and execution latency is not actionable. If price impact consumes the remaining move, predictive accuracy does not create an executable edge.
+
+### Model contract: estimate a path, not just “will it pump?”
+
+At every point-in-time timestamp t, estimate:
+- probability a predeclared net-return/price-excursion target is hit before an adverse-excursion threshold within horizon H;
+- time-to-target probabilities across several horizons, with right-censoring;
+- expected and tail adverse excursion before target or exit;
+- sellability and execution impact at a specified trade size;
+- data freshness, missingness and provider reliability;
+- manipulation risk as a separate calibrated estimate with hard safety vetoes.
+
+A token that rises 100% and collapses before an executable exit is not automatically a successful opportunity. Do not tune target, horizon or stop after seeing the test outcomes.
+
+### Additional experiments
+
+1. **Fixed vs rolling returns:** compare 15s/30s/60s/5m fixed-window returns with rolling-24h display changes.
+2. **Lead-lag:** test whether flow, unique buyers, liquidity and social attention lead price after controlling for prior price/volume, avoiding same-interval circularity.
+3. **Peak/reversal survival:** estimate time from first eligible alert to local peak and adverse reversal.
+4. **Rejected-opportunity counterfactual:** retain every filter rejection and passively track future outcomes, matched by token age, liquidity and time.
+5. **Label audit:** verify token creation, migration/graduation, liquidity removal and rug labels against authoritative chain/program state.
+6. **Tail stress:** report top-trade contribution, worst 1% outcomes, failed sells and clustered drawdowns; bootstrap by day/cohort rather than treating ticks as independent.
+7. **Source robustness:** rerun across providers and windows; log outages, stale feeds and API limits.
+
+### Claim ledger
+
+Mark each paper-derived result **Replicated**, **Partially replicated**, **Not replicated**, **Untested**, or **Not portable**. SSRN presence, recency, sample size and an impressive abstract are not proof of validity. For recent single-author Solana studies, inspect code/data, corrections, gaps, labels and whether metrics are out-of-sample.
+
+**Updated status:** this pass expands the research and test design only. No production collector changes were made, and no profitable early signal has yet been demonstrated on Autopsy-X's own point-in-time data. The key empirical question remains: *does any feature set produce earlier, calibrated, net-executable alerts than simple baselines on a sufficiently complete Solana memecoin universe?*
