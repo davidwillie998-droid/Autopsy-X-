@@ -7,6 +7,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PHASE3A_COMMIT = "617355f874d949431eb93d8ac2d3ecc7b6479aa3"
 PHASE3B_COMMIT = "f21f3bc2e18ab64d2b92e203c4202144eabf7eac"
+# index.html is inherited from the PR base branch, not a Phase 3C change.
+# Pin its expected content to the reviewed base so the allowlist cannot hide edits.
+UI_BASELINE_COMMIT = "141b2c1fcc582394e537aaf88b534264fcb258c3"
 
 
 def git(*args: str) -> str:
@@ -39,12 +42,21 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     # This UI workflow is inherited from the PR base branch and restored byte-for-byte there; it predates the Phase 3C changes and is not a Phase 3C implementation file.
     # The dashboard documentation was added on the base branch after Phase 3B and is inherited by this branch; it is not a Phase 3C implementation change.
     # The standalone SSRN literature map is a documentation-only research artifact, not a Phase 3C implementation change.
-    infra_allowed = {"intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml", "docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md", "docs/research/15-ssrn-memecoin-momentum-evidence.md"}
+    # index.html is inherited from the reviewed PR base; a separate test below
+    # pins it byte-for-byte to that baseline rather than permitting UI changes.
+    infra_allowed = {"intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml", "docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md", "docs/research/15-ssrn-memecoin-momentum-evidence.md", "index.html"}
     for f in changed:
         allowed = (f.startswith("docs/PHASE3C_") or f.startswith("intel/autopsyx/research/phase3c_")
                   or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")
                   or f in infra_allowed or f.startswith("intel/datasets/phase3c/runs/"))
         assert allowed, f"Phase 3C touched a file outside its namespace: {f}"
+
+
+def test_dashboard_index_is_unchanged_from_reviewed_pr_base():
+    """The scope allowlist must not mask unrelated dashboard edits."""
+    baseline = git("show", f"{UI_BASELINE_COMMIT}:index.html").rstrip("\\n")
+    current = (ROOT / "index.html").read_text().rstrip("\\n")
+    assert current == baseline, "index.html differs from the reviewed PR-base snapshot"
 
 
 def test_phase3c_workflow_mirrors_phase3a_workflow_procedure():
