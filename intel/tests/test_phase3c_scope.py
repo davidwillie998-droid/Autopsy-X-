@@ -54,11 +54,12 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
 
 def test_dashboard_index_is_unchanged_from_reviewed_pr_base():
     """The scope allowlist must not mask unrelated dashboard edits."""
+    # Compare raw bytes so newline conversion or text decoding cannot conceal a change.
     baseline = subprocess.run(
         ["git", "show", f"{UI_BASELINE_COMMIT}:index.html"],
-        cwd=ROOT, capture_output=True, text=True, check=True,
+        cwd=ROOT, capture_output=True, check=True,
     ).stdout
-    current = (ROOT / "index.html").read_text()
+    current = (ROOT / "index.html").read_bytes()
     assert current == baseline, "index.html differs from the reviewed PR-base snapshot"
 
 
