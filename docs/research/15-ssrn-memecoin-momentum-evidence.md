@@ -270,3 +270,120 @@ This pass prioritizes papers that challenge attractive momentum claims, distingu
 
 
 **Updated status:** this pass expands the research and test design only. No production collector changes were made, and no profitable early signal has yet been demonstrated on Autopsy-X's own point-in-time data. The key empirical question remains: *does any feature set produce earlier, calibrated, net-executable alerts than simple baselines on a sufficiently complete Solana memecoin universe?*
+
+## Deep research synthesis: causal signal, execution survival and falsification (2026-10-12)
+
+This section turns the SSRN evidence map into a stricter research protocol. It does not add a trading rule or claim that a profitable signal has been found. The central risk is that a model learns the mechanics of a launch, a data-collection artifact, or a manipulated activity burst and mistakes it for a durable opportunity.
+
+### A. Separate protocol progress from economic opportunity
+
+For a launchpad token, bonding-curve progress may be mechanically informative about graduation because graduation is defined by a protocol threshold. That does not establish positive net returns for a buyer entering at that stage. Graduation probability and tradeability are different estimands:
+
+- **Protocol outcome:** probability of graduation/migration conditional on the state observed at time t.
+- **Market outcome:** probability a predeclared price/return target is reached before a predeclared adverse excursion within horizon H.
+- **Execution outcome:** probability the position can be entered and exited at the stated size, after latency, fees, slippage, priority costs and failed-transaction risk.
+- **Risk outcome:** probability of manipulation, liquidity withdrawal, concentrated ownership or a data-quality failure that invalidates the trade thesis.
+
+Never report the first outcome as if it proved the second or third. Where the launch mechanism makes the outcome nearly deterministic near its threshold, compare the model against a simple progress-only baseline. The added variables must improve useful lead time or executable net outcomes, not merely rediscover the threshold.
+
+### B. The three-clock and point-in-time contract
+
+Every feature and outcome record should retain, where applicable:
+
+1. `event_ts`: when the chain/provider says the underlying event occurred, plus slot/block and transaction order when available.
+2. `first_seen_ts`: the earliest timestamp our collector actually received the event.
+3. `feature_ready_ts`: when the event had been parsed, validated and made available to the decision process.
+4. `decision_ts`: when the model could have emitted the alert.
+5. `simulated_submit_ts` and `simulated_fill_ts`: when an order could realistically have been submitted and filled under the stated latency model.
+
+The admissible feature set at decision time t is strictly the set whose `feature_ready_ts <= t`. Do not backdate a feature to on-chain event time when the collector received it later. Do not fill a historical gap with data downloaded after the decision time unless the source proves it was available then. Keep corrected, delayed and revised provider data distinguishable from the original value.
+
+Report both **market-time lead** and **system-time lead**. Only system-time lead, after a conservative latency and execution model, can support an actionability claim.
+
+### C. Define labels before model selection
+
+For each eligible token and decision timestamp t, freeze the following before evaluating any candidate:
+
+- A fixed horizon H, token-age eligibility window, target return/excursion, adverse threshold and maximum execution size.
+- A benchmark price that is actually executable after decision latency, not the retrospective event price.
+- A consistent convention for fee, slippage, priority/transaction cost, failed sell, pool/liquidity removal and price-impact handling.
+- A terminal label with explicit competing outcomes: TARGET_FIRST, ADVERSE_FIRST, NEITHER_BY_HORIZON, EXIT_INFEASIBLE, DATA_INVALID.
+- Censoring metadata where the observation window ends before the outcome is known.
+
+Use several horizons only if they are predeclared and treated as a multiple-testing family. Do not pick the horizon, threshold or stop that looks best on the final cohort. Report sensitivity across reasonable thresholds without turning the sensitivity table into a new tuning set.
+
+A token that briefly spikes beyond a target but cannot be sold at the assumed price must not be labelled an executable win. A token whose data stream disappears must not silently become a negative example or vanish from evaluation.
+
+### D. Causal and manipulation-aware ablation matrix
+
+The purpose is not to claim that observational wallet features establish causation. It is to determine whether the feature adds stable predictive information once the most obvious confounds are controlled.
+
+| Candidate feature family | Main confound | Required ablation or control |
+|---|---|---|
+| Bonding-curve SOL / liquidity velocity | Mechanical distance to protocol threshold | Compare against progress-only baseline; stratify by current curve state |
+| Swap count / volume acceleration | Wash trades, repeated wallets, bot bursts | Recompute after removing flagged wash trades and clustered accounts |
+| Unique buyer growth | One entity controlling many addresses | Compare raw addresses with conservative entity-cluster estimates and report cluster uncertainty |
+| Early-wallet history | Survivor bias, wallet labels unavailable at the time | Build features only from history that existed before t; evaluate new/unseen wallets separately |
+| Creator/deployer history | Identity leakage, historical look-ahead | Freeze a point-in-time identity graph; report cold-start cohort separately |
+| Social attention / sentiment | Bots, reposts, source selection, post-event reaction | Separate source classes; lag features; compare attention-only, sentiment-only and joint models |
+| Liquidity / sellability | State changes between quote and execution | Stress with stale-state delay, size-dependent impact and failed-exit scenarios |
+| Market-wide price/volume | SOL/BTC impulse mistaken for token alpha | Add contemporaneous market controls and test incremental token-specific lift |
+
+Wallet clustering itself is uncertain. Do not convert heuristic links into certain beneficial ownership. Report results under at least a conservative cluster definition and a broader sensitivity definition, including how many tokens become unscorable under each.
+
+### E. Selection, coverage and missingness are first-class outcomes
+
+The SSRN cross-pipeline coverage work in this evidence map demonstrates why a single collector's observed token universe cannot be assumed complete. A low overlap may reflect collection windows and configurations rather than true market differences. The evaluation must therefore report:
+
+- number of tokens created, discovered, eligible, feature-complete, scored, alerted, rejected and expired;
+- coverage rate by time window, provider, token age, liquidity/activity band and outcome cohort;
+- first-seen delay, feature freshness, polling-cycle completion, retry/cooldown behavior and outage windows;
+- overlap of independent data sources on matched timestamps, with denominators restricted to intervals both sources actually covered;
+- explicit reasons for every rejection and every unscorable example.
+
+Do not claim high precision by measuring only alerts that survived every filter. Retain rejected and filtered tokens in a shadow outcome ledger so false negatives and missed large moves can be measured. The shadow ledger is for evaluation, not permission to trade rejected tokens.
+
+### F. Statistical evaluation that resists false discovery
+
+1. **Chronological split:** train, tune, calibrate and test on non-overlapping chronological cohorts. Purge observations whose label horizons overlap split boundaries; embargo where wallet or token history can leak across windows.
+2. **Nested model selection:** threshold selection and feature selection occur inside the training/validation process only. Keep a sealed final holdout and record all attempted configurations.
+3. **Baselines:** compare with (a) protocol-progress-only, (b) price/volume-only, (c) age/liquidity-aware heuristic, and (d) simple momentum/mean-reversion alternatives. A complex model must beat the strongest relevant baseline.
+4. **Metrics:** report precision/recall at a fixed alert budget; PR-AUC for rare events; calibration/Brier score; target-before-adverse probability; net return distribution; time-to-target; adverse excursion; failed-exit rate; turnover; coverage; and false alerts per hour/day. ROC-AUC alone is inadequate for rare launches.
+5. **Uncertainty:** bootstrap by launch-day/cohort or another defensible dependence unit, not individual ticks as if independent. Report confidence intervals and the number of independent token/cohort clusters.
+6. **Tail concentration:** show the result with the top 1, 3 and 5 winners removed; worst 1% outcomes; clustered losses; and a cost/latency stress grid. A strategy whose result depends on a handful of outliers is fragile even if cumulative return is positive.
+7. **Prospective shadow run:** freeze the model and thresholds, record predictions without changing them, and wait for a predeclared number of independent events and calendar coverage. Publish every alert, including misses and data blocks. A small handful of live trades cannot establish reliable performance.
+
+### G. Acceptance gates: fail closed, not by narrative
+
+**Gate 0 — data integrity:** event/receipt/decision timestamps are present and monotonic where expected; labels are independently checked; coverage and outages are quantified. Failure means DATA_BLOCKED, not an imputed score.
+
+**Gate 1 — predictive value:** on the frozen holdout, the model improves on the strongest baseline on predeclared primary metrics with uncertainty reported. No claim if improvement is within noise or disappears after the primary ablations.
+
+**Gate 2 — economic value:** after conservative size-dependent execution costs, latency, failed exits and tail stress, the predefined target-before-adverse outcome remains positive relative to the baseline. Do not use frictionless mark-to-market returns as evidence.
+
+**Gate 3 — robustness:** results do not rely on one date, launch cohort, provider, source class, creator group or a handful of winners. Material drift or a data-source outage automatically lowers confidence or blocks alerts.
+
+**Gate 4 — prospective confirmation:** the frozen model performs acceptably on a later unseen shadow period. Passing earlier gates does not skip this gate.
+
+These are research gates, not universal numerical cutoffs. Numeric thresholds must be chosen before looking at the final holdout, based on intended alert capacity, execution constraints and acceptable error costs.
+
+### H. What would falsify the hypothesis?
+
+We should explicitly accept these possible outcomes:
+
+- The model only predicts protocol graduation but cannot produce net-executable returns.
+- Buyer-count and volume features lose all lift after coordinated-wallet and wash-trade controls.
+- Social features arrive too late or add no value after price/volume and market controls.
+- Apparent performance vanishes after realistic latency and exit-price simulation.
+- The feature set fails on later cohorts, new creators or independent data providers.
+- Coverage is too incomplete to make a reliable claim about the universe.
+- The simple baseline performs as well as or better than the complex model.
+
+Any of these is a useful research result. The correct response is to narrow the claim, improve measurement or reject the candidate—not to relax labels or tune until it passes.
+
+### I. Immediate next deliverable
+
+Before adding another predictive feature, produce a **point-in-time evaluation specification** with the target definitions, three-clock schema, coverage denominators, baselines, chronological splits, primary metrics, ablation matrix and frozen acceptance gates. Then validate the collector against that specification. Only after the data contract passes should model comparisons begin.
+
+**Conclusion:** the highest-value next step is not a larger neural network or more indicators. It is a reliable, point-in-time, manipulation-aware measurement system capable of disproving our own alpha hypothesis. The SSRN literature informs this protocol; it does not substitute for independent evidence on Autopsy-X's own data.
+
