@@ -771,6 +771,24 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
 
    double lots = g_risk.CalculateLotSize(g_md,actualSlDistPts);
 
+   // Enforce the remaining account-wide gross-lot budget, not just the per-order ceiling.
+   // NormalizeVolume may clamp upward to the broker minimum, so reject a remainder too small
+   // to represent safely rather than letting normalization exceed the account cap.
+   double remainingExposureLots = InpMaxExposureLots-accountExposureLots;
+   if(remainingExposureLots<=0.0)
+      lots=0.0;
+   else if(lots>remainingExposureLots)
+     {
+      if(remainingExposureLots<g_md.VolumeMin())
+         lots=0.0;
+      else
+        {
+         lots=g_md.NormalizeVolume(MathMin(lots,remainingExposureLots));
+         if(lots>remainingExposureLots+0.0000001)
+            lots=0.0;
+        }
+     }
+
    // A broker minimum lot can otherwise force a position larger than the configured
    // account-risk budget. Fail closed instead of allowing the minimum volume to
    // override the risk ceiling.
