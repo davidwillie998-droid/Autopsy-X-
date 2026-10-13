@@ -57,7 +57,7 @@ require("retcode!=TRADE_RETCODE_DONE" in execution,
 require("g_posState.modifyFailCount>=InpMaxModifyFailures" in ea
         and "AxCloseAndRecord(AX_EXIT_EXECUTION_QUALITY)" in ea,
         "repeated stop-management failures trigger a defensive exit")
-require("No martingale" in readme and "never averages down" in readme.lower(),
+require("not a martingale" in readme.lower() and "never averages down" in readme.lower(),
         "documentation explicitly prohibits martingale and averaging down")
 
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
