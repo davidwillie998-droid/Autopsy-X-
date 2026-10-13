@@ -40,7 +40,7 @@ require("void AxCountAccountExposure(int &positionsOut,double &grossLotsOut)" in
 require("PreTradeAllowed(accountOpenPositions,accountExposureLots" in ea
         and not re.search(r"PreTradeAllowed\(\s*0\s*,\s*0\.0", ea),
         "account-wide counts reach the hard pre-trade risk gate")
-require(bool(re.search(r"remainingExposureLots\\s*=\\s*InpMaxExposureLots\\s*-\\s*accountExposureLots", ea)),
+require(bool(re.search(r"remainingExposureLots\s*=\s*InpMaxExposureLots\s*-\s*accountExposureLots", ea)),
         "new order size is capped to remaining account-wide gross-lot allowance")
 require("remainingExposureLots<g_md.VolumeMin()" in ea and "lots=0.0" in ea,
         "under-minimum remaining exposure fails closed")
