@@ -668,6 +668,25 @@ bool AxHasForeignPositionOnSymbol(string &reasonOut)
    return(false);
   }
 
+//--- account-wide position count and gross lots. These feed the account-level hard caps in
+//--- CRiskEngine; passing literal zeroes here would silently disable both max-open-position and
+//--- total-exposure checks whenever other charts/EAs already had risk on the account.
+void AxCountAccountExposure(int &positionsOut,double &grossLotsOut)
+  {
+   positionsOut=0;
+   grossLotsOut=0.0;
+   int total=PositionsTotal();
+   for(int i=0;i<total;i++)
+     {
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0) continue;
+      double volume=PositionGetDouble(POSITION_VOLUME);
+      if(volume<=0.0) continue;
+      positionsOut++;
+      grossLotsOut+=volume;
+     }
+  }
+
 bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSeq,const string tag)
   {
    string gateReason;
@@ -686,7 +705,9 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
      }
    int realPositionsForSymbol; double realDirectionalExposure;
    AxCountRealPositions(realPositionsForSymbol,realDirectionalExposure,dir);
-   if(!g_risk.PreTradeAllowed(0,0.0,g_md.CurrentSpreadPts(),gateReason,
+   int accountOpenPositions; double accountExposureLots;
+   AxCountAccountExposure(accountOpenPositions,accountExposureLots);
+   if(!g_risk.PreTradeAllowed(accountOpenPositions,accountExposureLots,g_md.CurrentSpreadPts(),gateReason,
                                realPositionsForSymbol,realDirectionalExposure))
      {
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
