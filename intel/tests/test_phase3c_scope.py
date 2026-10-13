@@ -44,7 +44,7 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     # This UI workflow is inherited from the PR base branch and restored byte-for-byte there; it predates the Phase 3C changes and is not a Phase 3C implementation file.
     # The dashboard documentation and SSRN evidence map are inherited base-branch docs, not Phase 3C implementation changes.
     # index.html is allowed only because a separate test pins it byte-for-byte to the reviewed base.
-    infra_allowed = {"intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml", "docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md", "docs/research/15-ssrn-memecoin-momentum-evidence.md", "index.html"}
+    infra_allowed = {"intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml", "docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md", "docs/research/15-ssrn-memecoin-momentum-evidence.md", "docs/research/16-point-in-time-memecoin-evaluation.md", "index.html"}
     for f in changed:
         allowed = (f.startswith("docs/PHASE3C_") or f.startswith("intel/autopsyx/research/phase3c_")
                   or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")
