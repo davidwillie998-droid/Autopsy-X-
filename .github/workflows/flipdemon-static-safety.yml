@@ -3,6 +3,7 @@ name: FlipDemon Static Safety Audit
 # Source-level regression checks only. This workflow does not compile MQL5 or
 # validate broker fills; MetaEditor and MT5 Strategy Tester remain mandatory.
 on:
+  workflow_dispatch:
   push:
     branches:
       - 'claude/autopsy-flipdemon-extreme-l4ei3d'
