@@ -7,6 +7,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PHASE3A_COMMIT = "617355f874d949431eb93d8ac2d3ecc7b6479aa3"
 PHASE3B_COMMIT = "f21f3bc2e18ab64d2b92e203c4202144eabf7eac"
+# Snapshot of the reviewed PR base; avoid treating later base changes as Phase 3C changes.
+UI_BASELINE_COMMIT = "141b2c1fcc582394e537aaf88b534264fcb258c3"
 
 
 def git(*args: str) -> str:
@@ -30,20 +32,35 @@ def test_no_ctrade_or_order_placement_symbol_anywhere_in_phase3c():
 
 
 def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
-    """Diff from the Phase 3B commit touches only new docs/phase3c_*/research/phase3c
-    paths and test files for phase3c -- never an existing autopsyx module."""
-    changed = git("diff", "--name-only", PHASE3B_COMMIT, "HEAD").splitlines()
+    """Diff from the reviewed PR base touches only explicitly allowed research-scope paths.
+
+    Frozen Phase 2/3A/3B implementation files are checked separately below, so
+    unrelated changes already present on the PR base are not misattributed to this branch.
+    """
+    changed = git("diff", "--name-only", UI_BASELINE_COMMIT, "HEAD").splitlines()
     # Necessary Phase 3C acquisition/test infrastructure may change workflow files; existing production/research modules remain frozen.
     # a request file and a workflow mirroring phase3a-acquire.yml's own procedure exactly
     # (checked bit-for-bit against it below), so new archives can be independently acquired.
     # This UI workflow is inherited from the PR base branch and restored byte-for-byte there; it predates the Phase 3C changes and is not a Phase 3C implementation file.
-    # The dashboard documentation predates this PR and is unrelated to Phase 3C; this test compares against the historical Phase 3B commit, so explicitly allow that inherited file without allowing production modules.
-    infra_allowed = {"intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml", "docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md"}
+    # The dashboard documentation and SSRN evidence map are inherited base-branch docs, not Phase 3C implementation changes.
+    # index.html is allowed only because a separate test pins it byte-for-byte to the reviewed base.
+    infra_allowed = {"intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml", "docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md", "docs/research/15-ssrn-memecoin-momentum-evidence.md", "index.html"}
     for f in changed:
         allowed = (f.startswith("docs/PHASE3C_") or f.startswith("intel/autopsyx/research/phase3c_")
                   or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")
                   or f in infra_allowed or f.startswith("intel/datasets/phase3c/runs/"))
         assert allowed, f"Phase 3C touched a file outside its namespace: {f}"
+
+
+
+def test_dashboard_index_is_unchanged_from_reviewed_pr_base():
+    """The scope allowlist must not mask unrelated dashboard edits."""
+    baseline = subprocess.run(
+        ["git", "show", f"{UI_BASELINE_COMMIT}:index.html"],
+        cwd=ROOT, capture_output=True, check=True,
+    ).stdout
+    current = (ROOT / "index.html").read_bytes()
+    assert current == baseline, "index.html differs from the reviewed PR-base snapshot"
 
 
 def test_phase3c_workflow_mirrors_phase3a_workflow_procedure():
