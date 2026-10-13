@@ -14,7 +14,7 @@ def test_feature_is_legal_when_all_inputs_and_computation_precede_decision():
 @pytest.mark.parametrize(
     "feature,decision",
     [
-        (FeatureAvailability("late_input", (100, 121), 125), 130),
+        (FeatureAvailability("late_input", (100, 131), 132), 130),
         (FeatureAvailability("late_compute", (100, 110), 131), 130),
         (FeatureAvailability("impossible_compute", (100, 120), 110), 130),
     ],
