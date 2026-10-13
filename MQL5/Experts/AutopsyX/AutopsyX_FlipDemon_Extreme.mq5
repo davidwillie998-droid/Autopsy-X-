@@ -645,6 +645,29 @@ void AxCountRealPositions(int &positionsForSymbolOut,double &directionalExposure
 //--- every entry (fresh or flip re-entry) funnels through here, so risk/chop/HTF gates apply ---
 //--- unconditionally - a confirmed flip is always allowed to CLOSE the losing side, but the   ---
 //--- re-open into the new direction is still just another entry subject to every hard limit.  ---
+//--- A netting account has only one position per symbol. If another EA or a manual trade owns
+//--- that position, sending an opposite deal can reduce, close, or reverse somebody else's exposure.
+//--- Fail closed instead of treating the symbol as flat just because this EA's magic differs.
+bool AxHasForeignPositionOnSymbol(string &reasonOut)
+  {
+   int total=PositionsTotal();
+   for(int i=0;i<total;i++)
+     {
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      ulong positionMagic=(ulong)PositionGetInteger(POSITION_MAGIC);
+      if(positionMagic!=InpMagicNumber)
+        {
+         reasonOut=StringFormat("Foreign position on %s (ticket %I64u, magic %I64u); refusing to trade a shared netting position",
+                                _Symbol,ticket,positionMagic);
+         return(true);
+        }
+     }
+   reasonOut="";
+   return(false);
+  }
+
 bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSeq,const string tag)
   {
    string gateReason;
@@ -652,6 +675,11 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    //--- a disabled direction is a deliberate override and should never be shadowed by a message that
    //--- makes it look like an ordinary risk/session gate declined the trade (spec section 38). ---
    if(!g_emergency.CanEnterDirection(dir,gateReason))
+     {
+      if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
+      return(false);
+     }
+   if(AxHasForeignPositionOnSymbol(gateReason))
      {
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
       return(false);
