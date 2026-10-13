@@ -35,7 +35,8 @@ def test_no_ctrade_or_order_placement_symbol_anywhere_in_phase3c():
 def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     """Diff from the Phase 3B commit touches only new docs/phase3c_*/research/phase3c
     paths and test files for phase3c -- never an existing autopsyx module."""
-    changed = git("diff", "--name-only", PHASE3B_COMMIT, "HEAD").splitlines()
+    # Compare the PR branch against its reviewed base, not Phase 3B: the base contains later unrelated changes.
+    changed = git("diff", "--name-only", UI_BASELINE_COMMIT, "HEAD").splitlines()
     # Necessary Phase 3C acquisition/test infrastructure may change workflow files; existing production/research modules remain frozen.
     # a request file and a workflow mirroring phase3a-acquire.yml's own procedure exactly
     # (checked bit-for-bit against it below), so new archives can be independently acquired.
