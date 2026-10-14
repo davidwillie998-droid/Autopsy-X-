@@ -53,8 +53,8 @@ def test_labels_upside_first_after_execution_latency_and_costs():
                                 entry_notional_usd=100, spec=spec())[0]
     assert label.entry_ts_ms == 60_000
     assert label.outcome == "UPSIDE_FIRST"
-    assert label.barrier_net_return_pct is not None
-    assert label.realized_net_return_pct > 5
+    assert label.net_outcome_return_pct is not None
+    assert label.net_outcome_return_pct == 5
     assert label.contract_version == "1.0.0"
 
 
@@ -82,8 +82,8 @@ def test_downside_first_is_not_a_momentum_success():
     label = build_target_labels(data, token_key="solana:mint", pool_key="pool-a",
                                 entry_notional_usd=100, spec=spec())[0]
     assert label.outcome == "DOWNSIDE_FIRST"
-    assert label.realized_net_return_pct is not None
-    assert label.realized_net_return_pct < -5
+    assert label.net_outcome_return_pct is not None
+    assert label.net_outcome_return_pct == -5
 
 
 def test_same_bar_double_touch_is_ambiguous_not_optimistically_won():
@@ -96,7 +96,7 @@ def test_same_bar_double_touch_is_ambiguous_not_optimistically_won():
     label = build_target_labels(data, token_key="solana:mint", pool_key="pool-a",
                                 entry_notional_usd=100, spec=spec())[0]
     assert label.outcome == "AMBIGUOUS_SAME_BAR"
-    assert label.realized_net_return_pct is None
+    assert label.net_outcome_return_pct is None
 
 
 def test_complete_path_without_barrier_is_timeout():
@@ -104,7 +104,7 @@ def test_complete_path_without_barrier_is_timeout():
     label = build_target_labels(bars(flat), token_key="solana:mint", pool_key="pool-a",
                                 entry_notional_usd=100, spec=spec())[0]
     assert label.outcome == "TIMEOUT"
-    assert label.realized_net_return_pct is not None
+    assert label.net_outcome_return_pct is not None
 
 
 def test_incomplete_forward_path_is_censored_not_negative():
@@ -112,7 +112,7 @@ def test_incomplete_forward_path_is_censored_not_negative():
     label = build_target_labels(bars(flat), token_key="solana:mint", pool_key="pool-a",
                                 entry_notional_usd=100, spec=spec(horizon_ms=5 * 60_000))[0]
     assert label.outcome == "HORIZON_CENSORED"
-    assert label.realized_net_return_pct is None
+    assert label.net_outcome_return_pct is None
 
 
 def test_missing_or_insufficient_entry_liquidity_is_not_treated_as_zero_return():
