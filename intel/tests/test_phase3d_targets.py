@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from types import SimpleNamespace
 
 from autopsyx.research.phase3d_targets import (
     CANDIDATE_HORIZONS_MS,
@@ -11,6 +12,7 @@ from autopsyx.research.phase3d_targets import (
     build_target_labels,
     intervals_overlap,
     purge_overlapping_training_indices,
+    price_bars_from_point_in_time_records,
 )
 
 
@@ -41,6 +43,38 @@ def test_contract_candidate_grid_is_explicit_and_separate_from_frozen_phase3b():
     assert CANDIDATE_HORIZONS_MS == (300_000, 900_000, 3_600_000)
     assert CANDIDATE_UPSIDE_THRESHOLDS == (0.05, 0.10, 0.20)
 
+
+
+def test_point_in_time_join_never_uses_future_or_stale_liquidity():
+    bars_in = [
+        SimpleNamespace(ts=0, seen_ts=60_000, token="mint", pool="pool",
+                        open=100, high=101, low=99, close=100),
+        SimpleNamespace(ts=60_000, seen_ts=120_000, token="mint", pool="pool",
+                        open=100, high=101, low=99, close=100),
+        SimpleNamespace(ts=120_000, seen_ts=180_000, token="mint", pool="pool",
+                        open=100, high=101, low=99, close=100),
+    ]
+    snapshots = [
+        SimpleNamespace(ts=0, seen_ts=0, token="mint", pool="pool", liquidity_usd=10_000),
+        # This snapshot describes a later state but was not available at bar open.
+        SimpleNamespace(ts=120_000, seen_ts=180_000, token="mint", pool="pool", liquidity_usd=50_000),
+    ]
+    joined = price_bars_from_point_in_time_records(
+        bars_in, snapshots, token_key="mint", pool_key="pool", max_liquidity_age_ms=60_000
+    )
+    assert [b.liquidity_usd for b in joined] == [10_000, 10_000, None]
+
+
+def test_point_in_time_join_does_not_mix_other_pool_liquidity():
+    bar = SimpleNamespace(ts=60_000, seen_ts=120_000, token="mint", pool="pool-a",
+                          open=100, high=101, low=99, close=100)
+    other_pool = SimpleNamespace(ts=60_000, seen_ts=60_000, token="mint", pool="pool-b",
+                                 liquidity_usd=99_000)
+    joined = price_bars_from_point_in_time_records(
+        [bar], [other_pool], token_key="mint", pool_key="pool-a", max_liquidity_age_ms=60_000
+    )
+    assert len(joined) == 1
+    assert joined[0].liquidity_usd is None
 
 def test_labels_upside_first_after_execution_latency_and_costs():
     data = bars([
