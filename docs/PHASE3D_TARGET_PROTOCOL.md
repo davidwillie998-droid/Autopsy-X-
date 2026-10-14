@@ -30,7 +30,7 @@ The labeler never infers fraud. Rug-pull/fraud labels require an independently s
 
 The code exposes the candidate horizons **5, 15 and 60 minutes**, and upside thresholds **5%, 10% and 20%**. They are a research grid, not a license to select the best historical result and report it as if it were the only trial. Evaluate the full declared family, disclose all runs, and account for multiple testing. Downside barrier, latency, fees, slippage, minimum liquidity and participation limit must be specified explicitly for each venue/strategy evaluation; do not infer them from a favourable backtest.
 
-The v1 label builder uses caller-supplied proportional fee/slippage assumptions symmetrically on entry and exit. For barrier outcomes, net_outcome_return_pct records the configured barrier threshold, not the candle high/low as if that extreme were an executable fill; for TIMEOUT, it records the cost-adjusted horizon close. MFE/MAE remain path diagnostics, not fills. Replace cost assumptions with empirically measured venue-specific costs only through a separately reviewed contract version. A bar-level liquidity gate is a conservative proxy, not a full AMM price-impact simulation.
+The v1 label builder uses caller-supplied proportional fee/slippage assumptions symmetrically on entry and exit and a configured expected bar interval (60 seconds by default). Because the provider omits minutes without trades, a gap is conservatively censored unless a later, separately reviewed coverage-aware protocol can establish that the interval is safe to treat as no-trade. For barrier outcomes, net_outcome_return_pct records the configured barrier threshold, not the candle high/low as if that extreme were an executable fill; for TIMEOUT, it records the cost-adjusted horizon close. MFE/MAE remain path diagnostics, not fills. Replace cost assumptions with empirically measured venue-specific costs only through a separately reviewed contract version. A bar-level liquidity gate is a conservative proxy, not a full AMM price-impact simulation.
 
 ## Timing and data integrity
 
@@ -40,7 +40,7 @@ The v1 label builder uses caller-supplied proportional fee/slippage assumptions 
 - Bar timestamps must be strictly increasing; OHLC values must be positive and internally consistent.
 - price_bars_from_point_in_time_records joins bars only to matching token/pool liquidity snapshots whose event and ingestion timestamps are both no later than the bar open. It permits a last-known snapshot only within an explicit age limit. Future snapshots never backfill earlier bars; stale or missing liquidity remains missing.
 - When both barriers are crossed within one OHLC bar, the outcome is ambiguous rather than guessed.
-- Incomplete forward windows are censored. Do not count them as timeout failures or wins.
+- Incomplete forward windows are censored. Gaps larger than the configured bar interval censor the label before a later barrier touch can be counted. Do not count incomplete or gapped paths as timeout failures or wins.
 - MFE/MAE are stored as net-cost-adjusted path statistics. They describe the observed path; they are not a promise that a live order could capture those extrema.
 
 ## Validation protocol before model claims
