@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 from types import SimpleNamespace
 
+from autopsyx.research.phase3d_data_audit import audit_record_coverage
+
 from autopsyx.research.phase3d_targets import (
     CANDIDATE_HORIZONS_MS,
     CANDIDATE_UPSIDE_THRESHOLDS,
@@ -46,6 +48,27 @@ def test_contract_candidate_grid_is_explicit_and_separate_from_frozen_phase3b():
 
 
 
+
+
+def test_data_readiness_audit_reports_liquidity_and_horizon_coverage():
+    provider_bars = [
+        SimpleNamespace(ts=i * 60_000, seen_ts=(i + 1) * 60_000, token="mint",
+                        pool="pool-a", open=100, high=101, low=99, close=100)
+        for i in range(8)
+    ]
+    snapshots = [
+        SimpleNamespace(ts=i * 60_000, seen_ts=i * 60_000, token="mint",
+                        pool="pool-a", liquidity_usd=20_000)
+        for i in range(8)
+    ]
+    report = audit_record_coverage(provider_bars, snapshots, max_liquidity_age_ms=60_000)
+    assert report["token_count"] == 1
+    assert report["token_pool_count"] == 1
+    assert report["bar_count"] == 8
+    assert report["liquidity_known_bar_count"] == 8
+    assert report["pools_sufficient_by_horizon"]["300000"] == 1
+    assert report["pools_sufficient_by_horizon"]["900000"] == 0
+    assert report["pools_sufficient_by_horizon"]["3600000"] == 0
 
 def test_target_spec_rejects_non_finite_costs_and_thresholds():
     with pytest.raises(ValueError, match="must be finite"):
