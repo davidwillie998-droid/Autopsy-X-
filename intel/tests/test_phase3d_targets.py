@@ -53,7 +53,7 @@ def test_labels_upside_first_after_execution_latency_and_costs():
                                 entry_notional_usd=100, spec=spec())[0]
     assert label.entry_ts_ms == 60_000
     assert label.outcome == "UPSIDE_FIRST"
-    assert label.realized_net_return_pct is not None
+    assert label.barrier_net_return_pct is not None
     assert label.realized_net_return_pct > 5
     assert label.contract_version == "1.0.0"
 
