@@ -58,6 +58,20 @@ def test_labels_upside_first_after_execution_latency_and_costs():
     assert label.contract_version == "1.0.0"
 
 
+def test_mfe_mae_stop_at_first_barrier_instead_of_using_later_future_prices():
+    data = bars([
+        (100, 101, 99, 100),
+        (100, 101, 99, 100),
+        (100, 108, 99, 106),
+        (106, 110, 50, 60),
+    ])
+    label = build_target_labels(data, token_key="solana:mint", pool_key="pool-a",
+                                entry_notional_usd=100, spec=spec())[0]
+    assert label.outcome == "UPSIDE_FIRST"
+    assert label.observed_mae_net_pct is not None
+    assert label.observed_mae_net_pct > -5
+
+
 def test_downside_first_is_not_a_momentum_success():
     data = bars([
         (100, 101, 99, 100),
