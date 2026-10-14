@@ -311,6 +311,35 @@ def build_target_labels(
     return labels
 
 
+
+def summarize_target_labels(labels: Iterable[TargetLabel]) -> dict:
+    """Return transparent row-level prevalence and exclusion counts.
+
+    These are row counts, not independent-token sample sizes. A research
+    report must separately enforce token/pool grouping and minimum unique-token
+    thresholds before interpreting any prevalence or model score.
+    """
+    rows = list(labels)
+    counts = {outcome: 0 for outcome in sorted(OUTCOMES)}
+    for label in rows:
+        if label.outcome not in OUTCOMES:
+            raise ValueError(f"unknown target outcome: {label.outcome}")
+        counts[label.outcome] += 1
+    resolved = counts["UPSIDE_FIRST"] + counts["DOWNSIDE_FIRST"] + counts["TIMEOUT"]
+    total = len(rows)
+    return {
+        "contract_version": TARGET_CONTRACT_VERSION,
+        "row_count": total,
+        "unique_token_count": len({label.token_key for label in rows}),
+        "unique_token_pool_count": len({(label.token_key, label.pool_key) for label in rows}),
+        "outcome_counts": counts,
+        "upside_prevalence_all_rows": counts["UPSIDE_FIRST"] / total if total else None,
+        "upside_prevalence_resolved_rows": counts["UPSIDE_FIRST"] / resolved if resolved else None,
+        "resolved_rows": resolved,
+        "excluded_or_unresolved_rows": total - resolved,
+        "warning": "row counts are not independent-token sample sizes; no predictive performance is implied",
+    }
+
 def intervals_overlap(start_a: int, end_a: int, start_b: int, end_b: int) -> bool:
     """Inclusive interval overlap test for label-window purging."""
     if end_a < start_a or end_b < start_b:
