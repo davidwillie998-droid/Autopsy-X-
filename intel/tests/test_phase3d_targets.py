@@ -45,6 +45,13 @@ def test_contract_candidate_grid_is_explicit_and_separate_from_frozen_phase3b():
 
 
 
+
+def test_target_spec_rejects_non_finite_costs_and_thresholds():
+    with pytest.raises(ValueError, match="must be finite"):
+        spec(fee_bps=float("nan"))
+    with pytest.raises(ValueError, match="must be finite"):
+        spec(upside_threshold_pct=float("inf"))
+
 def test_point_in_time_join_never_uses_future_or_stale_liquidity():
     bars_in = [
         SimpleNamespace(ts=0, seen_ts=60_000, token="mint", pool="pool",
