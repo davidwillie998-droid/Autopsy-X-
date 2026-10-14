@@ -55,6 +55,9 @@ class Plan:
     rpc_rate_per_s: float = 2.0
     # Phase 3A enrichment (off by default so Phase 2 plans behave exactly as before)
     phase3a: bool = False
+    # Dedicated Phase 3D coverage run: prioritize synchronized pool-liquidity
+    # snapshots and OHLCV over trades, holder calls and DexScreener requests.
+    phase3d_coverage_mode: bool = False
     universe_file: str | None = None  # reuse a frozen universe from an earlier chained run
     rpc_page_limit: int = 100
     rpc_max_pages: int = 3
@@ -374,6 +377,18 @@ def poll_cycle(f: Fetcher, plan: Plan, picked: list[dict], cycle: int) -> None:
     for i in range(0, len(pools), 30):
         chunk = pools[i:i + 30]
         f.get(gt.NAME, "gt.pools_multi", gt.path_pools_multi(n, chunk), {"chain": n, "cycle": cycle})
+
+    if plan.phase3d_coverage_mode:
+        # Keep snapshot and price observations on the same cadence. The prior
+        # general-purpose cycle made 3+ requests per pool, so rate limiting
+        # stretched cycles far beyond 60 seconds and destroyed fresh joins.
+        # This mode deliberately spends the request budget on the pool state
+        # snapshot plus one recent OHLCV response per selected pool.
+        for p in picked:
+            ctx = {"chain": n, "pool": p["pool"], "token": p["token"], "cycle": cycle}
+            f.get(gt.NAME, "gt.ohlcv", gt.path_ohlcv(n, p["pool"], plan.poll_ohlcv_limit), ctx)
+        return
+
     for i in range(0, len(picked), ds.MAX_PAIRS_PER_CALL):
         chunk = picked[i:i + ds.MAX_PAIRS_PER_CALL]
         f.get(ds.NAME, "ds.pairs", ds.path_pairs(n, [p["pool"] for p in chunk]),
