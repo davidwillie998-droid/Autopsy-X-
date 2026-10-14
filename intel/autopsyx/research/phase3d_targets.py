@@ -97,6 +97,7 @@ class TargetSpec:
     """A preregistered label configuration; costs must be supplied by caller."""
 
     horizon_ms: int
+    bar_interval_ms: int = 60_000
     upside_threshold_pct: float
     downside_threshold_pct: float
     latency_ms: int
@@ -114,6 +115,8 @@ class TargetSpec:
             raise ValueError("target spec numeric values must be finite")
         if self.horizon_ms <= 0:
             raise ValueError("horizon_ms must be positive")
+        if self.bar_interval_ms <= 0:
+            raise ValueError("bar_interval_ms must be positive")
         if self.latency_ms < 0:
             raise ValueError("latency_ms cannot be negative")
         if not 0 < self.upside_threshold_pct < 1:
@@ -260,8 +263,15 @@ def build_target_labels(
         held = 0
         observed_path: list[PriceBar] = []
 
+        previous_ts: int | None = None
         for held, bar in enumerate(path, start=1):
+            if previous_ts is not None and bar.ts_ms - previous_ts > spec.bar_interval_ms:
+                outcome = "HORIZON_CENSORED"
+                reason = "gap between observed bars prevents reliable barrier ordering"
+                end_ts = previous_ts
+                break
             observed_path.append(bar)
+            previous_ts = bar.ts_ms
             up_hit = _net_return_pct(entry.open, bar.high, cost_rate) >= (
                 spec.upside_threshold_pct * 100.0
             )
