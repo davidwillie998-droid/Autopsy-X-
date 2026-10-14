@@ -34,6 +34,81 @@ def _max_contiguous_liquid_bars(bars, interval_ms: int) -> int:
     return best
 
 
+def _liquidity_join_diagnostics(
+    provider_bars: Iterable[object],
+    liquidity_snapshots: Iterable[object],
+    *,
+    chain: str,
+    token: str,
+    pool: str,
+    max_liquidity_age_ms: int,
+) -> dict:
+    """Explain why each bar did or did not have an admissible snapshot.
+
+    Counts are per bar, not per rejected snapshot. Identity uses the same
+    exact chain/token/pool match as the production join. No timestamp or
+    address normalization is silently applied.
+    """
+    bars = [
+        b for b in provider_bars
+        if str(getattr(b, "chain", "")) == chain
+        and str(getattr(b, "token", "")) == token
+        and str(getattr(b, "pool", "")) == pool
+    ]
+    snapshots = [
+        s for s in liquidity_snapshots
+        if str(getattr(s, "chain", "")) == chain
+        and str(getattr(s, "token", "")) == token
+        and str(getattr(s, "pool", "")) == pool
+    ]
+    reasons = {
+        "no_matching_snapshot": 0,
+        "event_after_bar_open": 0,
+        "not_ingested_by_bar_open": 0,
+        "stale_snapshot": 0,
+        "missing_liquidity_value": 0,
+        "mixed_or_invalid_candidates": 0,
+    }
+    covered = 0
+    for bar in bars:
+        bar_ts = int(getattr(bar, "ts"))
+        if not snapshots:
+            reasons["no_matching_snapshot"] += 1
+            continue
+        eligible = [
+            s for s in snapshots
+            if getattr(s, "liquidity_usd", None) is not None
+            and int(getattr(s, "ts")) <= bar_ts
+            and int(getattr(s, "seen_ts")) <= bar_ts
+            and bar_ts - int(getattr(s, "ts")) <= max_liquidity_age_ms
+        ]
+        if eligible:
+            covered += 1
+            continue
+        if all(getattr(s, "liquidity_usd", None) is None for s in snapshots):
+            reasons["missing_liquidity_value"] += 1
+        elif all(int(getattr(s, "ts")) > bar_ts for s in snapshots):
+            reasons["event_after_bar_open"] += 1
+        elif all(int(getattr(s, "seen_ts")) > bar_ts for s in snapshots):
+            reasons["not_ingested_by_bar_open"] += 1
+        elif all(
+            int(getattr(s, "ts")) <= bar_ts
+            and int(getattr(s, "seen_ts")) <= bar_ts
+            and bar_ts - int(getattr(s, "ts")) > max_liquidity_age_ms
+            for s in snapshots if getattr(s, "liquidity_usd", None) is not None
+        ) and any(getattr(s, "liquidity_usd", None) is not None for s in snapshots):
+            reasons["stale_snapshot"] += 1
+        else:
+            reasons["mixed_or_invalid_candidates"] += 1
+    return {
+        "bar_count": len(bars),
+        "matching_snapshot_count": len(snapshots),
+        "bars_with_eligible_snapshot": covered,
+        "bars_without_eligible_snapshot": len(bars) - covered,
+        "unmatched_bar_reasons": reasons,
+    }
+
+
 def audit_record_coverage(
     provider_bars: Iterable[object],
     liquidity_snapshots: Iterable[object],
@@ -71,6 +146,10 @@ def audit_record_coverage(
             selected, snapshots, token_key=token_key, pool_key=pool,
             max_liquidity_age_ms=max_liquidity_age_ms,
         )
+        join_diagnostics = _liquidity_join_diagnostics(
+            selected, snapshots, chain=chain, token=token, pool=pool,
+            max_liquidity_age_ms=max_liquidity_age_ms,
+        )
         gaps = sum(
             1 for left, right in zip(joined, joined[1:])
             if right.ts_ms - left.ts_ms > bar_interval_ms
@@ -88,6 +167,7 @@ def audit_record_coverage(
             "bar_gap_count": gaps,
             "span_ms": span,
             "max_contiguous_liquid_bars": longest,
+            "liquidity_join_diagnostics": join_diagnostics,
             "horizon_readiness": {
                 str(horizon): {
                     "minimum_contiguous_liquid_bars": horizon // bar_interval_ms + 1,
@@ -100,7 +180,7 @@ def audit_record_coverage(
     total_bars = sum(row["bar_count"] for row in pool_reports)
     total_known = sum(row["liquidity_known_bar_count"] for row in pool_reports)
     return {
-        "audit_version": "1.0.0",
+        "audit_version": "1.1.0",
         "max_liquidity_age_ms": max_liquidity_age_ms,
         "bar_interval_ms": bar_interval_ms,
         "token_count": len({(row["chain"], row["token"]) for row in pool_reports}),
