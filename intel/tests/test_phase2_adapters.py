@@ -314,6 +314,20 @@ def test_fetcher_waits_out_open_circuit_instead_of_failing(tmp_path):
     assert json.loads((tmp_path / "run.json").read_text())["circuit_waits"] >= 1
 
 
+def test_configured_duration_is_reserved_for_live_polling(tmp_path):
+    # Discovery/backfill take over one second on this deterministic fake clock.
+    # A one-second live window must still execute one poll cycle after backfill.
+    plan = acquire.Plan(
+        strata={"young": 1, "quiet_young": 0, "trending": 0, "established": 0},
+        new_pool_pages=1, backfill_pages=1, cycle_s=0, duration_s=1,
+    )
+    meta, _ = run_fake(tmp_path, cycles=None, plan=plan)
+    assert meta["cycles"] == 1
+    assert meta["poll_started_ms"] > meta["started_ms"]
+    assert meta["poll_ended_ms"] >= meta["poll_started_ms"]
+    assert meta["poll_duration_s"] >= 0
+
+
 def test_restrict_to_selection_keeps_only_polled_tokens(tmp_path):
     from autopsyx.data.normalize import restrict_to_selection
     run_fake(tmp_path, cycles=1, plan=acquire.Plan(strata={"young": 1, "quiet_young": 0, "trending": 0, "established": 0},
