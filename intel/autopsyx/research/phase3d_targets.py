@@ -33,6 +33,65 @@ class PriceBar:
     liquidity_usd: float | None
 
 
+def price_bars_from_point_in_time_records(
+    provider_bars: Iterable[object],
+    liquidity_snapshots: Iterable[object],
+    *,
+    token_key: str,
+    pool_key: str,
+    max_liquidity_age_ms: int,
+) -> list[PriceBar]:
+    """Join provider OHLC bars to only liquidity known by each bar's open.
+
+    Records use the repository's ProviderBar/PoolSnapshot field vocabulary:
+    ts, seen_ts, token, pool, and liquidity_usd. A snapshot is eligible only
+    when both its event timestamp and ingestion/seen timestamp are <= bar.ts.
+    The latest eligible snapshot may be used only within max_liquidity_age_ms.
+    No future snapshot is backfilled into the past, and stale/missing liquidity
+    remains None. If a bar has multiple provider revisions, the latest-seen
+    version is retained for outcome construction.
+    """
+    if max_liquidity_age_ms < 0:
+        raise ValueError("max_liquidity_age_ms cannot be negative")
+    bars = [
+        b for b in provider_bars
+        if getattr(b, "token", None) == token_key
+        and getattr(b, "pool", None) == pool_key
+    ]
+    snapshots = [
+        s for s in liquidity_snapshots
+        if getattr(s, "token", None) == token_key
+        and getattr(s, "pool", None) == pool_key
+    ]
+    latest_by_ts: dict[int, object] = {}
+    for bar in bars:
+        ts = int(getattr(bar, "ts"))
+        seen = int(getattr(bar, "seen_ts"))
+        if ts not in latest_by_ts or seen > int(getattr(latest_by_ts[ts], "seen_ts")):
+            latest_by_ts[ts] = bar
+
+    joined: list[PriceBar] = []
+    for ts, bar in sorted(latest_by_ts.items()):
+        candidates = [
+            s for s in snapshots
+            if int(getattr(s, "ts")) <= ts
+            and int(getattr(s, "seen_ts")) <= ts
+            and ts - int(getattr(s, "ts")) <= max_liquidity_age_ms
+            and getattr(s, "liquidity_usd", None) is not None
+        ]
+        snapshot = max(candidates, key=lambda s: (int(getattr(s, "ts")), int(getattr(s, "seen_ts")))) if candidates else None
+        joined.append(PriceBar(
+            ts_ms=ts,
+            open=float(getattr(bar, "open")),
+            high=float(getattr(bar, "high")),
+            low=float(getattr(bar, "low")),
+            close=float(getattr(bar, "close")),
+            liquidity_usd=float(getattr(snapshot, "liquidity_usd")) if snapshot is not None else None,
+        ))
+    _validate_bars(joined)
+    return joined
+
+
 @dataclass(frozen=True)
 class TargetSpec:
     """A preregistered label configuration; costs must be supplied by caller."""
