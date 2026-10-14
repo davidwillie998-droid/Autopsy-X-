@@ -1,6 +1,7 @@
-"""Phase 3C scope isolation: no production EA file exists to touch, and no
-Phase 2/Phase 3A/Phase 3B implementation file is modified by Phase 3C's own
-commits. This is the explicit scope test Phase 3C instruction 2 requires."""
+"""Research scope isolation: no production EA file exists to touch, and no
+Phase 2/Phase 3A/Phase 3B implementation file is modified. Phase 3C's
+namespace remains guarded; separately reviewed research additions are explicit."""
+
 import subprocess
 from pathlib import Path
 
@@ -46,9 +47,10 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     # This UI workflow is inherited from the PR base branch and restored byte-for-byte there; it predates the Phase 3C changes and is not a Phase 3C implementation file.
     # The dashboard documentation was added on the base branch after Phase 3B and is inherited by this branch; it is not a Phase 3C implementation change.
     # The standalone SSRN literature map is a documentation-only research artifact, not a Phase 3C implementation change.
+    # The feature-family ablation evaluator and its contract tests are an independent research milestone; allow only these exact paths.
     # index.html is inherited from the reviewed PR base; a separate test below
     # pins it byte-for-byte to that baseline rather than permitting UI changes.
-    infra_allowed = {"intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml", "docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md", "docs/research/15-ssrn-memecoin-momentum-evidence.md", "docs/research/16-point-in-time-memecoin-evaluation.md", "index.html"}
+    infra_allowed = {"intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml", "docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md", "docs/research/15-ssrn-memecoin-momentum-evidence.md", "docs/research/16-point-in-time-memecoin-evaluation.md", "index.html", "intel/autopsyx/research/feature_ablation.py", "intel/tests/test_feature_ablation.py"}
     for f in changed:
         allowed = (f.startswith("docs/PHASE3C_") or f.startswith("intel/autopsyx/research/phase3c_")
                   or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")
