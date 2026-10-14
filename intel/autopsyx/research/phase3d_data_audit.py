@@ -187,8 +187,30 @@ def audit_record_coverage(
 
     total_bars = sum(row["bar_count"] for row in pool_reports)
     total_known = sum(row["liquidity_known_bar_count"] for row in pool_reports)
+    join_reasons = {
+        reason: sum(
+            row["liquidity_join_diagnostics"]["unmatched_bar_reasons"][reason]
+            for row in pool_reports
+        )
+        for reason in (
+            "no_matching_snapshot", "event_after_bar_open", "not_ingested_by_bar_open",
+            "stale_snapshot", "missing_liquidity_value", "mixed_or_invalid_candidates",
+        )
+    }
+    join_diagnostics = {
+        "bars_with_eligible_snapshot": sum(
+            row["liquidity_join_diagnostics"]["bars_with_eligible_snapshot"]
+            for row in pool_reports
+        ),
+        "bars_without_eligible_snapshot": sum(
+            row["liquidity_join_diagnostics"]["bars_without_eligible_snapshot"]
+            for row in pool_reports
+        ),
+        "unmatched_bar_reasons": join_reasons,
+    }
     return {
         "audit_version": "1.1.0",
+        "liquidity_join_diagnostics": join_diagnostics,
         "max_liquidity_age_ms": max_liquidity_age_ms,
         "bar_interval_ms": bar_interval_ms,
         "token_count": len({(row["chain"], row["token"]) for row in pool_reports}),
