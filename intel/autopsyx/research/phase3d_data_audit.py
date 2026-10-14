@@ -55,6 +55,14 @@ def _liquidity_join_diagnostics(
         and str(getattr(b, "token", "")) == token
         and str(getattr(b, "pool", "")) == pool
     ]
+    # Mirror the production join: one latest-seen provider revision per
+    # bar-open timestamp, so diagnostics count bars rather than revisions.
+    latest_by_ts: dict[int, object] = {}
+    for bar in bars:
+        ts = int(getattr(bar, "ts"))
+        if ts not in latest_by_ts or int(getattr(bar, "seen_ts")) > int(getattr(latest_by_ts[ts], "seen_ts")):
+            latest_by_ts[ts] = bar
+    bars = [latest_by_ts[ts] for ts in sorted(latest_by_ts)]
     snapshots = [
         s for s in liquidity_snapshots
         if str(getattr(s, "chain", "")) == chain
