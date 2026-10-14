@@ -187,15 +187,15 @@ def build_target_labels(
         horizon_end = entry.ts_ms + spec.horizon_ms
         path = [b for b in rows[entry_idx:] if b.ts_ms <= horizon_end]
         complete = bool(path) and path[-1].ts_ms >= horizon_end
-        mfe = max(_net_return_pct(entry.open, b.high, cost_rate) for b in path)
-        mae = min(_net_return_pct(entry.open, b.low, cost_rate) for b in path)
         outcome = "HORIZON_CENSORED"
         reason = "observed bars do not cover the full label horizon"
         end_ts: int | None = path[-1].ts_ms if path else None
         realized: float | None = None
         held = 0
+        observed_path: list[PriceBar] = []
 
         for held, bar in enumerate(path, start=1):
+            observed_path.append(bar)
             up_hit = _net_return_pct(entry.open, bar.high, cost_rate) >= (
                 spec.upside_threshold_pct * 100.0
             )
@@ -230,6 +230,11 @@ def build_target_labels(
                     outcome = "TIMEOUT"
                     realized = _net_return_pct(entry.open, last.close, cost_rate)
                     reason = "neither barrier touched before horizon expiry"
+
+        # Path statistics stop at the first barrier touch; later bars must not
+        # inflate MFE/MAE for an event that would already have exited.
+        mfe = max(_net_return_pct(entry.open, b.high, cost_rate) for b in observed_path)
+        mae = min(_net_return_pct(entry.open, b.low, cost_rate) for b in observed_path)
 
         labels.append(TargetLabel(
             TARGET_CONTRACT_VERSION, token_key, pool_key, decision.ts_ms,
