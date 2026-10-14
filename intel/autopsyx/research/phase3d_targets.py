@@ -106,6 +106,12 @@ class TargetSpec:
     min_liquidity_usd: float = 0.0
 
     def __post_init__(self) -> None:
+        numeric_values = (
+            self.upside_threshold_pct, self.downside_threshold_pct, self.fee_bps,
+            self.slippage_bps, self.max_participation_pct, self.min_liquidity_usd,
+        )
+        if not all(isfinite(value) for value in numeric_values):
+            raise ValueError("target spec numeric values must be finite")
         if self.horizon_ms <= 0:
             raise ValueError("horizon_ms must be positive")
         if self.latency_ms < 0:
