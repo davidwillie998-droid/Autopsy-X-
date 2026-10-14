@@ -34,11 +34,14 @@ def _timestamp(value: object, field: str) -> int:
 def _validate(samples: Sequence[AblationSample]) -> tuple[list[AblationSample], tuple[str, ...]]:
     if len(samples) < 2:
         raise ValueError("at least two samples are required")
-    names = tuple(sorted(samples[0].families))
-    if not names:
+    raw_names = tuple(samples[0].families)
+    if not raw_names:
         raise ValueError("at least one feature family is required")
-    if any(not isinstance(name, str) or not name.strip() for name in names):
+    # Validate before sorting: mixed key types otherwise raise an incidental
+    # TypeError instead of the evaluator's documented input-validation error.
+    if any(not isinstance(name, str) or not name.strip() for name in raw_names):
         raise ValueError("feature-family names must be non-empty strings")
+    names = tuple(sorted(raw_names))
     if {"baseline", "combined"}.intersection(names):
         raise ValueError("feature-family names cannot use reserved names 'baseline' or 'combined'")
 
