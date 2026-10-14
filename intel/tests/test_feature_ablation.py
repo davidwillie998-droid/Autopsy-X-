@@ -64,6 +64,15 @@ def test_rejects_non_finite_feature_values():
         evaluate_feature_families(rows, n_folds=3, embargo_ms=0, min_train=10)
 
 
+def test_rejects_invalid_feature_family_names_before_sorting():
+    rows = make_samples()
+    rows[0] = AblationSample(
+        **{**rows[0].__dict__, "families": {"structure": (1.0,), 7: (0.0,)}}
+    )
+    with pytest.raises(ValueError, match="feature-family names"):
+        evaluate_feature_families(rows, n_folds=3, embargo_ms=0, min_train=10)
+
+
 def test_rejects_invalid_labels_and_inconsistent_families():
     rows = make_samples()
     rows[0] = AblationSample(**{**rows[0].__dict__, "y": 2})
