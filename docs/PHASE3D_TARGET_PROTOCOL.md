@@ -6,7 +6,7 @@ Status: **implementation protocol; not evidence of predictive edge or profitabil
 
 The existing Phase 3B contract (phase3b_contract.py, version 3b.1) remains frozen. It answers its original 15-minute, production-classification research question. Phase 3D defines a separate path-dependent target for the standalone memecoin momentum research system; it does not redefine Phase 3B labels, modify production signal logic, or enable live execution.
 
-Implementation: autopsyx.research.phase3d_targets.
+Implementation: autopsyx.research.phase3d_targets, including a bounded point-in-time liquidity join for the repository ProviderBar and PoolSnapshot records.
 
 ## Research question
 
@@ -18,7 +18,7 @@ This is narrower than “will price go up?” and does not imply that historical
 
 - UPSIDE_FIRST: net upside barrier is reached before the downside barrier and the touch bar passes the configured liquidity/participation gate.
 - DOWNSIDE_FIRST: net downside barrier is reached first and its touch bar passes the liquidity gate.
-- TIMEOUT: neither barrier is reached during a fully observed horizon; return is measured at the horizon endpoint.
+- TIMEOUT: neither barrier is reached during a fully observed horizon; the net outcome return is measured at the horizon endpoint.
 - AMBIGUOUS_SAME_BAR: OHLC high and low cross both barriers in the same bar. It is never counted as an upside success because intrabar ordering is unknown.
 - ENTRY_UNAVAILABLE: no post-decision bar exists at the configured latency, or entry liquidity is missing/insufficient.
 - EXIT_UNAVAILABLE: a barrier/expiry is observed but the relevant bar lacks sufficient exit liquidity.
@@ -30,7 +30,7 @@ The labeler never infers fraud. Rug-pull/fraud labels require an independently s
 
 The code exposes the candidate horizons **5, 15 and 60 minutes**, and upside thresholds **5%, 10% and 20%**. They are a research grid, not a license to select the best historical result and report it as if it were the only trial. Evaluate the full declared family, disclose all runs, and account for multiple testing. Downside barrier, latency, fees, slippage, minimum liquidity and participation limit must be specified explicitly for each venue/strategy evaluation; do not infer them from a favourable backtest.
 
-The v1 label builder uses caller-supplied proportional fee/slippage assumptions symmetrically on entry and exit. Replace these with empirically measured venue-specific costs only through a separately reviewed contract version. A bar-level liquidity gate is a conservative proxy, not a full AMM price-impact simulation.
+The v1 label builder uses caller-supplied proportional fee/slippage assumptions symmetrically on entry and exit. For barrier outcomes, net_outcome_return_pct records the configured barrier threshold, not the candle high/low as if that extreme were an executable fill; for TIMEOUT, it records the cost-adjusted horizon close. MFE/MAE remain path diagnostics, not fills. Replace cost assumptions with empirically measured venue-specific costs only through a separately reviewed contract version. A bar-level liquidity gate is a conservative proxy, not a full AMM price-impact simulation.
 
 ## Timing and data integrity
 
@@ -38,7 +38,7 @@ The v1 label builder uses caller-supplied proportional fee/slippage assumptions 
 - Decision time is the timestamp of the decision bar. Entry is delayed to the first subsequent bar at or after decision time plus configured latency.
 - Features must be computed from information available at decision time only. Forward bars are used only to construct outcomes.
 - Bar timestamps must be strictly increasing; OHLC values must be positive and internally consistent.
-- Missing liquidity remains missing; it never becomes zero, is forward-filled, or counts as a successful executable exit.
+- price_bars_from_point_in_time_records joins bars only to matching token/pool liquidity snapshots whose event and ingestion timestamps are both no later than the bar open. It permits a last-known snapshot only within an explicit age limit. Future snapshots never backfill earlier bars; stale or missing liquidity remains missing.
 - When both barriers are crossed within one OHLC bar, the outcome is ambiguous rather than guessed.
 - Incomplete forward windows are censored. Do not count them as timeout failures or wins.
 - MFE/MAE are stored as net-cost-adjusted path statistics. They describe the observed path; they are not a promise that a live order could capture those extrema.
