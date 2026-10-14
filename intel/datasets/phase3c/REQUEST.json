@@ -9,7 +9,7 @@
     "established": 1
   },
   "new_pool_pages": 3,
-  "backfill_pages": 2,
+  "backfill_pages": 0,
   "duration_s": 7200,
   "cycle_s": 60,
   "poll_ohlcv_limit": 5,
