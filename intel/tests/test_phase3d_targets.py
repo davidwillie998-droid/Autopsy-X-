@@ -178,6 +178,52 @@ def test_same_bar_double_touch_is_ambiguous_not_optimistically_won():
     assert label.net_outcome_return_pct is None
 
 
+def test_bar_opening_at_horizon_boundary_cannot_create_barrier_hit():
+    data = bars([
+        (100, 101, 99, 100),
+        (100, 101, 99, 100),
+        (100, 101, 99, 100),
+        (100, 101, 99, 100),
+        # This bar opens at the horizon boundary; its later spike is out of horizon.
+        (100, 130, 70, 100),
+    ])
+    label = build_target_labels(
+        data, token_key="solana:mint", pool_key="pool-a",
+        entry_notional_usd=100, spec=spec(),
+    )[0]
+    assert label.outcome == "TIMEOUT"
+    assert label.label_end_ts_ms == 240_000
+    assert label.net_outcome_return_pct is not None
+    # Flat expiry open means only assumed costs, not the boundary bar's spike.
+    assert label.net_outcome_return_pct < 0
+
+
+def test_horizon_without_exact_boundary_bar_is_censored_not_extended():
+    data = bars([(100, 101, 99, 100)] * 7)
+    label = build_target_labels(
+        data, token_key="solana:mint", pool_key="pool-a",
+        entry_notional_usd=100, spec=spec(horizon_ms=150_000),
+    )[0]
+    assert label.outcome == "HORIZON_CENSORED"
+    assert label.net_outcome_return_pct is None
+
+
+def test_gap_immediately_before_exact_horizon_boundary_is_censored():
+    data = [
+        PriceBar(0, 100, 101, 99, 100, 100_000),
+        PriceBar(60_000, 100, 101, 99, 100, 100_000),
+        PriceBar(120_000, 100, 101, 99, 100, 100_000),
+        # 180,000 is missing; exact expiry exists at 240,000.
+        PriceBar(240_000, 100, 101, 99, 100, 100_000),
+    ]
+    label = build_target_labels(
+        data, token_key="solana:mint", pool_key="pool-a",
+        entry_notional_usd=100, spec=spec(),
+    )[0]
+    assert label.outcome == "HORIZON_CENSORED"
+    assert "gap" in label.reason
+
+
 def test_complete_path_without_barrier_is_timeout():
     flat = [(100, 101, 99, 100)] * 7
     label = build_target_labels(bars(flat), token_key="solana:mint", pool_key="pool-a",
