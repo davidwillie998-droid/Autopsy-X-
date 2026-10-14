@@ -55,17 +55,20 @@ def audit_record_coverage(
     raw_bars = list(provider_bars)
     snapshots = list(liquidity_snapshots)
     keys = sorted({
-        (str(getattr(bar, "token")), str(getattr(bar, "pool")))
+        (str(getattr(bar, "chain", "")), str(getattr(bar, "token")), str(getattr(bar, "pool")))
         for bar in raw_bars
     })
     pool_reports = []
-    for token, pool in keys:
+    for chain, token, pool in keys:
         selected = [
             bar for bar in raw_bars
-            if getattr(bar, "token", None) == token and getattr(bar, "pool", None) == pool
+            if getattr(bar, "chain", "") == chain
+            and getattr(bar, "token", None) == token
+            and getattr(bar, "pool", None) == pool
         ]
+        token_key = f"{chain}:{token}" if chain else token
         joined = price_bars_from_point_in_time_records(
-            selected, snapshots, token_key=token, pool_key=pool,
+            selected, snapshots, token_key=token_key, pool_key=pool,
             max_liquidity_age_ms=max_liquidity_age_ms,
         )
         gaps = sum(
@@ -76,7 +79,8 @@ def audit_record_coverage(
         longest = _max_contiguous_liquid_bars(joined, bar_interval_ms)
         span = joined[-1].ts_ms - joined[0].ts_ms if len(joined) > 1 else 0
         pool_reports.append({
-            "token": token,
+            "chain": chain,
+            "token": token_key,
             "pool": pool,
             "bar_count": len(joined),
             "liquidity_known_bar_count": known,
@@ -99,7 +103,7 @@ def audit_record_coverage(
         "audit_version": "1.0.0",
         "max_liquidity_age_ms": max_liquidity_age_ms,
         "bar_interval_ms": bar_interval_ms,
-        "token_count": len({row["token"] for row in pool_reports}),
+        "token_count": len({(row["chain"], row["token"]) for row in pool_reports}),
         "token_pool_count": len(pool_reports),
         "bar_count": total_bars,
         "liquidity_known_bar_count": total_known,
