@@ -78,7 +78,7 @@ class TargetLabel:
     entry_notional_usd: float
     observed_mfe_net_pct: float | None
     observed_mae_net_pct: float | None
-    realized_net_return_pct: float | None
+    barrier_net_return_pct: float | None
     bars_held: int
     reason: str
 
@@ -137,7 +137,8 @@ def build_target_labels(
 
     Entry is delayed until the first bar whose open timestamp is at or after
     decision_ts + latency_ms. The profit/loss barrier uses net returns after
-    caller-supplied fee and slippage assumptions. If both barriers are crossed
+    caller-supplied fee and slippage assumptions. Barrier labels report the
+    threshold return, not the candle's high/low, which is not an executable fill. If both barriers are crossed
     within one OHLC bar, the outcome is ambiguous and is never counted as a win.
     An incomplete horizon is censored rather than mislabeled as a timeout.
 
@@ -190,7 +191,7 @@ def build_target_labels(
         outcome = "HORIZON_CENSORED"
         reason = "observed bars do not cover the full label horizon"
         end_ts: int | None = path[-1].ts_ms if path else None
-        realized: float | None = None
+        barrier_return: float | None = None
         held = 0
         observed_path: list[PriceBar] = []
 
@@ -213,11 +214,11 @@ def build_target_labels(
                 reason = "barrier touched but exit liquidity is missing or insufficient"
             elif up_hit:
                 outcome = "UPSIDE_FIRST"
-                realized = _net_return_pct(entry.open, bar.high, cost_rate)
+                barrier_return = spec.upside_threshold_pct * 100.0
                 reason = "net upside barrier touched before downside barrier"
             else:
                 outcome = "DOWNSIDE_FIRST"
-                realized = _net_return_pct(entry.open, bar.low, cost_rate)
+                barrier_return = -spec.downside_threshold_pct * 100.0
                 reason = "net downside barrier touched before upside barrier"
             break
         else:
@@ -228,7 +229,7 @@ def build_target_labels(
                     reason = "horizon expiry reached without sufficient exit liquidity"
                 else:
                     outcome = "TIMEOUT"
-                    realized = _net_return_pct(entry.open, last.close, cost_rate)
+                    barrier_return = _net_return_pct(entry.open, last.close, cost_rate)
                     reason = "neither barrier touched before horizon expiry"
 
         # Path statistics stop at the first barrier touch; later bars must not
