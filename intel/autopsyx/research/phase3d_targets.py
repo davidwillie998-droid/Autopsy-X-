@@ -53,16 +53,20 @@ def price_bars_from_point_in_time_records(
     """
     if max_liquidity_age_ms < 0:
         raise ValueError("max_liquidity_age_ms cannot be negative")
-    bars = [
-        b for b in provider_bars
-        if getattr(b, "token", None) == token_key
-        and getattr(b, "pool", None) == pool_key
-    ]
-    snapshots = [
-        s for s in liquidity_snapshots
-        if getattr(s, "token", None) == token_key
-        and getattr(s, "pool", None) == pool_key
-    ]
+    if ":" in token_key:
+        chain_key, token_address = token_key.split(":", 1)
+    else:
+        chain_key, token_address = None, token_key
+
+    def matches(record) -> bool:
+        return (
+            getattr(record, "token", None) == token_address
+            and getattr(record, "pool", None) == pool_key
+            and (chain_key is None or getattr(record, "chain", None) == chain_key)
+        )
+
+    bars = [b for b in provider_bars if matches(b)]
+    snapshots = [s for s in liquidity_snapshots if matches(s)]
     latest_by_ts: dict[int, object] = {}
     for bar in bars:
         ts = int(getattr(bar, "ts"))
