@@ -13,6 +13,7 @@ from autopsyx.research.phase3d_targets import (
     intervals_overlap,
     purge_overlapping_training_indices,
     price_bars_from_point_in_time_records,
+    summarize_target_labels,
 )
 
 
@@ -190,6 +191,24 @@ def test_input_order_and_ohlc_consistency_are_validated():
             token_key="solana:mint", pool_key="pool-a", entry_notional_usd=10, spec=spec(),
         )
 
+
+
+def test_prevalence_summary_reports_exclusions_and_unique_token_counts():
+    data = bars([
+        (100, 101, 99, 100),
+        (100, 108, 99, 106),
+        (106, 108, 104, 107),
+        (107, 109, 105, 108),
+    ])
+    labels = build_target_labels(data, token_key="solana:mint", pool_key="pool-a",
+                                 entry_notional_usd=100, spec=spec())
+    summary = summarize_target_labels(labels)
+    assert summary["row_count"] == len(labels)
+    assert summary["unique_token_count"] == 1
+    assert summary["unique_token_pool_count"] == 1
+    assert sum(summary["outcome_counts"].values()) == len(labels)
+    assert summary["excluded_or_unresolved_rows"] + summary["resolved_rows"] == len(labels)
+    assert "not independent-token" in summary["warning"]
 
 def test_label_outcome_vocabulary_is_closed():
     assert OUTCOMES == {
