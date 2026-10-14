@@ -6,7 +6,7 @@ Status: **implementation protocol; not evidence of predictive edge or profitabil
 
 The existing Phase 3B contract (phase3b_contract.py, version 3b.1) remains frozen. It answers its original 15-minute, production-classification research question. Phase 3D defines a separate path-dependent target for the standalone memecoin momentum research system; it does not redefine Phase 3B labels, modify production signal logic, or enable live execution.
 
-Implementation: autopsyx.research.phase3d_targets, including a bounded point-in-time liquidity join for the repository ProviderBar and PoolSnapshot records.
+Implementation: autopsyx.research.phase3d_targets, including a bounded point-in-time liquidity join for the repository ProviderBar and PoolSnapshot records. The reproducible archive readiness command is `python -m autopsyx.research.phase3d_data_audit`; CI saves its JSON output as the `phase3d-target-readiness` artifact.
 
 ## Research question
 
