@@ -97,13 +97,13 @@ class TargetSpec:
     """A preregistered label configuration; costs must be supplied by caller."""
 
     horizon_ms: int
-    bar_interval_ms: int = 60_000
     upside_threshold_pct: float
     downside_threshold_pct: float
     latency_ms: int
     fee_bps: float
     slippage_bps: float
     max_participation_pct: float
+    bar_interval_ms: int = 60_000
     min_liquidity_usd: float = 0.0
 
     def __post_init__(self) -> None:
