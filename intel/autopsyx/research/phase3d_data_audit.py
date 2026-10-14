@@ -6,7 +6,6 @@ model, or combine overlapping archives into one independent sample.
 from __future__ import annotations
 
 import json
-from collections import defaultdict
 from typing import Iterable
 
 from ..core.models import PoolSnapshot, ProviderBar
