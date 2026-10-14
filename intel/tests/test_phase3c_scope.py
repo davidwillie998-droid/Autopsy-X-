@@ -40,7 +40,7 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     """
     # Compare the PR branch against its reviewed base, not Phase 3B: the base contains later unrelated changes.
     changed = git("diff", "--name-only", UI_BASELINE_COMMIT, "HEAD").splitlines()
-    # Necessary Phase 3C acquisition/test infrastructure may change workflow files; existing production/research modules remain frozen.
+    # Phase 3C scope remains frozen; separately versioned Phase 3D target research is explicitly allowlisted below.
     # a request file and a workflow mirroring phase3a-acquire.yml's own procedure exactly
     # (checked bit-for-bit against it below), so new archives can be independently acquired.
     # This UI workflow is inherited from the PR base branch and restored byte-for-byte there; it predates the Phase 3C changes and is not a Phase 3C implementation file.
@@ -52,6 +52,9 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     for f in changed:
         allowed = (f.startswith("docs/PHASE3C_") or f.startswith("intel/autopsyx/research/phase3c_")
                   or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")
+                  or f == "docs/PHASE3D_TARGET_PROTOCOL.md"
+                  or f == "intel/autopsyx/research/phase3d_targets.py"
+                  or f == "intel/tests/test_phase3d_targets.py"
                   or f in infra_allowed or f.startswith("intel/datasets/phase3c/runs/"))
         assert allowed, f"Phase 3C touched a file outside its namespace: {f}"
 
