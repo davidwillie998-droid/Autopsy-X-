@@ -111,12 +111,10 @@ def test_missing_or_insufficient_entry_liquidity_is_not_treated_as_zero_return()
 def test_missing_exit_liquidity_does_not_count_as_a_winning_opportunity():
     data = bars([
         (100, 101, 99, 100),
+        (100, 101, 99, 100),
         (100, 108, 99, 106),
         (106, 108, 104, 107),
-        (107, 109, 105, 108),
     ])
-    data[1] = PriceBar(data[1].ts_ms, data[1].open, data[1].high, data[1].low,
-                       data[1].close, 100_000)
     data[2] = PriceBar(data[2].ts_ms, data[2].open, data[2].high, data[2].low,
                        data[2].close, None)
     label = build_target_labels(data, token_key="solana:mint", pool_key="pool-a",
