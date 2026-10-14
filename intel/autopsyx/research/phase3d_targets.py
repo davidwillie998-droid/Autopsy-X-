@@ -1,0 +1,373 @@
+"""Versioned, path-dependent labels for memecoin momentum research.
+
+This module is deliberately separate from the frozen Phase 3B contract.
+It labels historical price paths; it does not alter production signals or
+claim that a label is predictive or profitable.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from math import isfinite
+from typing import Iterable
+
+
+TARGET_CONTRACT_VERSION = "1.0.0"
+CANDIDATE_HORIZONS_MS = (5 * 60_000, 15 * 60_000, 60 * 60_000)
+CANDIDATE_UPSIDE_THRESHOLDS = (0.05, 0.10, 0.20)
+
+
+@dataclass(frozen=True)
+class PriceBar:
+    """One pool-specific OHLC bar, with point-in-time liquidity in USD.
+
+    ts_ms is the bar's open timestamp. Inputs must belong to one token/pool
+    episode and be ordered strictly by timestamp. Missing liquidity is None,
+    never silently replaced with zero or carried forward.
+    """
+
+    ts_ms: int
+    open: float
+    high: float
+    low: float
+    close: float
+    liquidity_usd: float | None
+
+
+def price_bars_from_point_in_time_records(
+    provider_bars: Iterable[object],
+    liquidity_snapshots: Iterable[object],
+    *,
+    token_key: str,
+    pool_key: str,
+    max_liquidity_age_ms: int,
+) -> list[PriceBar]:
+    """Join provider OHLC bars to only liquidity known by each bar's open.
+
+    Records use the repository's ProviderBar/PoolSnapshot field vocabulary:
+    ts, seen_ts, token, pool, and liquidity_usd. A snapshot is eligible only
+    when both its event timestamp and ingestion/seen timestamp are <= bar.ts.
+    The latest eligible snapshot may be used only within max_liquidity_age_ms.
+    No future snapshot is backfilled into the past, and stale/missing liquidity
+    remains None. If a bar has multiple provider revisions, the latest-seen
+    version is retained for outcome construction.
+    """
+    if max_liquidity_age_ms < 0:
+        raise ValueError("max_liquidity_age_ms cannot be negative")
+    if ":" in token_key:
+        chain_key, token_address = token_key.split(":", 1)
+    else:
+        chain_key, token_address = None, token_key
+
+    def matches(record) -> bool:
+        return (
+            getattr(record, "token", None) == token_address
+            and getattr(record, "pool", None) == pool_key
+            and (chain_key is None or getattr(record, "chain", None) == chain_key)
+        )
+
+    bars = [b for b in provider_bars if matches(b)]
+    snapshots = [s for s in liquidity_snapshots if matches(s)]
+    latest_by_ts: dict[int, object] = {}
+    for bar in bars:
+        ts = int(getattr(bar, "ts"))
+        seen = int(getattr(bar, "seen_ts"))
+        if ts not in latest_by_ts or seen > int(getattr(latest_by_ts[ts], "seen_ts")):
+            latest_by_ts[ts] = bar
+
+    joined: list[PriceBar] = []
+    for ts, bar in sorted(latest_by_ts.items()):
+        candidates = [
+            s for s in snapshots
+            if int(getattr(s, "ts")) <= ts
+            and int(getattr(s, "seen_ts")) <= ts
+            and ts - int(getattr(s, "ts")) <= max_liquidity_age_ms
+            and getattr(s, "liquidity_usd", None) is not None
+        ]
+        snapshot = max(candidates, key=lambda s: (int(getattr(s, "ts")), int(getattr(s, "seen_ts")))) if candidates else None
+        joined.append(PriceBar(
+            ts_ms=ts,
+            open=float(getattr(bar, "open")),
+            high=float(getattr(bar, "high")),
+            low=float(getattr(bar, "low")),
+            close=float(getattr(bar, "close")),
+            liquidity_usd=float(getattr(snapshot, "liquidity_usd")) if snapshot is not None else None,
+        ))
+    _validate_bars(joined)
+    return joined
+
+
+@dataclass(frozen=True)
+class TargetSpec:
+    """A preregistered label configuration; costs must be supplied by caller."""
+
+    horizon_ms: int
+    upside_threshold_pct: float
+    downside_threshold_pct: float
+    latency_ms: int
+    fee_bps: float
+    slippage_bps: float
+    max_participation_pct: float
+    bar_interval_ms: int = 60_000
+    min_liquidity_usd: float = 0.0
+
+    def __post_init__(self) -> None:
+        numeric_values = (
+            self.upside_threshold_pct, self.downside_threshold_pct, self.fee_bps,
+            self.slippage_bps, self.max_participation_pct, self.min_liquidity_usd,
+        )
+        if not all(isfinite(value) for value in numeric_values):
+            raise ValueError("target spec numeric values must be finite")
+        if self.horizon_ms <= 0:
+            raise ValueError("horizon_ms must be positive")
+        if self.bar_interval_ms <= 0:
+            raise ValueError("bar_interval_ms must be positive")
+        if self.latency_ms < 0:
+            raise ValueError("latency_ms cannot be negative")
+        if not 0 < self.upside_threshold_pct < 1:
+            raise ValueError("upside_threshold_pct must be between 0 and 1")
+        if not 0 < self.downside_threshold_pct < 1:
+            raise ValueError("downside_threshold_pct must be between 0 and 1")
+        if self.fee_bps < 0 or self.slippage_bps < 0:
+            raise ValueError("fee_bps and slippage_bps cannot be negative")
+        if not 0 < self.max_participation_pct <= 1:
+            raise ValueError("max_participation_pct must be in (0, 1]")
+        if self.min_liquidity_usd < 0:
+            raise ValueError("min_liquidity_usd cannot be negative")
+
+
+@dataclass(frozen=True)
+class TargetLabel:
+    contract_version: str
+    token_key: str
+    pool_key: str
+    decision_ts_ms: int
+    entry_ts_ms: int | None
+    label_end_ts_ms: int | None
+    outcome: str
+    horizon_ms: int
+    upside_threshold_pct: float
+    downside_threshold_pct: float
+    entry_notional_usd: float
+    observed_mfe_net_pct: float | None
+    observed_mae_net_pct: float | None
+    net_outcome_return_pct: float | None
+    bars_held: int
+    reason: str
+
+
+OUTCOMES = frozenset({
+    "UPSIDE_FIRST",
+    "DOWNSIDE_FIRST",
+    "TIMEOUT",
+    "AMBIGUOUS_SAME_BAR",
+    "ENTRY_UNAVAILABLE",
+    "EXIT_UNAVAILABLE",
+    "HORIZON_CENSORED",
+})
+
+
+def _validate_bars(bars: list[PriceBar]) -> None:
+    previous = None
+    for bar in bars:
+        values = (bar.open, bar.high, bar.low, bar.close)
+        if not all(isfinite(v) and v > 0 for v in values):
+            raise ValueError("OHLC prices must be finite and positive")
+        if bar.high < max(bar.open, bar.close, bar.low):
+            raise ValueError("bar high is inconsistent with OHLC")
+        if bar.low > min(bar.open, bar.close, bar.high):
+            raise ValueError("bar low is inconsistent with OHLC")
+        if bar.liquidity_usd is not None and (
+            not isfinite(bar.liquidity_usd) or bar.liquidity_usd < 0
+        ):
+            raise ValueError("liquidity_usd must be non-negative or None")
+        if previous is not None and bar.ts_ms <= previous:
+            raise ValueError("bars must have strictly increasing timestamps")
+        previous = bar.ts_ms
+
+
+def _net_return_pct(entry_price: float, exit_price: float, cost_rate: float) -> float:
+    """Long return after symmetric proportional fee + slippage assumptions."""
+    return ((exit_price * (1.0 - cost_rate)) /
+            (entry_price * (1.0 + cost_rate)) - 1.0) * 100.0
+
+
+def _liquid_enough(bar: PriceBar, notional: float, spec: TargetSpec) -> bool:
+    if bar.liquidity_usd is None or bar.liquidity_usd < spec.min_liquidity_usd:
+        return False
+    return notional <= bar.liquidity_usd * spec.max_participation_pct
+
+
+def build_target_labels(
+    bars: Iterable[PriceBar],
+    *,
+    token_key: str,
+    pool_key: str,
+    entry_notional_usd: float,
+    spec: TargetSpec,
+) -> list[TargetLabel]:
+    """Build one label per decision bar using only the future path for its outcome.
+
+    Entry is delayed until the first bar whose open timestamp is at or after
+    decision_ts + latency_ms. The profit/loss barrier uses net returns after
+    caller-supplied fee and slippage assumptions. Barrier labels report the
+    threshold return, not the candle's high/low, which is not an executable fill. If both barriers are crossed
+    within one OHLC bar, the outcome is ambiguous and is never counted as a win.
+    An incomplete horizon is censored rather than mislabeled as a timeout.
+
+    Call separately for each token/pool episode. Never combine pools just by
+    ticker/symbol. Fraud is not inferred by this labeler.
+    """
+    rows = list(bars)
+    _validate_bars(rows)
+    if not token_key.strip() or not pool_key.strip():
+        raise ValueError("token_key and pool_key are required")
+    if not isfinite(entry_notional_usd) or entry_notional_usd <= 0:
+        raise ValueError("entry_notional_usd must be finite and positive")
+
+    cost_rate = (spec.fee_bps + spec.slippage_bps) / 10_000.0
+    if cost_rate >= 1:
+        raise ValueError("combined fee and slippage must be below 100%")
+    labels: list[TargetLabel] = []
+
+    for decision_idx, decision in enumerate(rows):
+        target_entry_ts = decision.ts_ms + spec.latency_ms
+        entry_idx = next(
+            (j for j in range(decision_idx + 1, len(rows))
+             if rows[j].ts_ms >= target_entry_ts),
+            None,
+        )
+        if entry_idx is None:
+            labels.append(TargetLabel(
+                TARGET_CONTRACT_VERSION, token_key, pool_key, decision.ts_ms,
+                None, None, "ENTRY_UNAVAILABLE", spec.horizon_ms,
+                spec.upside_threshold_pct, spec.downside_threshold_pct,
+                entry_notional_usd, None, None, None, 0,
+                "no bar became available at or after the configured execution latency",
+            ))
+            continue
+
+        entry = rows[entry_idx]
+        if not _liquid_enough(entry, entry_notional_usd, spec):
+            labels.append(TargetLabel(
+                TARGET_CONTRACT_VERSION, token_key, pool_key, decision.ts_ms,
+                entry.ts_ms, entry.ts_ms, "ENTRY_UNAVAILABLE", spec.horizon_ms,
+                spec.upside_threshold_pct, spec.downside_threshold_pct,
+                entry_notional_usd, None, None, None, 0,
+                "entry liquidity is missing or exceeds the configured participation limit",
+            ))
+            continue
+
+        horizon_end = entry.ts_ms + spec.horizon_ms
+        path = [b for b in rows[entry_idx:] if b.ts_ms <= horizon_end]
+        complete = bool(path) and path[-1].ts_ms >= horizon_end
+        outcome = "HORIZON_CENSORED"
+        reason = "observed bars do not cover the full label horizon"
+        end_ts: int | None = path[-1].ts_ms if path else None
+        barrier_return: float | None = None
+        held = 0
+        observed_path: list[PriceBar] = []
+
+        previous_ts: int | None = None
+        for held, bar in enumerate(path, start=1):
+            if previous_ts is not None and bar.ts_ms - previous_ts > spec.bar_interval_ms:
+                outcome = "HORIZON_CENSORED"
+                reason = "gap between observed bars prevents reliable barrier ordering"
+                end_ts = previous_ts
+                break
+            observed_path.append(bar)
+            previous_ts = bar.ts_ms
+            up_hit = _net_return_pct(entry.open, bar.high, cost_rate) >= (
+                spec.upside_threshold_pct * 100.0
+            )
+            down_hit = _net_return_pct(entry.open, bar.low, cost_rate) <= (
+                -spec.downside_threshold_pct * 100.0
+            )
+            if not up_hit and not down_hit:
+                continue
+            end_ts = bar.ts_ms
+            if up_hit and down_hit:
+                outcome = "AMBIGUOUS_SAME_BAR"
+                reason = "both barriers were touched in one OHLC bar; conservative ambiguous label"
+            elif not _liquid_enough(bar, entry_notional_usd, spec):
+                outcome = "EXIT_UNAVAILABLE"
+                reason = "barrier touched but exit liquidity is missing or insufficient"
+            elif up_hit:
+                outcome = "UPSIDE_FIRST"
+                barrier_return = spec.upside_threshold_pct * 100.0
+                reason = "net upside barrier touched before downside barrier"
+            else:
+                outcome = "DOWNSIDE_FIRST"
+                barrier_return = -spec.downside_threshold_pct * 100.0
+                reason = "net downside barrier touched before upside barrier"
+            break
+        else:
+            if complete:
+                last = path[-1]
+                if not _liquid_enough(last, entry_notional_usd, spec):
+                    outcome = "EXIT_UNAVAILABLE"
+                    reason = "horizon expiry reached without sufficient exit liquidity"
+                else:
+                    outcome = "TIMEOUT"
+                    barrier_return = _net_return_pct(entry.open, last.close, cost_rate)
+                    reason = "neither barrier touched before horizon expiry"
+
+        # Path statistics stop at the first barrier touch; later bars must not
+        # inflate MFE/MAE for an event that would already have exited.
+        mfe = max(_net_return_pct(entry.open, b.high, cost_rate) for b in observed_path)
+        mae = min(_net_return_pct(entry.open, b.low, cost_rate) for b in observed_path)
+
+        labels.append(TargetLabel(
+            TARGET_CONTRACT_VERSION, token_key, pool_key, decision.ts_ms,
+            entry.ts_ms, end_ts, outcome, spec.horizon_ms,
+            spec.upside_threshold_pct, spec.downside_threshold_pct,
+            entry_notional_usd, mfe, mae, barrier_return, held, reason,
+        ))
+    return labels
+
+
+
+def summarize_target_labels(labels: Iterable[TargetLabel]) -> dict:
+    """Return transparent row-level prevalence and exclusion counts.
+
+    These are row counts, not independent-token sample sizes. A research
+    report must separately enforce token/pool grouping and minimum unique-token
+    thresholds before interpreting any prevalence or model score.
+    """
+    rows = list(labels)
+    counts = {outcome: 0 for outcome in sorted(OUTCOMES)}
+    for label in rows:
+        if label.outcome not in OUTCOMES:
+            raise ValueError(f"unknown target outcome: {label.outcome}")
+        counts[label.outcome] += 1
+    resolved = counts["UPSIDE_FIRST"] + counts["DOWNSIDE_FIRST"] + counts["TIMEOUT"]
+    total = len(rows)
+    return {
+        "contract_version": TARGET_CONTRACT_VERSION,
+        "row_count": total,
+        "unique_token_count": len({label.token_key for label in rows}),
+        "unique_token_pool_count": len({(label.token_key, label.pool_key) for label in rows}),
+        "outcome_counts": counts,
+        "upside_prevalence_all_rows": counts["UPSIDE_FIRST"] / total if total else None,
+        "upside_prevalence_resolved_rows": counts["UPSIDE_FIRST"] / resolved if resolved else None,
+        "resolved_rows": resolved,
+        "excluded_or_unresolved_rows": total - resolved,
+        "warning": "row counts are not independent-token sample sizes; no predictive performance is implied",
+    }
+
+def intervals_overlap(start_a: int, end_a: int, start_b: int, end_b: int) -> bool:
+    """Inclusive interval overlap test for label-window purging."""
+    if end_a < start_a or end_b < start_b:
+        raise ValueError("interval end must not precede its start")
+    return start_a <= end_b and start_b <= end_a
+
+
+def purge_overlapping_training_indices(
+    train_intervals: Iterable[tuple[int, int]],
+    test_intervals: Iterable[tuple[int, int]],
+) -> list[int]:
+    """Return train indices whose label intervals do not overlap any test interval."""
+    tests = list(test_intervals)
+    return [
+        i for i, (start, end) in enumerate(train_intervals)
+        if not any(intervals_overlap(start, end, ts, te) for ts, te in tests)
+    ]

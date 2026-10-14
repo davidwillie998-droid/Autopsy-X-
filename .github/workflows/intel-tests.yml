@@ -42,4 +42,14 @@ jobs:
           python-version: "3.11"
       - run: pip install pytest
       - run: python -m pytest -q -rs
+      - name: Audit Phase 3D point-in-time target data readiness
+        run: |
+          mkdir -p artifacts/phase3d
+          python -m autopsyx.research.phase3d_data_audit > artifacts/phase3d/target_readiness.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase3d-target-readiness
+          path: intel/artifacts/phase3d/target_readiness.json
+          if-no-files-found: ignore
       - run: python -m autopsyx demo
