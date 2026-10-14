@@ -319,7 +319,7 @@ def test_configured_duration_is_reserved_for_live_polling(tmp_path):
     # A one-second live window must still execute one poll cycle after backfill.
     plan = acquire.Plan(
         strata={"young": 1, "quiet_young": 0, "trending": 0, "established": 0},
-        new_pool_pages=1, backfill_pages=1, cycle_s=0, duration_s=1,
+        new_pool_pages=1, backfill_pages=1, cycle_s=0, duration_s=0.5,
     )
     meta, _ = run_fake(tmp_path, cycles=None, plan=plan)
     assert meta["cycles"] == 1
