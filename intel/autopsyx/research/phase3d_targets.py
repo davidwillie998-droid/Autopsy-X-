@@ -78,7 +78,7 @@ class TargetLabel:
     entry_notional_usd: float
     observed_mfe_net_pct: float | None
     observed_mae_net_pct: float | None
-    barrier_net_return_pct: float | None
+    net_outcome_return_pct: float | None
     bars_held: int
     reason: str
 
