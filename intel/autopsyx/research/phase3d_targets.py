@@ -306,7 +306,7 @@ def build_target_labels(
             TARGET_CONTRACT_VERSION, token_key, pool_key, decision.ts_ms,
             entry.ts_ms, end_ts, outcome, spec.horizon_ms,
             spec.upside_threshold_pct, spec.downside_threshold_pct,
-            entry_notional_usd, mfe, mae, realized, held, reason,
+            entry_notional_usd, mfe, mae, barrier_return, held, reason,
         ))
     return labels
 
