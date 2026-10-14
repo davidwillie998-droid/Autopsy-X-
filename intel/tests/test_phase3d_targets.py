@@ -115,6 +115,34 @@ def test_incomplete_forward_path_is_censored_not_negative():
     assert label.realized_net_return_pct is None
 
 
+def test_bar_opening_at_horizon_boundary_cannot_create_a_barrier_hit():
+    data = bars([
+        (100, 101, 99, 100),
+        (100, 101, 99, 100),
+        (100, 101, 99, 100),
+        (100, 101, 99, 100),
+        (100, 130, 70, 100),
+    ])
+    label = build_target_labels(
+        data, token_key="solana:mint", pool_key="pool-a",
+        entry_notional_usd=100, spec=spec(),
+    )[0]
+    assert label.outcome == "TIMEOUT"
+    assert label.label_end_ts_ms == 240_000
+    assert label.realized_net_return_pct is not None
+    assert label.realized_net_return_pct < 0
+
+
+def test_horizon_without_an_exact_boundary_bar_is_censored_not_extended():
+    data = bars([(100, 101, 99, 100)] * 7)
+    label = build_target_labels(
+        data, token_key="solana:mint", pool_key="pool-a",
+        entry_notional_usd=100, spec=spec(horizon_ms=150_000),
+    )[0]
+    assert label.outcome == "HORIZON_CENSORED"
+    assert label.realized_net_return_pct is None
+
+
 def test_missing_or_insufficient_entry_liquidity_is_not_treated_as_zero_return():
     data = bars([(100, 101, 99, 100)] * 5, liquidity=None)
     label = build_target_labels(data, token_key="solana:mint", pool_key="pool-a",

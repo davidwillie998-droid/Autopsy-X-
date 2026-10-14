@@ -185,10 +185,15 @@ def build_target_labels(
             continue
 
         horizon_end = entry.ts_ms + spec.horizon_ms
-        path = [b for b in rows[entry_idx:] if b.ts_ms <= horizon_end]
-        complete = bool(path) and path[-1].ts_ms >= horizon_end
+        # Bar timestamps denote opens. A bar opening exactly at horizon_end
+        # is the expiry price point, not part of the forward barrier path:
+        # its high/low/close occur after the label horizon.
+        future_rows = rows[entry_idx:]
+        path = [b for b in future_rows if b.ts_ms < horizon_end]
+        expiry_bar = next((b for b in future_rows if b.ts_ms >= horizon_end), None)
+        complete = expiry_bar is not None and expiry_bar.ts_ms == horizon_end
         outcome = "HORIZON_CENSORED"
-        reason = "observed bars do not cover the full label horizon"
+        reason = "no bar opens exactly at the horizon boundary; expiry price is not observable without interpolation"
         end_ts: int | None = path[-1].ts_ms if path else None
         realized: float | None = None
         held = 0
@@ -221,15 +226,17 @@ def build_target_labels(
                 reason = "net downside barrier touched before upside barrier"
             break
         else:
-            if complete:
-                last = path[-1]
-                if not _liquid_enough(last, entry_notional_usd, spec):
+            if complete and expiry_bar is not None:
+                end_ts = horizon_end
+                if not _liquid_enough(expiry_bar, entry_notional_usd, spec):
                     outcome = "EXIT_UNAVAILABLE"
                     reason = "horizon expiry reached without sufficient exit liquidity"
                 else:
                     outcome = "TIMEOUT"
-                    realized = _net_return_pct(entry.open, last.close, cost_rate)
-                    reason = "neither barrier touched before horizon expiry"
+                    # The open price at the exact boundary is observable at
+                    # expiry; do not use the bar's later close or high/low.
+                    realized = _net_return_pct(entry.open, expiry_bar.open, cost_rate)
+                    reason = "neither barrier touched before the exact horizon boundary"
 
         # Path statistics stop at the first barrier touch; later bars must not
         # inflate MFE/MAE for an event that would already have exited.
