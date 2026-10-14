@@ -50,3 +50,19 @@ def test_join_diagnostics_identify_missing_identity_match():
 
     assert report["matching_snapshot_count"] == 0
     assert report["unmatched_bar_reasons"]["no_matching_snapshot"] == 1
+
+
+def test_audit_exposes_aggregate_rejection_reasons():
+    from autopsyx.research.phase3d_data_audit import audit_record_coverage
+
+    report = audit_record_coverage(
+        [bar(0), bar(60_000)],
+        [snapshot(0, 1)],
+        max_liquidity_age_ms=30_000,
+    )
+
+    diag = report["liquidity_join_diagnostics"]
+    assert diag["bars_with_eligible_snapshot"] == 0
+    assert diag["bars_without_eligible_snapshot"] == 2
+    assert diag["unmatched_bar_reasons"]["not_ingested_by_bar_open"] == 1
+    assert diag["unmatched_bar_reasons"]["stale_snapshot"] == 1
