@@ -38,8 +38,11 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     Frozen Phase 2/3A/3B implementation files are checked separately below, so
     unrelated changes already present on the PR base are not misattributed to this branch.
     """
-    # Compare the PR branch against its reviewed base, not Phase 3B: the base contains later unrelated changes.
-    changed = git("diff", "--name-only", UI_BASELINE_COMMIT, "HEAD").splitlines()
+    # Compare only this branch's commits with the PR target branch. The pinned
+    # UI baseline below remains a separate byte-for-byte guard; using that old
+    # UI commit here misclassifies unrelated Phase 2 files already present on
+    # the target branch as changes made by this PR.
+    changed = git("diff", "--name-only", "research/memecoin-target-contract-v1-clean...HEAD").splitlines()
     # Phase 3C scope remains frozen; separately versioned Phase 3D target research is explicitly allowlisted below.
     # a request file and a workflow mirroring phase3a-acquire.yml's own procedure exactly
     # (checked bit-for-bit against it below), so new archives can be independently acquired.
