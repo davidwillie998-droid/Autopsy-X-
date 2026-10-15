@@ -11,7 +11,7 @@ name: Phase 3C data acquisition
 
 on:
   push:
-    branches: [ccr-dea9382c-vwhvi6]
+    branches: [fix/phase3d-acquisition-coverage]
     paths: ["intel/datasets/phase3c/REQUEST.json"]
 
 permissions:
