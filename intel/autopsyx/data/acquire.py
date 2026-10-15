@@ -294,7 +294,7 @@ def _pools_from(e: ManifestEntry, body: bytes | None) -> list[dict]:
     return out
 
 
-def select_universe(f: Fetcher, plan: Plan) -> dict:
+def select_universe(f: Fetcher, plan: Plan, forbidden_tokens: set[str] | None = None) -> dict:
     """Stratified random selection, recorded in full so it can be audited.
 
     Strata (evaluated on data available at selection time only):
@@ -305,6 +305,7 @@ def select_universe(f: Fetcher, plan: Plan) -> dict:
     Tokens already picked in an earlier stratum are skipped, and non-meme
     base assets (SOL, USDC, USDT) are excluded.
     """
+    forbidden_tokens = forbidden_tokens or set()
     n = plan.network
     cands: dict[str, list[dict]] = {"young": [], "trending": [], "established": []}
     for page in range(1, plan.new_pool_pages + 1):
@@ -332,6 +333,9 @@ def select_universe(f: Fetcher, plan: Plan) -> dict:
                 return
             if p["token"] in EXCLUDED_BASES:
                 excluded.append({**p, "reason": "non-meme base asset"})
+                continue
+            if p["token"] in forbidden_tokens:
+                excluded.append({**p, "reason": "Phase 3D forbidden token"})
                 continue
             if p["token"] in tokens:
                 continue
