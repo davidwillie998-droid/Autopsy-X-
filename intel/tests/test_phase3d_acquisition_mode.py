@@ -49,7 +49,10 @@ def test_configured_duration_is_reserved_for_live_polling(tmp_path):
         duration_s=0.5,
     )
     meta, _ = run_fake(tmp_path, cycles=None, plan=plan)
-    assert meta["cycles"] == 1
+    # The fake transport advances 150 ms per request, so a 500 ms live window
+    # may legitimately fit more than one cycle. The invariant is that polling
+    # starts after discovery/backfill and does not end with zero cycles.
+    assert meta["cycles"] >= 1
     assert meta["poll_started_ms"] > meta["started_ms"]
     assert meta["poll_ended_ms"] >= meta["poll_started_ms"]
     assert meta["poll_duration_s"] >= 0
