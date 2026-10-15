@@ -34,3 +34,22 @@ def test_phase3d_coverage_mode_prioritizes_synchronized_snapshot_and_ohlcv():
     assert "ds.pairs" not in endpoints
     assert "gt.token_info" not in endpoints
     assert len(fetcher.calls) == len(picked) + 1
+
+def test_configured_duration_is_reserved_for_live_polling(tmp_path):
+    # Backfill/discovery advance the fake clock, but cannot consume the live window.
+    from autopsyx.data import acquire
+    from phase2_fakes import run_fake
+
+    plan = Plan(
+        phase3d_coverage_mode=True,
+        strata={"young": 1, "quiet_young": 0, "trending": 0, "established": 0},
+        new_pool_pages=1,
+        backfill_pages=1,
+        cycle_s=0,
+        duration_s=0.5,
+    )
+    meta, _ = run_fake(tmp_path, cycles=None, plan=plan)
+    assert meta["cycles"] == 1
+    assert meta["poll_started_ms"] > meta["started_ms"]
+    assert meta["poll_ended_ms"] >= meta["poll_started_ms"]
+    assert meta["poll_duration_s"] >= 0
