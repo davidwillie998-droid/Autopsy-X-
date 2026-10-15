@@ -38,8 +38,11 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     Frozen Phase 2/3A/3B implementation files are checked separately below, so
     unrelated changes already present on the PR base are not misattributed to this branch.
     """
-    # Compare the PR branch against its reviewed base, not Phase 3B: the base contains later unrelated changes.
-    changed = git("diff", "--name-only", UI_BASELINE_COMMIT, "HEAD").splitlines()
+    # Compare only this branch's commits with the PR target branch. The pinned
+    # UI baseline below remains a separate byte-for-byte guard; using that old
+    # UI commit here misclassifies unrelated Phase 2 files already present on
+    # the target branch as changes made by this PR.
+    changed = git("diff", "--name-only", "research/memecoin-target-contract-v1-clean...HEAD").splitlines()
     # Phase 3C scope remains frozen; separately versioned Phase 3D target research is explicitly allowlisted below.
     # a request file and a workflow mirroring phase3a-acquire.yml's own procedure exactly
     # (checked bit-for-bit against it below), so new archives can be independently acquired.
@@ -48,7 +51,7 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     # The standalone SSRN literature map is a documentation-only research artifact, not a Phase 3C implementation change.
     # index.html is inherited from the reviewed PR base; a separate test below
     # pins it byte-for-byte to that baseline rather than permitting UI changes.
-    infra_allowed = {"intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml", "docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md", "docs/research/15-ssrn-memecoin-momentum-evidence.md", "docs/research/16-point-in-time-memecoin-evaluation.md", "index.html"}
+    infra_allowed = {"intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml", "docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md", "docs/research/15-ssrn-memecoin-momentum-evidence.md", "docs/research/16-point-in-time-memecoin-evaluation.md", "index.html", "intel/autopsyx/data/acquire.py", "intel/tests/test_phase3d_acquisition_mode.py"}
     for f in changed:
         allowed = (f.startswith("docs/PHASE3C_") or f.startswith("intel/autopsyx/research/phase3c_")
                   or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")

@@ -420,20 +420,29 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
     if plan.phase3a:
         meta["enrichment"] = enrich(f, plan, picked, 0)
         raw.write_json("run.json", meta)
+    # Discovery, historical backfill, and optional enrichment happen before
+    # live polling. They must not consume the configured observation window:
+    # otherwise a slow backfill can leave only one or two live poll cycles.
+    poll_started = now_ms()
+    meta["poll_started_ms"] = poll_started
+    raw.write_json("run.json", meta)
     cycle = 0
     while True:
         t0 = now_ms()
-        if (t0 - started) / 1000 >= plan.duration_s or (max_cycles is not None and cycle >= max_cycles):
+        if (t0 - poll_started) / 1000 >= plan.duration_s or (max_cycles is not None and cycle >= max_cycles):
             break
         poll_cycle(f, plan, picked, cycle)
         cycle += 1
         spent = (now_ms() - t0) / 1000
         if spent < plan.cycle_s:
             sleep(plan.cycle_s - spent)
+    poll_ended = now_ms()
     if plan.phase3a:
         meta["enrichment"] += enrich(f, plan, picked, 1)
     entries = raw.entries()
-    meta.update({"ended_ms": now_ms(), "cycles": cycle, "exchanges": len(entries), "circuit_waits": f.waited,
+    meta.update({"poll_ended_ms": poll_ended,
+                 "poll_duration_s": max(0.0, (poll_ended - poll_started) / 1000),
+                 "ended_ms": now_ms(), "cycles": cycle, "exchanges": len(entries), "circuit_waits": f.waited,
                  "final_gt_rate_per_s": f.clients[gt.NAME].limiter.rate,
                  "errors": sum(1 for e in entries if e.error), "status": "COMPLETE"})
     raw.write_json("run.json", meta)
