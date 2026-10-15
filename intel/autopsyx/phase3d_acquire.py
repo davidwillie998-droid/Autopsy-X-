@@ -27,8 +27,8 @@ def _select(plan, forbidden, max_attempts=50):
         raw=acquire.RawStore(Path("/tmp")/"phase3d-universe")
         f=acquire.Fetcher(raw, acquire.default_clients(trial, now), now, time.sleep, trial.circuit_waits,
                           display={"solana_rpc":"https://api.mainnet-beta.solana.com"})
-        sel=acquire.select_universe(f, trial)
-        picked=[p for p in sel["picked"] if p["token"] not in forbidden]
+        sel=acquire.select_universe(f, trial, forbidden_tokens=forbidden)
+        picked=sel["picked"]
         tokens={p["token"] for p in picked}
         if len(tokens) >= 85:
             picked=sorted(picked,key=lambda p:(p["stratum"],p["pool"]))
@@ -42,7 +42,7 @@ def _select(plan, forbidden, max_attempts=50):
                                       "liquidity_usd_at_selection":p["liquidity_usd"],
                                       "h1_txns_at_selection":p["h1_txns"]} for p in picked},
                "exclusions":[{"pool":p["pool"],"token":p["token"],"reason":"Phase 3D forbidden token"}
-                             for p in sel["picked"] if p["token"] in forbidden]}
+                             for p in sel["excluded"] if p.get("reason") == "Phase 3D forbidden token"]}
             u["fingerprint"]=acquire._universe_fingerprint(u)
             return u
     raise RuntimeError("unable to obtain >=85 fresh distinct tokens after 50 seed attempts")
