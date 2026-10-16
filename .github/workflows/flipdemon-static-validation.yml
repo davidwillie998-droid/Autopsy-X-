@@ -14,7 +14,9 @@ on:
       - "fix/flipdemon-extreme-safety-rebased-20261016"
     paths:
       - "MQL5/**"
-      - "python/tests/test_architecture_invariants.py"
+      - "python/tests/**"
+      - "scripts/verify_flipdemon_safety.py"
+      - "docs/FLIPDEMON_SSRN_EXECUTION_EVIDENCE.md"
       - ".github/workflows/flipdemon-static-validation.yml"
 
 permissions:
