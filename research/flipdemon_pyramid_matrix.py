@@ -67,10 +67,16 @@ def schedule_target_lots(
     The multiplier is deliberately bounded to prevent exponential runaway.
     """
     values = (base_lots, max_target_lots, increasing_multiplier, quality_multiplier)
-    if not isinstance(stage_index, int) or stage_index < 1:
+    if isinstance(stage_index, bool) or not isinstance(stage_index, int) or stage_index < 1:
         raise ValueError("stage_index must be a positive integer")
-    if any(not math.isfinite(float(v)) or float(v) <= 0 for v in values):
-        raise ValueError("schedule inputs must be finite and positive")
+    if any(
+        isinstance(v, bool)
+        or not isinstance(v, (int, float))
+        or not math.isfinite(float(v))
+        or float(v) <= 0
+        for v in values
+    ):
+        raise ValueError("schedule inputs must be finite positive numbers (booleans are invalid)")
     if increasing_multiplier < 1.0 or increasing_multiplier > 2.0:
         raise ValueError("increasing_multiplier must be between 1.0 and 2.0")
     if quality_multiplier > 1.0:
@@ -136,7 +142,9 @@ def evaluate_add_on(inputs: PyramidInputs) -> PyramidDecision:
         if getattr(inputs, field) is not True
     ]
 
-    if (not isinstance(inputs.current_positions, int)
+    if (isinstance(inputs.current_positions, bool)
+            or isinstance(inputs.position_cap, bool)
+            or not isinstance(inputs.current_positions, int)
             or not isinstance(inputs.position_cap, int)
             or inputs.current_positions < 0 or inputs.position_cap < 1):
         reasons.append("INVALID_POSITION_CAP")
@@ -145,7 +153,9 @@ def evaluate_add_on(inputs: PyramidInputs) -> PyramidDecision:
 
     for field in _NUMERIC_FIELDS:
         value = getattr(inputs, field)
-        if not isinstance(value, (int, float)) or not _finite_nonnegative(float(value)):
+        if (isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not _finite_nonnegative(float(value))):
             reasons.append("INVALID_NUMERIC_INPUT:" + field)
 
     for field in (
@@ -155,7 +165,10 @@ def evaluate_add_on(inputs: PyramidInputs) -> PyramidDecision:
         "volume_min", "volume_max", "volume_step", "max_margin_usage_pct",
     ):
         value = getattr(inputs, field)
-        if isinstance(value, (int, float)) and math.isfinite(float(value)) and value <= 0:
+        if (not isinstance(value, bool)
+                and isinstance(value, (int, float))
+                and math.isfinite(float(value))
+                and value <= 0):
             reasons.append("NONPOSITIVE_REQUIRED_INPUT:" + field)
 
     if inputs.volume_max < inputs.volume_min:
