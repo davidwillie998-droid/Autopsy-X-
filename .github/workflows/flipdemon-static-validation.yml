@@ -9,6 +9,7 @@ on:
       - "scripts/verify_flipdemon_safety.py"
       - "docs/FLIPDEMON_SSRN_EXECUTION_EVIDENCE.md"
       - "docs/FLIPDEMON_PYRAMID_MATRIX_SOURCE_AUDIT.md"
+      - "docs/FLIPDEMON_PYRAMID_MATRIX_VALIDATION_PROTOCOL.md"
       - ".github/workflows/flipdemon-static-validation.yml"
   push:
     branches:
