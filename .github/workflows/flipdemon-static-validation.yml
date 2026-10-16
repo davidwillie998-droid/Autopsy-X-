@@ -4,11 +4,14 @@ on:
   pull_request:
     paths:
       - "MQL5/**"
-      - "python/tests/test_architecture_invariants.py"
+      - "python/tests/**"
+      - "scripts/verify_flipdemon_safety.py"
+      - "docs/FLIPDEMON_SSRN_EXECUTION_EVIDENCE.md"
       - ".github/workflows/flipdemon-static-validation.yml"
   push:
     branches:
       - "fix/flipdemon-extreme-safety-audit"
+      - "fix/flipdemon-extreme-safety-rebased-20261016"
     paths:
       - "MQL5/**"
       - "python/tests/test_architecture_invariants.py"
@@ -32,3 +35,5 @@ jobs:
         run: python -m pip install --upgrade pytest
       - name: Run MQL5 source architecture and safety invariants
         run: python -m pytest -q python/tests/test_architecture_invariants.py
+      - name: Run execution-safety and final-sizing invariants
+        run: python scripts/verify_flipdemon_safety.py
