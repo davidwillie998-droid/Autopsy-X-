@@ -186,6 +186,37 @@ class PyramidMatrixTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             schedule_target_lots(2, 0.1, "unknown", 2.0)
 
+    def test_boolean_values_are_rejected_as_numeric_inputs(self):
+        for field in (
+            "current_campaign_stop_risk", "campaign_risk_budget",
+            "stop_and_cost_risk_per_lot", "target_add_lots",
+            "current_account_gross_lots", "account_gross_lot_cap",
+            "current_symbol_lots", "symbol_lot_cap",
+            "current_directional_lots", "directional_lot_cap",
+            "equity", "current_margin", "free_margin", "margin_per_lot",
+            "max_margin_usage_pct", "volume_min", "volume_max", "volume_step",
+        ):
+            with self.subTest(field=field):
+                decision = evaluate_add_on(baseline(**{field: True}))
+                self.assertFalse(decision.allowed)
+                self.assertEqual(decision.allowed_lots, 0.0)
+                self.assertIn("INVALID_NUMERIC_INPUT:" + field, decision.reasons)
+
+    def test_boolean_position_counts_are_rejected(self):
+        for field in ("current_positions", "position_cap"):
+            with self.subTest(field=field):
+                decision = evaluate_add_on(baseline(**{field: True}))
+                self.assertFalse(decision.allowed)
+                self.assertIn("INVALID_POSITION_CAP", decision.reasons)
+
+    def test_schedule_rejects_boolean_stage_and_numeric_values(self):
+        with self.assertRaises(ValueError):
+            schedule_target_lots(True, 0.1, "equal", 1.0)
+        with self.assertRaises(ValueError):
+            schedule_target_lots(1, True, "equal", 1.0)
+        with self.assertRaises(ValueError):
+            schedule_target_lots(1, 0.1, "equal", True)
+
 
 if __name__ == "__main__":
     unittest.main()
