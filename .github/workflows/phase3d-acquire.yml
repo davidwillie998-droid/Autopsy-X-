@@ -79,7 +79,7 @@ jobs:
         run: |
           for run in p3d-sol-20261008a p3d-sol-20261008b; do
             if [ -f "datasets/phase3d/runs/$run/run.json" ]; then
-              python -m autopsyx verify-provenance "datasets/phase3d/runs/$run" > "datasets/phase3d/runs/$run/runner_verify.json" || true
+              python -m autopsyx verify-provenance "datasets/phase3d/runs/$run" > "datasets/phase3d/runs/$run/runner_verify.json"
             fi
           done
       - name: Upload acquisition artifacts
