@@ -1,0 +1,166 @@
+{
+  "circuit_waits": 0,
+  "code_version": "5172db4050c26c92cb91f33755f01abbd16b4580",
+  "cycles": 1,
+  "ended_ms": 1792143443570,
+  "enrichment": [],
+  "errors": 0,
+  "exchanges": 282,
+  "execution": "none: acquisition only, no orders",
+  "final_gt_rate_per_s": 0.059926850572228456,
+  "phase3d": {
+    "contamination_check": true,
+    "distinct_selected_tokens": 95,
+    "run_id": "p3d-sol-20261008a",
+    "sample_gate": true,
+    "window": "A"
+  },
+  "plan": {
+    "backfill_pages": 2,
+    "circuit_waits": 5,
+    "cycle_s": 60,
+    "ds_rate_per_s": 2.0,
+    "duration_s": 3000,
+    "gt_min_rate_per_s": 0.03,
+    "gt_rate_per_s": 0.2,
+    "holders_per_cycle": 2,
+    "lag_ms": 60000,
+    "network": "solana",
+    "new_pool_pages": 5,
+    "ohlcv_every": 1,
+    "phase3a": true,
+    "poll_ohlcv_limit": 5,
+    "rpc_max_pages": 1,
+    "rpc_max_txs": 8,
+    "rpc_page_limit": 100,
+    "rpc_rate_per_s": 2.0,
+    "seed": 20261008,
+    "strata": {
+      "established": 30,
+      "quiet_young": 5,
+      "trending": 30,
+      "young": 30
+    },
+    "universe_file": "datasets/phase3d/runs/p3d-sol-20261008a/universe.json"
+  },
+  "pre_replay": {
+    "backfill": {
+      "pages": 47,
+      "stopped_by_deadline": true
+    },
+    "enrichment_stopped_by_deadline": true
+  },
+  "provenance": {
+    "acquisition_status": "COMPLETE",
+    "canonical_dataset_version": "3a.1",
+    "canonical_files": {
+      "phase2_records": "canonical/phase2_records.jsonl.gz",
+      "phase3a_observations": "canonical/phase3a_observations.jsonl.gz"
+    },
+    "completed_at": "2026-10-16T09:37:23.570000+00:00",
+    "config_hash": "417bd32cce8fb72c",
+    "coverage_summary": {
+      "phase2_issues": {
+        "DERIVED_FIELD": 95,
+        "FORMING_BAR_DROPPED": 38,
+        "IMPOSSIBLE_COUNT": 1,
+        "NULL_FIELD": 38,
+        "PAGE_FULL": 66,
+        "PARTIAL_RESPONSE": 1
+      },
+      "phase2_tokens": 95,
+      "phase3a_by_kind_state": {
+        "creator_state|NOT_OBSERVED": 3,
+        "creator_state|OBSERVED": 34,
+        "holder_state|ERROR": 1,
+        "holder_state|NOT_OBSERVED": 6,
+        "holder_state|OBSERVED": 30,
+        "liquidity_event|OBSERVED": 95
+      }
+    },
+    "dataset_hash_algorithm": "sha256; phase2_records: concat of json.dumps(record, sort_keys=True, default=str) in normalizer order; phase3a_observations: json.dumps(observation.to_dict(), sort_keys=True) + newline in canonical order",
+    "endpoints": {
+      "ds.pairs": 4,
+      "gt.ohlcv": 142,
+      "gt.pools_multi": 4,
+      "gt.token_info": 37,
+      "gt.trades": 95
+    },
+    "environment": {
+      "github_repository": "davidwillie998-droid/Autopsy-X-",
+      "github_workflow": "Phase 3D independent acquisition",
+      "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+      "python": "3.11.17",
+      "runner_name": "GitHub Actions 1000000415",
+      "runner_os": "Linux"
+    },
+    "normalization_version": {
+      "observation_schema": "3a.1",
+      "sha256": "d1f17e40dbd196dc00a57f21d1deaae24a67d5193d476b9ea3e1f6ec997d084a",
+      "sources": {
+        "core/models.py": "4a5b69b699bf2b927965780f6c0a1f30af759bbc46f8564496768b846ab6c5a6",
+        "core/observation.py": "cd427925de27062fdef20e648ba839b22f123e845f90b12f4b31ed7bcdee9283",
+        "data/normalize.py": "045f6b0da79eb7ea468d787a4009d5097d4fbef6c7ebb8c009c0bf97f0020bbe",
+        "data/normalize3a.py": "927dc7c453a6841a76ba858b90bd6d6cbe6ebf86dc3d731b5afecda9f4d268fc",
+        "data/providers/dexscreener.py": "cd95c543b4363ed610220e976cb4e7d69dec77460a0e3628e2235b9e74c71b6a",
+        "data/providers/geckoterminal.py": "69e08237be25849bbadcdc7d998f02143e66bd3b65fc32b7ecc9d380bab870b4",
+        "data/providers/gt_phase3a.py": "651fca65a63652254143b34421c28311369ca8380330a80011348ad6c6592ef0",
+        "data/providers/news_social.py": "c75738ea9248b11686523100114a11526b30ed191a1ef66bd895ba58dbfdbeb4",
+        "data/providers/solana_rpc.py": "d0939c469d3fa7cc11fa4eb28d363e0cb8167bb1666991a94c06b9a9beb8dbcb",
+        "data/raw.py": "fee31fb80ef59c1195c05b7df158f6d4c0075d85d8f49f98677dcab9ce0e386e",
+        "data/validate.py": "3642dc3fac0b2e0f2f6143435aea46813a9d9f7846592fe3a9e2f8e046be6e34",
+        "pipeline.py": "acbce7f08f969b1206a3d252ca5b5e3d0be60d5c660ca12cf8fa41841bd411d3",
+        "providers/store.py": "b3e4532142ebb607e0537dea5663d5e5e04064b3f0f2b8e924d460e54fde494c"
+      }
+    },
+    "providers": [
+      "dexscreener",
+      "geckoterminal"
+    ],
+    "record_counts": {
+      "manifest_errors": 0,
+      "manifest_exchanges": 282,
+      "phase2_records": {
+        "Coverage": 237,
+        "HolderSnapshot": 30,
+        "PoolInfo": 95,
+        "PoolSnapshot": 157,
+        "ProviderBar": 25208,
+        "Swap": 21119,
+        "TokenMeta": 132
+      },
+      "phase3a_observations": 169
+    },
+    "repository_commit": "5172db4050c26c92cb91f33755f01abbd16b4580",
+    "run_id": "p3d-sol-20261008a",
+    "runner_dataset_hash": {
+      "phase2_records": "247063bd2c3f9a99c3ee30222795978c53641adca0eae9a83eee0476c6f6e0ce",
+      "phase3a_observations": "ab900e8664afcc876d02903279f4c5b38a39d3b85172eddb6c827bbde2071db5"
+    },
+    "started_at": "2026-10-16T08:30:19.292000+00:00",
+    "unavailable_fields": [],
+    "workflow_run_attempt": "1",
+    "workflow_run_id": "38873845291"
+  },
+  "runner": "GitHub Actions 1000000415",
+  "scheduler": {
+    "enrichment_guard_s": 180,
+    "name": "phase3c1-protected-replay",
+    "pre_replay_deadline_ms": 1792140619292,
+    "protected_replay_deadline_ms": 1792142419292,
+    "replay_actual_s": 2823.86,
+    "replay_ended_ms": 1792143443570,
+    "replay_planned_s": 1799.582,
+    "replay_reserve_met": true,
+    "replay_reserve_s": 1800,
+    "replay_started_ms": 1792140619710,
+    "total_duration_s": 3000
+  },
+  "started_ms": 1792139419292,
+  "status": "COMPLETE",
+  "universe": {
+    "fingerprint": "47aa8c6ba6269268649d715c43d3e8dfa6b099b369e30d3d979bf2e17f1b307c",
+    "from": "datasets/phase3d/runs/p3d-sol-20261008a/universe.json",
+    "source": "reused"
+  }
+}

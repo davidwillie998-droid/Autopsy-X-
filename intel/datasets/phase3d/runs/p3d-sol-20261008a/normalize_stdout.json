@@ -1,0 +1,20 @@
+{
+  "dataset_sha256": "247063bd2c3f9a99c3ee30222795978c53641adca0eae9a83eee0476c6f6e0ce",
+  "issues": {
+    "DERIVED_FIELD": 95,
+    "FORMING_BAR_DROPPED": 38,
+    "IMPOSSIBLE_COUNT": 1,
+    "NULL_FIELD": 38,
+    "PAGE_FULL": 66,
+    "PARTIAL_RESPONSE": 1
+  },
+  "records": {
+    "Coverage": 237,
+    "HolderSnapshot": 30,
+    "PoolInfo": 95,
+    "PoolSnapshot": 157,
+    "ProviderBar": 25208,
+    "Swap": 21119,
+    "TokenMeta": 132
+  }
+}
