@@ -881,13 +881,18 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
                          g_risk.ProjectedMarginAcceptable(requiredMargin);
       bool finalExposureOk=g_risk.ProjectedExposureAcceptable(symbolExposureLots,
                                                                realDirectionalExposure,lots);
+      // Re-check the ACCOUNT-WIDE gross-lot cap after all scaling/normalization. NormalizeVolume()
+      // may round a reduced size upward to a broker step, so the earlier base-lot cap is not enough.
+      bool finalAccountExposureOk=(accountExposureLots+lots<=InpMaxExposureLots+0.0000001);
       if(!finalRiskOk || finalStopProfit>=0.0 ||
-         MathAbs(finalStopProfit)>finalRiskBudget+0.01 || !finalMarginOk || !finalExposureOk)
+         MathAbs(finalStopProfit)>finalRiskBudget+0.01 || !finalMarginOk ||
+         !finalExposureOk || !finalAccountExposureOk)
         {
          if(InpVerboseLogging)
-            PrintFormat("AUTOPSY X: final size rejected by projected risk/margin/exposure gate (risk_ok=%s, margin_ok=%s, exposure_ok=%s, stop_loss=%.2f, budget=%.2f, margin=%.2f)",
+            PrintFormat("AUTOPSY X: final size rejected by projected risk/margin/exposure gate (risk_ok=%s, margin_ok=%s, symbol_exposure_ok=%s, account_exposure_ok=%s, stop_loss=%.2f, budget=%.2f, margin=%.2f)",
                         finalRiskOk ? "true":"false",finalMarginOk ? "true":"false",
-                        finalExposureOk ? "true":"false",MathAbs(finalStopProfit),finalRiskBudget,requiredMargin);
+                        finalExposureOk ? "true":"false",finalAccountExposureOk ? "true":"false",
+                        MathAbs(finalStopProfit),finalRiskBudget,requiredMargin);
          lots=0.0;
         }
      }
