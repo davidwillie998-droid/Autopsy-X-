@@ -13,7 +13,6 @@ import math
 
 @dataclass(frozen=True)
 class PyramidInputs:
-    # Hard eligibility gates. Every gate must be true to consider an add-on.
     continuation_confirmed: bool
     thesis_valid: bool
     regime_valid: bool
@@ -21,34 +20,24 @@ class PyramidInputs:
     broker_state_reconciled: bool
     required_inputs_available: bool
     campaign_is_winning: bool
-
-    # Campaign risk and volume inputs, all monetary values in account currency.
     current_campaign_stop_risk: float
     campaign_risk_budget: float
     stop_and_cost_risk_per_lot: float
     target_add_lots: float
-
-    # Exposure ceilings include the proposed add-on.
     current_account_gross_lots: float
     account_gross_lot_cap: float
     current_symbol_lots: float
     symbol_lot_cap: float
     current_directional_lots: float
     directional_lot_cap: float
-
-    # Margin inputs. margin_per_lot must be a conservative broker-aware estimate.
     equity: float
     current_margin: float
     free_margin: float
     margin_per_lot: float
     max_margin_usage_pct: float
-
-    # Broker volume constraints.
     volume_min: float
     volume_max: float
     volume_step: float
-
-    # Position-count ceiling is a ceiling, never a target to fill.
     current_positions: int
     position_cap: int
 
@@ -88,28 +77,34 @@ def _finite_nonnegative(value: float) -> bool:
     return math.isfinite(value) and value >= 0.0
 
 
+def _difference(upper: float, lower: float) -> float:
+    """Subtract user/broker decimal values without binary-float headroom loss."""
+    return float(Decimal(str(upper)) - Decimal(str(lower)))
+
+
 def _floor_to_step(value: float, step: float) -> float:
     """Floor, never round up, to the broker volume step using decimal arithmetic."""
     units = (Decimal(str(value)) / Decimal(str(step))).to_integral_value(
         rounding=ROUND_FLOOR
     )
-    result = units * Decimal(str(step))
-    return float(result)
+    return float(units * Decimal(str(step)))
 
 
 def evaluate_add_on(inputs: PyramidInputs) -> PyramidDecision:
     """Return the largest safe broker-valid add-on, or fail closed.
 
-    Risk budget is a fixed campaign budget supplied by the caller. This function
-    never expands it when floating profit or equity rises. Risk-per-lot must
-    already include a conservative allowance for spread, commission and slippage.
+    Risk budget is fixed for the campaign and supplied by the caller. Floating
+    profit or equity growth never expands it. Risk-per-lot must include a
+    conservative allowance for spread, commission and slippage.
     """
     reasons = [
         code for field, code in _GATE_FIELDS
         if getattr(inputs, field) is not True
     ]
 
-    if inputs.current_positions < 0 or inputs.position_cap < 1:
+    if (not isinstance(inputs.current_positions, int)
+            or not isinstance(inputs.position_cap, int)
+            or inputs.current_positions < 0 or inputs.position_cap < 1):
         reasons.append("INVALID_POSITION_CAP")
     elif inputs.current_positions >= inputs.position_cap:
         reasons.append("POSITION_CAP_REACHED")
@@ -119,7 +114,6 @@ def evaluate_add_on(inputs: PyramidInputs) -> PyramidDecision:
         if not isinstance(value, (int, float)) or not _finite_nonnegative(float(value)):
             reasons.append("INVALID_NUMERIC_INPUT:" + field)
 
-    # Values that must be strictly positive to calculate a safe volume.
     for field in (
         "campaign_risk_budget", "stop_and_cost_risk_per_lot",
         "target_add_lots", "account_gross_lot_cap", "symbol_lot_cap",
@@ -137,40 +131,40 @@ def evaluate_add_on(inputs: PyramidInputs) -> PyramidDecision:
     if reasons:
         return PyramidDecision(False, 0.0, tuple(dict.fromkeys(reasons)), None, None, False)
 
-    risk_remaining = inputs.campaign_risk_budget - inputs.current_campaign_stop_risk
+    risk_remaining = _difference(
+        inputs.campaign_risk_budget, inputs.current_campaign_stop_risk
+    )
+    current_margin_pct = inputs.current_margin / inputs.equity * 100.0
     if risk_remaining <= 0.0:
-        return PyramidDecision(False, 0.0, ("CAMPAIGN_RISK_BUDGET_EXHAUSTED",), 
-                               inputs.current_campaign_stop_risk, 
-                               inputs.current_margin / inputs.equity * 100.0, False)
+        return PyramidDecision(
+            False, 0.0, ("CAMPAIGN_RISK_BUDGET_EXHAUSTED",),
+            inputs.current_campaign_stop_risk, current_margin_pct, False
+        )
 
     risk_limited_lots = risk_remaining / inputs.stop_and_cost_risk_per_lot
-    account_headroom = inputs.account_gross_lot_cap - inputs.current_account_gross_lots
-    symbol_headroom = inputs.symbol_lot_cap - inputs.current_symbol_lots
-    direction_headroom = inputs.directional_lot_cap - inputs.current_directional_lots
+    account_headroom = _difference(
+        inputs.account_gross_lot_cap, inputs.current_account_gross_lots
+    )
+    symbol_headroom = _difference(inputs.symbol_lot_cap, inputs.current_symbol_lots)
+    direction_headroom = _difference(
+        inputs.directional_lot_cap, inputs.current_directional_lots
+    )
     margin_cap_money = inputs.equity * inputs.max_margin_usage_pct / 100.0
     margin_headroom_money = min(
-        inputs.free_margin,
-        margin_cap_money - inputs.current_margin,
+        inputs.free_margin, _difference(margin_cap_money, inputs.current_margin)
     )
     margin_limited_lots = margin_headroom_money / inputs.margin_per_lot
 
     raw_lots = min(
-        inputs.target_add_lots,
-        inputs.volume_max,
-        risk_limited_lots,
-        account_headroom,
-        symbol_headroom,
-        direction_headroom,
-        margin_limited_lots,
+        inputs.target_add_lots, inputs.volume_max, risk_limited_lots,
+        account_headroom, symbol_headroom, direction_headroom, margin_limited_lots,
     )
     lots = _floor_to_step(max(0.0, raw_lots), inputs.volume_step)
 
     if lots < inputs.volume_min:
         return PyramidDecision(
             False, 0.0, ("SAFE_VOLUME_BELOW_BROKER_MINIMUM",),
-            inputs.current_campaign_stop_risk,
-            inputs.current_margin / inputs.equity * 100.0,
-            False,
+            inputs.current_campaign_stop_risk, current_margin_pct, False,
         )
 
     projected_risk = (
@@ -180,8 +174,7 @@ def evaluate_add_on(inputs: PyramidInputs) -> PyramidDecision:
         (inputs.current_margin + lots * inputs.margin_per_lot) / inputs.equity * 100.0
     )
 
-    # Independent post-normalization invariant checks. Any arithmetic or rounding
-    # surprise blocks the order instead of weakening a limit.
+    # Recheck every hard constraint after volume normalization.
     if projected_risk > inputs.campaign_risk_budget + 1e-8:
         return PyramidDecision(False, 0.0, ("POST_NORMALIZATION_RISK_BREACH",),
                                projected_risk, projected_margin, False)
@@ -201,10 +194,10 @@ def evaluate_add_on(inputs: PyramidInputs) -> PyramidDecision:
         return PyramidDecision(False, 0.0, ("POST_NORMALIZATION_FREE_MARGIN_BREACH",),
                                projected_risk, projected_margin, False)
 
-    reasons_out = ("SAFE_ADD_ON",) if lots >= inputs.target_add_lots else (
-        "SAFE_SIZE_REDUCED_TO_RISK_CAPACITY",
+    reason = "SAFE_ADD_ON" if lots >= inputs.target_add_lots else (
+        "SAFE_SIZE_REDUCED_TO_RISK_CAPACITY"
     )
     return PyramidDecision(
-        True, lots, reasons_out, projected_risk, projected_margin,
+        True, lots, (reason,), projected_risk, projected_margin,
         lots + 1e-8 < inputs.target_add_lots,
     )
