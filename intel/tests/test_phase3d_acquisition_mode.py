@@ -56,3 +56,18 @@ def test_configured_duration_is_reserved_for_live_polling(tmp_path):
     assert meta["poll_started_ms"] > meta["started_ms"]
     assert meta["poll_ended_ms"] >= meta["poll_started_ms"]
     assert meta["poll_duration_s"] >= 0
+
+
+def test_phase3d_request_backfills_history_for_contiguous_coverage():
+    # Without backfill, the collector only polls five recent minute bars.
+    # It cannot establish historical 15m/60m coverage at the start of a run.
+    import json
+    from pathlib import Path
+
+    request_path = Path(__file__).resolve().parents[1] / "datasets" / "phase3c" / "REQUEST.json"
+    request = json.loads(request_path.read_text(encoding="utf-8"))
+
+    assert request["phase3d_coverage_mode"] is True
+    assert request["backfill_pages"] >= 1
+    assert request["poll_ohlcv_limit"] >= 5
+    assert request["duration_s"] >= 3600
