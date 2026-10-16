@@ -1,5 +1,5 @@
 {
-  "run_id": "p3c-sol-20261016a",
+  "run_id": "p3c-sol-20261016b",
   "network": "solana",
   "seed": 20261016,
   "strata": {
@@ -9,7 +9,7 @@
     "established": 1
   },
   "new_pool_pages": 3,
-  "backfill_pages": 0,
+  "backfill_pages": 1,
   "duration_s": 7200,
   "cycle_s": 60,
   "poll_ohlcv_limit": 5,
