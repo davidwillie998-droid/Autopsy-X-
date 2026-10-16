@@ -51,6 +51,9 @@ require("remainingExposureLots<g_md.VolumeMin()" in ea and "lots=0.0" in ea,
 require("OrderCalcProfit(orderType,_Symbol,lots,intendedPrice,slPrice,projectedProfitAtStop)" in ea
         and "projectedLoss>riskBudget+0.01" in ea,
         "broker-account-currency loss calculation rejects sizes above configured trade-risk budget")
+require("bool finalAccountExposureOk=(accountExposureLots+lots<=InpMaxExposureLots+0.0000001)" in ea
+        and "!finalExposureOk || !finalAccountExposureOk" in ea,
+        "final normalized volume cannot breach account-wide gross-lot cap")
 require("m_riskPercent               = AxClampD(riskPercent,0.05,2.0)" in risk,
         "risk engine hard-clamps risk per trade to 2 percent")
 require("DailyLossLimitBreached()" in risk and "WeeklyLossLimitBreached()" in risk,
