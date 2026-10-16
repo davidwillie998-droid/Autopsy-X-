@@ -48,8 +48,9 @@ require(bool(re.search(r"remainingExposureLots\s*=\s*InpMaxExposureLots\s*-\s*ac
         "new order size is capped to remaining account-wide gross-lot allowance")
 require("remainingExposureLots<g_md.VolumeMin()" in ea and "lots=0.0" in ea,
         "under-minimum remaining exposure fails closed")
-require("projectedRiskPct > g_risk.RiskPercent()+0.0001" in ea,
-        "broker minimum volume cannot silently exceed configured trade-risk budget")
+require("OrderCalcProfit(orderType,_Symbol,lots,intendedPrice,slPrice,projectedProfitAtStop)" in ea
+        and "projectedLoss>riskBudget+0.01" in ea,
+        "broker-account-currency loss calculation rejects sizes above configured trade-risk budget")
 require("m_riskPercent               = AxClampD(riskPercent,0.05,2.0)" in risk,
         "risk engine hard-clamps risk per trade to 2 percent")
 require("DailyLossLimitBreached()" in risk and "WeeklyLossLimitBreached()" in risk,
