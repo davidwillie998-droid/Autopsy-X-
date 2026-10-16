@@ -79,3 +79,48 @@ The request uses `backfill_pages: 0` intentionally. GeckoTerminal returns histor
 - Li et al. (2026), *Catching the Rug*, frame rug-pull detection using first-five-minute features to predict one-hour risk labels. Those labels are liquidity-withdrawal / trading-idleness outcomes, not upside-momentum labels. [Paper](https://arxiv.org/html/2608.20271).
 
 **Current decision:** the request preserves point-in-time liquidity integrity and the regression test guards against accidental historical backfill. Historical readiness is still **NOT VERIFIED** until the new acquisition completes, provenance passes, and measured coverage clears the unchanged thresholds.
+
+
+## Expanded SSRN evidence review (16 October 2026)
+
+This is a targeted, multi-angle literature search, not a claim that 500,000 papers were individually read. SSRN items are working papers unless a separate publication record establishes peer review. Abstract-level evidence is treated as provisional; implementation decisions below rely on methodological convergence and explicit failure cases, not headline returns.
+
+| SSRN paper | Evidence useful to this project | Engineering implication | Transfer limitation |
+|---|---|---|---|
+| Ding, Lin, Luo & Xu (2025), [Decompose Market Manipulation Strategies: Evidence from On-chain Meme Coin Market](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5953738) | Uses granular on-chain transactions and off-chain comments across 6,000 Pump.fun meme coins; studies concealed accumulation/sniping, wash trading and comment bots. | Treat apparent activity and sentiment as potentially manipulable. Add provenance-aware wallet concentration, burst/coordinated-account and abnormal turnover features only when source coverage supports them. | Pump.fun cohort and observational associations do not label an individual token fraudulent or predict upside. |
+| Kamat (2026), [Hour-Aware Adaptive Risk Management for Autonomous Memecoin Trading](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6564803) and its [companion dataset](https://zenodo.org/records/23017853) | The disclosed 15-day paper-trading sample has 190 trades; the paper reports that removing the top three trades reverses cumulative profitability. Its hour-of-day comparison is explicitly non-confirmatory (reported p=0.5634), and real slippage/failed transactions/MEV were not measured. | Require fragility analysis, complete outcome distributions, rejected-candidate counterfactual logging and conservative execution costs. Treat small-sample positive returns as descriptive, not proof of edge. | One system, short window and simulated execution; it cannot establish a general strategy or validate our own model. |
+| Wang & Pang (2026), [When the Feed Lags: Public-Data Delay and Quoted Liquidity in Crypto Markets](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6675338) | Minute-level Binance BTC/ETH/BNB evidence links higher public-feed delay to wider spreads and thinner displayed depth, including out-of-sample gains for quoted-spread prediction. | Persist request/response times; report cycle duration, request failures, cadence overruns and snapshot freshness. A stale feed must downgrade eligibility rather than produce a confident alert. | Centralized-exchange order books are not Solana AMM pool snapshots; use this as a testable data-quality hypothesis, not a calibrated DEX model. |
+| Foley et al. (2022; later journal publication), [Not So Fast](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4156263) | Raw tick data across crypto exchanges show that timestamp precision and venue latency can distort liquidity and trading metrics. | Distinguish event time, response/receive time and ingestion time. Reconstruct features only from data available at the decision cutoff. | CEX trade/quote sequencing is not identical to AMM pool-state timing. |
+| Alexander & Dakos (2019), [A Critical Investigation of Cryptocurrency Data and Analysis](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3382828) | Shows that data-source and timestamp inconsistencies can materially change crypto return and index calculations. | Record provider, raw-response hash, schema/parser version, duplicates, missing intervals and revisions. Reproducible provenance is a hard gate. | Older market-data examples; provider-specific issues must be re-tested on our actual feed. |
+| Rustin (2026), [Testing for Tradable Alpha in Short-Term Bitcoin Market Data](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6444920) | Reports weak short-horizon feature correlations that fail to generate positive risk-adjusted results after costs under walk-forward evaluation. | Separate statistical prediction from net executable value. Use cost-aware baselines and pre-register the evaluation horizon/threshold before tuning. | BTC CEX results do not settle the question for early-stage Solana tokens. |
+| Kim (2026), [Beyond Accuracy: A Validation Framework for Machine Learning in Cryptocurrency Trading](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6508779) | Evaluates 340 strategy variants and emphasizes that passing a statistical/permutation test does not guarantee stable validation or economic value. | Use sequential gates: data validity → leakage tests → out-of-sample predictive lift → cost-adjusted economic lift → robustness/fragility. Failure at any gate blocks promotion. | Framework and sample assets may differ; the gate structure is more transferable than its reported empirical results. |
+| Zhang et al. (2026), [What Drives Crypto Prices?](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6482433) | Reports illiquidity predicts the magnitude of intraday moves, not their direction, in major-crypto data. | Treat liquidity/illiquidity primarily as risk, volatility and execution context unless a separate directional hypothesis survives testing. | Major crypto session-level results are not evidence of directional predictability in memecoins. |
+| Li, Shin, Sun & Wang (2022), [The Dark Side of Decentralized Finance: Evidence from Meme Tokens](https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4228920) | On-chain meme-token data document the scale of issuance and risks around the low-friction token ecosystem. | Maintain an explicit universe/selection log and include failed, dead and rugged tokens; do not evaluate only tokens that survived long enough to appear in a current listing. | Historical period and chains differ from the present Solana universe. |
+
+## Code change from this review: per-cycle acquisition diagnostics
+
+The previous archive reported a long elapsed run with only two polling cycles. That aggregate result could not show whether time was lost to provider latency, retries/circuit waits, or work within individual polling cycles. The acquisition loop now records `cycle_telemetry` for every completed live cycle:
+
+- start/end timestamps and measured duration;
+- configured target cadence and cadence overrun;
+- request count and provider-error count for that cycle;
+- number of selected pools;
+- incremental persistence to `run.json`, so interrupted runs retain completed-cycle diagnostics.
+
+The Fetcher now maintains request/error counters so cycle diagnostics do not need to re-read the entire raw manifest for each cycle. A regression test checks the telemetry shape and basic invariants.
+
+**What this fixes:** the next audit can diagnose whether synchronized polling actually meets its 60-second cadence and whether provider failures explain sparse coverage. It does not create historical liquidity data or make the archive ready by itself.
+
+## Updated evidence gates
+
+1. **Acquisition integrity:** provenance verifies; request/config and code revision are recorded.
+2. **Cadence integrity:** cycle telemetry shows actual duration, overrun, requests and errors. Report distributions (median, p95, maximum), not only average cadence.
+3. **Coverage integrity:** per-pool synchronized snapshots and closed OHLCV bars meet existing 5m/15m/60m continuity and freshness rules.
+4. **Point-in-time integrity:** no observation enters a feature before its receive/ingestion time; future-dated negative tests pass.
+5. **Predictive integrity:** pre-specified horizons and labels, chronological out-of-sample testing, purged overlapping labels, simple baselines and permutation controls.
+6. **Economic integrity:** include pool-size-dependent price impact, fees, quote/observation delay, failed fills and conservative exit assumptions.
+7. **Fragility and manipulation:** report performance excluding top winners, by liquidity/age/venue cohorts, and keep manipulation/rug risk separate from upside labels.
+
+Do not change the coverage thresholds to compensate for poor acquisition cadence. If cycle telemetry shows overruns, reduce unnecessary calls or the universe size and rerun; if it shows provider errors, fix the transport/provider failure. If cadence is sound but snapshots are absent, investigate provider schema/coverage rather than counting price bars as liquidity evidence.
+
+**Status after code change:** telemetry instrumentation is committed and regression coverage is added. CI, acquisition completion, provenance and actual readiness are still separate verification gates; no pass is claimed until their outputs are inspected.
