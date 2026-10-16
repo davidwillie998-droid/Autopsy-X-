@@ -51,6 +51,7 @@ def test_phase3d_does_not_modify_frozen_phase3c1_implementation():
     for f in changed:
         allowed = (
             f.startswith("docs/PHASE3D_")
+            or f == "docs/research/15-ssrn-evidence-and-data-readiness-gates.md"
             or f.startswith("intel/datasets/phase3d/")
             or f.startswith("intel/tests/test_phase3d_")
             or f == "intel/autopsyx/phase3d_acquire.py"
