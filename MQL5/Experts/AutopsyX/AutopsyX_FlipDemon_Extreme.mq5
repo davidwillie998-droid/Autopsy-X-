@@ -652,6 +652,23 @@ void AxCountRealPositions(int &accountPositionsOut,double &symbolExposureLotsOut
 //--- every entry (fresh or flip re-entry) funnels through here, so risk/chop/HTF gates apply ---
 //--- unconditionally - a confirmed flip is always allowed to CLOSE the losing side, but the   ---
 //--- re-open into the new direction is still just another entry subject to every hard limit.  ---
+//--- Account-wide position count and gross lots for account-level hard caps.
+void AxCountAccountExposure(int &positionsOut,double &grossLotsOut)
+  {
+   positionsOut=0;
+   grossLotsOut=0.0;
+   int total=PositionsTotal();
+   for(int i=0;i<total;i++)
+     {
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0) continue;
+      double volume=PositionGetDouble(POSITION_VOLUME);
+      if(volume<=0.0) continue;
+      positionsOut++;
+      grossLotsOut+=volume;
+     }
+  }
+
 bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSeq,const string tag)
   {
    string gateReason;
@@ -674,7 +691,12 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
          Print("AUTOPSY X: entry blocked because a position on this symbol is owned by another EA or manual trading");
       return(false);
      }
-   if(!g_risk.PreTradeAllowed(accountPositions,symbolExposureLots,g_md.CurrentSpreadPts(),gateReason,
+   // Account-wide hard limits must use gross exposure across every symbol; symbol-specific
+   // exposure is kept separately for the per-symbol/directional projection gates below.
+   int accountOpenPositions;
+   double accountExposureLots;
+   AxCountAccountExposure(accountOpenPositions,accountExposureLots);
+   if(!g_risk.PreTradeAllowed(accountOpenPositions,accountExposureLots,g_md.CurrentSpreadPts(),gateReason,
                                realPositionsForSymbol,realDirectionalExposure))
      {
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
@@ -737,6 +759,23 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    double actualSlDistPts = (point>0) ? MathAbs(intendedPrice-slPrice)/point : InpEmergencySlPoints;
 
    double lots = g_risk.CalculateLotSize(g_md,actualSlDistPts);
+
+   // Enforce the remaining account-wide gross-lot budget before broker normalization can
+   // round a requested size upward. A remainder below minimum lot fails closed.
+   double remainingExposureLots=InpMaxExposureLots-accountExposureLots;
+   if(remainingExposureLots<=0.0)
+      lots=0.0;
+   else if(lots>remainingExposureLots)
+     {
+      if(remainingExposureLots<g_md.VolumeMin())
+         lots=0.0;
+      else
+        {
+         lots=g_md.NormalizeVolume(MathMin(lots,remainingExposureLots));
+         if(lots>remainingExposureLots+0.0000001)
+            lots=0.0;
+        }
+     }
 
    // A broker minimum lot can otherwise force a position larger than the configured
    // account-risk budget. Fail closed instead of allowing the minimum volume to
