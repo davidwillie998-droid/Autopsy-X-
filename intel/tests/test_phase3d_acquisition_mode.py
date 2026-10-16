@@ -58,9 +58,11 @@ def test_configured_duration_is_reserved_for_live_polling(tmp_path):
     assert meta["poll_duration_s"] >= 0
 
 
-def test_phase3d_request_backfills_history_for_contiguous_coverage():
-    # Without backfill, the collector only polls five recent minute bars.
-    # It cannot establish historical 15m/60m coverage at the start of a run.
+def test_phase3d_request_excludes_historical_bars_without_point_in_time_liquidity():
+    # GeckoTerminal does not provide historical liquidity snapshots. Backfilled
+    # OHLCV could inflate apparent price/liquidity overlap unless every consumer
+    # applies seen_ts correctly, so this coverage run deliberately excludes it.
+    # Eligibility must be established by fresh, synchronized live observations.
     import json
     from pathlib import Path
 
@@ -69,5 +71,6 @@ def test_phase3d_request_backfills_history_for_contiguous_coverage():
 
     assert request["phase3d_coverage_mode"] is True
     assert request["backfill_pages"] == 0
-    assert request["poll_ohlcv_limit"] >= 5
+    assert request["poll_ohlcv_limit"] == 5
+    assert request["lag_ms"] >= 60_000
     assert request["duration_s"] >= 3600
