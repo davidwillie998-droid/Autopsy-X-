@@ -76,6 +76,10 @@ class Fetcher:
         self.display = display or {}
         self.sleep, self.circuit_waits = sleep, circuit_waits
         self.waited = 0
+        # Monotonic-within-run counters let the acquisition loop attribute
+        # provider pressure/errors to each cycle without re-reading the archive.
+        self.request_count = 0
+        self.error_count = 0
 
     def post(self, provider: str, endpoint: str, path: str, payload: dict,
              context: dict) -> tuple[ManifestEntry, bytes | None]:
@@ -92,6 +96,7 @@ class Fetcher:
         c = self.clients[provider]
         shown = self.display.get(provider, c.base_url)
         t0 = self.now_ms()
+        self.request_count += 1
         waits = 0
         while True:
             try:
@@ -113,6 +118,7 @@ class Fetcher:
                                 context=context | ({"circuit_waits": waits} if waits else {}),
                                 attempt_log=getattr(exc, "attempt_log", ()), method="POST" if payload else "GET",
                                 request_body=payload)
+            self.error_count += 1
             return e, None
         e = self.raw.record(provider=provider, endpoint=endpoint, url=shown + r.url[len(c.base_url):], request_ts=r.request_ts,
                             response_ts=r.response_ts, status=r.status, body=r.body, attempts=r.attempts,
@@ -441,12 +447,36 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
     meta["poll_started_ms"] = poll_started
     raw.write_json("run.json", meta)
     cycle = 0
+    cycle_telemetry: list[dict] = []
     while True:
         t0 = now_ms()
         if (t0 - poll_started) / 1000 >= plan.duration_s or (max_cycles is not None and cycle >= max_cycles):
             break
+        requests_before = f.request_count
+        errors_before = f.error_count
         poll_cycle(f, plan, picked, cycle)
+        cycle_ended = now_ms()
+        duration_ms = max(0, cycle_ended - t0)
+        request_count = f.request_count - requests_before
+        error_count = f.error_count - errors_before
+        target_ms = max(0, int(plan.cycle_s * 1000))
+        cycle_telemetry.append({
+            "cycle": cycle,
+            "started_ms": t0,
+            "ended_ms": cycle_ended,
+            "duration_ms": duration_ms,
+            "target_cycle_ms": target_ms,
+            "cadence_overrun_ms": max(0, duration_ms - target_ms),
+            "requests": request_count,
+            "errors": error_count,
+            "pool_count": len(picked),
+        })
         cycle += 1
+        # Persist cycle diagnostics as the run proceeds so an interrupted run
+        # still exposes cadence overruns and provider failures.
+        meta["cycles"] = cycle
+        meta["cycle_telemetry"] = cycle_telemetry
+        raw.write_json("run.json", meta)
         spent = (now_ms() - t0) / 1000
         if spent < plan.cycle_s:
             sleep(plan.cycle_s - spent)
@@ -456,7 +486,8 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
     entries = raw.entries()
     meta.update({"poll_ended_ms": poll_ended,
                  "poll_duration_s": max(0.0, (poll_ended - poll_started) / 1000),
-                 "ended_ms": now_ms(), "cycles": cycle, "exchanges": len(entries), "circuit_waits": f.waited,
+                 "ended_ms": now_ms(), "cycles": cycle, "cycle_telemetry": cycle_telemetry,
+                 "exchanges": len(entries), "circuit_waits": f.waited,
                  "final_gt_rate_per_s": f.clients[gt.NAME].limiter.rate,
                  "errors": sum(1 for e in entries if e.error), "status": "COMPLETE"})
     raw.write_json("run.json", meta)
