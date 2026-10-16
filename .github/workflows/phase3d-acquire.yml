@@ -7,6 +7,7 @@ on:
     paths:
       - "intel/datasets/phase3d/ACQUISITION_REQUEST.json"
       - "intel/autopsyx/phase3d_acquire.py"
+      - "intel/autopsyx/data/providers/geckoterminal.py"
       - ".github/workflows/phase3d-acquire.yml"
 
 permissions:
