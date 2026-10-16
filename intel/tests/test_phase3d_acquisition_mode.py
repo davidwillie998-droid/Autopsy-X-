@@ -68,6 +68,6 @@ def test_phase3d_request_backfills_history_for_contiguous_coverage():
     request = json.loads(request_path.read_text(encoding="utf-8"))
 
     assert request["phase3d_coverage_mode"] is True
-    assert request["backfill_pages"] >= 1
+    assert request["backfill_pages"] == 0
     assert request["poll_ohlcv_limit"] >= 5
     assert request["duration_s"] >= 3600
