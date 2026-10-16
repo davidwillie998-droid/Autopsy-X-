@@ -32,8 +32,12 @@ require(bool(re.search(r"InpExecutionMode\s*=\s*AX_EXEC_ANALYSIS_ONLY", ea)),
         "execution defaults to ANALYSIS_ONLY")
 require("ACCOUNT_MARGIN_MODE_RETAIL_HEDGING" in ea and "return(INIT_FAILED)" in ea,
         "unsupported hedging accounts fail initialization")
-require("bool AxHasForeignPositionOnSymbol(string &reasonOut)" in ea
-        and "if(AxHasForeignPositionOnSymbol(gateReason))" in ea,
+require(
+        ("bool AxHasForeignPositionOnSymbol(string &reasonOut)" in ea
+         and "if(AxHasForeignPositionOnSymbol(gateReason))" in ea)
+        or ("bool foreignPositionOnSymbol=false;" in ea
+            and "if(foreignPositionOnSymbol)" in ea
+            and "AxCountRealPositions(accountPositions,symbolExposureLots,realPositionsForSymbol," in ea),
         "entries refuse to trade against a foreign position on the same netting symbol")
 require("void AxCountAccountExposure(int &positionsOut,double &grossLotsOut)" in ea,
         "account-wide open positions and gross lots are measured")
