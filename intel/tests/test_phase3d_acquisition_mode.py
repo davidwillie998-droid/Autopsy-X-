@@ -56,6 +56,14 @@ def test_configured_duration_is_reserved_for_live_polling(tmp_path):
     assert meta["poll_started_ms"] > meta["started_ms"]
     assert meta["poll_ended_ms"] >= meta["poll_started_ms"]
     assert meta["poll_duration_s"] >= 0
+    assert len(meta["cycle_telemetry"]) == meta["cycles"]
+    for cycle in meta["cycle_telemetry"]:
+        assert cycle["ended_ms"] >= cycle["started_ms"]
+        assert cycle["duration_ms"] == cycle["ended_ms"] - cycle["started_ms"]
+        assert cycle["requests"] >= 1
+        assert cycle["errors"] >= 0
+        assert cycle["cadence_overrun_ms"] >= 0
+        assert cycle["pool_count"] == 1
 
 
 def test_phase3d_request_excludes_historical_bars_without_point_in_time_liquidity():
