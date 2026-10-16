@@ -20,14 +20,16 @@ def forbidden_tokens(window, out_root):
         out |= _tokens(Path(out_root)/"p3d-sol-20261008a"/"universe.json")
     return out
 
-def _select(plan, forbidden, max_attempts=50):
+def _select(plan, forbidden, max_attempts=1):
     now=lambda: int(time.time()*1000)
+    last_candidates = {}
     for attempt in range(max_attempts):
         trial=acquire.Plan(**{**plan.__dict__, "seed": plan.seed+attempt})
         raw=acquire.RawStore(Path("/tmp")/"phase3d-universe")
         f=acquire.Fetcher(raw, acquire.default_clients(trial, now), now, time.sleep, trial.circuit_waits,
                           display={"solana_rpc":"https://api.mainnet-beta.solana.com"})
         sel=acquire.select_universe(f, trial, forbidden_tokens=forbidden)
+        last_candidates = sel.get("candidates", {})
         picked=sel["picked"]
         tokens={p["token"] for p in picked}
         if len(tokens) >= 85:
@@ -45,7 +47,7 @@ def _select(plan, forbidden, max_attempts=50):
                              for p in sel["excluded"] if p.get("reason") == "Phase 3D forbidden token"]}
             u["fingerprint"]=acquire._universe_fingerprint(u)
             return u
-    raise RuntimeError("unable to obtain >=85 fresh distinct tokens after 50 seed attempts")
+    raise RuntimeError(f"unable to obtain >=85 fresh distinct tokens in one discovery pass; candidates={last_candidates}; increase provider coverage or resolve rate limits")
 
 def run(request_path, window, out_root):
     req=json.loads(Path(request_path).read_text())
