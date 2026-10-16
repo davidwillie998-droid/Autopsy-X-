@@ -21,6 +21,9 @@ The literature supports treating execution and validation as first-class parts o
 | Deng, *Preventing Silent Semantics Drift in Automated Trading Systems* (SSRN 6071832, 2026 preprint) — https://ssrn.com/abstract=6071832 | Proposes explicit pre-run semantic checks, runtime guards, fault injection, and an auditable decision trail. | Pin execution mode, risk parameters and cost assumptions; test kill switches and configuration faults; preserve reason-coded logs and test artifacts. | A preprint describing its own assurance layer; it is a design reference, not independent certification of this EA. |
 | Cartea, Donnelly & Jaimungal, *Algorithmic Trading with Model Uncertainty* (SSRN 2310645; journal publication noted on SSRN) — https://ssrn.com/abstract=2310645 | Models uncertainty in market-order arrivals, limit-order fill probability and mid-price dynamics, linking uncertainty to inventory and adverse-selection risk. | Do not treat estimated spread, impact, or fill probability as known constants; stress test parameter uncertainty and fail closed when required inputs are unavailable. | Market-making model; not a direct position-sizing formula for this EA. |
 
+
+| Lu, *Where Backtests Go Wrong: Look-Ahead, Non-Determinism, and Timestamp Misalignment in Practice* (SSRN 7226622, posted 10 Aug 2026) — https://ssrn.com/abstract=7226622 | The preprint describes implementation contamination: future-indexing, timestamp misalignment and non-determinism can create apparent alpha independent of ordinary parameter overfitting. | Add deterministic replay and point-in-time assertions; test that every feature timestamp is no later than its decision timestamp; preserve exact input snapshots and seeds. | A new single-program forensic case study/preprint; useful as a defect taxonomy, not an independent estimate of how often these defects occur. |
+
 SSRN hosts working papers, preprints, and papers later published elsewhere. The status differs by item; abstracts alone do not establish independent replication. Use each item as a source of testable engineering hypotheses, not as proof of trading performance.
 
 ## Required implementation and validation controls
@@ -44,3 +47,12 @@ The merge-conflict investigation found newer account-wide exposure checks in the
 - A separate path-fix PR was retargeted to the execution-safety branch and GitHub reported it clean.
 - This rebased safety candidate includes a reconciliation of the account-wide exposure gate and final-volume checks; fresh CI is required.
 - No verified MetaEditor compile, MT5 Strategy Tester report, or demo forward-test evidence is asserted by this document.
+
+## Additional review controls from the literature
+
+- **Temporal integrity:** for every decision at time *t*, reject any feature, bar, news item, or position state whose effective/availability timestamp is later than *t*. Test with deliberately shifted timestamps and shuffled input order.
+- **Deterministic replay:** identical tick history, configuration, account settings and seed should reproduce the same decisions. Store configuration hashes and the source/data version with each tester report.
+- **Execution-state fault injection:** simulate timeout after server-side acceptance, delayed trade-transaction events, partial fills, and terminal restart. The expected invariant is no duplicate entry and no unconfirmed position treated as owned.
+- **Final-size guard:** risk and margin must be recalculated after every multiplier and volume normalization, immediately before order submission. The static verifier now checks this source ordering and the no-blind-retry/reconciliation invariants.
+
+These are test requirements derived from the papers and the MQL5 API contract; they do not establish that a compiled EA passes them in a broker environment.
