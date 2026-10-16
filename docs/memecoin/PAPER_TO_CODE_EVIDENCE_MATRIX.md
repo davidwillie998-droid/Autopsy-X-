@@ -66,11 +66,11 @@ Each audit run should publish, at minimum:
 
 ## Engineering finding from the Phase 3D request audit
 
-The previous request configured `backfill_pages: 0`, so it collected no pre-poll OHLCV context. That was not, by itself, the root cause of liquidity-readiness failure: historical price bars cannot be treated as point-in-time liquid observations because the provider response is only observed at collection time. The key readiness evidence must come from fresh, synchronized live liquidity snapshots and eligible price bars.
+The request uses `backfill_pages: 0` intentionally. GeckoTerminal returns historical OHLCV but does not provide historical liquidity snapshots. Combining old price bars with a current pool-liquidity snapshot could inflate apparent coverage or introduce look-ahead if the consumer ignores the bar's `seen_ts`. The conservative coverage run therefore does not backfill OHLCV.
 
-**Change committed:** run `p3c-sol-20261016b` now requests `backfill_pages: 1` (up to one provider page of 1,000 minute bars per selected pool) for price context, while retaining the existing 60-second poll cadence, 60-second lag policy, five-bar live poll, and two-hour observation window. A regression test protects this configuration and explicitly states that historical bars must not be treated as known at their bar-open time.
+**Fix committed:** keep the dedicated Phase 3D polling mode, five-pool stratified universe, one synchronized multi-pool liquidity snapshot plus one five-bar OHLCV request per pool each 60-second cycle, 60-second lag policy, and two-hour live window. A regression test now protects `backfill_pages == 0` and explains the point-in-time rationale.
 
-**Limits of this change:** backfill supplies price history, not historical liquidity snapshots. The two-hour live observation period must still establish sufficiently fresh pool-liquidity snapshots aligned with eligible bars. Newly launched pools may have less than 1,000 bars available. This change does not establish readiness by itself; the per-pool coverage audit and existing acceptance thresholds must still pass. Do not count a historical price bar as liquid merely because a current snapshot exists.
+**What still needs proof:** two hours of configured runtime is not evidence of two hours of valid observations. The new archive must demonstrate enough completed cycles, fresh per-pool liquidity snapshots, eligible price bars, acceptable gaps and valid provenance. Historical readiness remains **NOT VERIFIED** until measured coverage passes the unchanged 5m/15m/60m thresholds. This acquisition cannot reconstruct historical liquidity that was never collected.
 
 ## Additional primary research detail
 
@@ -78,4 +78,4 @@ The previous request configured `backfill_pages: 0`, so it collected no pre-poll
 - The 2026 MELT revision of *MemeTrans* describes 41,470 Solana launches and more than 200 million transactions, with typed behavioral traces and bundle-level links between accounts. Its cohort is restricted to launches completing the defined migration lifecycle and a particular market period, so selection bias and cross-period generalization must be tested before transferring its results to our live universe. [MELT v2](https://arxiv.org/html/2602.13480v2).
 - Li et al. (2026), *Catching the Rug*, frame rug-pull detection using first-five-minute features to predict one-hour risk labels. Those labels are liquidity-withdrawal / trading-idleness outcomes, not upside-momentum labels. [Paper](https://arxiv.org/html/2608.20271).
 
-**Current decision:** configuration defect fixed in the request and guarded by a regression test; historical readiness is still **NOT VERIFIED** until the new acquisition completes, provenance passes, and measured coverage clears the unchanged thresholds.
+**Current decision:** the request preserves point-in-time liquidity integrity and the regression test guards against accidental historical backfill. Historical readiness is still **NOT VERIFIED** until the new acquisition completes, provenance passes, and measured coverage clears the unchanged thresholds.
