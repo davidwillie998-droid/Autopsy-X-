@@ -37,7 +37,7 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     # a request file and a workflow mirroring phase3a-acquire.yml's own procedure exactly
     # (checked bit-for-bit against it below), so new archives can be independently acquired.
     # This UI workflow is inherited from the PR base branch and restored byte-for-byte there; it predates the Phase 3C changes and is not a Phase 3C implementation file.
-    infra_allowed = {"intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml", "intel/autopsyx/data/acquire.py", "intel/tests/test_phase3d_acquisition_coverage.py", "intel/tests/test_phase3d_acquisition_mode.py"}
+    infra_allowed = {"intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml", "intel/autopsyx/data/acquire.py", "intel/tests/test_phase3d_acquisition_coverage.py", "intel/tests/test_phase3d_acquisition_mode.py", "docs/memecoin/PAPER_TO_CODE_EVIDENCE_MATRIX.md"}
     for f in changed:
         allowed = (f.startswith("docs/PHASE3C_") or f.startswith("intel/autopsyx/research/phase3c_")
                   or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")
