@@ -10,7 +10,9 @@
   "plan": {
     "network": "solana",
     "strata": {"young": 30, "quiet_young": 5, "trending": 30, "established": 30},
-    "new_pool_pages": 3,
+    "new_pool_pages": 5,
+    "trending_pages": 3,
+    "established_pages": 3,
     "backfill_pages": 2,
     "duration_s": 3000,
     "cycle_s": 60,
