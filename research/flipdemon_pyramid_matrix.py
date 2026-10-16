@@ -1,7 +1,7 @@
 """Pure reference model for FLIPDEMON EXTREME's proposed pyramid sizing policy.
 
-This module has no MT5, broker, network, filesystem, or order-execution authority.
-It is a research oracle for unit tests only. Production MQL5 must independently
+No MT5, broker, network, filesystem, or order-execution authority is present.
+This is a research oracle for unit tests only. Production MQL5 must independently
 calculate and enforce all limits immediately before submission and after fills.
 """
 from __future__ import annotations
@@ -52,6 +52,40 @@ class PyramidDecision:
     target_was_reduced: bool
 
 
+def schedule_target_lots(
+    stage_index: int,
+    base_lots: float,
+    policy: str,
+    max_target_lots: float,
+    increasing_multiplier: float = 1.5,
+    quality_multiplier: float = 1.0,
+) -> float:
+    """Return a bounded *target*, not an authorized order size.
+
+    stage_index is 1-based for add-ons. Supported policies are equal, increasing,
+    and risk_adaptive. Final allowed volume must still pass evaluate_add_on().
+    The multiplier is deliberately bounded to prevent exponential runaway.
+    """
+    values = (base_lots, max_target_lots, increasing_multiplier, quality_multiplier)
+    if not isinstance(stage_index, int) or stage_index < 1:
+        raise ValueError("stage_index must be a positive integer")
+    if any(not math.isfinite(float(v)) or float(v) <= 0 for v in values):
+        raise ValueError("schedule inputs must be finite and positive")
+    if increasing_multiplier < 1.0 or increasing_multiplier > 2.0:
+        raise ValueError("increasing_multiplier must be between 1.0 and 2.0")
+    if quality_multiplier > 1.0:
+        raise ValueError("quality_multiplier must not exceed 1.0")
+    if policy == "equal":
+        target = base_lots
+    elif policy == "increasing":
+        target = base_lots * (increasing_multiplier ** (stage_index - 1))
+    elif policy == "risk_adaptive":
+        target = base_lots * quality_multiplier
+    else:
+        raise ValueError("policy must be equal, increasing, or risk_adaptive")
+    return min(target, max_target_lots)
+
+
 _GATE_FIELDS = (
     ("continuation_confirmed", "NO_FRESH_CONTINUATION"),
     ("thesis_valid", "THESIS_INVALID"),
@@ -78,12 +112,12 @@ def _finite_nonnegative(value: float) -> bool:
 
 
 def _difference(upper: float, lower: float) -> float:
-    """Subtract user/broker decimal values without binary-float headroom loss."""
+    """Subtract decimal-valued inputs without binary-float headroom loss."""
     return float(Decimal(str(upper)) - Decimal(str(lower)))
 
 
 def _floor_to_step(value: float, step: float) -> float:
-    """Floor, never round up, to the broker volume step using decimal arithmetic."""
+    """Floor, never round up, to the broker volume step."""
     units = (Decimal(str(value)) / Decimal(str(step))).to_integral_value(
         rounding=ROUND_FLOOR
     )
