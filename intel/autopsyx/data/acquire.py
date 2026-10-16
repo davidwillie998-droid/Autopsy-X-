@@ -124,6 +124,8 @@ class Fetcher:
                             response_ts=r.response_ts, status=r.status, body=r.body, attempts=r.attempts,
                             error=None, context=context, attempt_log=r.attempt_log,
                             method="POST" if payload else "GET", request_body=payload)
+        if e.error:
+            self.error_count += 1
         return e, r.body
 
 
