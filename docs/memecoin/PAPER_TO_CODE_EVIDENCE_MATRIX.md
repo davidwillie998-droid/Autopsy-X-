@@ -62,3 +62,20 @@ Each audit run should publish, at minimum:
 - Mongardini, A. & Mei, J. (2025). *A Midsummer Meme’s Dream: Investigating Market Manipulations in the Meme Coin Ecosystem.* Preprint. https://arxiv.org/abs/2507.01963
 - Hu, Y. et al. (2026). *MemeTrans: A Dataset for Detecting High-Risk Memecoin Launches on Solana.* Preprint. https://arxiv.org/abs/2602.13480
 - Li, Y. et al. (2026). *Catching the Rug: Early Prediction of Fraudulent Memecoins on Solana via Machine Learning.* Preprint. https://arxiv.org/abs/2608.20271
+
+
+## Engineering finding from the Phase 3D request audit
+
+The previous request configured `backfill_pages: 0`, while the live polling request asks for only five one-minute OHLCV bars per pool. That combination did not collect pre-poll history and therefore could not establish historical 15-minute/60-minute coverage at the beginning of a run. This is a configuration-level coverage defect, not evidence that the market itself lacks qualifying pools.
+
+**Fix committed:** the next run is now `p3c-sol-20261016b` with `backfill_pages: 1` (up to one provider page of 1,000 minute bars per selected pool), while retaining the existing 60-second poll cadence, 60-second lag policy, five-bar live poll, and two-hour observation window. A regression test now fails if the Phase 3D request returns to zero backfill pages.
+
+**Limits of this fix:** backfill supplies price history, not historical liquidity snapshots. The two-hour live observation period must still establish sufficiently fresh pool-liquidity snapshots aligned with eligible bars. Newly launched pools may have less than 1,000 bars available. This change does not establish readiness by itself; the per-pool coverage audit and existing acceptance thresholds must still pass. Do not count a historical price bar as liquid merely because a current snapshot exists.
+
+## Additional primary research detail
+
+- Foley et al. (2023), *Not so fast*, analyze raw tick data from 17 centralized exchanges and show that timestamp precision and matching-engine differences distort trade-package and liquidity estimates. We apply the general data-quality lesson to receive/observation timing, but do not assume their CEX-specific correction transfers directly to GeckoTerminal or Solana AMMs.
+- The 2026 MELT revision of *MemeTrans* describes 41,470 Solana launches and more than 200 million transactions, with typed behavioral traces and bundle-level links between accounts. Its cohort is restricted to launches completing the defined migration lifecycle and a particular market period, so selection bias and cross-period generalization must be tested before transferring its results to our live universe. [MELT v2](https://arxiv.org/html/2602.13480v2).
+- Li et al. (2026), *Catching the Rug*, frame rug-pull detection using first-five-minute features to predict one-hour risk labels. Those labels are liquidity-withdrawal / trading-idleness outcomes, not upside-momentum labels. [Paper](https://arxiv.org/html/2608.20271).
+
+**Current decision:** configuration defect fixed in the request and guarded by a regression test; historical readiness is still **NOT VERIFIED** until the new acquisition completes, provenance passes, and measured coverage clears the unchanged thresholds.
