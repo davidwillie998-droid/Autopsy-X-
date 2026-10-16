@@ -1,0 +1,1393 @@
+{
+  "circuit_waits": 4,
+  "code_version": "c7df5a814700be2d10a4cc1dc4a6034fccbad89a",
+  "cycle_telemetry": [
+    {
+      "cadence_overrun_ms": 3713,
+      "cycle": 0,
+      "duration_ms": 63713,
+      "ended_ms": 1792136889577,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792136825864,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 30313,
+      "cycle": 1,
+      "duration_ms": 90313,
+      "ended_ms": 1792136979891,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792136889578,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 20207,
+      "cycle": 2,
+      "duration_ms": 80207,
+      "ended_ms": 1792137060099,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792136979892,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 23856,
+      "cycle": 3,
+      "duration_ms": 83856,
+      "ended_ms": 1792137143955,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792137060099,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 16354,
+      "cycle": 4,
+      "duration_ms": 76354,
+      "ended_ms": 1792137220310,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792137143956,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 21079,
+      "cycle": 5,
+      "duration_ms": 81079,
+      "ended_ms": 1792137301389,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792137220310,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 31406,
+      "cycle": 6,
+      "duration_ms": 91406,
+      "ended_ms": 1792137392795,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792137301389,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 14698,
+      "cycle": 7,
+      "duration_ms": 74698,
+      "ended_ms": 1792137467494,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792137392796,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 49002,
+      "cycle": 8,
+      "duration_ms": 109002,
+      "ended_ms": 1792137576496,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792137467494,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 25142,
+      "cycle": 9,
+      "duration_ms": 85142,
+      "ended_ms": 1792137661639,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792137576497,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 27303,
+      "cycle": 10,
+      "duration_ms": 87303,
+      "ended_ms": 1792137748942,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792137661639,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 36149,
+      "cycle": 11,
+      "duration_ms": 96149,
+      "ended_ms": 1792137845093,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792137748944,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 17293,
+      "cycle": 12,
+      "duration_ms": 77293,
+      "ended_ms": 1792137922387,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792137845094,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 28487,
+      "cycle": 13,
+      "duration_ms": 88487,
+      "ended_ms": 1792138010875,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792137922388,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 13148,
+      "cycle": 14,
+      "duration_ms": 73148,
+      "ended_ms": 1792138084023,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792138010875,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 40368,
+      "cycle": 15,
+      "duration_ms": 100368,
+      "ended_ms": 1792138184396,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792138084028,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 6703,
+      "cycle": 16,
+      "duration_ms": 66703,
+      "ended_ms": 1792138251100,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792138184397,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 41178,
+      "cycle": 17,
+      "duration_ms": 101178,
+      "ended_ms": 1792138352279,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792138251101,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 21111,
+      "cycle": 18,
+      "duration_ms": 81111,
+      "ended_ms": 1792138433390,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792138352279,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 24618,
+      "cycle": 19,
+      "duration_ms": 84618,
+      "ended_ms": 1792138518009,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792138433391,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 34081,
+      "cycle": 20,
+      "duration_ms": 94081,
+      "ended_ms": 1792138612091,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792138518010,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 16154,
+      "cycle": 21,
+      "duration_ms": 76154,
+      "ended_ms": 1792138688246,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792138612092,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 27626,
+      "cycle": 22,
+      "duration_ms": 87626,
+      "ended_ms": 1792138775872,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792138688246,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 12509,
+      "cycle": 23,
+      "duration_ms": 72509,
+      "ended_ms": 1792138848382,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792138775873,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 46843,
+      "cycle": 24,
+      "duration_ms": 106843,
+      "ended_ms": 1792138955225,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792138848382,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 5192,
+      "cycle": 25,
+      "duration_ms": 65192,
+      "ended_ms": 1792139020417,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792138955225,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 32097,
+      "cycle": 26,
+      "duration_ms": 92097,
+      "ended_ms": 1792139112518,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792139020421,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 3497,
+      "cycle": 27,
+      "duration_ms": 63497,
+      "ended_ms": 1792139176015,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792139112518,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 37343,
+      "cycle": 28,
+      "duration_ms": 97343,
+      "ended_ms": 1792139273359,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792139176016,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 28136,
+      "cycle": 29,
+      "duration_ms": 88136,
+      "ended_ms": 1792139361496,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792139273360,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 21220,
+      "cycle": 30,
+      "duration_ms": 81220,
+      "ended_ms": 1792139442716,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792139361496,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 0,
+      "cycle": 31,
+      "duration_ms": 56118,
+      "ended_ms": 1792139498835,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792139442717,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 0,
+      "cycle": 32,
+      "duration_ms": 40587,
+      "ended_ms": 1792139543304,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792139502717,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 32674,
+      "cycle": 33,
+      "duration_ms": 92674,
+      "ended_ms": 1792139655391,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792139562717,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 25992,
+      "cycle": 34,
+      "duration_ms": 85992,
+      "ended_ms": 1792139741384,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792139655392,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 35135,
+      "cycle": 35,
+      "duration_ms": 95135,
+      "ended_ms": 1792139836519,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792139741384,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 16761,
+      "cycle": 36,
+      "duration_ms": 76761,
+      "ended_ms": 1792139913285,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792139836524,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 28035,
+      "cycle": 37,
+      "duration_ms": 88035,
+      "ended_ms": 1792140001320,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792139913285,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 12773,
+      "cycle": 38,
+      "duration_ms": 72773,
+      "ended_ms": 1792140074094,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792140001321,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 47113,
+      "cycle": 39,
+      "duration_ms": 107113,
+      "ended_ms": 1792140181207,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792140074094,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 33630,
+      "cycle": 40,
+      "duration_ms": 93630,
+      "ended_ms": 1792140274838,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792140181208,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 23726,
+      "cycle": 41,
+      "duration_ms": 83726,
+      "ended_ms": 1792140358565,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792140274839,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 24916,
+      "cycle": 42,
+      "duration_ms": 84916,
+      "ended_ms": 1792140443482,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792140358566,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 18585,
+      "cycle": 43,
+      "duration_ms": 78585,
+      "ended_ms": 1792140522067,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792140443482,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 36894,
+      "cycle": 44,
+      "duration_ms": 96894,
+      "ended_ms": 1792140618961,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792140522067,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 11284,
+      "cycle": 45,
+      "duration_ms": 71284,
+      "ended_ms": 1792140690246,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792140618962,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 31158,
+      "cycle": 46,
+      "duration_ms": 91158,
+      "ended_ms": 1792140781405,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792140690247,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 37961,
+      "cycle": 47,
+      "duration_ms": 97961,
+      "ended_ms": 1792140879367,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792140781406,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 26278,
+      "cycle": 48,
+      "duration_ms": 86278,
+      "ended_ms": 1792140965646,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792140879368,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 26597,
+      "cycle": 49,
+      "duration_ms": 86597,
+      "ended_ms": 1792141052244,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792140965647,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 19289,
+      "cycle": 50,
+      "duration_ms": 79289,
+      "ended_ms": 1792141131534,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792141052245,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 45920,
+      "cycle": 51,
+      "duration_ms": 105920,
+      "ended_ms": 1792141237455,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792141131535,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 9624,
+      "cycle": 52,
+      "duration_ms": 69624,
+      "ended_ms": 1792141307080,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792141237456,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 43939,
+      "cycle": 53,
+      "duration_ms": 103939,
+      "ended_ms": 1792141411020,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792141307081,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 22408,
+      "cycle": 54,
+      "duration_ms": 82408,
+      "ended_ms": 1792141493429,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792141411021,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 25889,
+      "cycle": 55,
+      "duration_ms": 85889,
+      "ended_ms": 1792141579319,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792141493430,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 34536,
+      "cycle": 56,
+      "duration_ms": 94536,
+      "ended_ms": 1792141673856,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792141579320,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 16548,
+      "cycle": 57,
+      "duration_ms": 76548,
+      "ended_ms": 1792141750405,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792141673857,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 27970,
+      "cycle": 58,
+      "duration_ms": 87970,
+      "ended_ms": 1792141838376,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792141750406,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 12694,
+      "cycle": 59,
+      "duration_ms": 72694,
+      "ended_ms": 1792141911072,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792141838378,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 47061,
+      "cycle": 60,
+      "duration_ms": 107061,
+      "ended_ms": 1792142018134,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792141911073,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 24261,
+      "cycle": 61,
+      "duration_ms": 84261,
+      "ended_ms": 1792142102395,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792142018134,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 26533,
+      "cycle": 62,
+      "duration_ms": 86533,
+      "ended_ms": 1792142188928,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792142102395,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 35618,
+      "cycle": 63,
+      "duration_ms": 95618,
+      "ended_ms": 1792142284547,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792142188929,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 16988,
+      "cycle": 64,
+      "duration_ms": 76988,
+      "ended_ms": 1792142361535,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792142284547,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 28376,
+      "cycle": 65,
+      "duration_ms": 88376,
+      "ended_ms": 1792142449912,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792142361536,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 12903,
+      "cycle": 66,
+      "duration_ms": 72903,
+      "ended_ms": 1792142522816,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792142449913,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 47252,
+      "cycle": 67,
+      "duration_ms": 107252,
+      "ended_ms": 1792142630069,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792142522817,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 33676,
+      "cycle": 68,
+      "duration_ms": 93676,
+      "ended_ms": 1792142723746,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792142630070,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 23700,
+      "cycle": 69,
+      "duration_ms": 83700,
+      "ended_ms": 1792142807447,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792142723747,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 16514,
+      "cycle": 70,
+      "duration_ms": 76514,
+      "ended_ms": 1792142883961,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792142807447,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 20673,
+      "cycle": 71,
+      "duration_ms": 80673,
+      "ended_ms": 1792142964635,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792142883962,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 47346,
+      "cycle": 72,
+      "duration_ms": 107346,
+      "ended_ms": 1792143071981,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792142964635,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 10214,
+      "cycle": 73,
+      "duration_ms": 70214,
+      "ended_ms": 1792143142196,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792143071982,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 37492,
+      "cycle": 74,
+      "duration_ms": 97492,
+      "ended_ms": 1792143239689,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792143142197,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 6037,
+      "cycle": 75,
+      "duration_ms": 66037,
+      "ended_ms": 1792143305727,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792143239690,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 32901,
+      "cycle": 76,
+      "duration_ms": 92901,
+      "ended_ms": 1792143398629,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792143305728,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 22587,
+      "cycle": 77,
+      "duration_ms": 82587,
+      "ended_ms": 1792143481216,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792143398629,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 25655,
+      "cycle": 78,
+      "duration_ms": 85655,
+      "ended_ms": 1792143566872,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792143481217,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 0,
+      "cycle": 79,
+      "duration_ms": 59624,
+      "ended_ms": 1792143626497,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792143566873,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 0,
+      "cycle": 80,
+      "duration_ms": 45673,
+      "ended_ms": 1792143672546,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792143626873,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 0,
+      "cycle": 81,
+      "duration_ms": 24195,
+      "ended_ms": 1792143711068,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792143686873,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 0,
+      "cycle": 82,
+      "duration_ms": 20665,
+      "ended_ms": 1792143767538,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792143746873,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 0,
+      "cycle": 83,
+      "duration_ms": 20050,
+      "ended_ms": 1792143826924,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792143806874,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 0,
+      "cycle": 84,
+      "duration_ms": 34736,
+      "ended_ms": 1792143901610,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792143866874,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 8182,
+      "cycle": 85,
+      "duration_ms": 68182,
+      "ended_ms": 1792143995056,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792143926874,
+      "target_cycle_ms": 60000
+    },
+    {
+      "cadence_overrun_ms": 5434,
+      "cycle": 86,
+      "duration_ms": 65434,
+      "ended_ms": 1792144060491,
+      "errors": 0,
+      "pool_count": 5,
+      "requests": 6,
+      "started_ms": 1792143995057,
+      "target_cycle_ms": 60000
+    }
+  ],
+  "cycles": 87,
+  "ended_ms": 1792144799425,
+  "enrichment": [
+    {
+      "funding": {
+        "address": "EMdKqFBPN5NBh4XSiVPy8MWGRUgLTYsXRNQzVMJ3C7Kr",
+        "history_truncated": true,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 100,
+        "signatures_not_fetched": 92,
+        "transactions_requested": 8
+      },
+      "liquidity": {
+        "address": "4MJ9A8Uy9xW3szjXd9jMdwNLEr4EpR8v1Aiep55PVPBg",
+        "history_truncated": true,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 100,
+        "signatures_not_fetched": 92,
+        "transactions_requested": 8
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "7GKcZsxF3boVZpJxgj6nfPzzA8gZEpEixEunEgffBya"
+    },
+    {
+      "funding": {
+        "address": "8jmTq9Z8vGo3waPycNcYGP98S64Kw7LXhhUB1qP1un59",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 6,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 6
+      },
+      "liquidity": {
+        "address": "7PCqSkrFAWB7sbYCCmLMRYwp9Ha2iqJAhwj4JRxMzJJ9",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 3,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 3
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "HQ4oSgHmmpMGJtzXL6BgrLmSqiyQfMjuSfdPaNTWpump"
+    },
+    {
+      "funding": {
+        "address": "3FmcW36UvfTVH6P1BhkTH2tjRN5QS879nbr1v3b8RVRo",
+        "history_truncated": true,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 100,
+        "signatures_not_fetched": 92,
+        "transactions_requested": 8
+      },
+      "liquidity": {
+        "address": "ByKfqBGyHQj1hmEUouXfueLJEU1SHdJz3uMtd1yXGunS",
+        "history_truncated": true,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 100,
+        "signatures_not_fetched": 92,
+        "transactions_requested": 8
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv"
+    },
+    {
+      "funding": {
+        "address": "4XxXeTaUjXZPj6tK7WSVBbxoTTEz6ZFReogERF3dyUPy",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 32,
+        "signatures_not_fetched": 24,
+        "transactions_requested": 8
+      },
+      "liquidity": {
+        "address": "3cQXA9pv7DFeXwyn4gYmkTBb36NTqKTMyU6bTVXuFGEh",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 4,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 4
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "FWsov1yCCMeQFGLKt4UcuD1DJnsfRmEykR9C4vcQhw9W"
+    },
+    {
+      "funding": {
+        "address": "FM1w2rhLurY3CogtY2TvyBG3yMHNb9RfHrfWDHoSJJMN",
+        "history_truncated": true,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 100,
+        "signatures_not_fetched": 92,
+        "transactions_requested": 8
+      },
+      "liquidity": {
+        "address": "4NioGi23jXHhsbopZPxRzr3vCTDywmonozJkbb2k8cow",
+        "history_truncated": true,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 100,
+        "signatures_not_fetched": 92,
+        "transactions_requested": 8
+      },
+      "news_social": {
+        "gdelt": "error",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "8PZJo1HBboF2f7BWqkCYt41LBAFihE74vHnQoN6TpxFJ"
+    },
+    {
+      "funding": {
+        "address": "EMdKqFBPN5NBh4XSiVPy8MWGRUgLTYsXRNQzVMJ3C7Kr",
+        "history_truncated": true,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 100,
+        "signatures_not_fetched": 92,
+        "transactions_requested": 8
+      },
+      "liquidity": {
+        "address": "4MJ9A8Uy9xW3szjXd9jMdwNLEr4EpR8v1Aiep55PVPBg",
+        "history_truncated": true,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 100,
+        "signatures_not_fetched": 92,
+        "transactions_requested": 8
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 1,
+      "token": "7GKcZsxF3boVZpJxgj6nfPzzA8gZEpEixEunEgffBya"
+    },
+    {
+      "funding": {
+        "address": "8jmTq9Z8vGo3waPycNcYGP98S64Kw7LXhhUB1qP1un59",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 12,
+        "signatures_not_fetched": 4,
+        "transactions_requested": 8
+      },
+      "liquidity": {
+        "address": "7PCqSkrFAWB7sbYCCmLMRYwp9Ha2iqJAhwj4JRxMzJJ9",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 3,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 3
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 1,
+      "token": "HQ4oSgHmmpMGJtzXL6BgrLmSqiyQfMjuSfdPaNTWpump"
+    },
+    {
+      "funding": {
+        "address": "3FmcW36UvfTVH6P1BhkTH2tjRN5QS879nbr1v3b8RVRo",
+        "history_truncated": true,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 100,
+        "signatures_not_fetched": 92,
+        "transactions_requested": 8
+      },
+      "liquidity": {
+        "address": "ByKfqBGyHQj1hmEUouXfueLJEU1SHdJz3uMtd1yXGunS",
+        "history_truncated": true,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 100,
+        "signatures_not_fetched": 92,
+        "transactions_requested": 8
+      },
+      "news_social": {
+        "gdelt": "error",
+        "reddit": "error"
+      },
+      "round": 1,
+      "token": "2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv"
+    },
+    {
+      "funding": {
+        "address": "4XxXeTaUjXZPj6tK7WSVBbxoTTEz6ZFReogERF3dyUPy",
+        "history_truncated": true,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 100,
+        "signatures_not_fetched": 92,
+        "transactions_requested": 8
+      },
+      "liquidity": {
+        "address": "3cQXA9pv7DFeXwyn4gYmkTBb36NTqKTMyU6bTVXuFGEh",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 4,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 4
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 1,
+      "token": "FWsov1yCCMeQFGLKt4UcuD1DJnsfRmEykR9C4vcQhw9W"
+    },
+    {
+      "funding": {
+        "address": "FM1w2rhLurY3CogtY2TvyBG3yMHNb9RfHrfWDHoSJJMN",
+        "history_truncated": true,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 100,
+        "signatures_not_fetched": 92,
+        "transactions_requested": 8
+      },
+      "liquidity": {
+        "address": "4NioGi23jXHhsbopZPxRzr3vCTDywmonozJkbb2k8cow",
+        "history_truncated": true,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 100,
+        "signatures_not_fetched": 92,
+        "transactions_requested": 8
+      },
+      "news_social": {
+        "gdelt": "error",
+        "reddit": "error"
+      },
+      "round": 1,
+      "token": "8PZJo1HBboF2f7BWqkCYt41LBAFihE74vHnQoN6TpxFJ"
+    }
+  ],
+  "errors": 13,
+  "exchanges": 712,
+  "execution": "none: acquisition only, no orders",
+  "final_gt_rate_per_s": 0.11000000000000006,
+  "plan": {
+    "backfill_pages": 0,
+    "circuit_waits": 5,
+    "cycle_s": 60,
+    "ds_rate_per_s": 2.0,
+    "duration_s": 7200,
+    "gt_min_rate_per_s": 0.03,
+    "gt_rate_per_s": 0.2,
+    "holders_per_cycle": 0,
+    "lag_ms": 60000,
+    "network": "solana",
+    "new_pool_pages": 3,
+    "ohlcv_every": 1,
+    "phase3a": true,
+    "phase3d_coverage_mode": true,
+    "poll_ohlcv_limit": 5,
+    "rpc_max_pages": 1,
+    "rpc_max_txs": 8,
+    "rpc_page_limit": 100,
+    "rpc_rate_per_s": 2,
+    "seed": 20261016,
+    "strata": {
+      "established": 1,
+      "quiet_young": 1,
+      "trending": 1,
+      "young": 2
+    },
+    "universe_file": null
+  },
+  "poll_duration_s": 7234.629,
+  "poll_ended_ms": 1792144060492,
+  "poll_started_ms": 1792136825863,
+  "provenance": {
+    "acquisition_status": "COMPLETE",
+    "canonical_dataset_version": "3a.1",
+    "canonical_files": {
+      "phase2_records": "canonical/phase2_records.jsonl.gz",
+      "phase3a_observations": "canonical/phase3a_observations.jsonl.gz"
+    },
+    "completed_at": "2026-10-16T09:59:59.425000+00:00",
+    "config_hash": "417bd32cce8fb72c",
+    "coverage_summary": {
+      "phase2_issues": {
+        "DERIVED_FIELD": 535,
+        "FORMING_BAR_DROPPED": 4,
+        "MALFORMED_RECORD": 167,
+        "NULL_FIELD": 4,
+        "PROVIDER_ERROR": 13
+      },
+      "phase2_tokens": 88,
+      "phase3a_by_kind_state": {
+        "creator_state|OBSERVED": 5,
+        "funding_transfer|ERROR": 3,
+        "funding_transfer|NOT_OBSERVED": 8,
+        "funding_transfer|OBSERVED": 182,
+        "holder_state|NOT_OBSERVED": 1,
+        "holder_state|OBSERVED": 4,
+        "liquidity_event|ERROR": 7,
+        "liquidity_event|NOT_OBSERVED": 35,
+        "liquidity_event|OBSERVED": 96,
+        "news|ERROR": 3,
+        "news|NOT_OBSERVED": 7,
+        "social|ERROR": 10
+      }
+    },
+    "dataset_hash_algorithm": "sha256; phase2_records: concat of json.dumps(record, sort_keys=True, default=str) in normalizer order; phase3a_observations: json.dumps(observation.to_dict(), sort_keys=True) + newline in canonical order",
+    "endpoints": {
+      "gt.new_pools": 3,
+      "gt.ohlcv": 435,
+      "gt.pools_multi": 87,
+      "gt.token_info": 5,
+      "gt.top_pools": 1,
+      "gt.trending": 1,
+      "news.gdelt": 10,
+      "rpc.signatures": 20,
+      "rpc.transaction": 140,
+      "social.reddit": 10
+    },
+    "environment": {
+      "github_repository": "davidwillie998-droid/Autopsy-X-",
+      "github_workflow": "Phase 3C data acquisition",
+      "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+      "python": "3.11.17",
+      "runner_name": "GitHub Actions 1000000394",
+      "runner_os": "Linux"
+    },
+    "normalization_version": {
+      "observation_schema": "3a.1",
+      "sha256": "d1f17e40dbd196dc00a57f21d1deaae24a67d5193d476b9ea3e1f6ec997d084a",
+      "sources": {
+        "core/models.py": "4a5b69b699bf2b927965780f6c0a1f30af759bbc46f8564496768b846ab6c5a6",
+        "core/observation.py": "cd427925de27062fdef20e648ba839b22f123e845f90b12f4b31ed7bcdee9283",
+        "data/normalize.py": "045f6b0da79eb7ea468d787a4009d5097d4fbef6c7ebb8c009c0bf97f0020bbe",
+        "data/normalize3a.py": "927dc7c453a6841a76ba858b90bd6d6cbe6ebf86dc3d731b5afecda9f4d268fc",
+        "data/providers/dexscreener.py": "cd95c543b4363ed610220e976cb4e7d69dec77460a0e3628e2235b9e74c71b6a",
+        "data/providers/geckoterminal.py": "69e08237be25849bbadcdc7d998f02143e66bd3b65fc32b7ecc9d380bab870b4",
+        "data/providers/gt_phase3a.py": "651fca65a63652254143b34421c28311369ca8380330a80011348ad6c6592ef0",
+        "data/providers/news_social.py": "c75738ea9248b11686523100114a11526b30ed191a1ef66bd895ba58dbfdbeb4",
+        "data/providers/solana_rpc.py": "d0939c469d3fa7cc11fa4eb28d363e0cb8167bb1666991a94c06b9a9beb8dbcb",
+        "data/raw.py": "fee31fb80ef59c1195c05b7df158f6d4c0075d85d8f49f98677dcab9ce0e386e",
+        "data/validate.py": "3642dc3fac0b2e0f2f6143435aea46813a9d9f7846592fe3a9e2f8e046be6e34",
+        "pipeline.py": "acbce7f08f969b1206a3d252ca5b5e3d0be60d5c660ca12cf8fa41841bd411d3",
+        "providers/store.py": "b3e4532142ebb607e0537dea5663d5e5e04064b3f0f2b8e924d460e54fde494c"
+      }
+    },
+    "providers": [
+      "gdelt",
+      "geckoterminal",
+      "reddit",
+      "solana_rpc"
+    ],
+    "record_counts": {
+      "manifest_errors": 13,
+      "manifest_exchanges": 712,
+      "phase2_records": {
+        "Coverage": 435,
+        "HolderSnapshot": 4,
+        "PoolInfo": 535,
+        "PoolSnapshot": 532,
+        "ProviderBar": 1736,
+        "TokenMeta": 540
+      },
+      "phase3a_observations": 361
+    },
+    "repository_commit": "c7df5a814700be2d10a4cc1dc4a6034fccbad89a",
+    "run_id": "p3c-sol-20261016d",
+    "runner_dataset_hash": {
+      "phase2_records": "cb195207244805ea56b2773616e7b60e219a008065a3aed95bd3550d60832cc3",
+      "phase3a_observations": "6a3f777ab442895b190ae99a8f4f1f54fa535154ddf58a757924d95f4fbb1d8d"
+    },
+    "started_at": "2026-10-16T07:40:26.414000+00:00",
+    "unavailable_fields": [],
+    "workflow_run_attempt": "1",
+    "workflow_run_id": "38856573442"
+  },
+  "runner": "GitHub Actions 1000000394",
+  "started_ms": 1792136426414,
+  "status": "COMPLETE",
+  "universe": {
+    "fingerprint": "24e4c1a94299952e3f71b5422fa9005596e1462b19bff5f8ac9520b82f25e76c",
+    "source": "frozen_this_run"
+  }
+}
