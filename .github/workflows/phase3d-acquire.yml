@@ -121,10 +121,23 @@ jobs:
           set -euo pipefail
           git config user.name "autopsyx-acquisition"
           git config user.email "actions@users.noreply.github.com"
+          git fetch origin "${{ github.ref_name }}"
+          git rebase "origin/${{ github.ref_name }}"
           git add intel/datasets/phase3d/runs
           if git diff --cached --quiet; then
             echo "No new acquisition archives to commit."
           else
             git commit -m "Phase 3D independent acquisition: windows A and B (workflow ${{ github.run_id }})"
           fi
-          git push origin "HEAD:${{ github.ref_name }}"
+          # A docs/test commit may land while data is being acquired. Retry a
+          # fast-forward-safe push after rebasing only the isolated archive commit.
+          pushed=0
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:${{ github.ref_name }}"; then
+              pushed=1
+              break
+            fi
+            git fetch origin "${{ github.ref_name }}"
+            git rebase "origin/${{ github.ref_name }}"
+          done
+          test "$pushed" -eq 1 || { echo "Could not push acquisition archives after 3 attempts" >&2; exit 1; }
