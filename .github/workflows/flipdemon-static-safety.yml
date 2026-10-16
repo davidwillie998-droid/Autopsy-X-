@@ -7,9 +7,11 @@ on:
   push:
     branches:
       - 'claude/autopsy-flipdemon-extreme-l4ei3d'
+      - 'fix/flipdemon-extreme-safety-rebased-20261016'
     paths:
       - 'MQL5/**'
       - 'scripts/verify_flipdemon_safety.py'
+      - 'docs/FLIPDEMON_SSRN_EXECUTION_EVIDENCE.md'
       - '.github/workflows/flipdemon-static-safety.yml'
   pull_request:
     paths:
