@@ -5,7 +5,11 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "research"))
-from flipdemon_pyramid_matrix import PyramidInputs, evaluate_add_on
+from flipdemon_pyramid_matrix import (
+    PyramidInputs,
+    evaluate_add_on,
+    schedule_target_lots,
+)
 
 
 def baseline(**overrides):
@@ -161,6 +165,26 @@ class PyramidMatrixTests(unittest.TestCase):
         decision = evaluate_add_on(baseline(campaign_is_winning=False))
         self.assertFalse(decision.allowed)
         self.assertIn("NO_ADD_TO_LOSING_CAMPAIGN", decision.reasons)
+
+    def test_increasing_schedule_grows_but_respects_target_ceiling(self):
+        self.assertAlmostEqual(schedule_target_lots(1, 0.1, "increasing", 2.0), 0.1)
+        self.assertAlmostEqual(schedule_target_lots(2, 0.1, "increasing", 2.0), 0.15)
+        self.assertAlmostEqual(schedule_target_lots(20, 0.1, "increasing", 0.5), 0.5)
+
+    def test_equal_and_risk_adaptive_schedules_are_bounded(self):
+        self.assertAlmostEqual(schedule_target_lots(5, 0.2, "equal", 1.0), 0.2)
+        self.assertAlmostEqual(
+            schedule_target_lots(5, 0.2, "risk_adaptive", 1.0, quality_multiplier=0.4),
+            0.08,
+        )
+
+    def test_schedule_rejects_unbounded_multiplier_and_bad_stage(self):
+        with self.assertRaises(ValueError):
+            schedule_target_lots(3, 0.1, "increasing", 2.0, increasing_multiplier=3.0)
+        with self.assertRaises(ValueError):
+            schedule_target_lots(0, 0.1, "equal", 2.0)
+        with self.assertRaises(ValueError):
+            schedule_target_lots(2, 0.1, "unknown", 2.0)
 
 
 if __name__ == "__main__":
