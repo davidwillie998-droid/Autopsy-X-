@@ -40,7 +40,9 @@ class Plan:
     network: str = "solana"
     seed: int = 20260930
     strata: dict[str, int] = field(default_factory=lambda: {"young": 4, "quiet_young": 2, "trending": 3, "established": 3})
-    new_pool_pages: int = 3
+    new_pool_pages: int = 5
+    trending_pages: int = 3
+    established_pages: int = 3
     backfill_pages: int = 2  # x 1000 minute bars per pool
     duration_s: int = 3600
     cycle_s: int = 60
@@ -315,10 +317,22 @@ def select_universe(f: Fetcher, plan: Plan, forbidden_tokens: set[str] | None = 
                          response_ts=None, status=None, body=None, attempts=None,
                          error=f"new_pools page {page} failed; later pages still fetched", context={"page": page})
         cands["young"] += _pools_from(e, b)
-    e, b = f.get(gt.NAME, "gt.trending", gt.path_trending(n), {"chain": n, "stratum": "trending"})
-    cands["trending"] = _pools_from(e, b)
-    e, b = f.get(gt.NAME, "gt.top_pools", gt.path_top_pools(n), {"chain": n, "stratum": "established"})
-    cands["established"] = _pools_from(e, b)
+    for page in range(1, plan.trending_pages + 1):
+        e, b = f.get(gt.NAME, "gt.trending", gt.path_trending(n, page),
+                     {"chain": n, "stratum": "trending", "page": page})
+        if b is None:
+            f.raw.record(provider="audit", endpoint="pagination_gap", url=e.url, request_ts=e.request_ts,
+                         response_ts=None, status=None, body=None, attempts=None,
+                         error=f"trending page {page} failed", context={"page": page})
+        cands["trending"] += _pools_from(e, b)
+    for page in range(1, plan.established_pages + 1):
+        e, b = f.get(gt.NAME, "gt.top_pools", gt.path_top_pools(n, page),
+                     {"chain": n, "stratum": "established", "page": page})
+        if b is None:
+            f.raw.record(provider="audit", endpoint="pagination_gap", url=e.url, request_ts=e.request_ts,
+                         response_ts=None, status=None, body=None, attempts=None,
+                         error=f"established page {page} failed", context={"page": page})
+        cands["established"] += _pools_from(e, b)
 
     rng = random.Random(plan.seed)
     picked: list[dict] = []
