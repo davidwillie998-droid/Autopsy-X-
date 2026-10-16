@@ -11,7 +11,7 @@ name: Phase 3C data acquisition
 
 on:
   push:
-    branches: [ccr-dea9382c-vwhvi6]
+    branches: [fix/phase3d-acquisition-coverage]
     paths: ["intel/datasets/phase3c/REQUEST.json"]
 
 permissions:
@@ -47,7 +47,7 @@ jobs:
       - name: Verify provenance on the runner
         if: always()
         working-directory: intel
-        run: python -m autopsyx verify-provenance "datasets/phase3c/runs/$RUN_ID" > "datasets/phase3c/runs/$RUN_ID/runner_verify.json" || true
+        run: python -m autopsyx verify-provenance "datasets/phase3c/runs/$RUN_ID" > "datasets/phase3c/runs/$RUN_ID/runner_verify.json"
       - name: Commit raw archive
         if: always()
         run: |

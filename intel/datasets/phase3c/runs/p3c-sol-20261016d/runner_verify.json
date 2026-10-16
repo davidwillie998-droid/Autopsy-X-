@@ -1,0 +1,30 @@
+{
+  "acquisition_status": "COMPLETE",
+  "archive": "p3c-sol-20261016d",
+  "committed_canonical": {
+    "phase2_records": "cb195207244805ea56b2773616e7b60e219a008065a3aed95bd3550d60832cc3",
+    "phase3a_observations": "6a3f777ab442895b190ae99a8f4f1f54fa535154ddf58a757924d95f4fbb1d8d"
+  },
+  "committed_matches_runner": true,
+  "config_hash_local": "417bd32cce8fb72c",
+  "config_hash_runner": "417bd32cce8fb72c",
+  "normalization_version_match": true,
+  "rebuild_1": {
+    "phase2_records": "cb195207244805ea56b2773616e7b60e219a008065a3aed95bd3550d60832cc3",
+    "phase3a_observations": "6a3f777ab442895b190ae99a8f4f1f54fa535154ddf58a757924d95f4fbb1d8d"
+  },
+  "rebuild_2": {
+    "phase2_records": "cb195207244805ea56b2773616e7b60e219a008065a3aed95bd3550d60832cc3",
+    "phase3a_observations": "6a3f777ab442895b190ae99a8f4f1f54fa535154ddf58a757924d95f4fbb1d8d"
+  },
+  "rebuild_matches_runner": true,
+  "reproducible": true,
+  "runner": {
+    "phase2_records": "cb195207244805ea56b2773616e7b60e219a008065a3aed95bd3550d60832cc3",
+    "phase3a_observations": "6a3f777ab442895b190ae99a8f4f1f54fa535154ddf58a757924d95f4fbb1d8d"
+  },
+  "scope": "phase2_records and phase3a_observations",
+  "source": "run.json provenance (sealed on runner)",
+  "verified": true,
+  "workflow_run_id": "38856573442"
+}
