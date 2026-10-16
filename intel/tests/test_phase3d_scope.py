@@ -53,6 +53,7 @@ def test_phase3d_does_not_modify_frozen_phase3c1_implementation():
             f.startswith("docs/PHASE3D_")
             or f.startswith("intel/datasets/phase3d/")
             or f.startswith("intel/tests/test_phase3d_")
+            or f == "intel/autopsyx/phase3d_acquire.py"
             or f.startswith(".github/workflows/phase3d-")
             or f == ".github/workflows/intel-tests.yml"
             or f == "intel/tests/test_phase3c_scope.py"
