@@ -68,4 +68,35 @@ require("g_posState.modifyFailCount>=InpMaxModifyFailures" in ea
 require("not a martingale" in readme.lower() and "never averages down" in readme.lower(),
         "documentation explicitly prohibits martingale and averaging down")
 
+
+# Guard ordering matters: risk, margin and exposure must be checked against the final
+# normalized volume AFTER every adaptive multiplier and affordability adjustment.
+afe_i = ea.find("if(!g_afe.Evaluate(")
+impact_i = ea.find("g_heatmap.EstimateExecution(")
+final_risk_i = ea.find("bool finalRiskOk=")
+open_i = ea.find("g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice")
+require(afe_i >= 0 and impact_i >= 0 and final_risk_i > afe_i and final_risk_i > impact_i and open_i > final_risk_i,
+        "final risk/margin/exposure checks run after adaptive and impact sizing, before order submission")
+require("OrderCalcProfit(finalOrderType,_Symbol,lots,intendedPrice,slPrice,finalStopProfit)" in ea
+        and "OrderCalcMargin(finalOrderType,_Symbol,lots,intendedPrice,requiredMargin)" in ea
+        and "!finalRiskOk" in ea and "!finalMarginOk" in ea,
+        "final volume is rejected if account-currency stop risk or projected margin cannot be verified")
+require("bool finalExposureOk=g_risk.ProjectedExposureAcceptable(symbolExposureLots," in ea
+        and "bool finalAccountExposureOk=(accountExposureLots+lots<=InpMaxExposureLots+0.0000001)" in ea,
+        "symbol/directional and account-wide caps are independently enforced on final volume")
+
+open_market_i = execution.find("bool              OpenMarket(")
+close_i = execution.find("bool              ClosePosition(")
+open_market = execution[open_market_i:close_i] if open_market_i >= 0 and close_i > open_market_i else ""
+require("bool serverConfirmedFill=(retcode==TRADE_RETCODE_DONE || retcode==TRADE_RETCODE_DONE_PARTIAL)" in open_market
+        and "Ambiguous order result, not retried" in open_market
+        and "retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION" in open_market,
+        "ambiguous market-order acknowledgements fail closed without blind duplicate retries")
+close_body = execution[close_i:] if close_i >= 0 else ""
+close_send_i = close_body.find("ok = m_trade.PositionClose(symbol)")
+close_reconcile_i = close_body.find("if(!PositionSelect(symbol))", close_send_i)
+close_retry_i = close_body.find("if(ok || !RetryableRetcode(retcode))", close_send_i)
+require(close_send_i >= 0 and close_reconcile_i > close_send_i and close_retry_i > close_reconcile_i,
+        "close requests reconcile broker position state before any retry decision")
+
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
