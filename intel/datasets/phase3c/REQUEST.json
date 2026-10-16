@@ -1,7 +1,7 @@
 {
-  "run_id": "p3c-sol-20261014a",
+  "run_id": "p3c-sol-20261016a",
   "network": "solana",
-  "seed": 20261014,
+  "seed": 20261016,
   "strata": {
     "young": 2,
     "quiet_young": 1,
