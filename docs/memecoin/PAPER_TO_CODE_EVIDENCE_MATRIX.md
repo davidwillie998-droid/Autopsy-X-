@@ -66,11 +66,11 @@ Each audit run should publish, at minimum:
 
 ## Engineering finding from the Phase 3D request audit
 
-The previous request configured `backfill_pages: 0`, while the live polling request asks for only five one-minute OHLCV bars per pool. That combination did not collect pre-poll history and therefore could not establish historical 15-minute/60-minute coverage at the beginning of a run. This is a configuration-level coverage defect, not evidence that the market itself lacks qualifying pools.
+The previous request configured `backfill_pages: 0`, so it collected no pre-poll OHLCV context. That was not, by itself, the root cause of liquidity-readiness failure: historical price bars cannot be treated as point-in-time liquid observations because the provider response is only observed at collection time. The key readiness evidence must come from fresh, synchronized live liquidity snapshots and eligible price bars.
 
-**Fix committed:** the next run is now `p3c-sol-20261016b` with `backfill_pages: 1` (up to one provider page of 1,000 minute bars per selected pool), while retaining the existing 60-second poll cadence, 60-second lag policy, five-bar live poll, and two-hour observation window. A regression test now fails if the Phase 3D request returns to zero backfill pages.
+**Change committed:** run `p3c-sol-20261016b` now requests `backfill_pages: 1` (up to one provider page of 1,000 minute bars per selected pool) for price context, while retaining the existing 60-second poll cadence, 60-second lag policy, five-bar live poll, and two-hour observation window. A regression test protects this configuration and explicitly states that historical bars must not be treated as known at their bar-open time.
 
-**Limits of this fix:** backfill supplies price history, not historical liquidity snapshots. The two-hour live observation period must still establish sufficiently fresh pool-liquidity snapshots aligned with eligible bars. Newly launched pools may have less than 1,000 bars available. This change does not establish readiness by itself; the per-pool coverage audit and existing acceptance thresholds must still pass. Do not count a historical price bar as liquid merely because a current snapshot exists.
+**Limits of this change:** backfill supplies price history, not historical liquidity snapshots. The two-hour live observation period must still establish sufficiently fresh pool-liquidity snapshots aligned with eligible bars. Newly launched pools may have less than 1,000 bars available. This change does not establish readiness by itself; the per-pool coverage audit and existing acceptance thresholds must still pass. Do not count a historical price bar as liquid merely because a current snapshot exists.
 
 ## Additional primary research detail
 
