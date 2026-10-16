@@ -64,8 +64,9 @@ def _select(plan, forbidden, trending_pages=3, established_pages=3):
     take("trending",candidates["trending"],plan.strata["trending"])
     take("established",candidates["established"],plan.strata["established"])
     counts={k:len(v) for k,v in candidates.items()} | {"quiet_young":len(quiet)}
+    selected_counts={s:sum(1 for p in picked if p["stratum"]==s) for s in plan.strata}
     if len(tokens) < 85:
-        raise RuntimeError(f"unable to obtain >=85 fresh distinct tokens in one discovery pass; selected={len(tokens)}; candidate_counts={counts}; selected_by_stratum={{s:sum(1 for p in picked if p['stratum']==s) for s in plan.strata}}")
+        raise RuntimeError(f"unable to obtain >=85 fresh distinct tokens in one discovery pass; selected={len(tokens)}; candidate_counts={counts}; selected_by_stratum={selected_counts}")
     picked=sorted(picked,key=lambda p:(p["stratum"],p["pool"]))
     u={"frozen_at_ms":now(),
        "mechanism":{"procedure":"Phase 3D fresh seeded stratified selection using paginated GeckoTerminal discovery",
