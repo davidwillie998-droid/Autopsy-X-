@@ -30,7 +30,7 @@ jobs:
       - name: Acquire Window A
         working-directory: intel
         env:
-          AUTOPSYX_SOLANA_RPC_URL: \${{ secrets.AUTOPSYX_SOLANA_RPC_URL }}
+          AUTOPSYX_SOLANA_RPC_URL: ${{ secrets.AUTOPSYX_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com' }}
         run: python -m autopsyx.phase3d_acquire --request datasets/phase3d/ACQUISITION_REQUEST.json --window A --out-root datasets/phase3d/runs
       - name: Verify Window A
         working-directory: intel
@@ -47,7 +47,7 @@ jobs:
       - name: Acquire Window B
         working-directory: intel
         env:
-          AUTOPSYX_SOLANA_RPC_URL: \${{ secrets.AUTOPSYX_SOLANA_RPC_URL }}
+          AUTOPSYX_SOLANA_RPC_URL: ${{ secrets.AUTOPSYX_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com' }}
         run: python -m autopsyx.phase3d_acquire --request datasets/phase3d/ACQUISITION_REQUEST.json --window B --out-root datasets/phase3d/runs
       - name: Verify independence
         working-directory: intel
@@ -86,7 +86,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: phase3d-acquisition-\${{ github.run_id }}
+          name: phase3d-acquisition-${{ github.run_id }}
           path: intel/datasets/phase3d/runs
           retention-days: 30
       - name: Commit acquisition archives
@@ -95,5 +95,5 @@ jobs:
           git config user.name "autopsyx-acquisition"
           git config user.email "actions@users.noreply.github.com"
           git add intel/datasets/phase3d/runs
-          git commit -m "Phase 3D independent acquisition: windows A and B (workflow \${{ github.run_id }})" || true
-          git push origin "HEAD:\${{ github.ref_name }}"
+          git commit -m "Phase 3D independent acquisition: windows A and B (workflow ${{ github.run_id }})" || true
+          git push origin "HEAD:${{ github.ref_name }}"
