@@ -84,11 +84,11 @@ private:
 public:
                      CRiskEngine(void)
      {
-      m_riskPercent=1.0; m_dailyLossLimitPercent=8.0; m_maxConsecutiveLosses=5;
+      m_riskPercent=1.0; m_dailyLossLimitPercent=4.0; m_maxConsecutiveLosses=4;
       m_maxOpenPositions=1; m_maxExposureLots=1.0; m_maxFlipsPerDay=20;
       m_maxTradesPerRollingPeriod=10; m_rollingPeriodSec=300;
       m_maxSpreadPts=250; m_maxSlippagePts=30; m_minFreeMarginPercent=150.0;
-      m_weeklyLossLimitPercent=15.0; m_maxPositionsPerSymbol=1; m_maxDirectionalExposureLots=1.0;
+      m_weeklyLossLimitPercent=8.0; m_maxPositionsPerSymbol=1; m_maxDirectionalExposureLots=1.0;
       m_maxMarginUsagePercent=50.0; m_maxExecutionFailures=5;
       m_dayStartEquity=0; m_dayStartTime=0; m_weekStartEquity=0; m_weekStartTime=0;
       m_consecutiveLosses=0; m_flipsToday=0; m_consecutiveExecutionFailures=0;
@@ -101,7 +101,7 @@ public:
                                 const int maxTradesPerRollingPeriod,const int rollingPeriodSec,
                                 const double maxSpreadPts,const double maxSlippagePts,
                                 const double minFreeMarginPercent,
-                                const double weeklyLossLimitPercent=15.0,
+                                const double weeklyLossLimitPercent=8.0,
                                 const int maxPositionsPerSymbol=1,
                                 const double maxDirectionalExposureLots=1.0,
                                 const double maxMarginUsagePercent=50.0,
