@@ -316,7 +316,7 @@ def test_final_volume_cannot_breach_symbol_or_directional_exposure_caps():
     ea = EA_FILE.read_text(errors="replace")
     risk = (INCLUDE_DIR / "RiskEngine.mqh").read_text(errors="replace")
     assert "g_risk.ProjectedExposureAcceptable(symbolExposureLots" in ea
-    assert "currentDirectionalLots+proposedLots>m_maxDirectionalExposureLots" in risk
+    assert "m_maxDirectionalExposureLots>0.0 && currentDirectionalLots+proposedLots>m_maxDirectionalExposureLots+1e-8" in risk
     assert "InpMaxExposureLots<=0.0 || accountExposureLots+lots<=InpMaxExposureLots+0.0000001" in ea
     assert "if(m_maxExposureLots>0.0) lots = MathMin(lots,m_maxExposureLots);" in risk
 
@@ -337,6 +337,7 @@ def test_zero_fixed_gross_lot_cap_disables_only_that_cap():
     ea = EA_FILE.read_text(errors="replace")
     risk = (INCLUDE_DIR / "RiskEngine.mqh").read_text(errors="replace")
     assert "InpMaxExposureLots         = 0.0" in ea
+    assert "InpMaxDirectionalExposureLots = 0.0" in ea
     assert "if(InpMaxExposureLots>0.0)" in ea
     assert "if(m_maxExposureLots>0.0) lots = MathMin(lots,m_maxExposureLots);" in risk
     assert "m_dailyLossLimitPercent=4.0" in risk
