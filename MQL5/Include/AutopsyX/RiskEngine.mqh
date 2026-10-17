@@ -48,6 +48,7 @@ private:
    datetime          m_lossTimes[AX_RISK_LOSS_HISTORY];
    int               m_lossTimeCount;
    bool              m_lossPersistenceOk;
+   bool              m_equityPersistenceOk;
    int               m_flipsToday;
    int               m_consecutiveExecutionFailures;
    bool              m_dailyLockout;
@@ -132,6 +133,58 @@ private:
       return(true);
      }
 
+   string            EquityStateKey(const string field) const
+     {
+      // Account-wide keys keep equity-loss baselines consistent across EA instances and symbols.
+      return(StringFormat("AXFDEQ_%I64d_%s",AccountInfoInteger(ACCOUNT_LOGIN),field));
+     }
+
+   bool              WritePersistentValue(const string key,const double value)
+     {
+      datetime writtenAt=GlobalVariableSet(key,value);
+      if(writtenAt==0 || !GlobalVariableCheck(key)) return(false);
+      return(MathAbs(GlobalVariableGet(key)-value)<0.5);
+     }
+
+   bool              PersistEquityState(void)
+     {
+      string readyKey=EquityStateKey("READY");
+      if(!WritePersistentValue(readyKey,0.0)) return(false);
+      if(!WritePersistentValue(EquityStateKey("DAY_START"),(double)m_dayStartTime)) return(false);
+      if(!WritePersistentValue(EquityStateKey("DAY_EQUITY"),m_dayStartEquity)) return(false);
+      if(!WritePersistentValue(EquityStateKey("DAY_LOCK"),m_dailyLockout ? 1.0 : 0.0)) return(false);
+      if(!WritePersistentValue(EquityStateKey("WEEK_START"),(double)m_weekStartTime)) return(false);
+      if(!WritePersistentValue(EquityStateKey("WEEK_EQUITY"),m_weekStartEquity)) return(false);
+      if(!WritePersistentValue(EquityStateKey("WEEK_LOCK"),m_weeklyLockout ? 1.0 : 0.0)) return(false);
+      return(WritePersistentValue(readyKey,1.0));
+     }
+
+   bool              LoadEquityState(bool &stateExists)
+     {
+      stateExists=false;
+      string fields[6]={"DAY_START","DAY_EQUITY","DAY_LOCK","WEEK_START","WEEK_EQUITY","WEEK_LOCK"};
+      bool anyFieldExists=false;
+      for(int i=0;i<ArraySize(fields);i++)
+         if(GlobalVariableCheck(EquityStateKey(fields[i]))) anyFieldExists=true;
+      string readyKey=EquityStateKey("READY");
+      if(!GlobalVariableCheck(readyKey)) return(!anyFieldExists);
+      if(MathAbs(GlobalVariableGet(readyKey)-1.0)>0.1) return(false);
+      for(int i=0;i<ArraySize(fields);i++)
+         if(!GlobalVariableCheck(EquityStateKey(fields[i]))) return(false);
+      datetime dayStart=(datetime)GlobalVariableGet(EquityStateKey("DAY_START"));
+      double dayEquity=GlobalVariableGet(EquityStateKey("DAY_EQUITY"));
+      double dayLock=GlobalVariableGet(EquityStateKey("DAY_LOCK"));
+      datetime weekStart=(datetime)GlobalVariableGet(EquityStateKey("WEEK_START"));
+      double weekEquity=GlobalVariableGet(EquityStateKey("WEEK_EQUITY"));
+      double weekLock=GlobalVariableGet(EquityStateKey("WEEK_LOCK"));
+      if(dayStart<=0 || dayEquity<=0.0 || weekStart<=0 || weekEquity<=0.0) return(false);
+      if((dayLock!=0.0 && dayLock!=1.0) || (weekLock!=0.0 && weekLock!=1.0)) return(false);
+      m_dayStartTime=dayStart; m_dayStartEquity=dayEquity; m_dailyLockout=(dayLock>0.5);
+      m_weekStartTime=weekStart; m_weekStartEquity=weekEquity; m_weeklyLockout=(weekLock>0.5);
+      stateExists=true;
+      return(true);
+     }
+
    void              PushTradeTime(const datetime t)
      {
       if(m_tradeTimeCount<AX_RISK_TRADE_BUFFER) { m_tradeTimes[m_tradeTimeCount]=t; m_tradeTimeCount++; }
@@ -152,7 +205,7 @@ public:
       m_weeklyLossLimitPercent=8.0; m_maxPositionsPerSymbol=1; m_maxDirectionalExposureLots=1.0;
       m_maxMarginUsagePercent=50.0; m_maxExecutionFailures=5;
       m_dayStartEquity=0; m_dayStartTime=0; m_weekStartEquity=0; m_weekStartTime=0;
-      m_lossTimeCount=0; m_lossPersistenceOk=true; m_flipsToday=0; m_consecutiveExecutionFailures=0;
+      m_lossTimeCount=0; m_lossPersistenceOk=true; m_equityPersistenceOk=true; m_flipsToday=0; m_consecutiveExecutionFailures=0;
       m_dailyLockout=false; m_weeklyLockout=false; m_tradeTimeCount=0; m_killed=false;
      }
 
@@ -269,6 +322,7 @@ public:
         {
          m_dailyLockout = true;
          m_lockoutReason = StringFormat("Daily loss limit hit: -%.2f%% (limit %.2f%%)",lossPct,m_dailyLossLimitPercent);
+         if(!PersistEquityState()) m_equityPersistenceOk=false;
          return(true);
         }
       return(false);
@@ -300,6 +354,7 @@ public:
         {
          m_weeklyLockout = true;
          m_lockoutReason = StringFormat("Weekly loss limit hit: -%.2f%% (limit %.2f%%)",lossPct,m_weeklyLossLimitPercent);
+         if(!PersistEquityState()) m_equityPersistenceOk=false;
          return(true);
         }
       return(false);
@@ -400,6 +455,7 @@ public:
       double dirExposure = (directionalExposureLots<0) ? currentExposureLots : directionalExposureLots;
 
       if(m_killed) { reason="Kill switch active"; return(false); }
+      if(!m_equityPersistenceOk) { reason="Daily/weekly equity-loss state persistence failed; entries blocked"; return(false); }
       if(!m_lossPersistenceOk) { reason="Rolling 24-hour loss history persistence failed; entries blocked"; return(false); }
       if(DailyLossLimitBreached()) { reason=m_lockoutReason; return(false); }
       if(WeeklyLossLimitBreached()) { reason=m_lockoutReason; return(false); }
