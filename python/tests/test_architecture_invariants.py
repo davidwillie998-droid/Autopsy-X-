@@ -368,3 +368,8 @@ def test_account_flip_loss_limits_are_conservative_and_consistent():
     assert "LoadLossTimes" in risk
     assert "PersistLossTimes" in risk
     assert "m_lossPersistenceOk" in risk
+    assert "EquityStateKey" in risk
+    assert "PersistEquityState" in risk
+    assert "LoadEquityState" in risk
+    assert "m_equityPersistenceOk" in risk
+    assert "Daily/weekly equity-loss state persistence failed; entries blocked" in risk
