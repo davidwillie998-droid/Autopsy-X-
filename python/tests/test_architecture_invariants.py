@@ -364,3 +364,7 @@ def test_account_flip_loss_limits_are_conservative_and_consistent():
     assert "LossesInRolling24Hours" in risk
     assert "m_weeklyLossLimitPercent=8.0" in risk
     assert "weeklyLossLimitPercent=8.0" in risk
+    assert "GlobalVariableSet" in risk
+    assert "LoadLossTimes" in risk
+    assert "PersistLossTimes" in risk
+    assert "m_lossPersistenceOk" in risk
