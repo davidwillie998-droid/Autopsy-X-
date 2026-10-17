@@ -99,6 +99,10 @@ def test_kelly_gate_uses_conservative_estimate_and_only_scales_down():
     assert re.search(r"InpUseKellyGate\s*=\s*true", text)
     assert "EvaluateConservative" in text
     assert "allowedRiskPct=MathMin(configuredRiskPct,kellyReport.halfKellyFraction*100.0)" in text
+    assert "double effectiveRiskCapPct=g_risk.RiskPercent();" in text
+    assert "effectiveRiskCapPct=MathMin(configuredRiskPct,allowedRiskPct);" in text
+    assert "double riskBudget=equity*effectiveRiskCapPct/100.0;" in text
+    assert "double finalRiskBudget=equity*effectiveRiskCapPct/100.0;" in text
     assert "95% Wilson lower bound" in kelly
     assert "if(allowedRiskPct<configuredRiskPct)" in text
 
