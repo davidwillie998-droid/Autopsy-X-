@@ -114,7 +114,7 @@ require("AX_VWAP_EXIT_CONFIRMED_CROSS_PLUS_STRUCTURE" in ea and "return(INIT_PAR
         "unsupported structure-confirmed VWAP mode fails initialization instead of silently falling back")
 require("#include <AutopsyX/KellyRuin.mqh>" in ea and "EvaluateConservative" in ea,
         "Kelly estimator is included and called by the entry gate")
-require("95% Wilson lower-bound" in kelly and "AX_KELLY_MIN_SAMPLE" in kelly,
+require("95% Wilson lower bound" in kelly and "AX_KELLY_MIN_SAMPLE" in kelly,
         "Kelly sizing uses a conservative win-rate bound and minimum sample requirement")
 require("InpKellyWarmupRiskPercent" in ea and "MathMin(configuredRiskPct,kellyReport.halfKellyFraction*100.0)" in ea,
         "Kelly gate caps risk during warm-up and at no more than half conservative Kelly")
