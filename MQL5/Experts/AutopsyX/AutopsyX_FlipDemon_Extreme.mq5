@@ -35,6 +35,7 @@
 #include <AutopsyX/Heatmap.mqh>
 #include <AutopsyX/TradeAutopsy.mqh>
 #include <AutopsyX/Statistics.mqh>
+#include <AutopsyX/KellyRuin.mqh>
 #include <AutopsyX/AdaptiveFlipEngine.mqh>
 #include <AutopsyX/VWAPEngine.mqh>
 #include <AutopsyX/EmergencyControls.mqh>
@@ -96,9 +97,13 @@ input int             InpVWAPTokyoHour       = 0;      // Tokyo session open, br
 input int             InpVWAPLondonHour      = 8;      // London session open, broker server time hour
 input int             InpVWAPNewYorkHour     = 13;      // New York session open, broker server time hour
 input double          InpVWAPDeadbandATRMult = 0.1;    // Deadband around VWAP, as a multiple of ATR, before a trend read is BULLISH/BEARISH rather than NEUTRAL
-input bool            InpUseVWAPExit         = false;  // Opt-in mechanical exit: close if a bar closes on the wrong side of VWAP from the position's direction - see InpVWAPExitMode for exactly when it fires
+input bool            InpUseVWAPExit         = true;   // Mechanical closed-bar VWAP exit enabled by default; validate per symbol/timeframe before live use
 input ENUM_AX_VWAP_EXIT_MODE InpVWAPExitMode  = AX_VWAP_EXIT_CONFIRMED_CROSS; // Only relevant when InpUseVWAPExit is on. CONFIRMED_CROSS is the original/default behavior (closed-bar confirmation) - see ExitEngine.mqh for all four modes
-input double          InpVWAPAlignmentBonus  = 1.15;   // Sizing bonus applied ONLY when InpUseVWAPExit is on and this signal agrees with VWAP trend - see AdaptiveFlipEngine.mqh for how this is bounded
+input double          InpVWAPAlignmentBonus  = 1.15;   // Bounded sizing adjustment; applies only when the mechanical VWAP exit is armed and aligned
+
+input group "=== KELLY RISK GATE ===";
+input bool            InpUseKellyGate          = true;  // Conservative statistical sizing gate; never increases RiskEngine risk
+input double          InpKellyWarmupRiskPercent = 0.25; // Risk cap until 30 completed non-partial trades exist in this EA session; 0 blocks entries
 
 input group "=== RISK ENGINE ===";
 input double         InpDailyLossLimitPercent   = 8.0;    // Daily loss limit (%) - stops session when hit
@@ -226,6 +231,7 @@ CAdaptiveFlipEngine   g_afe;
 CVWAPEngine           g_vwap;
 CTradeAutopsy         g_autopsy;
 CStatistics           g_stats;
+CKellyRuinEngine      g_kelly;
 CAccuracyEngine       g_accuracy;
 CDashboard            g_dash;
 
@@ -760,6 +766,58 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
 
    double lots = g_risk.CalculateLotSize(g_md,actualSlDistPts);
 
+   // Kelly gate: use only completed, non-partial, net-of-cost outcomes from this EA session.
+   // The first 30 outcomes use a small configurable warm-up risk cap so the gate cannot deadlock
+   // itself waiting for trades it would never permit. Once enough observations exist, size at no
+   // more than half of a 95% Wilson-lower-bound Kelly estimate. Invalid/non-positive edge fails closed.
+   if(InpUseKellyGate && lots>0.0)
+     {
+      double configuredRiskPct=g_risk.RiskPercent();
+      if(configuredRiskPct<=0.0)
+        {
+         if(InpVerboseLogging) Print("AUTOPSY X: Kelly gate blocked entry (configured risk is not positive)");
+         return(false);
+        }
+      SAxStatsSnapshot kellyStats=g_stats.Compute(g_autopsy,g_risk.DayStartEquity()>0?g_risk.DayStartEquity():AccountInfoDouble(ACCOUNT_EQUITY));
+      double allowedRiskPct=0.0;
+      if(kellyStats.totalTrades<AX_KELLY_MIN_SAMPLE)
+        {
+         allowedRiskPct=MathMin(configuredRiskPct,InpKellyWarmupRiskPercent);
+         if(InpVerboseLogging) PrintFormat("AUTOPSY X: Kelly warm-up %d/%d trades; risk capped at %.3f%%",
+                                          kellyStats.totalTrades,AX_KELLY_MIN_SAMPLE,allowedRiskPct);
+        }
+      else
+        {
+         SAxKellyReport kellyReport=g_kelly.EvaluateConservative(kellyStats.winRate,kellyStats.avgWin,
+                                      MathAbs(kellyStats.avgLoss),kellyStats.totalTrades,configuredRiskPct);
+         if(kellyReport.state!=AX_KELLY_VALID)
+           {
+            if(InpVerboseLogging) PrintFormat("AUTOPSY X: Kelly gate blocked entry (%s: %s)",
+                                             AxKellyStateToString(kellyReport.state),kellyReport.note);
+            return(false);
+           }
+         allowedRiskPct=MathMin(configuredRiskPct,kellyReport.halfKellyFraction*100.0);
+         if(InpVerboseLogging) PrintFormat("AUTOPSY X: conservative half-Kelly cap %.3f%% (current risk %.3f%%)",
+                                          allowedRiskPct,configuredRiskPct);
+        }
+      if(allowedRiskPct<=0.0)
+        {
+         if(InpVerboseLogging) Print("AUTOPSY X: Kelly gate blocked entry (allowed risk is zero/non-positive)");
+         return(false);
+        }
+      if(allowedRiskPct<configuredRiskPct)
+        {
+         double scaledKellyLots=lots*(allowedRiskPct/configuredRiskPct);
+         if(scaledKellyLots<g_md.VolumeMin()) lots=0.0;
+         else lots=g_md.NormalizeVolume(scaledKellyLots);
+        }
+      if(lots<=0.0)
+        {
+         if(InpVerboseLogging) Print("AUTOPSY X: Kelly gate blocked entry (risk-capped volume is below broker minimum)");
+         return(false);
+        }
+     }
+
    // Enforce the remaining account-wide gross-lot budget before broker normalization can
    // round a requested size upward. A remainder below minimum lot fails closed.
    double remainingExposureLots=InpMaxExposureLots-accountExposureLots;
@@ -1099,21 +1157,15 @@ int OnInit(void)
                      InpMaxDirectionalExposureLots,InpMaxMarginUsagePercent,InpMaxExecutionFailures);
    g_emergency.Configure(InpExecutionMode,InpEnableTrading,InpEnableLong,InpEnableShort);
 
-   //--- IMMEDIATE and CONFIRMED_CROSS_PLUS_STRUCTURE VWAP exit modes need live-price and structure-
-   //--- engine wiring that does not exist in this EA yet (see the g_exit.Evaluate() call site) - an
-   //--- operator selecting either would otherwise believe a mechanical exit is armed when it can
-   //--- never actually fire. Warned loudly and forced to the one mode that IS fully wired, rather
-   //--- than silently doing nothing (code-review finding). ---
-   if(InpUseVWAPExit && InpVWAPExitMode!=AX_VWAP_EXIT_CONFIRMED_CROSS)
+   // IMMEDIATE is wired to the live side-of-market quote below. Structure-confirmed mode remains
+   // intentionally unsupported until the structural engine is deliberately promoted into Layer 1.
+   // Fail initialization rather than silently substituting a different exit rule.
+   if(InpUseVWAPExit && InpVWAPExitMode==AX_VWAP_EXIT_CONFIRMED_CROSS_PLUS_STRUCTURE)
      {
-      PrintFormat("AUTOPSY X WARNING: InpVWAPExitMode=%s is not yet wired to live data in this build "
-                  "(needs live-tick-price and/or structure-engine integration) - it will NEVER trigger. "
-                  "Forcing CONFIRMED_CROSS, the only fully-wired mode, for this session.",
-                  AxVwapExitModeToString(InpVWAPExitMode));
-      g_effectiveVwapExitMode = AX_VWAP_EXIT_CONFIRMED_CROSS;
+      Print("AUTOPSY X ERROR: CONFIRMED_CROSS_PLUS_STRUCTURE is unavailable in this build; select OFF, IMMEDIATE, or CONFIRMED_CROSS.");
+      return(INIT_PARAMETERS_INCORRECT);
      }
-   else
-      g_effectiveVwapExitMode = InpVWAPExitMode;
+   g_effectiveVwapExitMode = InpVWAPExitMode;
 
    g_entryEngine.Configure(InpMinConfidenceToEnter);
    g_exec.Init(_Symbol,InpMagicNumber,InpDeviationPoints,InpMaxExecRetries);
@@ -1336,9 +1388,10 @@ void OnTick(void)
          //--- before that wiring exists would silently never fire, which is documented here rather
          //--- than left to be discovered.
          ENUM_AX_VWAP_EXIT_MODE effectiveVwapExitMode = InpUseVWAPExit ? g_effectiveVwapExitMode : AX_VWAP_EXIT_OFF;
+         double vwapExitCurrentPrice=(g_posState.dir==AX_DIR_BUY) ? g_md.CurrentBid() : g_md.CurrentAsk();
          SAxExitDecision dec = g_exit.Evaluate(g_posState,g_md,g_mom,g_micro,score,InpMaxSpreadPoints,
                                                 effectiveVwapExitMode,isNewBarThisTick,g_vwapValue,
-                                                g_lastClosedBarClose,0.0,false);
+                                                g_lastClosedBarClose,vwapExitCurrentPrice,false);
          if(dec.shouldExit)
            {
             AxCloseAndRecord(dec.reason);
