@@ -4,6 +4,9 @@
 //|                                                                    |
 //|  Computes classical Kelly using a conservative 95% Wilson lower   |
 //|  bound on observed win rate, then supports half-Kelly size caps.   |
+//|  Research context: Sinclair (2014), SSRN 2457368; Sukhov (2026),  |
+//|  SSRN 6195358. Wilson-bound sizing is this project's conservative |
+//|  engineering choice, not a result claimed by either paper.        |
 //|                                                                    |
 //|  HONEST LIMITATION: a precise closed-form "probability of ruin"    |
 //|  for fractional-Kelly betting depends on assumptions this class    |
