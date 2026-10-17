@@ -57,12 +57,9 @@ class VwapHolyGrailReplicaTests(unittest.TestCase):
         report = backtest(bars, Config(allow_short=False))
         self.assertTrue(all(t["direction"] == "LONG" for t in report["trades"]))
 
-    def test_missing_one_minute_bar_marks_session_incomplete(self):
-        bars = [
-            bar(0, 100, 102, 100, 102),
-            bar(2, 102, 103, 101, 102.5),
-            bar(3, 102.5, 103, 101, 102),
-        ]
+    def test_missing_one_minute_bar_marks_otherwise_complete_session_incomplete(self):
+        # 390 one-minute bars span 09:30 through 15:59 ET; omit only one interior bar.
+        bars = [bar(i, 100, 101, 99, 100) for i in range(390) if i != 100]
         report = backtest(bars)
         self.assertEqual(report["incomplete_sessions"], ["2024-01-02"])
 
