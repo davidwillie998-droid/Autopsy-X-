@@ -474,7 +474,7 @@ is architecturally complete and verification-incomplete.
 ## 8. Where to go next
 
 - `docs/MODULE_WIRING.md` — the mechanically-derived list of exactly
-  which 25 files are live and which 28 are not, and why.
+  which 26 files are live and which 27 are not, and why.
 - `docs/WIRING_PLAN.md` — a 5-tier order for wiring the 28 dormant
   modules in eventually (risk-reducers first, signal-generators last,
   each with its own dependency chain, off-switch, and acceptance test),
