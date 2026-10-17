@@ -58,6 +58,13 @@ require("m_riskPercent               = AxClampD(riskPercent,0.05,2.0)" in risk,
         "risk engine hard-clamps risk per trade to 2 percent")
 require("DailyLossLimitBreached()" in risk and "WeeklyLossLimitBreached()" in risk,
         "daily and weekly loss locks are checked in the risk engine")
+require(bool(re.search(r"InpDailyLossLimitPercent\s*=\s*4\.0", ea))
+        and bool(re.search(r"InpWeeklyLossLimitPercent\s*=\s*8\.0", ea))
+        and bool(re.search(r"InpMaxConsecutiveLosses\s*=\s*4", ea)),
+        "EA defaults match the 4% daily, 8% weekly, and 4-consecutive-loss safety policy")
+require("m_dailyLossLimitPercent=4.0" in risk and "m_maxConsecutiveLosses=4" in risk
+        and "m_weeklyLossLimitPercent=8.0" in risk and "weeklyLossLimitPercent=8.0" in risk,
+        "risk-engine fallback and Configure defaults match the EA loss limits")
 require("ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut,actualLotsOut)" in execution,
         "market entries require broker position confirmation")
 require("retcode!=TRADE_RETCODE_DONE" in execution,
