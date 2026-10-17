@@ -8,16 +8,22 @@ on:
     branches:
       - 'claude/autopsy-flipdemon-extreme-l4ei3d'
       - 'fix/flipdemon-extreme-safety-rebased-20261016'
+      - 'research/flipdemon-monte-carlo-validation-20261017'
     paths:
       - 'MQL5/**'
-      - 'python/tests/test_architecture_invariants.py'
+      - 'python/research/**'
+      - 'python/tests/**'
       - 'scripts/verify_flipdemon_safety.py'
       - 'docs/FLIPDEMON_SSRN_EXECUTION_EVIDENCE.md'
+      - 'docs/FLIPDEMON_MONTE_CARLO_VALIDATION.md'
       - '.github/workflows/flipdemon-static-safety.yml'
   pull_request:
     paths:
       - 'MQL5/**'
+      - 'python/research/**'
+      - 'python/tests/**'
       - 'scripts/verify_flipdemon_safety.py'
+      - 'docs/FLIPDEMON_MONTE_CARLO_VALIDATION.md'
       - '.github/workflows/flipdemon-static-safety.yml'
 
 permissions:
@@ -38,5 +44,7 @@ jobs:
         run: python -m pip install --upgrade pytest
       - name: Run architecture invariant tests
         run: python -m pytest -q python/tests/test_architecture_invariants.py
+      - name: Run Monte Carlo validation tests
+        run: python -m pytest -q python/tests/test_monte_carlo_validation.py
       - name: Verify critical safety invariants
         run: python scripts/verify_flipdemon_safety.py
