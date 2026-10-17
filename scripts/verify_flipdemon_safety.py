@@ -44,20 +44,28 @@ require("void AxCountAccountExposure(int &positionsOut,double &grossLotsOut)" in
 require("PreTradeAllowed(accountOpenPositions,accountExposureLots" in ea
         and not re.search(r"PreTradeAllowed\(\s*0\s*,\s*0\.0", ea),
         "account-wide counts reach the hard pre-trade risk gate")
-require(bool(re.search(r"remainingExposureLots\s*=\s*InpMaxExposureLots\s*-\s*accountExposureLots", ea)),
-        "new order size is capped to remaining account-wide gross-lot allowance")
-require("remainingExposureLots<g_md.VolumeMin()" in ea and "lots=0.0" in ea,
-        "under-minimum remaining exposure fails closed")
+require("if(InpMaxExposureLots>0.0)" in ea and "remainingExposureLots=InpMaxExposureLots-accountExposureLots" in ea,
+        "optional fixed gross-lot cap is applied only when configured above zero")
+require("InpMaxExposureLots<=0.0 || accountExposureLots+lots<=InpMaxExposureLots+0.0000001" in ea,
+        "final normalized size rechecks the optional account-wide gross-lot cap")
+require("if(m_maxExposureLots>0.0) lots = MathMin(lots,m_maxExposureLots);" in risk,
+        "risk sizing honors the optional cap without treating zero as zero lots")
 require("OrderCalcProfit(orderType,_Symbol,lots,intendedPrice,slPrice,projectedProfitAtStop)" in ea
         and "projectedLoss>riskBudget+0.01" in ea,
         "broker-account-currency loss calculation rejects sizes above configured trade-risk budget")
-require("bool finalAccountExposureOk=(accountExposureLots+lots<=InpMaxExposureLots+0.0000001)" in ea
+require("bool finalAccountExposureOk=(InpMaxExposureLots<=0.0 || accountExposureLots+lots<=InpMaxExposureLots+0.0000001)" in ea
         and "!finalExposureOk || !finalAccountExposureOk" in ea,
-        "final normalized volume cannot breach account-wide gross-lot cap")
-require("m_riskPercent               = AxClampD(riskPercent,0.05,2.0)" in risk,
+        "final normalized volume rechecks any configured account-wide gross-lot cap")
+require("if(m_maxExposureLots>0.0 && currentExposureLots>=m_maxExposureLots)" in risk
+        and "m_riskPercent               = AxClampD(riskPercent,0.05,2.0)" in risk,
         "risk engine hard-clamps risk per trade to 2 percent")
 require("DailyLossLimitBreached()" in risk and "WeeklyLossLimitBreached()" in risk,
         "daily and weekly loss locks are checked in the risk engine")
+require(bool(re.search(r"InpMaxExposureLots\s*=\s*0\.0", ea))
+        and "InpHtfFastTimeframe       = PERIOD_H4" in ea
+        and "InpHtfSlowTimeframe       = PERIOD_D1" in ea
+        and "g_regimeDaily.R2()" in ea,
+        "fixed gross-lot cap is disabled by default and H4/Daily filters are wired")
 require(bool(re.search(r"InpDailyLossLimitPercent\s*=\s*4\.0", ea))
         and bool(re.search(r"InpWeeklyLossLimitPercent\s*=\s*8\.0", ea))
         and bool(re.search(r"InpMaxLossesPerRolling24Hours\s*=\s*4", ea)),
