@@ -316,10 +316,32 @@ def test_final_volume_cannot_breach_symbol_or_directional_exposure_caps():
     ea = EA_FILE.read_text(errors="replace")
     risk = (INCLUDE_DIR / "RiskEngine.mqh").read_text(errors="replace")
     assert "g_risk.ProjectedExposureAcceptable(symbolExposureLots" in ea
-    assert "currentSymbolLots+proposedLots>m_maxExposureLots" in risk
     assert "currentDirectionalLots+proposedLots>m_maxDirectionalExposureLots" in risk
+    assert "InpMaxExposureLots<=0.0 || accountExposureLots+lots<=InpMaxExposureLots+0.0000001" in ea
+    assert "if(m_maxExposureLots>0.0) lots = MathMin(lots,m_maxExposureLots);" in risk
 
 
+
+
+def test_h4_and_daily_higher_timeframe_confluence_are_both_wired():
+    ea = EA_FILE.read_text(errors="replace")
+    assert "InpHtfFastTimeframe       = PERIOD_H4" in ea
+    assert "InpHtfSlowTimeframe       = PERIOD_D1" in ea
+    assert "if(h4Clear && h4Slope<0.0) return(false);" in ea
+    assert "if(dailyClear && dailySlope<0.0) return(false);" in ea
+    assert "g_regimeH4.Update();" in ea
+    assert "g_regimeDaily.Update();" in ea
+
+
+def test_zero_fixed_gross_lot_cap_disables_only_that_cap():
+    ea = EA_FILE.read_text(errors="replace")
+    risk = (INCLUDE_DIR / "RiskEngine.mqh").read_text(errors="replace")
+    assert "InpMaxExposureLots         = 0.0" in ea
+    assert "if(InpMaxExposureLots>0.0)" in ea
+    assert "if(m_maxExposureLots>0.0) lots = MathMin(lots,m_maxExposureLots);" in risk
+    assert "m_dailyLossLimitPercent=4.0" in risk
+    assert "m_weeklyLossLimitPercent=8.0" in risk
+    assert "m_maxMarginUsagePercent=50.0" in risk
 
 def test_close_position_does_not_retry_ambiguous_or_unconfirmed_server_results():
     execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
