@@ -206,7 +206,7 @@ public:
       m_maxOpenPositions=1; m_maxExposureLots=0.0; m_maxFlipsPerDay=20;
       m_maxTradesPerRollingPeriod=10; m_rollingPeriodSec=300;
       m_maxSpreadPts=250; m_maxSlippagePts=30; m_minFreeMarginPercent=150.0;
-      m_weeklyLossLimitPercent=8.0; m_maxPositionsPerSymbol=1; m_maxDirectionalExposureLots=1.0;
+      m_weeklyLossLimitPercent=8.0; m_maxPositionsPerSymbol=1; m_maxDirectionalExposureLots=0.0;
       m_maxMarginUsagePercent=50.0; m_maxExecutionFailures=5;
       m_dayStartEquity=0; m_dayStartTime=0; m_weekStartEquity=0; m_weekStartTime=0;
       m_lossTimeCount=0; m_lossPersistenceOk=true; m_equityPersistenceOk=true; m_flipsToday=0; m_consecutiveExecutionFailures=0;
@@ -387,7 +387,7 @@ public:
       if(currentSymbolLots<0.0 || currentDirectionalLots<0.0 || proposedLots<=0.0) return(false);
       // The optional account-wide gross-lot cap is checked by the caller using account totals.
       // This method enforces the independent directional cap and validates the symbol exposure input.
-      if(currentDirectionalLots+proposedLots>m_maxDirectionalExposureLots+1e-8) return(false);
+      if(m_maxDirectionalExposureLots>0.0 && currentDirectionalLots+proposedLots>m_maxDirectionalExposureLots+1e-8) return(false);
       return(true);
      }
 
@@ -470,7 +470,7 @@ public:
       if(openPositions>=m_maxOpenPositions) { reason="Max open positions reached"; return(false); }
       if(posForSymbol>=m_maxPositionsPerSymbol) { reason="Max positions for this symbol reached"; return(false); }
       if(m_maxExposureLots>0.0 && currentExposureLots>=m_maxExposureLots) { reason="Max exposure reached"; return(false); }
-      if(dirExposure>=m_maxDirectionalExposureLots) { reason="Max directional exposure reached"; return(false); }
+      if(m_maxDirectionalExposureLots>0.0 && dirExposure>=m_maxDirectionalExposureLots) { reason="Max directional exposure reached"; return(false); }
       if(m_flipsToday>=m_maxFlipsPerDay) { reason="Max flips per day reached"; return(false); }
       if(TradesInRollingWindow()>=m_maxTradesPerRollingPeriod) { reason="Max trades in rolling window reached"; return(false); }
       if(spreadPts>m_maxSpreadPts) { reason="Spread above maximum allowed"; return(false); }
