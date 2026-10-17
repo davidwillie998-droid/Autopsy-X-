@@ -1380,13 +1380,10 @@ void OnTick(void)
       else
         {
          g_exit.UpdateExcursion(g_posState,g_md.CurrentBid(),g_md.CurrentAsk(),g_md.TickValue(),g_md.TickSize());
-         //--- InpUseVWAPExit is the master on/off switch (unchanged); InpVWAPExitMode governs exactly
-         //--- when it fires once armed. IMMEDIATE-mode live-price and PLUS_STRUCTURE-mode structure
-         //--- confirmation aren't wired to real inputs yet (StructureEngine isn't integrated into the
-         //--- live tick loop) - passing 0.0/false is correct-by-construction for CONFIRMED_CROSS (the
-         //--- default), which never reads either parameter; selecting IMMEDIATE or PLUS_STRUCTURE
-         //--- before that wiring exists would silently never fire, which is documented here rather
-         //--- than left to be discovered.
+         //--- The master toggle controls whether the position's VWAP exit is armed. CONFIRMED_CROSS
+         //--- checks the last closed bar once per new bar; IMMEDIATE compares the executable-side quote
+         //--- against the current VWAP on every tick. The structure-confirmed mode is rejected in OnInit
+         //--- until CStructureEngine is deliberately integrated and tested.
          ENUM_AX_VWAP_EXIT_MODE effectiveVwapExitMode = InpUseVWAPExit ? g_effectiveVwapExitMode : AX_VWAP_EXIT_OFF;
          double vwapExitCurrentPrice=(g_posState.dir==AX_DIR_BUY) ? g_md.CurrentBid() : g_md.CurrentAsk();
          SAxExitDecision dec = g_exit.Evaluate(g_posState,g_md,g_mom,g_micro,score,InpMaxSpreadPoints,
