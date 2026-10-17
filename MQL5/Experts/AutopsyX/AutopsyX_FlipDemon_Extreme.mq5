@@ -407,7 +407,7 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
 
    g_autopsy.RecordTrade(rec);
    if(rec.flipSeq>0) g_accuracy.RegisterFlipOutcome(rec.netProfit>0);
-   g_risk.RegisterTradeClosed(rec.netProfit);
+   g_risk.RegisterTradeClosed(rec.netProfit,closeTime);
    if(reason==AX_EXIT_SL || reason==AX_EXIT_MOMENTUM_COLLAPSE || reason==AX_EXIT_MICROSTRUCTURE_REVERSAL)
       g_chop.RegisterStopOut();
 
