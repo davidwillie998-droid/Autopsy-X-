@@ -100,3 +100,21 @@ require(close_send_i >= 0 and close_reconcile_i > close_send_i and close_retry_i
         "close requests reconcile broker position state before any retry decision")
 
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
+
+# Research-driven VWAP/Kelly integration guardrails. These remain source-level checks,
+# not a substitute for MetaEditor compilation or MT5 Strategy Tester execution.
+KELLY = ROOT / "MQL5/Include/AutopsyX/KellyRuin.mqh"
+require(KELLY.is_file(), "Kelly risk gate source exists")
+kelly = KELLY.read_text(encoding="utf-8")
+require(bool(re.search(r"InpUseVWAPExit\s*=\s*true", ea)),
+        "mechanical VWAP exit is enabled by default while execution remains ANALYSIS_ONLY")
+require("currentVwapExitPrice" in ea and "g_lastClosedBarClose,vwapExitCurrentPrice,false" in ea,
+        "IMMEDIATE VWAP exit receives the live executable-side quote")
+require("AX_VWAP_EXIT_CONFIRMED_CROSS_PLUS_STRUCTURE" in ea and "return(INIT_PARAMETERS_INCORRECT)" in ea,
+        "unsupported structure-confirmed VWAP mode fails initialization instead of silently falling back")
+require("#include <AutopsyX/KellyRuin.mqh>" in ea and "EvaluateConservative" in ea,
+        "Kelly estimator is included and called by the entry gate")
+require("95% Wilson lower-bound" in kelly and "AX_KELLY_MIN_SAMPLE" in kelly,
+        "Kelly sizing uses a conservative win-rate bound and minimum sample requirement")
+require("InpKellyWarmupRiskPercent" in ea and "MathMin(configuredRiskPct,kellyReport.halfKellyFraction*100.0)" in ea,
+        "Kelly gate caps risk during warm-up and at no more than half conservative Kelly")
