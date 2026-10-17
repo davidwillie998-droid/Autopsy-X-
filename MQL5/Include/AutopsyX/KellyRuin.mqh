@@ -1,12 +1,9 @@
 //+------------------------------------------------------------------+
 //|                                                    KellyRuin.mqh |
-//|  Kelly Criterion / Ruin-Bound Estimator (FLIPDEMON EXTREME       |
-//|  upgrade, spec section 31) - REPORT ONLY.                        |
+//|  Conservative Kelly risk gate (FLIPDEMON EXTREME upgrade).      |
 //|                                                                    |
-//|  This class computes the classical Kelly fraction f* = p - q/b     |
-//|  (p = win probability, q = 1-p, b = avg win / avg loss payoff      |
-//|  ratio) from real closed-trade statistics. That is the entire      |
-//|  scope of what is computed here - deliberately.                   |
+//|  Computes classical Kelly using a conservative 95% Wilson lower   |
+//|  bound on observed win rate, then supports half-Kelly size caps.   |
 //|                                                                    |
 //|  HONEST LIMITATION: a precise closed-form "probability of ruin"    |
 //|  for fractional-Kelly betting depends on assumptions this class    |
@@ -19,9 +16,8 @@
 //|  actual Kelly/fractional-Kelly literature (e.g. Thorp) uses to     |
 //|  warn about overbetting, not a fabricated probability.             |
 //|                                                                    |
-//|  NEVER let this class's output authorize or size a live trade -    |
-//|  see AdaptiveFlipEngine.mqh / RiskEngine.mqh for the actual risk   |
-//|  authority. This is diagnostics, nothing more.                     |
+//|  This class may only reduce permitted size or block an entry. It  |
+//|  never raises risk; RiskEngine remains the hard-cap authority.     |
 //+------------------------------------------------------------------+
 #property strict
 #ifndef AX_KELLYRUIN_MQH
