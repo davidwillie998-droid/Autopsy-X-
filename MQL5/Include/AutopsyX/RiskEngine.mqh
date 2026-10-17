@@ -203,7 +203,7 @@ public:
                      CRiskEngine(void)
      {
       m_riskPercent=1.0; m_dailyLossLimitPercent=4.0; m_maxLossesRolling24h=4;
-      m_maxOpenPositions=1; m_maxExposureLots=1.0; m_maxFlipsPerDay=20;
+      m_maxOpenPositions=1; m_maxExposureLots=0.0; m_maxFlipsPerDay=20;
       m_maxTradesPerRollingPeriod=10; m_rollingPeriodSec=300;
       m_maxSpreadPts=250; m_maxSlippagePts=30; m_minFreeMarginPercent=150.0;
       m_weeklyLossLimitPercent=8.0; m_maxPositionsPerSymbol=1; m_maxDirectionalExposureLots=1.0;
@@ -304,7 +304,7 @@ public:
 
       double lots = riskAmount/valuePerLot;
       lots = md.NormalizeVolume(lots);
-      lots = MathMin(lots,m_maxExposureLots);
+      if(m_maxExposureLots>0.0) lots = MathMin(lots,m_maxExposureLots);
       //--- re-normalized AFTER the exposure clamp, not just before it - m_maxExposureLots is a       ---
       //--- user-configured input (Configure()) with no guarantee of being volume-step-aligned for a   ---
       //--- given broker; without this second pass, an exposure cap like 0.375 lots on a 0.01-step      ---
@@ -379,13 +379,14 @@ public:
       return(usagePct<m_maxMarginUsagePercent);
      }
 
-   // Reject a proposed order that would breach symbol or directional lot caps after fill.
+   // Reject a proposed order that would breach directional lot limits after fill.
    bool              ProjectedExposureAcceptable(const double currentSymbolLots,
                                                    const double currentDirectionalLots,
                                                    const double proposedLots) const
      {
       if(currentSymbolLots<0.0 || currentDirectionalLots<0.0 || proposedLots<=0.0) return(false);
-      if(currentSymbolLots+proposedLots>m_maxExposureLots+1e-8) return(false);
+      // The optional account-wide gross-lot cap is checked by the caller using account totals.
+      // This method enforces the independent directional cap and validates the symbol exposure input.
       if(currentDirectionalLots+proposedLots>m_maxDirectionalExposureLots+1e-8) return(false);
       return(true);
      }
@@ -468,7 +469,7 @@ public:
         { reason=StringFormat("Max consecutive execution failures reached (%d)",m_consecutiveExecutionFailures); return(false); }
       if(openPositions>=m_maxOpenPositions) { reason="Max open positions reached"; return(false); }
       if(posForSymbol>=m_maxPositionsPerSymbol) { reason="Max positions for this symbol reached"; return(false); }
-      if(currentExposureLots>=m_maxExposureLots) { reason="Max exposure reached"; return(false); }
+      if(m_maxExposureLots>0.0 && currentExposureLots>=m_maxExposureLots) { reason="Max exposure reached"; return(false); }
       if(dirExposure>=m_maxDirectionalExposureLots) { reason="Max directional exposure reached"; return(false); }
       if(m_flipsToday>=m_maxFlipsPerDay) { reason="Max flips per day reached"; return(false); }
       if(TradesInRollingWindow()>=m_maxTradesPerRollingPeriod) { reason="Max trades in rolling window reached"; return(false); }
