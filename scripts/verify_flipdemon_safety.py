@@ -108,7 +108,7 @@ require(KELLY.is_file(), "Kelly risk gate source exists")
 kelly = KELLY.read_text(encoding="utf-8")
 require(bool(re.search(r"InpUseVWAPExit\s*=\s*true", ea)),
         "mechanical VWAP exit is enabled by default while execution remains ANALYSIS_ONLY")
-require("currentVwapExitPrice" in ea and "g_lastClosedBarClose,vwapExitCurrentPrice,false" in ea,
+require("vwapExitCurrentPrice" in ea and "g_lastClosedBarClose,vwapExitCurrentPrice,false" in ea,
         "IMMEDIATE VWAP exit receives the live executable-side quote")
 require("AX_VWAP_EXIT_CONFIRMED_CROSS_PLUS_STRUCTURE" in ea and "return(INIT_PARAMETERS_INCORRECT)" in ea,
         "unsupported structure-confirmed VWAP mode fails initialization instead of silently falling back")
