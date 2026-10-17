@@ -69,6 +69,10 @@ require("m_dailyLossLimitPercent=4.0" in risk and "m_maxLossesRolling24h=4" in r
 require("GlobalVariableSet" in risk and "LoadLossTimes" in risk
         and "PersistLossTimes" in risk and "m_lossPersistenceOk" in risk,
         "rolling 24-hour loss history persists across restarts and blocks entries if persistence fails")
+require("EquityStateKey" in risk and "PersistEquityState" in risk
+        and "LoadEquityState" in risk and "m_equityPersistenceOk" in risk
+        and "AXFDEQ_%I64d_%s" in risk,
+        "account-wide daily/weekly baselines and lockouts persist across restarts and fail closed on corrupt state")
 require("ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut,actualLotsOut)" in execution,
         "market entries require broker position confirmation")
 require("retcode!=TRADE_RETCODE_DONE" in execution,
