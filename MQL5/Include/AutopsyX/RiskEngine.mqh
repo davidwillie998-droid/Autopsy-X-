@@ -81,6 +81,11 @@ private:
       return(StringFormat("AXFDX24_%I64d_%s_%d",AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,slot));
      }
 
+   string            LossStorageReadyKey(void) const
+     {
+      return(StringFormat("AXFDX24_%I64d_%s_READY",AccountInfoInteger(ACCOUNT_LOGIN),_Symbol));
+     }
+
    bool              PersistLossTimes(void)
      {
       for(int i=0;i<AX_RISK_LOSS_HISTORY;i++)
@@ -91,19 +96,35 @@ private:
          if(!GlobalVariableCheck(key) || MathAbs(GlobalVariableGet(key)-storedValue)>0.5)
             return(false);
         }
-      return(true);
+      string readyKey=LossStorageReadyKey();
+      GlobalVariableSet(readyKey,1.0);
+      return(GlobalVariableCheck(readyKey) && MathAbs(GlobalVariableGet(readyKey)-1.0)<0.1);
      }
 
    bool              LoadLossTimes(void)
      {
       m_lossTimeCount=0;
+      bool anySlotExists=false;
+      for(int i=0;i<AX_RISK_LOSS_HISTORY;i++)
+         if(GlobalVariableCheck(LossStorageKey(i))) anySlotExists=true;
+
+      string readyKey=LossStorageReadyKey();
+      if(!GlobalVariableCheck(readyKey))
+        {
+         // No prior state is normal on first install. Partial state without the ready
+         // marker is ambiguous, so fail closed rather than assuming there were no losses.
+         if(anySlotExists) return(false);
+         return(PersistLossTimes());
+        }
+
       for(int i=0;i<AX_RISK_LOSS_HISTORY;i++)
         {
          string key=LossStorageKey(i);
-         if(!GlobalVariableCheck(key)) continue;
+         if(!GlobalVariableCheck(key)) return(false);
          datetime lossTime=(datetime)GlobalVariableGet(key);
-         if(lossTime>0 && m_lossTimeCount<AX_RISK_LOSS_HISTORY)
+         if(lossTime>0)
            {
+            if(m_lossTimeCount>=AX_RISK_LOSS_HISTORY) return(false);
             m_lossTimes[m_lossTimeCount]=lossTime;
             m_lossTimeCount++;
            }
