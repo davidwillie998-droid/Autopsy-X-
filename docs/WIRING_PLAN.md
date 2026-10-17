@@ -1,7 +1,7 @@
 # Wiring Plan for the 28 Dormant Modules
 
 **Applies to commit:** d511a00
-**Purpose:** order the 28 dormant modules (see `docs/MODULE_WIRING.md`)
+**Purpose:** order the 27 dormant modules (see `docs/MODULE_WIRING.md`)
 for eventual live integration, by risk category first and real
 dependency graph second - checked against actual method signatures in
 this pass, not inferred from module names or phase numbers.
@@ -128,7 +128,6 @@ codebase's blanket convention rather than carving out an exception for
 | `RestartRecovery.mqh` | Live position/account state | `InpUseRestartRecovery` (OFF) | Restart the EA mid-position on a demo account; confirm state is correctly re-hydrated, not reset. |
 | `TradeReconciliation.mqh` | Tier 0 (`OnTradeTransaction`) | `InpUseTradeReconciliation` (OFF) | Manually close a position outside the EA (e.g. from the terminal) on a demo account; confirm reconciliation detects and logs the discrepancy. |
 | `MonteCarlo.mqh` | `TradeAutopsy` ledger (live) | `InpUseMonteCarloReport` (OFF) | Run against a real closed-trade history; sanity-check the projection against a hand-computed simple case. |
-| `KellyRuin.mqh` | `TradeAutopsy`/`Statistics` (live) | `InpUseKellyGate` (ON) | Conservative 95% Wilson-bound win rate; cap risk at half-Kelly after 30 completed outcomes; use a capped warm-up risk before then; never increase the RiskEngine limit. |
 | `PerformanceAttribution.mqh` | `TradeAutopsy` ledger (live) | `InpUsePerformanceAttribution` (OFF) | Cross-check one regime bucket's win rate by hand against the raw CSV. |
 | `DrawdownAnalytics.mqh` | `TradeAutopsy` ledger (live) | `InpUseDrawdownAnalytics` (OFF) | Cross-check one detected episode's depth/duration by hand against the raw CSV. |
 | `ExplainabilityEngine.mqh` + `ExplainabilityLog.mqh` | `TradePermissionMatrix`/`DynamicPositionSizing` (Tier 4) for real content | `InpUseExplainabilityLog` (OFF) | Confirm the JSONL log parses as valid JSON per line on a real run. |
@@ -148,7 +147,7 @@ Tier 3 (signal)      → StructureEngine, AlphaEngine, CompositeDirection,
                        ExecutionEligibility, CrisisEngine, CapacityCrowdingEngine
 Tier 4 (capstone)    → TradePermissionMatrix, DynamicPositionSizing
 Tier 5 (reporting)   → TradeLifecycle, RestartRecovery, TradeReconciliation,
-                       MonteCarlo, KellyRuin, PerformanceAttribution,
+                       MonteCarlo, PerformanceAttribution,
                        DrawdownAnalytics, ExplainabilityEngine,
                        ExplainabilityLog, InstitutionalDashboard
 ```
