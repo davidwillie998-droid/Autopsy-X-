@@ -17,7 +17,7 @@ private:
    //--- configuration ---
    double            m_riskPercent;
    double            m_dailyLossLimitPercent;
-   int               m_maxConsecutiveLosses;
+   int               m_maxLossesRolling24h;
    int               m_maxOpenPositions;
    double            m_maxExposureLots;
    int               m_maxFlipsPerDay;
@@ -44,7 +44,8 @@ private:
    datetime          m_dayStartTime;
    double            m_weekStartEquity;
    datetime          m_weekStartTime;
-   int               m_consecutiveLosses;
+   datetime          m_lossTimes[AX_RISK_TRADE_BUFFER];
+   int               m_lossTimeCount;
    int               m_flipsToday;
    int               m_consecutiveExecutionFailures;
    bool              m_dailyLockout;
@@ -84,19 +85,19 @@ private:
 public:
                      CRiskEngine(void)
      {
-      m_riskPercent=1.0; m_dailyLossLimitPercent=4.0; m_maxConsecutiveLosses=4;
+      m_riskPercent=1.0; m_dailyLossLimitPercent=4.0; m_maxLossesRolling24h=4;
       m_maxOpenPositions=1; m_maxExposureLots=1.0; m_maxFlipsPerDay=20;
       m_maxTradesPerRollingPeriod=10; m_rollingPeriodSec=300;
       m_maxSpreadPts=250; m_maxSlippagePts=30; m_minFreeMarginPercent=150.0;
       m_weeklyLossLimitPercent=8.0; m_maxPositionsPerSymbol=1; m_maxDirectionalExposureLots=1.0;
       m_maxMarginUsagePercent=50.0; m_maxExecutionFailures=5;
       m_dayStartEquity=0; m_dayStartTime=0; m_weekStartEquity=0; m_weekStartTime=0;
-      m_consecutiveLosses=0; m_flipsToday=0; m_consecutiveExecutionFailures=0;
+      m_lossTimeCount=0; m_flipsToday=0; m_consecutiveExecutionFailures=0;
       m_dailyLockout=false; m_weeklyLockout=false; m_tradeTimeCount=0; m_killed=false;
      }
 
    void              Configure(const double riskPercent,const double dailyLossLimitPercent,
-                                const int maxConsecutiveLosses,const int maxOpenPositions,
+                                const int maxLossesRolling24h,const int maxOpenPositions,
                                 const double maxExposureLots,const int maxFlipsPerDay,
                                 const int maxTradesPerRollingPeriod,const int rollingPeriodSec,
                                 const double maxSpreadPts,const double maxSlippagePts,
@@ -109,7 +110,7 @@ public:
      {
       m_riskPercent               = AxClampD(riskPercent,0.05,2.0);   // hard ceiling: never >2% (spec section 2)
       m_dailyLossLimitPercent     = dailyLossLimitPercent;
-      m_maxConsecutiveLosses      = maxConsecutiveLosses;
+      m_maxLossesRolling24h        = maxLossesRolling24h;
       m_maxOpenPositions          = maxOpenPositions;
       m_maxExposureLots           = maxExposureLots;
       m_maxFlipsPerDay            = maxFlipsPerDay;
@@ -135,7 +136,6 @@ public:
         {
          m_dayStartTime   = dayStart;
          m_dayStartEquity = AccountInfoDouble(ACCOUNT_EQUITY);
-         m_consecutiveLosses = 0;
          m_flipsToday = 0;
          m_dailyLockout = false;
          m_lockoutReason = "";
@@ -199,9 +199,18 @@ public:
       return(false);
      }
 
-   bool              ConsecutiveLossLimitBreached(void) const
+   int               LossesInRolling24Hours(void) const
      {
-      return(m_consecutiveLosses>=m_maxConsecutiveLosses);
+      datetime now=TimeCurrent();
+      int count=0;
+      for(int i=0;i<m_lossTimeCount;i++)
+         if(m_lossTimes[i]>0 && m_lossTimes[i]<=now && (now-m_lossTimes[i])<=86400) count++;
+      return(count);
+     }
+
+   bool              Rolling24HourLossLimitBreached(void) const
+     {
+      return(LossesInRolling24Hours()>=m_maxLossesRolling24h);
      }
 
    //--- weekly loss limit - same "no auto-recovery" discipline as the daily one, on a Monday-      ---
@@ -273,9 +282,21 @@ public:
 
    void              RegisterTradeClosed(const double netProfit)
      {
-      if(netProfit<0) m_consecutiveLosses++;
-      else if(netProfit>0) m_consecutiveLosses=0;
-      PushTradeTime(TimeCurrent());
+      datetime closedAt=TimeCurrent();
+      if(netProfit<0)
+        {
+         if(m_lossTimeCount<AX_RISK_TRADE_BUFFER)
+           {
+            m_lossTimes[m_lossTimeCount]=closedAt;
+            m_lossTimeCount++;
+           }
+         else
+           {
+            for(int i=1;i<AX_RISK_TRADE_BUFFER;i++) m_lossTimes[i-1]=m_lossTimes[i];
+            m_lossTimes[AX_RISK_TRADE_BUFFER-1]=closedAt;
+           }
+        }
+      PushTradeTime(closedAt);
      }
 
    void              RegisterFlip(void) { m_flipsToday++; }
@@ -305,7 +326,7 @@ public:
       if(m_killed) { reason="Kill switch active"; return(false); }
       if(DailyLossLimitBreached()) { reason=m_lockoutReason; return(false); }
       if(WeeklyLossLimitBreached()) { reason=m_lockoutReason; return(false); }
-      if(ConsecutiveLossLimitBreached()) { reason="Max consecutive losses reached - session paused"; return(false); }
+      if(Rolling24HourLossLimitBreached()) { reason=StringFormat("Rolling 24-hour loss limit reached (%d losing trades)",LossesInRolling24Hours()); return(false); }
       if(ExecutionFailureLimitBreached())
         { reason=StringFormat("Max consecutive execution failures reached (%d)",m_consecutiveExecutionFailures); return(false); }
       if(openPositions>=m_maxOpenPositions) { reason="Max open positions reached"; return(false); }
@@ -342,7 +363,6 @@ public:
    string            KillReason(void) const { return(m_killReason); }
 
    double            RiskPercent(void) const { return(m_riskPercent); }
-   int               ConsecutiveLosses(void) const { return(m_consecutiveLosses); }
    int               FlipsToday(void) const { return(m_flipsToday); }
    bool              DailyLockout(void) const { return(m_dailyLockout); }
    string            LockoutReason(void) const { return(m_lockoutReason); }
