@@ -1,6 +1,7 @@
 name: FlipDemon Static Safety Audit
 
-# Source-level regression checks only. This workflow does not compile MQL5 or
+# Source-level regression checks and the separate VWAP research harness tests only.
+# This workflow does not compile MQL5 or
 # validate broker fills; MetaEditor and MT5 Strategy Tester remain mandatory.
 on:
   workflow_dispatch:
@@ -17,6 +18,8 @@ on:
     paths:
       - 'MQL5/**'
       - 'scripts/verify_flipdemon_safety.py'
+      - 'research/vwap_holy_grail/**'
+      - 'python/tests/test_vwap_holy_grail_replica.py'
       - '.github/workflows/flipdemon-static-safety.yml'
 
 permissions:
@@ -33,5 +36,9 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install Python test runner
+        run: python -m pip install --upgrade pytest
+      - name: Test VWAP Holy Grail replication harness
+        run: python -m pytest -q python/tests/test_vwap_holy_grail_replica.py
       - name: Verify critical safety invariants
         run: python scripts/verify_flipdemon_safety.py
