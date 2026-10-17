@@ -214,10 +214,12 @@ def backtest(bars: list[Bar], config: Config = Config()) -> dict:
 
             if config.fill_model == "paper_close":
                 # Same-bar close fill mirrors the paper-style no-slippage assumption.
-                # Equality to VWAP leaves the existing position unchanged.
-                if signal and signal != direction:
-                    close_position(bar.close, bar.timestamp, "VWAP_CROSS")
-                    open_position(signal, bar.close, bar.timestamp, day)
+                # Equality to VWAP leaves the existing position unchanged. Never open a new
+                # position on the final RTH bar because the mandatory session flatten follows.
+                if not is_last and signal and signal != direction:
+                    close_time = bar.timestamp + timedelta(minutes=1)
+                    close_position(bar.close, close_time, "VWAP_CROSS")
+                    open_position(signal, bar.close, close_time, day)
             else:
                 # Signal is only known after this candle closes; fill on the next candle open.
                 if signal and signal != direction:
