@@ -106,8 +106,8 @@ input bool            InpUseKellyGate          = true;  // Conservative statisti
 input double          InpKellyWarmupRiskPercent = 0.25; // Risk cap until 30 completed non-partial trades exist in this EA session; 0 blocks entries
 
 input group "=== RISK ENGINE ===";
-input double         InpDailyLossLimitPercent   = 8.0;    // Daily loss limit (%) - stops session when hit
-input int            InpMaxConsecutiveLosses    = 5;      // Max consecutive losses before pausing
+input double         InpDailyLossLimitPercent   = 4.0;    // Hard daily equity-loss stop: 4%; blocks new entries until the next broker day
+input int            InpMaxLossesPerRolling24Hours = 4;   // Block new entries after 4 losing completed trades in any rolling 24-hour window
 input int            InpMaxOpenPositions        = 1;      // Max simultaneously open positions
 input double         InpMaxExposureLots         = 1.0;    // Max total exposure, lots
 input int            InpMaxFlipsPerDay          = 20;      // Max direction flips per day
@@ -116,7 +116,7 @@ input int            InpRollingPeriodSeconds    = 300;     // Rolling window len
 input double         InpMaxSpreadPoints         = 250;     // Max acceptable spread, points
 input double         InpMaxSlippagePoints       = 30;      // Max acceptable slippage, points
 input double         InpMinFreeMarginPercent    = 150.0;   // Min margin level %, refuse new entries below this
-input double         InpWeeklyLossLimitPercent  = 15.0;    // Weekly loss limit (%), Monday-anchored - stops the week when hit
+input double         InpWeeklyLossLimitPercent  = 8.0;     // Hard weekly equity-loss stop: 8%, Monday-anchored
 input int            InpMaxPositionsPerSymbol   = 1;       // Max simultaneously open positions on this symbol specifically
 input double         InpMaxDirectionalExposureLots = 1.0;  // Max exposure lots in one direction (BUY or SELL) at once
 input double         InpMaxMarginUsagePercent   = 50.0;     // Max ACCOUNT_MARGIN / ACCOUNT_EQUITY, as a percent
@@ -407,7 +407,7 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
 
    g_autopsy.RecordTrade(rec);
    if(rec.flipSeq>0) g_accuracy.RegisterFlipOutcome(rec.netProfit>0);
-   g_risk.RegisterTradeClosed(rec.netProfit);
+   g_risk.RegisterTradeClosed(rec.netProfit,closeTime);
    if(reason==AX_EXIT_SL || reason==AX_EXIT_MOMENTUM_COLLAPSE || reason==AX_EXIT_MICROSTRUCTURE_REVERSAL)
       g_chop.RegisterStopOut();
 
@@ -1153,7 +1153,7 @@ int OnInit(void)
    g_scorer.Configure(InpMinScoreToAct,InpMinGapToAct);
    g_flip.Configure(InpFlipRequiredConfirmations,InpFlipMinConfidence);
    g_chop.Configure(InpAntiChopBaseCooldownSec,InpAntiChopMaxCooldownSec);
-   g_risk.Configure(AxRiskPercentForMode(),InpDailyLossLimitPercent,InpMaxConsecutiveLosses,
+   g_risk.Configure(AxRiskPercentForMode(),InpDailyLossLimitPercent,InpMaxLossesPerRolling24Hours,
                      InpMaxOpenPositions,InpMaxExposureLots,InpMaxFlipsPerDay,
                      InpMaxTradesPerRollingPeriod,InpRollingPeriodSeconds,
                      InpMaxSpreadPoints,InpMaxSlippagePoints,InpMinFreeMarginPercent,

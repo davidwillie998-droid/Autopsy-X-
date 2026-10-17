@@ -203,7 +203,7 @@ def test_pretrade_allowed_checks_every_required_hard_gate():
     body = m.group(0)
     required_checks = [
         "m_killed", "DailyLossLimitBreached", "WeeklyLossLimitBreached",
-        "ConsecutiveLossLimitBreached", "ExecutionFailureLimitBreached",
+        "Rolling24HourLossLimitBreached", "ExecutionFailureLimitBreached",
         "m_maxOpenPositions", "m_maxExposureLots", "m_maxSpreadPts",
         "MarginUsageAcceptable",
     ]
@@ -348,3 +348,33 @@ def test_partial_close_rechecks_position_ownership_after_server_fill():
         "bool              Flip", 1
     )[0]
     assert "Position ownership changed during partial close" in partial_block
+
+
+@pytest.mark.skipif(not EA_FILE.exists(), reason="live EA file not found")
+def test_account_flip_loss_limits_are_conservative_and_consistent():
+    """The EA defaults and risk-engine fallbacks must agree on the hard loss policy."""
+    ea = EA_FILE.read_text(errors="replace")
+    risk = (INCLUDE_DIR / "RiskEngine.mqh").read_text(errors="replace")
+    assert re.search(r"InpDailyLossLimitPercent\s*=\s*4\.0", ea)
+    assert re.search(r"InpWeeklyLossLimitPercent\s*=\s*8\.0", ea)
+    assert re.search(r"InpMaxLossesPerRolling24Hours\s*=\s*4", ea)
+    assert "m_dailyLossLimitPercent=4.0" in risk
+    assert "m_maxLossesRolling24h=4" in risk
+    assert "Rolling24HourLossLimitBreached" in risk
+    assert "LossesInRolling24Hours" in risk
+    assert "m_weeklyLossLimitPercent=8.0" in risk
+    assert "weeklyLossLimitPercent=8.0" in risk
+    assert "GlobalVariableSet" in risk
+    assert "LoadLossTimes" in risk
+    assert "PersistLossTimes" in risk
+    assert "m_lossPersistenceOk" in risk
+    assert "EquityStateKey" in risk
+    assert "PersistEquityState" in risk
+    assert "LoadEquityState" in risk
+    assert "m_equityPersistenceOk" in risk
+    assert "RegisterTradeClosed(const double netProfit,const datetime closeTime=0)" in risk
+    assert "RegisterTradeClosed(rec.netProfit,closeTime)" in ea
+    assert "datetime closedAt=(closeTime>0) ? closeTime : TimeCurrent()" in risk
+    assert "datetime writtenAt=GlobalVariableSet(key,storedValue)" in risk
+    assert "GlobalVariablesFlush()" in risk
+    assert "Daily/weekly equity-loss state persistence failed; entries blocked" in risk

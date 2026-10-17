@@ -58,6 +58,26 @@ require("m_riskPercent               = AxClampD(riskPercent,0.05,2.0)" in risk,
         "risk engine hard-clamps risk per trade to 2 percent")
 require("DailyLossLimitBreached()" in risk and "WeeklyLossLimitBreached()" in risk,
         "daily and weekly loss locks are checked in the risk engine")
+require(bool(re.search(r"InpDailyLossLimitPercent\s*=\s*4\.0", ea))
+        and bool(re.search(r"InpWeeklyLossLimitPercent\s*=\s*8\.0", ea))
+        and bool(re.search(r"InpMaxLossesPerRolling24Hours\s*=\s*4", ea)),
+        "EA defaults match the 4% daily, 8% weekly, and rolling-24-hour loss safety policy")
+require("m_dailyLossLimitPercent=4.0" in risk and "m_maxLossesRolling24h=4" in risk
+        and "m_weeklyLossLimitPercent=8.0" in risk and "weeklyLossLimitPercent=8.0" in risk
+        and "Rolling24HourLossLimitBreached" in risk and "LossesInRolling24Hours" in risk,
+        "risk-engine fallback and Configure defaults match the EA loss limits")
+require("GlobalVariableSet" in risk and "LoadLossTimes" in risk
+        and "PersistLossTimes" in risk and "m_lossPersistenceOk" in risk,
+        "rolling 24-hour loss history persists across restarts and blocks entries if persistence fails")
+require("EquityStateKey" in risk and "PersistEquityState" in risk
+        and "LoadEquityState" in risk and "m_equityPersistenceOk" in risk
+        and "AXFDEQ_%I64d_%s" in risk,
+        "account-wide daily/weekly baselines and lockouts persist across restarts and fail closed on corrupt state")
+require("RegisterTradeClosed(rec.netProfit,closeTime)" in ea
+        and "datetime closedAt=(closeTime>0) ? closeTime : TimeCurrent()" in risk
+        and "datetime writtenAt=GlobalVariableSet(key,storedValue)" in risk
+        and "GlobalVariablesFlush()" in risk,
+        "rolling loss guard uses the broker close timestamp and verifies persistent writes")
 require("ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut,actualLotsOut)" in execution,
         "market entries require broker position confirmation")
 require("retcode!=TRADE_RETCODE_DONE" in execution,
