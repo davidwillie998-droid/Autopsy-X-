@@ -128,7 +128,7 @@ codebase's blanket convention rather than carving out an exception for
 | `RestartRecovery.mqh` | Live position/account state | `InpUseRestartRecovery` (OFF) | Restart the EA mid-position on a demo account; confirm state is correctly re-hydrated, not reset. |
 | `TradeReconciliation.mqh` | Tier 0 (`OnTradeTransaction`) | `InpUseTradeReconciliation` (OFF) | Manually close a position outside the EA (e.g. from the terminal) on a demo account; confirm reconciliation detects and logs the discrepancy. |
 | `MonteCarlo.mqh` | `TradeAutopsy` ledger (live) | `InpUseMonteCarloReport` (OFF) | Run against a real closed-trade history; sanity-check the projection against a hand-computed simple case. |
-| `KellyRuin.mqh` | `TradeAutopsy`/`Statistics` (live) | `InpUseKellyReport` (OFF) | Confirm its own report-only invariant holds: grep the call site to verify its output is never passed into `CalculateLotSize()` or any sizing path. |
+| `KellyRuin.mqh` | `TradeAutopsy`/`Statistics` (live) | `InpUseKellyGate` (ON) | Conservative 95% Wilson-bound win rate; cap risk at half-Kelly after 30 completed outcomes; use a capped warm-up risk before then; never increase the RiskEngine limit. |
 | `PerformanceAttribution.mqh` | `TradeAutopsy` ledger (live) | `InpUsePerformanceAttribution` (OFF) | Cross-check one regime bucket's win rate by hand against the raw CSV. |
 | `DrawdownAnalytics.mqh` | `TradeAutopsy` ledger (live) | `InpUseDrawdownAnalytics` (OFF) | Cross-check one detected episode's depth/duration by hand against the raw CSV. |
 | `ExplainabilityEngine.mqh` + `ExplainabilityLog.mqh` | `TradePermissionMatrix`/`DynamicPositionSizing` (Tier 4) for real content | `InpUseExplainabilityLog` (OFF) | Confirm the JSONL log parses as valid JSON per line on a real run. |
