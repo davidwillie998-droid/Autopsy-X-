@@ -131,7 +131,7 @@ into the EA that would actually run.
 **Correction against an earlier draft of this document:** an earlier version of this
 paragraph claimed "every dormant file's own header already says so" (i.e. explicitly
 flags its own not-wired status in a code comment). That was checked and found false -
-only 5 of the 28 (`KellyRuin.mqh`, `CrisisEngine.mqh`, `TradePermissionMatrix.mqh`,
+only 4 of the 27 (`CrisisEngine.mqh`, `TradePermissionMatrix.mqh`,
 `DynamicPositionSizing.mqh`, `InstitutionalDashboard.mqh`) carry that specific
 self-disclaimer in their own header text. The other 23 are dormant for the structural
 reason established above (absent from the `#include` graph, confirmed by grep), not
