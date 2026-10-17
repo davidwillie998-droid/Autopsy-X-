@@ -23,6 +23,9 @@ class VwapHolyGrailReplicaTests(unittest.TestCase):
         report = backtest(bars, Config(fill_model="paper_close"))
         self.assertEqual(report["session_count"], 1)
         self.assertEqual(report["closed_trades"], 2)
+        self.assertIn("T09:31:00", report["trades"][0]["entry_time"])
+        self.assertIn("T09:32:00", report["trades"][0]["exit_time"])
+        self.assertIn("T09:33:00", report["trades"][-1]["exit_time"])
         self.assertEqual(report["trades"][-1]["exit_reason"], "SESSION_CLOSE")
         self.assertEqual(report["equity_curve"][-1]["direction"], 0)
         self.assertGreater(report["commission_paid"], 0)
@@ -53,6 +56,15 @@ class VwapHolyGrailReplicaTests(unittest.TestCase):
         ]
         report = backtest(bars, Config(allow_short=False))
         self.assertTrue(all(t["direction"] == "LONG" for t in report["trades"]))
+
+    def test_missing_one_minute_bar_marks_session_incomplete(self):
+        bars = [
+            bar(0, 100, 102, 100, 102),
+            bar(2, 102, 103, 101, 102.5),
+            bar(3, 102.5, 103, 101, 102),
+        ]
+        report = backtest(bars)
+        self.assertEqual(report["incomplete_sessions"], ["2024-01-02"])
 
     def test_rejects_naive_timestamp(self):
         with self.assertRaises(ValueError):
