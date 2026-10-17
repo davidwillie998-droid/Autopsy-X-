@@ -376,4 +376,5 @@ def test_account_flip_loss_limits_are_conservative_and_consistent():
     assert "RegisterTradeClosed(rec.netProfit,closeTime)" in ea
     assert "datetime closedAt=(closeTime>0) ? closeTime : TimeCurrent()" in risk
     assert "datetime writtenAt=GlobalVariableSet(key,storedValue)" in risk
+    assert "GlobalVariablesFlush()" in risk
     assert "Daily/weekly equity-loss state persistence failed; entries blocked" in risk
