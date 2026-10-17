@@ -66,6 +66,9 @@ require("m_dailyLossLimitPercent=4.0" in risk and "m_maxLossesRolling24h=4" in r
         and "m_weeklyLossLimitPercent=8.0" in risk and "weeklyLossLimitPercent=8.0" in risk
         and "Rolling24HourLossLimitBreached" in risk and "LossesInRolling24Hours" in risk,
         "risk-engine fallback and Configure defaults match the EA loss limits")
+require("GlobalVariableSet" in risk and "LoadLossTimes" in risk
+        and "PersistLossTimes" in risk and "m_lossPersistenceOk" in risk,
+        "rolling 24-hour loss history persists across restarts and blocks entries if persistence fails")
 require("ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut,actualLotsOut)" in execution,
         "market entries require broker position confirmation")
 require("retcode!=TRADE_RETCODE_DONE" in execution,
