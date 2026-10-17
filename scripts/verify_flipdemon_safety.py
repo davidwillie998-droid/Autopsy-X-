@@ -75,7 +75,8 @@ require("EquityStateKey" in risk and "PersistEquityState" in risk
         "account-wide daily/weekly baselines and lockouts persist across restarts and fail closed on corrupt state")
 require("RegisterTradeClosed(rec.netProfit,closeTime)" in ea
         and "datetime closedAt=(closeTime>0) ? closeTime : TimeCurrent()" in risk
-        and "datetime writtenAt=GlobalVariableSet(key,storedValue)" in risk,
+        and "datetime writtenAt=GlobalVariableSet(key,storedValue)" in risk
+        and "GlobalVariablesFlush()" in risk,
         "rolling loss guard uses the broker close timestamp and verifies persistent writes")
 require("ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut,actualLotsOut)" in execution,
         "market entries require broker position confirmation")
