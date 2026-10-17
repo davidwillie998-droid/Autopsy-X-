@@ -118,7 +118,7 @@ input double         InpMaxSlippagePoints       = 30;      // Max acceptable sli
 input double         InpMinFreeMarginPercent    = 150.0;   // Min margin level %, refuse new entries below this
 input double         InpWeeklyLossLimitPercent  = 8.0;     // Hard weekly equity-loss stop: 8%, Monday-anchored
 input int            InpMaxPositionsPerSymbol   = 1;       // Max simultaneously open positions on this symbol specifically
-input double         InpMaxDirectionalExposureLots = 1.0;  // Max exposure lots in one direction (BUY or SELL) at once
+input double         InpMaxDirectionalExposureLots = 0.0;  // Fixed directional lot cap; 0 disables it, while risk/margin guards remain active
 input double         InpMaxMarginUsagePercent   = 50.0;     // Max ACCOUNT_MARGIN / ACCOUNT_EQUITY, as a percent
 input int            InpMaxExecutionFailures    = 5;        // Max consecutive order-send failures before blocking new entries
 
