@@ -106,8 +106,8 @@ input bool            InpUseKellyGate          = true;  // Conservative statisti
 input double          InpKellyWarmupRiskPercent = 0.25; // Risk cap until 30 completed non-partial trades exist in this EA session; 0 blocks entries
 
 input group "=== RISK ENGINE ===";
-input double         InpDailyLossLimitPercent   = 8.0;    // Daily loss limit (%) - stops session when hit
-input int            InpMaxConsecutiveLosses    = 5;      // Max consecutive losses before pausing
+input double         InpDailyLossLimitPercent   = 4.0;    // Hard daily equity-loss stop: 4%; blocks new entries until the next broker day
+input int            InpMaxConsecutiveLosses    = 4;      // Pause after 4 consecutive losing outcomes; streak resets at broker-day rollover
 input int            InpMaxOpenPositions        = 1;      // Max simultaneously open positions
 input double         InpMaxExposureLots         = 1.0;    // Max total exposure, lots
 input int            InpMaxFlipsPerDay          = 20;      // Max direction flips per day
@@ -116,7 +116,7 @@ input int            InpRollingPeriodSeconds    = 300;     // Rolling window len
 input double         InpMaxSpreadPoints         = 250;     // Max acceptable spread, points
 input double         InpMaxSlippagePoints       = 30;      // Max acceptable slippage, points
 input double         InpMinFreeMarginPercent    = 150.0;   // Min margin level %, refuse new entries below this
-input double         InpWeeklyLossLimitPercent  = 15.0;    // Weekly loss limit (%), Monday-anchored - stops the week when hit
+input double         InpWeeklyLossLimitPercent  = 8.0;     // Hard weekly equity-loss stop: 8%, Monday-anchored
 input int            InpMaxPositionsPerSymbol   = 1;       // Max simultaneously open positions on this symbol specifically
 input double         InpMaxDirectionalExposureLots = 1.0;  // Max exposure lots in one direction (BUY or SELL) at once
 input double         InpMaxMarginUsagePercent   = 50.0;     // Max ACCOUNT_MARGIN / ACCOUNT_EQUITY, as a percent
