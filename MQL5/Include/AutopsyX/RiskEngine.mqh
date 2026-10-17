@@ -99,7 +99,9 @@ private:
         }
       string readyKey=LossStorageReadyKey();
       datetime readyWrittenAt=GlobalVariableSet(readyKey,1.0);
-      return(readyWrittenAt!=0 && GlobalVariableCheck(readyKey) && MathAbs(GlobalVariableGet(readyKey)-1.0)<0.1);
+      if(readyWrittenAt==0 || !GlobalVariableCheck(readyKey) || MathAbs(GlobalVariableGet(readyKey)-1.0)>=0.1) return(false);
+      GlobalVariablesFlush();
+      return(true);
      }
 
    bool              LoadLossTimes(void)
@@ -156,7 +158,9 @@ private:
       if(!WritePersistentValue(EquityStateKey("WEEK_START"),(double)m_weekStartTime)) return(false);
       if(!WritePersistentValue(EquityStateKey("WEEK_EQUITY"),m_weekStartEquity)) return(false);
       if(!WritePersistentValue(EquityStateKey("WEEK_LOCK"),m_weeklyLockout ? 1.0 : 0.0)) return(false);
-      return(WritePersistentValue(readyKey,1.0));
+      if(!WritePersistentValue(readyKey,1.0)) return(false);
+      GlobalVariablesFlush();
+      return(GlobalVariableCheck(readyKey) && MathAbs(GlobalVariableGet(readyKey)-1.0)<0.1);
      }
 
    bool              LoadEquityState(bool &stateExists)
