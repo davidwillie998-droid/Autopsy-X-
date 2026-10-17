@@ -7,7 +7,7 @@ originally written at a6f4aad)
 **Instruments:** designed for XAUUSD and major FX pairs (24-hour markets,
 no single session open)
 **Size:** 1,499-line main `.mq5` file, 61 supporting `.mqh` modules (26
-live, 35 dormant — see Section 4.10 for two of those 36 not previously
+live, 35 dormant — see Section 4.10 for two of those 35 not previously
 catalogued here), plus a standalone Python research package and a
 separate real-data research pipeline (`research/information_value/`)
 outside the MQL5 tree entirely
