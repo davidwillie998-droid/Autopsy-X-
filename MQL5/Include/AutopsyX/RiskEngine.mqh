@@ -412,7 +412,7 @@ public:
 
    void              RegisterTradeClosed(const double netProfit,const datetime closeTime=0)
      {
-      datetime closedAt=TimeCurrent();
+      datetime closedAt=(closeTime>0) ? closeTime : TimeCurrent();
       if(netProfit<0)
         {
          if(m_lossTimeCount<AX_RISK_LOSS_HISTORY)
