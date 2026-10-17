@@ -33,6 +33,14 @@ class MonteCarloValidationTests(unittest.TestCase):
         self.assertGreater(result["max_drawdown_pct"], 0)
         self.assertEqual(result["longest_losing_streak"], 3)
 
+    def test_equity_path_uses_configured_ruin_threshold(self):
+        result = equity_path([-1.0] * 100, 2.0, ruin_equity_pct=90.0)
+        self.assertTrue(result["ruin_threshold_breach"])
+
+    def test_equity_path_rejects_invalid_ruin_threshold(self):
+        with self.assertRaises(ValueError):
+            equity_path([1.0, -1.0], 1.0, ruin_equity_pct=100.0)
+
     def test_zero_breach_upper_bound_is_nonzero_and_below_one(self):
         upper = binomial_upper_95_zero_or_general(0, 20_000)
         self.assertGreater(upper, 0)
