@@ -765,6 +765,9 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    double actualSlDistPts = (point>0) ? MathAbs(intendedPrice-slPrice)/point : InpEmergencySlPoints;
 
    double lots = g_risk.CalculateLotSize(g_md,actualSlDistPts);
+   // Preserve the effective Kelly/warm-up risk ceiling through later sizing multipliers
+   // and broker-volume normalization; final stop-risk validation must respect this cap.
+   double effectiveRiskCapPct=g_risk.RiskPercent();
 
    // Kelly gate: use only completed, non-partial, net-of-cost outcomes from this EA session.
    // The first 30 outcomes use a small configurable warm-up risk cap so the gate cannot deadlock
@@ -805,7 +808,8 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
          if(InpVerboseLogging) Print("AUTOPSY X: Kelly gate blocked entry (allowed risk is zero/non-positive)");
          return(false);
         }
-      if(allowedRiskPct<configuredRiskPct)
+      effectiveRiskCapPct=MathMin(configuredRiskPct,allowedRiskPct);
+       if(allowedRiskPct<configuredRiskPct)
         {
          double scaledKellyLots=lots*(allowedRiskPct/configuredRiskPct);
          if(scaledKellyLots<g_md.VolumeMin()) lots=0.0;
@@ -846,7 +850,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       bool riskCalcOk=(equity>0.0 &&
                        OrderCalcProfit(orderType,_Symbol,lots,intendedPrice,slPrice,projectedProfitAtStop));
       double projectedLoss=riskCalcOk ? MathAbs(projectedProfitAtStop) : 0.0;
-      double riskBudget=equity*g_risk.RiskPercent()/100.0;
+      double riskBudget=equity*effectiveRiskCapPct/100.0;
       // Fail closed when broker/account-currency loss calculation is unavailable or exceeds budget.
       if(!riskCalcOk || projectedProfitAtStop>=0.0 || projectedLoss>riskBudget+0.01)
          lots=0.0;
@@ -934,7 +938,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       ENUM_ORDER_TYPE finalOrderType=(dir==AX_DIR_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
       bool finalRiskOk=(equity>0.0 &&
                         OrderCalcProfit(finalOrderType,_Symbol,lots,intendedPrice,slPrice,finalStopProfit));
-      double finalRiskBudget=equity*g_risk.RiskPercent()/100.0;
+      double finalRiskBudget=equity*effectiveRiskCapPct/100.0;
       bool finalMarginOk=OrderCalcMargin(finalOrderType,_Symbol,lots,intendedPrice,requiredMargin) &&
                          g_risk.ProjectedMarginAcceptable(requiredMargin);
       bool finalExposureOk=g_risk.ProjectedExposureAcceptable(symbolExposureLots,
