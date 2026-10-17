@@ -191,26 +191,40 @@ public:
    void              OnTickHousekeeping(void)
      {
       MqlDateTime dtNow;
-      TimeToStruct(TimeCurrent(),dtNow);
-      datetime dayStart = TimeCurrent() - (dtNow.hour*3600+dtNow.min*60+dtNow.sec);
-      if(dayStart != m_dayStartTime)
-        {
-         m_dayStartTime   = dayStart;
-         m_dayStartEquity = AccountInfoDouble(ACCOUNT_EQUITY);
-         m_flipsToday = 0;
-         m_dailyLockout = false;
-         m_lockoutReason = "";
-        }
-      if(m_dayStartEquity<=0) m_dayStartEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+      datetime now=TimeCurrent();
+      TimeToStruct(now,dtNow);
+      datetime dayStart=now-(dtNow.hour*3600+dtNow.min*60+dtNow.sec);
+      datetime weekStart=WeekStart(now);
+      double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+      bool stateExists=false;
 
-      datetime weekStart = WeekStart(TimeCurrent());
-      if(weekStart != m_weekStartTime)
+      // Restore account-wide baselines and lockouts so restarts cannot reset loss budgets.
+      if(!LoadEquityState(stateExists)) { m_equityPersistenceOk=false; return; }
+      if(!stateExists)
         {
-         m_weekStartTime   = weekStart;
-         m_weekStartEquity = AccountInfoDouble(ACCOUNT_EQUITY);
-         m_weeklyLockout = false;
+         m_dayStartTime=dayStart; m_dayStartEquity=equity; m_dailyLockout=false;
+         m_weekStartTime=weekStart; m_weekStartEquity=equity; m_weeklyLockout=false;
+         if(equity<=0.0 || !PersistEquityState()) m_equityPersistenceOk=false;
+         return;
         }
-      if(m_weekStartEquity<=0) m_weekStartEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+
+      bool changed=false;
+      if(dayStart!=m_dayStartTime)
+        {
+         m_dayStartTime=dayStart; m_dayStartEquity=equity; m_dailyLockout=false;
+         m_flipsToday=0; m_lockoutReason=""; changed=true;
+        }
+      if(weekStart!=m_weekStartTime)
+        {
+         m_weekStartTime=weekStart; m_weekStartEquity=equity; m_weeklyLockout=false;
+         changed=true;
+        }
+      if(m_dayStartEquity<=0.0 || m_weekStartEquity<=0.0 || equity<=0.0)
+        {
+         m_equityPersistenceOk=false;
+         return;
+        }
+      if(changed && !PersistEquityState()) m_equityPersistenceOk=false;
      }
 
    //--- position sizing: risk-percent based, never martingale, never scaled by loss streak. ---
