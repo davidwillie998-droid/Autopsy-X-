@@ -100,6 +100,54 @@ public:
                              (rep.currentRiskAsMultipleOfKelly>1.0) ? " (OVERBETTING relative to Kelly)" : "");
       return(rep);
      }
+
+   // Conservative estimate: replace the point win-rate with the lower bound of a two-sided
+   // 95% Wilson score interval before computing Kelly. This is a deliberately cautious
+   // frequentist approximation, not a full Bayesian Kelly solution; payoff-ratio uncertainty
+   // is not estimated here, so the caller must still apply fractional Kelly and hard risk caps.
+   SAxKellyReport EvaluateConservative(const double winRatePct,const double avgWinR,const double avgLossR,
+                                       const int sampleTrades,const double currentRiskPercent) const
+     {
+      SAxKellyReport rep;
+      rep.state=AX_KELLY_INVALID_INPUT; rep.kellyFraction=0; rep.halfKellyFraction=0;
+      rep.currentRiskAsMultipleOfKelly=0; rep.note="";
+
+      if(sampleTrades<AX_KELLY_MIN_SAMPLE)
+        {
+         rep.state=AX_KELLY_INSUFFICIENT_SAMPLE;
+         rep.note=StringFormat("Need >=%d closed trades for conservative Kelly (have %d)",
+                               AX_KELLY_MIN_SAMPLE,sampleTrades);
+         return(rep);
+        }
+      if(winRatePct<0.0 || winRatePct>100.0 || avgWinR<=0.0 || avgLossR<=0.0 || currentRiskPercent<=0.0)
+        {
+         rep.state=AX_KELLY_INVALID_INPUT;
+         rep.note="Invalid win-rate, payoff, or current-risk input for conservative Kelly";
+         return(rep);
+        }
+
+      double n=(double)sampleTrades;
+      double p=winRatePct/100.0;
+      const double z=1.959963984540054; // two-sided 95% Wilson interval
+      double z2=z*z;
+      double denom=1.0+z2/n;
+      double center=p+z2/(2.0*n);
+      double margin=z*MathSqrt((p*(1.0-p)/n)+(z2/(4.0*n*n)));
+      double lowerP=(center-margin)/denom;
+      lowerP=AxClampD(lowerP,0.0,1.0);
+
+      if(lowerP<=0.0)
+        {
+         rep.state=AX_KELLY_RUIN_CONDITION;
+         rep.note="95% Wilson lower bound for win probability is zero; no conservative positive edge established";
+         return(rep);
+        }
+
+      rep=Evaluate(lowerP*100.0,avgWinR,avgLossR,sampleTrades,currentRiskPercent);
+      if(rep.state==AX_KELLY_VALID)
+         rep.note=StringFormat("95%% Wilson lower-bound win rate %.2f%%. %s",lowerP*100.0,rep.note);
+      return(rep);
+     }
   };
 //+------------------------------------------------------------------+
 #endif // AX_KELLYRUIN_MQH
