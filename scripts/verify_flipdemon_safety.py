@@ -60,8 +60,8 @@ require("DailyLossLimitBreached()" in risk and "WeeklyLossLimitBreached()" in ri
         "daily and weekly loss locks are checked in the risk engine")
 require(bool(re.search(r"InpDailyLossLimitPercent\s*=\s*4\.0", ea))
         and bool(re.search(r"InpWeeklyLossLimitPercent\s*=\s*8\.0", ea))
-        and bool(re.search(r"InpMaxConsecutiveLosses\s*=\s*4", ea)),
-        "EA defaults match the 4% daily, 8% weekly, and 4-consecutive-loss safety policy")
+        and bool(re.search(r"InpMaxLossesPerRolling24Hours\s*=\s*4", ea)),
+        "EA defaults match the 4% daily, 8% weekly, and rolling-24-hour loss safety policy")
 require("m_dailyLossLimitPercent=4.0" in risk and "m_maxLossesRolling24h=4" in risk
         and "m_weeklyLossLimitPercent=8.0" in risk and "weeklyLossLimitPercent=8.0" in risk
         and "Rolling24HourLossLimitBreached" in risk and "LossesInRolling24Hours" in risk,
