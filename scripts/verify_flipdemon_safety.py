@@ -110,7 +110,7 @@ require("OrderCalcProfit(finalOrderType,_Symbol,lots,intendedPrice,slPrice,final
         and "!finalRiskOk" in ea and "!finalMarginOk" in ea,
         "final volume is rejected if account-currency stop risk or projected margin cannot be verified")
 require("bool finalExposureOk=g_risk.ProjectedExposureAcceptable(symbolExposureLots," in ea
-        and "bool finalAccountExposureOk=(accountExposureLots+lots<=InpMaxExposureLots+0.0000001)" in ea,
+        and "bool finalAccountExposureOk=(InpMaxExposureLots<=0.0 || accountExposureLots+lots<=InpMaxExposureLots+0.0000001)" in ea,
         "symbol/directional and account-wide caps are independently enforced on final volume")
 
 open_market_i = execution.find("bool              OpenMarket(")
