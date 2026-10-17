@@ -78,7 +78,10 @@ def stationary_sample(
 
 
 def equity_path(
-    returns_r: Sequence[float], risk_pct: float, adverse_cost_r: float = 0.0
+    returns_r: Sequence[float],
+    risk_pct: float,
+    adverse_cost_r: float = 0.0,
+    ruin_equity_pct: float = 50.0,
 ) -> dict[str, float | int | bool]:
     """Compound equity using a fixed fraction of current equity per trade.
 
@@ -90,6 +93,8 @@ def equity_path(
         raise ValueError("risk_pct must be > 0 and <= 2.0 percent")
     if adverse_cost_r < 0 or not math.isfinite(adverse_cost_r):
         raise ValueError("adverse_cost_r must be finite and >= 0")
+    if not (0 < ruin_equity_pct < 100) or not math.isfinite(ruin_equity_pct):
+        raise ValueError("ruin_equity_pct must be finite and between 0 and 100")
     risk_fraction = risk_pct / 100.0
     equity = peak = 1.0
     max_dd_pct = 0.0
@@ -111,7 +116,7 @@ def equity_path(
         "final_equity_pct_initial": 100.0 * equity,
         "max_drawdown_pct": max_dd_pct,
         "longest_losing_streak": losing_streak,
-        "ruin_50pct_breach": equity <= 0.5,
+        "ruin_threshold_breach": equity <= ruin_equity_pct / 100.0,
     }
 
 
@@ -163,7 +168,9 @@ def run_simulations(values: Sequence[float], config: Config, method: str) -> dic
             sample = iid_sample(values, n, rng)
         else:
             sample = stationary_sample(values, n, config.mean_block_length, rng)
-        result = equity_path(sample, config.risk_pct, config.adverse_cost_r)
+        result = equity_path(
+            sample, config.risk_pct, config.adverse_cost_r, config.ruin_equity_pct
+        )
         dd = float(result["max_drawdown_pct"])
         eq = float(result["final_equity_pct_initial"])
         dds.append(dd)
