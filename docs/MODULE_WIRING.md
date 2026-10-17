@@ -63,6 +63,7 @@ runs is dormant for that reason specifically, not merely unreferenced.
 | VWAPEngine.mqh | CVWAPEngine | g_vwap |
 | TradeAutopsy.mqh | CTradeAutopsy | g_autopsy |
 | Statistics.mqh | CStatistics, CAccuracyEngine | g_stats, g_accuracy |
+| KellyRuin.mqh | CKellyRuinEngine | g_kelly (entry risk cap only) |
 | Dashboard.mqh | CDashboard | g_dash |
 
 `Defs.mqh` is a shared type/enum header with no class of its own —
