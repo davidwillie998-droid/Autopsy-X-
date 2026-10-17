@@ -57,6 +57,8 @@ intent and the `.mq5`/`.mqh` files as the thing to fix.
 
 ## 3. Modules
 
+The current research-fix branch enables the mechanical VWAP exit by default and adds a conservative Kelly risk gate. The default execution mode remains `ANALYSIS_ONLY`. The Kelly gate uses current-session in-memory outcomes only; it restarts its 30-trade warm-up after an EA restart. The `CONFIRMED_CROSS_PLUS_STRUCTURE` VWAP mode is intentionally rejected at initialization until its structural engine is wired and tested. These source changes have not yet been compiled in MetaEditor.
+
 | File | Responsibility |
 |---|---|
 | `Defs.mqh` | Shared enums/structs used by every other module |
@@ -74,6 +76,7 @@ intent and the `.mq5`/`.mqh` files as the thing to fix.
 | `ExitEngine.mqh` | Dynamic SL/TP, break-even, momentum-adaptive trailing, fast defensive exits |
 | `TradeAutopsy.mqh` | Per-trade CSV log + rule-based classification |
 | `Statistics.mqh` | Win rate / profit factor / expectancy / drawdown / directional accuracy / profitability gate |
+| `KellyRuin.mqh` | Conservative 95% Wilson-bound Kelly estimator used to cap entry risk at half-Kelly after 30 completed trades; warm-up risk cap applies before then |
 | `Dashboard.mqh` | On-chart panel + KILL ENGINE button |
 
 ## 4. Risk modes

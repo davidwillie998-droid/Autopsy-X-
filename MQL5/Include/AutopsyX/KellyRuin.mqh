@@ -1,12 +1,12 @@
 //+------------------------------------------------------------------+
 //|                                                    KellyRuin.mqh |
-//|  Kelly Criterion / Ruin-Bound Estimator (FLIPDEMON EXTREME       |
-//|  upgrade, spec section 31) - REPORT ONLY.                        |
+//|  Conservative Kelly risk gate (FLIPDEMON EXTREME upgrade).      |
 //|                                                                    |
-//|  This class computes the classical Kelly fraction f* = p - q/b     |
-//|  (p = win probability, q = 1-p, b = avg win / avg loss payoff      |
-//|  ratio) from real closed-trade statistics. That is the entire      |
-//|  scope of what is computed here - deliberately.                   |
+//|  Computes classical Kelly using a conservative 95% Wilson lower   |
+//|  bound on observed win rate, then supports half-Kelly size caps.   |
+//|  Research context: Sinclair (2014), SSRN 2457368; Sukhov (2026),  |
+//|  SSRN 6195358. Wilson-bound sizing is this project's conservative |
+//|  engineering choice, not a result claimed by either paper.        |
 //|                                                                    |
 //|  HONEST LIMITATION: a precise closed-form "probability of ruin"    |
 //|  for fractional-Kelly betting depends on assumptions this class    |
@@ -19,9 +19,8 @@
 //|  actual Kelly/fractional-Kelly literature (e.g. Thorp) uses to     |
 //|  warn about overbetting, not a fabricated probability.             |
 //|                                                                    |
-//|  NEVER let this class's output authorize or size a live trade -    |
-//|  see AdaptiveFlipEngine.mqh / RiskEngine.mqh for the actual risk   |
-//|  authority. This is diagnostics, nothing more.                     |
+//|  This class may only reduce permitted size or block an entry. It  |
+//|  never raises risk; RiskEngine remains the hard-cap authority.     |
 //+------------------------------------------------------------------+
 #property strict
 #ifndef AX_KELLYRUIN_MQH
@@ -44,10 +43,10 @@ struct SAxKellyReport
 class CKellyRuinEngine
   {
 public:
-   //--- winRatePct: 0..100. avgWinR/avgLossR: BOTH given as positive R-multiple magnitudes.        ---
+   //--- winRatePct: 0..100. Average win/loss magnitudes must be positive and use the same units.        ---
    //--- currentRiskPercent: the account's actual configured risk-per-trade (from CRiskEngine),      ---
    //--- passed in so the comparison ratio uses the real number, not a guess. ---
-   SAxKellyReport    Evaluate(const double winRatePct,const double avgWinR,const double avgLossR,
+   SAxKellyReport    Evaluate(const double winRatePct,const double avgWinMagnitude,const double avgLossMagnitude,
                                const int sampleTrades,const double currentRiskPercent) const
      {
       SAxKellyReport rep;
@@ -63,14 +62,14 @@ public:
         }
       if(winRatePct<=0 || winRatePct>=100)
         { rep.note="Win rate out of valid (0,100) range"; return(rep); }
-      if(avgWinR<=0 || avgLossR<=0)
+      if(avgWinMagnitude<=0 || avgLossMagnitude<=0)
         { rep.note="Average win/loss R must both be positive magnitudes"; return(rep); }
       if(currentRiskPercent<=0)
         { rep.note="Current risk percent must be positive"; return(rep); }
 
       double p = winRatePct/100.0;
       double q = 1.0-p;
-      double b = avgWinR/avgLossR;
+      double b = avgWinMagnitude/avgLossMagnitude;
       double kelly = p-(q/b);
 
       if(!MathIsValidNumber(kelly))
@@ -98,6 +97,54 @@ public:
                              kelly,kelly*100.0,rep.halfKellyFraction*100.0,currentRiskPercent,
                              rep.currentRiskAsMultipleOfKelly,
                              (rep.currentRiskAsMultipleOfKelly>1.0) ? " (OVERBETTING relative to Kelly)" : "");
+      return(rep);
+     }
+
+   // Conservative estimate: replace the point win-rate with the lower bound of a two-sided
+   // 95% Wilson score interval before computing Kelly. This is a deliberately cautious
+   // frequentist approximation, not a full Bayesian Kelly solution; payoff-ratio uncertainty
+   // is not estimated here, so the caller must still apply fractional Kelly and hard risk caps.
+   SAxKellyReport EvaluateConservative(const double winRatePct,const double avgWinMagnitude,const double avgLossMagnitude,
+                                       const int sampleTrades,const double currentRiskPercent) const
+     {
+      SAxKellyReport rep;
+      rep.state=AX_KELLY_INVALID_INPUT; rep.kellyFraction=0; rep.halfKellyFraction=0;
+      rep.currentRiskAsMultipleOfKelly=0; rep.note="";
+
+      if(sampleTrades<AX_KELLY_MIN_SAMPLE)
+        {
+         rep.state=AX_KELLY_INSUFFICIENT_SAMPLE;
+         rep.note=StringFormat("Need >=%d closed trades for conservative Kelly (have %d)",
+                               AX_KELLY_MIN_SAMPLE,sampleTrades);
+         return(rep);
+        }
+      if(winRatePct<0.0 || winRatePct>100.0 || avgWinMagnitude<=0.0 || avgLossMagnitude<=0.0 || currentRiskPercent<=0.0)
+        {
+         rep.state=AX_KELLY_INVALID_INPUT;
+         rep.note="Invalid win-rate, payoff, or current-risk input for conservative Kelly";
+         return(rep);
+        }
+
+      double n=(double)sampleTrades;
+      double p=winRatePct/100.0;
+      const double z=1.959963984540054; // two-sided 95% Wilson interval
+      double z2=z*z;
+      double denom=1.0+z2/n;
+      double center=p+z2/(2.0*n);
+      double margin=z*MathSqrt((p*(1.0-p)/n)+(z2/(4.0*n*n)));
+      double lowerP=(center-margin)/denom;
+      lowerP=AxClampD(lowerP,0.0,1.0);
+
+      if(lowerP<=0.0)
+        {
+         rep.state=AX_KELLY_RUIN_CONDITION;
+         rep.note="95% Wilson lower bound for win probability is zero; no conservative positive edge established";
+         return(rep);
+        }
+
+      rep=Evaluate(lowerP*100.0,avgWinMagnitude,avgLossMagnitude,sampleTrades,currentRiskPercent);
+      if(rep.state==AX_KELLY_VALID)
+         rep.note=StringFormat("95%% Wilson lower-bound win rate %.2f%%. %s",lowerP*100.0,rep.note);
       return(rep);
      }
   };

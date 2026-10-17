@@ -6,8 +6,8 @@ originally written at a6f4aad)
 **Platform:** MetaTrader 5 (MQL5 Expert Advisor)
 **Instruments:** designed for XAUUSD and major FX pairs (24-hour markets,
 no single session open)
-**Size:** 1,499-line main `.mq5` file, 61 supporting `.mqh` modules (25
-live, 36 dormant — see Section 4.10 for two of those 36 not previously
+**Size:** 1,499-line main `.mq5` file, 61 supporting `.mqh` modules (26
+live, 35 dormant — see Section 4.10 for two of those 35 not previously
 catalogued here), plus a standalone Python research package and a
 separate real-data research pipeline (`research/information_value/`)
 outside the MQL5 tree entirely
@@ -124,14 +124,14 @@ position size against estimated order-book depth when enabled).
 - **`CExitEngine`** — momentum-collapse exits, microstructure-reversal
   exits, max-hold-time (profit/trend-aware, not a fixed timer), spread-
   abnormal exits, execution-quality circuit-breaker exits, breakeven and
-  trailing stops, and an optional mechanical VWAP exit (see 3.5).
+  trailing stops, and the default-enabled mechanical VWAP exit (see 3.5).
 - **`CVWAPEngine`** — Zarattini & Aziz (2023)-inspired: a bar closing on
   one side of VWAP tends to keep drifting that way. Adapted for 24-hour
   markets (rolling or FX-session-anchored VWAP, not the original paper's
-  single NYSE-open anchor) and paired, deliberately, with an
-  unconditional mechanical exit the instant a bar closes wrong-side —
-  the paper's own finding is that the exit rule is what bounds losses,
-  not the entry signal alone.
+  single NYSE-open anchor). The default exit is a closed-bar wrong-side
+  check for positions that entered aligned with VWAP; the live-price mode
+  is also wired. The original paper's QQQ/TQQQ results do not establish
+  profitability on XAUUSD or FX, so broker-specific tests remain mandatory.
 
 ### 3.4 Risk management — the part with the hardest guarantees
 
@@ -158,6 +158,8 @@ position size against estimated order-book depth when enabled).
   not just by convention.
 - **`CEmergencyControls`** — execution-mode switch and a manual kill
   state, plus the on-chart KILL ENGINE button.
+
+**`CKellyRuinEngine` — conservative Kelly risk gate.** Once 30 completed, non-partial outcomes are available in the current EA session, it uses a 95% Wilson lower bound on the observed win rate and caps risk at no more than half of that conservative Kelly estimate. A non-positive/invalid estimate blocks entry. Before the minimum sample, risk is capped by `InpKellyWarmupRiskPercent` (default 0.25%; zero disables warm-up entries). The trade sample is in-memory and resets when the EA restarts, so warm-up may repeat after restart. Kelly never increases risk; `RiskEngine`'s hard caps remain authoritative.
 
 ### 3.5 Logging, statistics, and display
 
@@ -274,17 +276,13 @@ every engine above into one `ENUM_AX_FINAL_DECISION`.
 `CDynamicPositionSizing` — a size-down-only multiplier stack combining
 the decision, drawdown state, crisis level, alpha quality, and capacity,
 architecturally incapable of exceeding the base risk percent (each
-component multiplier is pre-clamped to `[0,1]`, and Kelly is
-deliberately excluded from this stack per its own report-only
-constraint — see 4.6).
+component multiplier is pre-clamped to `[0,1]`. The separate live
+Kelly gate applies only as a size-down cap before this stack and cannot
+override `RiskEngine` or increase the base risk.
 
-### 4.6 Diagnostics, never authorization
+### 4.6 Report-only diagnostics
 
-`CKellyRuinEngine` — computes the classical Kelly fraction and compares
-current risk-per-trade against it, explicitly labeled in its own file
-header: "NEVER let this class's output authorize or size a live trade
-— this is diagnostics, nothing more." A Monte Carlo projection module
-serves the same report-only role.
+The Monte Carlo projection module remains report-only. The Kelly estimator is no longer diagnostic-only: its conservative estimate may reduce permitted size or block an entry, but it cannot authorize an increase in risk. The Kelly gate is deliberately separate from the dormant institutional position-sizing stack.
 
 ### 4.7 Attribution, explainability, and Dashboard v3
 
@@ -445,10 +443,7 @@ exist yet.
   formula, threshold, and weight either cites the specific paper finding
   it implements, or is explicitly marked as this codebase's own choice.
   Nothing is attributed to a source that doesn't actually specify it.
-- **Every feature ships opt-in, off by default** — `InpUseVWAPExit`,
-  `InpUseAdaptiveFlipEngine`, `InpUseImpactCostSizing`, `InpUseHeatmap`,
-  and (per `docs/WIRING_PLAN.md`) every one of the 28 dormant modules'
-  eventual toggle, all default `false`.
+- **Execution stays analysis-only by default.** The mechanical VWAP exit and conservative Kelly gate default to enabled; the Kelly gate only caps risk. Other optional modules such as `InpUseAdaptiveFlipEngine`, `InpUseImpactCostSizing`, and `InpUseHeatmap` remain opt-in. The structural-confirmation VWAP mode fails initialization until its structure integration is deliberately shipped.
 - **Signal generation and risk/execution permission are architecturally
   separate** — no signal-producing class anywhere in this codebase
   contains a `CTrade`/order-execution call. Verified by inspection, not
@@ -479,8 +474,8 @@ is architecturally complete and verification-incomplete.
 ## 8. Where to go next
 
 - `docs/MODULE_WIRING.md` — the mechanically-derived list of exactly
-  which 25 files are live and which 28 are not, and why.
-- `docs/WIRING_PLAN.md` — a 5-tier order for wiring the 28 dormant
+  which 26 files are live and which 27 are not, and why.
+- `docs/WIRING_PLAN.md` — a 5-tier order for wiring the 27 dormant
   modules in eventually (risk-reducers first, signal-generators last,
   each with its own dependency chain, off-switch, and acceptance test),
   plus one concrete accessor-exposure gap discovered while writing it.
