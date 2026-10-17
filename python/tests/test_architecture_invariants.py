@@ -203,7 +203,7 @@ def test_pretrade_allowed_checks_every_required_hard_gate():
     body = m.group(0)
     required_checks = [
         "m_killed", "DailyLossLimitBreached", "WeeklyLossLimitBreached",
-        "ConsecutiveLossLimitBreached", "ExecutionFailureLimitBreached",
+        "Rolling24HourLossLimitBreached", "ExecutionFailureLimitBreached",
         "m_maxOpenPositions", "m_maxExposureLots", "m_maxSpreadPts",
         "MarginUsageAcceptable",
     ]
