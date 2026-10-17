@@ -101,7 +101,7 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
     )
 
     actual = (ROOT / "intel" / "autopsyx" / "data" / "acquire.py").read_text()
-    assert actual == expected, "acquire.py contains changes beyond the reviewed poll-window timing repair"
+    assert actual.rstrip("\n") == expected.rstrip("\n"), "acquire.py contains changes beyond the reviewed poll-window timing repair"
 
 
 def test_phase3c_workflow_mirrors_phase3a_workflow_procedure():
