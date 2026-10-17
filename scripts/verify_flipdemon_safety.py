@@ -48,7 +48,8 @@ require("if(InpMaxExposureLots>0.0)" in ea and "remainingExposureLots=InpMaxExpo
         "optional fixed gross-lot cap is applied only when configured above zero")
 require("InpMaxExposureLots<=0.0 || accountExposureLots+lots<=InpMaxExposureLots+0.0000001" in ea,
         "final normalized size rechecks the optional account-wide gross-lot cap")
-require("if(m_maxExposureLots>0.0) lots = MathMin(lots,m_maxExposureLots);" in risk,
+require("if(m_maxExposureLots>0.0) lots = MathMin(lots,m_maxExposureLots);" in risk
+        and "m_maxDirectionalExposureLots>0.0 && currentDirectionalLots+proposedLots>m_maxDirectionalExposureLots+1e-8" in risk,
         "risk sizing honors the optional cap without treating zero as zero lots")
 require("OrderCalcProfit(orderType,_Symbol,lots,intendedPrice,slPrice,projectedProfitAtStop)" in ea
         and "projectedLoss>riskBudget+0.01" in ea,
@@ -62,6 +63,7 @@ require("if(m_maxExposureLots>0.0 && currentExposureLots>=m_maxExposureLots)" in
 require("DailyLossLimitBreached()" in risk and "WeeklyLossLimitBreached()" in risk,
         "daily and weekly loss locks are checked in the risk engine")
 require(bool(re.search(r"InpMaxExposureLots\s*=\s*0\.0", ea))
+        and bool(re.search(r"InpMaxDirectionalExposureLots\s*=\s*0\.0", ea))
         and "InpHtfFastTimeframe       = PERIOD_H4" in ea
         and "InpHtfSlowTimeframe       = PERIOD_D1" in ea
         and "g_regimeDaily.R2()" in ea,
