@@ -107,7 +107,7 @@ input double          InpKellyWarmupRiskPercent = 0.25; // Risk cap until 30 com
 
 input group "=== RISK ENGINE ===";
 input double         InpDailyLossLimitPercent   = 4.0;    // Hard daily equity-loss stop: 4%; blocks new entries until the next broker day
-input int            InpMaxConsecutiveLosses    = 4;      // Pause after 4 consecutive losing outcomes; streak resets at broker-day rollover
+input int            InpMaxLossesPerRolling24Hours = 4;   // Block new entries after 4 losing completed trades in any rolling 24-hour window
 input int            InpMaxOpenPositions        = 1;      // Max simultaneously open positions
 input double         InpMaxExposureLots         = 1.0;    // Max total exposure, lots
 input int            InpMaxFlipsPerDay          = 20;      // Max direction flips per day
@@ -1153,7 +1153,7 @@ int OnInit(void)
    g_scorer.Configure(InpMinScoreToAct,InpMinGapToAct);
    g_flip.Configure(InpFlipRequiredConfirmations,InpFlipMinConfidence);
    g_chop.Configure(InpAntiChopBaseCooldownSec,InpAntiChopMaxCooldownSec);
-   g_risk.Configure(AxRiskPercentForMode(),InpDailyLossLimitPercent,InpMaxConsecutiveLosses,
+   g_risk.Configure(AxRiskPercentForMode(),InpDailyLossLimitPercent,InpMaxLossesPerRolling24Hours,
                      InpMaxOpenPositions,InpMaxExposureLots,InpMaxFlipsPerDay,
                      InpMaxTradesPerRollingPeriod,InpRollingPeriodSeconds,
                      InpMaxSpreadPoints,InpMaxSlippagePoints,InpMinFreeMarginPercent,
