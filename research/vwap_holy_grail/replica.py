@@ -10,7 +10,7 @@ import csv
 import json
 import math
 from dataclasses import asdict, dataclass
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Iterable
 from zoneinfo import ZoneInfo
@@ -186,7 +186,11 @@ def backtest(bars: list[Bar], config: Config = Config()) -> dict:
     for day, items in sessions.items():
         first_local = items[0][0].timestamp.astimezone(tz).time().replace(tzinfo=None)
         last_local = items[-1][0].timestamp.astimezone(tz).time().replace(tzinfo=None)
-        if first_local != time(9, 30) or last_local != time(15, 59):
+        has_minute_gap = any(
+            (items[i][0].timestamp - items[i - 1][0].timestamp).total_seconds() != 60
+            for i in range(1, len(items))
+        )
+        if first_local != time(9, 30) or last_local != time(15, 59) or has_minute_gap:
             incomplete_sessions.append(day)
         pending_direction: int | None = None
 
@@ -221,12 +225,12 @@ def backtest(bars: list[Bar], config: Config = Config()) -> dict:
 
             # Mark-to-market equity at each bar close; entry commission was deducted from cash.
             marked = cash + (direction * shares * (bar.close - entry_price) if direction else 0.0)
-            equity_curve.append({"timestamp": bar.timestamp.isoformat(), "session": day,
+            equity_curve.append({"timestamp": (bar.timestamp + timedelta(minutes=1)).isoformat(), "session": day,
                                  "close": bar.close, "vwap": vwap if math.isfinite(vwap) else None,
                                  "direction": direction, "equity": marked})
 
             if is_last and config.flatten_at_session_end:
-                close_position(bar.close, bar.timestamp, "SESSION_CLOSE")
+                close_position(bar.close, bar.timestamp + timedelta(minutes=1), "SESSION_CLOSE")
                 pending_direction = None
                 equity_curve[-1]["equity"] = cash
                 equity_curve[-1]["direction"] = 0
@@ -276,11 +280,16 @@ def main() -> None:
     parser.add_argument("--commission-per-share", type=float, default=0.0005)
     parser.add_argument("--timezone", default="America/New_York")
     parser.add_argument("--long-only", action="store_true")
+    parser.add_argument("--require-complete-sessions", action="store_true",
+                        help="Fail if any session lacks 09:30/15:59 bars or contains a missing one-minute bar")
     parser.add_argument("--output", help="Optional JSON output path")
     args = parser.parse_args()
     config = Config(args.capital, args.position_fraction, args.commission_per_share,
                     args.fill_model, args.timezone, not args.long_only, True)
     report = backtest(load_csv(args.csv), config)
+    if args.require_complete_sessions and report["incomplete_sessions"]:
+        raise SystemExit("Incomplete regular-session data detected for: " +
+                         ", ".join(report["incomplete_sessions"]))
     encoded = json.dumps(report, indent=2, allow_nan=False)
     if args.output:
         Path(args.output).write_text(encoded + "\n", encoding="utf-8")
