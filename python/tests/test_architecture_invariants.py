@@ -359,6 +359,8 @@ def test_account_flip_loss_limits_are_conservative_and_consistent():
     assert re.search(r"InpWeeklyLossLimitPercent\s*=\s*8\.0", ea)
     assert re.search(r"InpMaxConsecutiveLosses\s*=\s*4", ea)
     assert "m_dailyLossLimitPercent=4.0" in risk
-    assert "m_maxConsecutiveLosses=4" in risk
+    assert "m_maxLossesRolling24h=4" in risk
+    assert "Rolling24HourLossLimitBreached" in risk
+    assert "LossesInRolling24Hours" in risk
     assert "m_weeklyLossLimitPercent=8.0" in risk
     assert "weeklyLossLimitPercent=8.0" in risk
