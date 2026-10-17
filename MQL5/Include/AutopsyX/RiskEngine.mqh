@@ -10,6 +10,7 @@
 #include "MarketData.mqh"
 
 #define AX_RISK_TRADE_BUFFER 256
+#define AX_RISK_LOSS_HISTORY 4
 
 class CRiskEngine
   {
@@ -44,8 +45,9 @@ private:
    datetime          m_dayStartTime;
    double            m_weekStartEquity;
    datetime          m_weekStartTime;
-   datetime          m_lossTimes[AX_RISK_TRADE_BUFFER];
+   datetime          m_lossTimes[AX_RISK_LOSS_HISTORY];
    int               m_lossTimeCount;
+   bool              m_lossPersistenceOk;
    int               m_flipsToday;
    int               m_consecutiveExecutionFailures;
    bool              m_dailyLockout;
@@ -72,6 +74,43 @@ private:
       return(dayStart-daysSinceMonday*86400);
      }
 
+   string            LossStorageKey(const int slot) const
+     {
+      // Shared by this account and symbol across EA restarts and EA instances.
+      // Keep the key short enough for MT5 terminal global-variable limits.
+      return(StringFormat("AXFDX24_%I64d_%s_%d",AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,slot));
+     }
+
+   bool              PersistLossTimes(void)
+     {
+      for(int i=0;i<AX_RISK_LOSS_HISTORY;i++)
+        {
+         double storedValue=(i<m_lossTimeCount) ? (double)m_lossTimes[i] : 0.0;
+         string key=LossStorageKey(i);
+         GlobalVariableSet(key,storedValue);
+         if(!GlobalVariableCheck(key) || MathAbs(GlobalVariableGet(key)-storedValue)>0.5)
+            return(false);
+        }
+      return(true);
+     }
+
+   bool              LoadLossTimes(void)
+     {
+      m_lossTimeCount=0;
+      for(int i=0;i<AX_RISK_LOSS_HISTORY;i++)
+        {
+         string key=LossStorageKey(i);
+         if(!GlobalVariableCheck(key)) continue;
+         datetime lossTime=(datetime)GlobalVariableGet(key);
+         if(lossTime>0 && m_lossTimeCount<AX_RISK_LOSS_HISTORY)
+           {
+            m_lossTimes[m_lossTimeCount]=lossTime;
+            m_lossTimeCount++;
+           }
+        }
+      return(true);
+     }
+
    void              PushTradeTime(const datetime t)
      {
       if(m_tradeTimeCount<AX_RISK_TRADE_BUFFER) { m_tradeTimes[m_tradeTimeCount]=t; m_tradeTimeCount++; }
@@ -92,7 +131,7 @@ public:
       m_weeklyLossLimitPercent=8.0; m_maxPositionsPerSymbol=1; m_maxDirectionalExposureLots=1.0;
       m_maxMarginUsagePercent=50.0; m_maxExecutionFailures=5;
       m_dayStartEquity=0; m_dayStartTime=0; m_weekStartEquity=0; m_weekStartTime=0;
-      m_lossTimeCount=0; m_flipsToday=0; m_consecutiveExecutionFailures=0;
+      m_lossTimeCount=0; m_lossPersistenceOk=true; m_flipsToday=0; m_consecutiveExecutionFailures=0;
       m_dailyLockout=false; m_weeklyLockout=false; m_tradeTimeCount=0; m_killed=false;
      }
 
@@ -124,6 +163,7 @@ public:
       m_maxDirectionalExposureLots= maxDirectionalExposureLots;
       m_maxMarginUsagePercent     = maxMarginUsagePercent;
       m_maxExecutionFailures      = maxExecutionFailures;
+      m_lossPersistenceOk=LoadLossTimes();
      }
 
    //--- call every tick: rolls the trading day/week and clears the corresponding lockout ---
@@ -285,16 +325,17 @@ public:
       datetime closedAt=TimeCurrent();
       if(netProfit<0)
         {
-         if(m_lossTimeCount<AX_RISK_TRADE_BUFFER)
+         if(m_lossTimeCount<AX_RISK_LOSS_HISTORY)
            {
             m_lossTimes[m_lossTimeCount]=closedAt;
             m_lossTimeCount++;
            }
          else
            {
-            for(int i=1;i<AX_RISK_TRADE_BUFFER;i++) m_lossTimes[i-1]=m_lossTimes[i];
-            m_lossTimes[AX_RISK_TRADE_BUFFER-1]=closedAt;
+            for(int i=1;i<AX_RISK_LOSS_HISTORY;i++) m_lossTimes[i-1]=m_lossTimes[i];
+            m_lossTimes[AX_RISK_LOSS_HISTORY-1]=closedAt;
            }
+         if(!PersistLossTimes()) m_lossPersistenceOk=false;
         }
       PushTradeTime(closedAt);
      }
@@ -324,6 +365,7 @@ public:
       double dirExposure = (directionalExposureLots<0) ? currentExposureLots : directionalExposureLots;
 
       if(m_killed) { reason="Kill switch active"; return(false); }
+      if(!m_lossPersistenceOk) { reason="Rolling 24-hour loss history persistence failed; entries blocked"; return(false); }
       if(DailyLossLimitBreached()) { reason=m_lockoutReason; return(false); }
       if(WeeklyLossLimitBreached()) { reason=m_lockoutReason; return(false); }
       if(Rolling24HourLossLimitBreached()) { reason=StringFormat("Rolling 24-hour loss limit reached (%d losing trades)",LossesInRolling24Hours()); return(false); }
