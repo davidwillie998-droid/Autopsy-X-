@@ -93,13 +93,13 @@ private:
         {
          double storedValue=(i<m_lossTimeCount) ? (double)m_lossTimes[i] : 0.0;
          string key=LossStorageKey(i);
-         GlobalVariableSet(key,storedValue);
-         if(!GlobalVariableCheck(key) || MathAbs(GlobalVariableGet(key)-storedValue)>0.5)
+         datetime writtenAt=GlobalVariableSet(key,storedValue);
+         if(writtenAt==0 || !GlobalVariableCheck(key) || MathAbs(GlobalVariableGet(key)-storedValue)>0.5)
             return(false);
         }
       string readyKey=LossStorageReadyKey();
-      GlobalVariableSet(readyKey,1.0);
-      return(GlobalVariableCheck(readyKey) && MathAbs(GlobalVariableGet(readyKey)-1.0)<0.1);
+      datetime readyWrittenAt=GlobalVariableSet(readyKey,1.0);
+      return(readyWrittenAt!=0 && GlobalVariableCheck(readyKey) && MathAbs(GlobalVariableGet(readyKey)-1.0)<0.1);
      }
 
    bool              LoadLossTimes(void)
@@ -410,7 +410,7 @@ public:
      }
    int               ConsecutiveExecutionFailures(void) const { return(m_consecutiveExecutionFailures); }
 
-   void              RegisterTradeClosed(const double netProfit)
+   void              RegisterTradeClosed(const double netProfit,const datetime closeTime=0)
      {
       datetime closedAt=TimeCurrent();
       if(netProfit<0)
