@@ -184,7 +184,7 @@ numbers alone — for any serious post-session analysis.
 
 A second review pass added the following on top of the original build. All
 are additive — every one has a hard off switch, and none of them relax any
-risk cap from section 4. The fixed account-wide gross-lot cap defaults to
+risk cap from section 4. The fixed account-wide gross-lot and directional-lot caps default to
 0 (disabled); this does not mean risk is unlimited. Stop-loss risk sizing,
 per-trade risk ceilings, position-count limits, directional exposure,
 margin usage, free-margin level, daily/weekly loss locks, and execution
