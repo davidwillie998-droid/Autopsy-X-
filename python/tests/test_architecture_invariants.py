@@ -372,4 +372,8 @@ def test_account_flip_loss_limits_are_conservative_and_consistent():
     assert "PersistEquityState" in risk
     assert "LoadEquityState" in risk
     assert "m_equityPersistenceOk" in risk
+    assert "RegisterTradeClosed(const double netProfit,const datetime closeTime=0)" in risk
+    assert "RegisterTradeClosed(rec.netProfit,closeTime)" in ea
+    assert "datetime closedAt=(closeTime>0) ? closeTime : TimeCurrent()" in risk
+    assert "datetime writtenAt=GlobalVariableSet(key,storedValue)" in risk
     assert "Daily/weekly equity-loss state persistence failed; entries blocked" in risk
