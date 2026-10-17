@@ -26,7 +26,7 @@ Example:
 ```bash
 python -m research.vwap_holy_grail.replica qqq_1m.csv --fill-model paper_close --output qqq_paper_close.json
 python -m research.vwap_holy_grail.replica qqq_1m.csv --fill-model next_open --output qqq_next_open.json
-python -m unittest tests.test_vwap_holy_grail_replica -v
+python -m unittest research.vwap_holy_grail.test_replica -v
 ```
 
 The report flags sessions without both a 09:30 bar and a 15:59 bar as incomplete. Do not compare an incomplete-data result with the paper's full-period headline. Run QQQ first across 2018-01-02 through 2023-09-28, then TQQQ with its own data, before making any XAUUSD/FX adaptation. The published QQQ/TQQQ performance is a paper-reported result, not a guarantee or evidence of transferability to gold or forex.
