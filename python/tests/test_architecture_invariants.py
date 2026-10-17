@@ -348,3 +348,17 @@ def test_partial_close_rechecks_position_ownership_after_server_fill():
         "bool              Flip", 1
     )[0]
     assert "Position ownership changed during partial close" in partial_block
+
+
+@pytest.mark.skipif(not EA_FILE.exists(), reason="live EA file not found")
+def test_account_flip_loss_limits_are_conservative_and_consistent():
+    """The EA defaults and risk-engine fallbacks must agree on the hard loss policy."""
+    ea = EA_FILE.read_text(errors="replace")
+    risk = (INCLUDE_DIR / "RiskEngine.mqh").read_text(errors="replace")
+    assert re.search(r"InpDailyLossLimitPercent\s*=\s*4\.0", ea)
+    assert re.search(r"InpWeeklyLossLimitPercent\s*=\s*8\.0", ea)
+    assert re.search(r"InpMaxConsecutiveLosses\s*=\s*4", ea)
+    assert "m_dailyLossLimitPercent=4.0" in risk
+    assert "m_maxConsecutiveLosses=4" in risk
+    assert "m_weeklyLossLimitPercent=8.0" in risk
+    assert "weeklyLossLimitPercent=8.0" in risk
