@@ -109,7 +109,7 @@ input group "=== RISK ENGINE ===";
 input double         InpDailyLossLimitPercent   = 4.0;    // Hard daily equity-loss stop: 4%; blocks new entries until the next broker day
 input int            InpMaxLossesPerRolling24Hours = 4;   // Block new entries after 4 losing completed trades in any rolling 24-hour window
 input int            InpMaxOpenPositions        = 1;      // Max simultaneously open positions
-input double         InpMaxExposureLots         = 1.0;    // Max total exposure, lots
+input double         InpMaxExposureLots         = 0.0;    // Fixed account-wide gross-lot cap; 0 disables this cap only. Stop-risk, position, directional, and margin gates remain active.
 input int            InpMaxFlipsPerDay          = 20;      // Max direction flips per day
 input int            InpMaxTradesPerRollingPeriod = 10;    // Max trades within rolling window
 input int            InpRollingPeriodSeconds    = 300;     // Rolling window length, seconds
@@ -118,7 +118,7 @@ input double         InpMaxSlippagePoints       = 30;      // Max acceptable sli
 input double         InpMinFreeMarginPercent    = 150.0;   // Min margin level %, refuse new entries below this
 input double         InpWeeklyLossLimitPercent  = 8.0;     // Hard weekly equity-loss stop: 8%, Monday-anchored
 input int            InpMaxPositionsPerSymbol   = 1;       // Max simultaneously open positions on this symbol specifically
-input double         InpMaxDirectionalExposureLots = 1.0;  // Max exposure lots in one direction (BUY or SELL) at once
+input double         InpMaxDirectionalExposureLots = 0.0;  // Fixed directional lot cap; 0 disables it, while risk/margin guards remain active
 input double         InpMaxMarginUsagePercent   = 50.0;     // Max ACCOUNT_MARGIN / ACCOUNT_EQUITY, as a percent
 input int            InpMaxExecutionFailures    = 5;        // Max consecutive order-send failures before blocking new entries
 
@@ -163,7 +163,8 @@ input double          InpPartialTriggerRR       = 1.0;     // Favorable move req
 input double          InpPartialClosePercent    = 50.0;    // % of current position volume to close on trigger
 
 input group "=== HIGHER-TIMEFRAME CONFLUENCE ===";
-input ENUM_TIMEFRAMES InpHtfTimeframe           = PERIOD_H1; // Higher timeframe used for the confluence filter
+input ENUM_TIMEFRAMES InpHtfFastTimeframe       = PERIOD_H4; // Intermediate higher-timeframe confirmation
+input ENUM_TIMEFRAMES InpHtfSlowTimeframe       = PERIOD_D1; // Broad daily directional confirmation
 input bool            InpRequireHtfConfluence   = true;      // Block entries that fight a clear HTF trend
 input double          InpHtfMinR2ToBlock        = 0.35;      // HTF R^2 below this = no clear HTF opinion, don't block
 
@@ -209,7 +210,8 @@ CMomentumEngine       g_mom;
 CMicrostructureEngine g_micro;
 CLiquidityEngine      g_liq;
 CRegimeEngine         g_regime;
-CRegimeEngine         g_regimeHtf;
+CRegimeEngine         g_regimeH4;
+CRegimeEngine         g_regimeDaily;
 CSignalScorer         g_scorer;
 CFlipEngine           g_flip;
 CAntiChopEngine       g_chop;
@@ -239,7 +241,8 @@ SAxPositionState      g_posState;
 bool                  g_haveOpenPosition = false;
 ENUM_AX_ENGINE_STATE  g_engineState = AX_ENGINE_ACTIVE;
 datetime              g_lastBarTime = 0;
-datetime              g_lastHtfBarTime = 0;
+datetime              g_lastH4BarTime = 0;
+datetime              g_lastDailyBarTime = 0;
 int                   g_consecutiveExecFailures = 0;
 double                g_adaptiveConfMultiplier = 1.0;
 // the score actually acted on this tick, AFTER AxApplyOrderFlowBonus - CSignalScorer's own Last()
@@ -544,16 +547,27 @@ void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double l
    g_haveOpenPosition  = true;
   }
 
-//--- higher-timeframe confluence: block entries that fight a clear HTF trend. A HTF with no ---
-//--- clear direction (low R^2) never blocks - this is a filter against fighting HTF trend,  ---
-//--- not a requirement that HTF agree outright. ---
+//--- H4 and Daily confluence: every clearly directional HTF must agree with the proposed side.
+//--- Low-R2 timeframes are neutral, but a clear opposing trend on either timeframe blocks entry.
+//--- This avoids trading against the daily bias just because H4 has a countertrend move.
 bool AxHtfConfluenceOk(const ENUM_AX_DIR dir)
   {
    if(!InpRequireHtfConfluence) return(true);
-   if(g_regimeHtf.R2() < InpHtfMinR2ToBlock) return(true);
-   double slope = g_regimeHtf.Slope();
-   if(dir==AX_DIR_BUY)  return(slope>=0);
-   if(dir==AX_DIR_SELL) return(slope<=0);
+   if(dir!=AX_DIR_BUY && dir!=AX_DIR_SELL) return(true);
+   bool h4Clear=(g_regimeH4.R2()>=InpHtfMinR2ToBlock);
+   bool dailyClear=(g_regimeDaily.R2()>=InpHtfMinR2ToBlock);
+   double h4Slope=g_regimeH4.Slope();
+   double dailySlope=g_regimeDaily.Slope();
+   if(dir==AX_DIR_BUY)
+     {
+      if(h4Clear && h4Slope<0.0) return(false);
+      if(dailyClear && dailySlope<0.0) return(false);
+     }
+   else
+     {
+      if(h4Clear && h4Slope>0.0) return(false);
+      if(dailyClear && dailySlope>0.0) return(false);
+     }
    return(true);
   }
 
@@ -822,20 +836,24 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
         }
      }
 
-   // Enforce the remaining account-wide gross-lot budget before broker normalization can
-   // round a requested size upward. A remainder below minimum lot fails closed.
-   double remainingExposureLots=InpMaxExposureLots-accountExposureLots;
-   if(remainingExposureLots<=0.0)
-      lots=0.0;
-   else if(lots>remainingExposureLots)
+   // Optional account-wide gross-lot cap. A value <= 0 disables only this fixed-lot cap;
+   // stop-loss risk, Kelly/AFE reductions, position-count limits, directional exposure, and
+   // projected margin checks remain mandatory. Apply the cap before normalization to avoid round-up.
+   if(InpMaxExposureLots>0.0)
      {
-      if(remainingExposureLots<g_md.VolumeMin())
+      double remainingExposureLots=InpMaxExposureLots-accountExposureLots;
+      if(remainingExposureLots<=0.0)
          lots=0.0;
-      else
+      else if(lots>remainingExposureLots)
         {
-         lots=g_md.NormalizeVolume(MathMin(lots,remainingExposureLots));
-         if(lots>remainingExposureLots+0.0000001)
+         if(remainingExposureLots<g_md.VolumeMin())
             lots=0.0;
+         else
+           {
+            lots=g_md.NormalizeVolume(MathMin(lots,remainingExposureLots));
+            if(lots>remainingExposureLots+0.0000001)
+               lots=0.0;
+           }
         }
      }
 
@@ -945,7 +963,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
                                                                realDirectionalExposure,lots);
       // Re-check the ACCOUNT-WIDE gross-lot cap after all scaling/normalization. NormalizeVolume()
       // may round a reduced size upward to a broker step, so the earlier base-lot cap is not enough.
-      bool finalAccountExposureOk=(accountExposureLots+lots<=InpMaxExposureLots+0.0000001);
+      bool finalAccountExposureOk=(InpMaxExposureLots<=0.0 || accountExposureLots+lots<=InpMaxExposureLots+0.0000001);
       if(!finalRiskOk || finalStopProfit>=0.0 ||
          MathAbs(finalStopProfit)>finalRiskBudget+0.01 || !finalMarginOk ||
          !finalExposureOk || !finalAccountExposureOk)
@@ -1133,15 +1151,22 @@ int OnInit(void)
       Print("AUTOPSY X: failed to initialize regime engine (ATR handle)");
       return(INIT_FAILED);
      }
-   if(!g_regimeHtf.Init(_Symbol,InpHtfTimeframe))
+   if(!g_regimeH4.Init(_Symbol,InpHtfFastTimeframe))
      {
-      Print("AUTOPSY X: failed to initialize HTF regime engine (ATR handle)");
+      Print("AUTOPSY X: failed to initialize H4 regime engine (ATR handle)");
+      return(INIT_FAILED);
+     }
+   if(!g_regimeDaily.Init(_Symbol,InpHtfSlowTimeframe))
+     {
+      Print("AUTOPSY X: failed to initialize Daily regime engine (ATR handle)");
+      g_regimeH4.Deinit();
       return(INIT_FAILED);
      }
    g_liq.Init(_Symbol,InpRegimeTimeframe);
    g_liq.RefreshLevels();
    g_regime.Update();
-   g_regimeHtf.Update();
+   g_regimeH4.Update();
+   g_regimeDaily.Update();
 
    g_volProfile.Init(_Symbol,InpVolumeProfileBars,InpVolumeProfileBinPoints,g_md.Point(),InpRegimeTimeframe);
    g_volProfile.Refresh();
@@ -1220,7 +1245,8 @@ void OnDeinit(const int reason)
      }
    g_autopsy.Deinit();
    g_regime.Deinit();
-   g_regimeHtf.Deinit();
+   g_regimeH4.Deinit();
+   g_regimeDaily.Deinit();
    g_heatmap.Deinit();
   }
 
@@ -1305,12 +1331,18 @@ void OnTick(void)
          g_vwapTrend = "NEUTRAL";
         }
      }
-   //--- HTF confluence structure refreshes on its own, slower bar clock ---
-   datetime htfBarTime = iTime(_Symbol,InpHtfTimeframe,0);
-   if(htfBarTime!=g_lastHtfBarTime && htfBarTime>0)
+   //--- Refresh H4 and Daily confluence engines on their own bar clocks. ---
+   datetime h4BarTime=iTime(_Symbol,InpHtfFastTimeframe,0);
+   if(h4BarTime>0 && h4BarTime!=g_lastH4BarTime)
      {
-      g_lastHtfBarTime = htfBarTime;
-      g_regimeHtf.Update();
+      g_lastH4BarTime=h4BarTime;
+      g_regimeH4.Update();
+     }
+   datetime dailyBarTime=iTime(_Symbol,InpHtfSlowTimeframe,0);
+   if(dailyBarTime>0 && dailyBarTime!=g_lastDailyBarTime)
+     {
+      g_lastDailyBarTime=dailyBarTime;
+      g_regimeDaily.Update();
      }
    g_liq.UpdateTick(g_md.CurrentBid(),g_md.CurrentAsk(),g_mom.DisplacementPts(),g_md.Point());
 
@@ -1577,8 +1609,8 @@ void OnTimer(void)
    else if(g_chop.IsInCooldown()) displayState = AX_ENGINE_COOLDOWN;
 
    SAxDashboardExtras extras;
-   extras.htfRegime             = g_regimeHtf.Regime();
-   extras.htfSlope              = g_regimeHtf.Slope();
+   extras.htfRegime             = g_regimeH4.Regime();
+   extras.htfSlope              = g_regimeH4.Slope();
    extras.accuracy5s            = g_accuracy.Accuracy(2); // AxAccHorizonsSec index 2 == 5 seconds
    extras.accuracy30s           = g_accuracy.Accuracy(4); // index 4 == 30 seconds
    extras.flipAccuracy          = g_accuracy.FlipAccuracy();

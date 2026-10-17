@@ -184,14 +184,19 @@ numbers alone — for any serious post-session analysis.
 
 A second review pass added the following on top of the original build. All
 are additive — every one has a hard off switch, and none of them relax any
-risk cap from section 4.
+risk cap from section 4. The fixed account-wide gross-lot and directional-lot caps default to
+0 (disabled); this does not mean risk is unlimited. Stop-loss risk sizing,
+per-trade risk ceilings, position-count limits, directional exposure,
+margin usage, free-margin level, daily/weekly loss locks, and execution
+safeguards remain enforced. High leverage changes margin requirements, not
+price-loss exposure.
 
 - **Higher-timeframe confluence** (`InpRequireHtfConfluence`,
-  `InpHtfTimeframe`, `InpHtfMinR2ToBlock`). A second regime engine runs on
-  a slower timeframe (H1 by default) purely as a filter: it blocks an
-  entry only when the HTF has a *clear* trend (R² above the threshold)
-  running opposite to the trade direction. An HTF with no clear opinion
-  never blocks anything.
+  `InpHtfFastTimeframe`, `InpHtfSlowTimeframe`, `InpHtfMinR2ToBlock`).
+  Independent regime engines evaluate H4 and Daily by default. A clear
+  opposing trend on either timeframe blocks an entry; low-R² readings are
+  treated as neutral. This is directional confluence, not a calibrated
+  win probability, and it must be validated against broker history.
 - **ATR-adaptive stops** (`InpUseAtrStops`, `InpAtrStopMultiplier`). The
   emergency stop distance widens to the larger of the fixed-point floor or
   an ATR multiple, so a volatile symbol/regime doesn't get stopped out by
