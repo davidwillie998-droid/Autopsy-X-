@@ -43,10 +43,10 @@ struct SAxKellyReport
 class CKellyRuinEngine
   {
 public:
-   //--- winRatePct: 0..100. avgWinR/avgLossR: BOTH given as positive R-multiple magnitudes.        ---
+   //--- winRatePct: 0..100. Average win/loss magnitudes must be positive and use the same units.        ---
    //--- currentRiskPercent: the account's actual configured risk-per-trade (from CRiskEngine),      ---
    //--- passed in so the comparison ratio uses the real number, not a guess. ---
-   SAxKellyReport    Evaluate(const double winRatePct,const double avgWinR,const double avgLossR,
+   SAxKellyReport    Evaluate(const double winRatePct,const double avgWinMagnitude,const double avgLossMagnitude,
                                const int sampleTrades,const double currentRiskPercent) const
      {
       SAxKellyReport rep;
@@ -62,14 +62,14 @@ public:
         }
       if(winRatePct<=0 || winRatePct>=100)
         { rep.note="Win rate out of valid (0,100) range"; return(rep); }
-      if(avgWinR<=0 || avgLossR<=0)
+      if(avgWinMagnitude<=0 || avgLossMagnitude<=0)
         { rep.note="Average win/loss R must both be positive magnitudes"; return(rep); }
       if(currentRiskPercent<=0)
         { rep.note="Current risk percent must be positive"; return(rep); }
 
       double p = winRatePct/100.0;
       double q = 1.0-p;
-      double b = avgWinR/avgLossR;
+      double b = avgWinMagnitude/avgLossMagnitude;
       double kelly = p-(q/b);
 
       if(!MathIsValidNumber(kelly))
@@ -104,7 +104,7 @@ public:
    // 95% Wilson score interval before computing Kelly. This is a deliberately cautious
    // frequentist approximation, not a full Bayesian Kelly solution; payoff-ratio uncertainty
    // is not estimated here, so the caller must still apply fractional Kelly and hard risk caps.
-   SAxKellyReport EvaluateConservative(const double winRatePct,const double avgWinR,const double avgLossR,
+   SAxKellyReport EvaluateConservative(const double winRatePct,const double avgWinMagnitude,const double avgLossMagnitude,
                                        const int sampleTrades,const double currentRiskPercent) const
      {
       SAxKellyReport rep;
@@ -118,7 +118,7 @@ public:
                                AX_KELLY_MIN_SAMPLE,sampleTrades);
          return(rep);
         }
-      if(winRatePct<0.0 || winRatePct>100.0 || avgWinR<=0.0 || avgLossR<=0.0 || currentRiskPercent<=0.0)
+      if(winRatePct<0.0 || winRatePct>100.0 || avgWinMagnitude<=0.0 || avgLossMagnitude<=0.0 || currentRiskPercent<=0.0)
         {
          rep.state=AX_KELLY_INVALID_INPUT;
          rep.note="Invalid win-rate, payoff, or current-risk input for conservative Kelly";
@@ -142,7 +142,7 @@ public:
          return(rep);
         }
 
-      rep=Evaluate(lowerP*100.0,avgWinR,avgLossR,sampleTrades,currentRiskPercent);
+      rep=Evaluate(lowerP*100.0,avgWinMagnitude,avgLossMagnitude,sampleTrades,currentRiskPercent);
       if(rep.state==AX_KELLY_VALID)
          rep.note=StringFormat("95%% Wilson lower-bound win rate %.2f%%. %s",lowerP*100.0,rep.note);
       return(rep);
