@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from autopsyx.research.phase3c_readiness_diagnostics import summarize_coverage_intervals, summarize_timestamps
+from autopsyx.research.phase3c_readiness_diagnostics import conservative_coverage_intervals, summarize_coverage_intervals, summarize_timestamps
 
 
 def test_timestamp_summary_exposes_internal_gaps_and_duplicates():
@@ -83,3 +83,24 @@ def test_no_coverage_claim_is_unknown_not_zero_coverage():
     assert report["coverage_claim_count"] == 0
     assert report["coverage_union_ratio_inside_claim_span"] is None
     assert report["uncovered_gap_count"] is None
+
+
+def test_backfill_coverage_is_clipped_to_returned_historical_bars():
+    # The frozen parser's generic claim ends at response time, which can
+    # overstate coverage for a before_timestamp historical page.
+    result = conservative_coverage_intervals(
+        [120_000, 180_000, 240_000], [(120_000, 900_000)], is_backfill=True,
+    )
+    assert result == [(120_000, 300_000)]
+
+
+def test_live_poll_coverage_keeps_provider_completeness_claim():
+    result = conservative_coverage_intervals(
+        [120_000, 180_000], [(120_000, 600_000)], is_backfill=False,
+    )
+    assert result == [(120_000, 600_000)]
+
+
+def test_backfill_page_without_valid_bars_claims_no_coverage():
+    result = conservative_coverage_intervals([], [(0, 600_000)], is_backfill=True)
+    assert result == []
