@@ -34,11 +34,12 @@ def summarize_timestamps(timestamps: list[int], *, created_ts: int | None = None
             "observed_rows": len(timestamps), "unique_bars": 0, "duplicate_rows": duplicates,
             "first_bar_ms": None, "last_bar_ms": None, "observed_span_intervals": 0,
             "missing_intervals_inside_observed_span": None, "coverage_inside_observed_span": None,
-            "longest_contiguous_run_bars": 0, "longest_internal_gap_intervals": 0,
+            "longest_contiguous_run_bars": 0, "longest_internal_gap_intervals": 0, "misaligned_timestamps": 0,
             "created_to_last_expected_intervals": None, "missing_intervals_since_creation": None,
         }
 
     expected_span = ((unique[-1] - unique[0]) // interval_ms) + 1
+    misaligned_timestamps = sum(ts % interval_ms != 0 for ts in unique)
     missing_inside = max(0, expected_span - len(unique))
     longest_run = 1
     run = 1
@@ -74,6 +75,7 @@ def summarize_timestamps(timestamps: list[int], *, created_ts: int | None = None
         "coverage_inside_observed_span": len(unique) / expected_span if expected_span else None,
         "longest_contiguous_run_bars": longest_run,
         "longest_internal_gap_intervals": longest_gap,
+        "misaligned_timestamps": misaligned_timestamps,
         "created_to_last_expected_intervals": created_expected,
         "missing_intervals_since_creation": missing_since_creation,
     }
@@ -93,6 +95,7 @@ def audit_archive(run_dir: Path) -> dict:
     plan = meta.get("plan") or {}
     lag_ms = int(plan.get("lag_ms", 60_000))
     interval_ms = MINUTE_MS
+    backfill_page_size_bars = 1000  # explicit limit passed to gt.path_ohlcv in acquire.backfill
 
     request_counts = Counter()
     error_counts = Counter()
@@ -190,6 +193,19 @@ def audit_archive(run_dir: Path) -> dict:
                 and isinstance(duration_s, (int, float)) else None
             ),
         },
+        "configured_history_cap": {
+            "backfill_pages_per_pool": plan.get("backfill_pages"),
+            "provider_bars_per_page": backfill_page_size_bars,
+            "maximum_requested_minute_bars_per_pool": (
+                int(plan["backfill_pages"]) * backfill_page_size_bars
+                if isinstance(plan.get("backfill_pages"), (int, float)) else None
+            ),
+            "maximum_requested_history_hours_per_pool": (
+                int(plan["backfill_pages"]) * backfill_page_size_bars / 60
+                if isinstance(plan.get("backfill_pages"), (int, float)) else None
+            ),
+            "interpretation": "Configured upper bound only; actual bars can be lower because pools are younger, provider pages are short, requests fail, or validation rejects records.",
+        },
         "request_accounting": {
             "ohlcv_requests_total": int(request_counts["total_ohlcv"]),
             "ohlcv_backfill_requests": int(request_counts["backfill_ohlcv"]),
@@ -210,6 +226,7 @@ def audit_archive(run_dir: Path) -> dict:
             "The created-to-last interval count is a coverage diagnostic, not a claim that every minute after pool creation should trade.",
             "No readiness thresholds are inferred or changed by this tool.",
             "Repeated bars across polling responses are reported as duplicate observations, not silently removed from the raw archive.",
+            "Historical OHLCV backfill uses a provider page size of 1000 minute bars; configured page count therefore caps the maximum requested history and may be insufficient for multi-day requirements.",
         ],
     }
 
