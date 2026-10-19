@@ -45,6 +45,9 @@ class Plan:
     duration_s: int = 3600
     cycle_s: int = 60
     poll_ohlcv_limit: int = 5
+    # Optional Phase 3C request budget: rotate this many pools per poll cycle.
+    # None preserves the frozen Phase 3A/Phase 2 behavior exactly.
+    poll_pools_per_cycle: int | None = None
     holders_per_cycle: int = 2
     lag_ms: int = 60_000
     gt_rate_per_s: float = 0.45  # below GeckoTerminal's published free-tier limit (30/min)
@@ -378,7 +381,14 @@ def poll_cycle(f: Fetcher, plan: Plan, picked: list[dict], cycle: int) -> None:
         chunk = picked[i:i + ds.MAX_PAIRS_PER_CALL]
         f.get(ds.NAME, "ds.pairs", ds.path_pairs(n, [p["pool"] for p in chunk]),
               {"chain": n, "cycle": cycle, "pool_tokens": {p["pool"]: p["token"] for p in chunk}})
-    for p in picked:
+    poll_picked = picked
+    if plan.poll_pools_per_cycle is not None:
+        if plan.poll_pools_per_cycle < 1:
+            raise ValueError("poll_pools_per_cycle must be >= 1 when configured")
+        count = min(plan.poll_pools_per_cycle, len(picked))
+        start = (cycle * count) % len(picked)
+        poll_picked = [picked[(start + offset) % len(picked)] for offset in range(count)]
+    for p in poll_picked:
         ctx = {"chain": n, "pool": p["pool"], "token": p["token"], "cycle": cycle}
         f.get(gt.NAME, "gt.trades", gt.path_trades(n, p["pool"]), ctx)
         if cycle % plan.ohlcv_every == 0:

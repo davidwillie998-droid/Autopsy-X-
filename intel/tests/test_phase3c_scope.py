@@ -61,6 +61,14 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
         expected = expected.replace(old, new, 1)
 
     substitute(
+        '    poll_ohlcv_limit: int = 5\n',
+        '    poll_ohlcv_limit: int = 5\n'
+        '    # Optional Phase 3C request budget: rotate this many pools per poll cycle.\n'
+        '    # None preserves the frozen Phase 3A/Phase 2 behavior exactly.\n'
+        '    poll_pools_per_cycle: int | None = None\n'
+    )
+
+    substitute(
         '    started = now_ms()\n'
         '    meta = {"started_ms": started, "plan": plan.__dict__, "code_version": os.environ.get("GITHUB_SHA", "local"),\n'
         '            "runner": os.environ.get("RUNNER_NAME", "local"), "execution": "none: acquisition only, no orders"}\n',
@@ -85,6 +93,26 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
         '    raw.write_json("run.json", meta)\n'
         '    cycle = 0\n'
     )
+    substitute(
+        '    for p in picked:\n'
+        '        ctx = {"chain": n, "pool": p["pool"], "token": p["token"], "cycle": cycle}\n'
+        '        f.get(gt.NAME, "gt.trades", gt.path_trades(n, p["pool"]), ctx)\n'
+        '        if cycle % plan.ohlcv_every == 0:\n'
+        '            f.get(gt.NAME, "gt.ohlcv", gt.path_ohlcv(n, p["pool"], plan.poll_ohlcv_limit), ctx)\n',
+        '    poll_picked = picked\n'
+        '    if plan.poll_pools_per_cycle is not None:\n'
+        '        if plan.poll_pools_per_cycle < 1:\n'
+        '            raise ValueError("poll_pools_per_cycle must be >= 1 when configured")\n'
+        '        count = min(plan.poll_pools_per_cycle, len(picked))\n'
+        '        start = (cycle * count) % len(picked)\n'
+        '        poll_picked = [picked[(start + offset) % len(picked)] for offset in range(count)]\n'
+        '    for p in poll_picked:\n'
+        '        ctx = {"chain": n, "pool": p["pool"], "token": p["token"], "cycle": cycle}\n'
+        '        f.get(gt.NAME, "gt.trades", gt.path_trades(n, p["pool"]), ctx)\n'
+        '        if cycle % plan.ohlcv_every == 0:\n'
+        '            f.get(gt.NAME, "gt.ohlcv", gt.path_ohlcv(n, p["pool"], plan.poll_ohlcv_limit), ctx)\n'
+    )
+
     substitute(
         '        if (t0 - started) / 1000 >= plan.duration_s or (max_cycles is not None and cycle >= max_cycles):\n',
         '        if (t0 - poll_window_started_ms) / 1000 >= plan.duration_s or (max_cycles is not None and cycle >= max_cycles):\n'
