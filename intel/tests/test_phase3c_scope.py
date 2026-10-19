@@ -7,6 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PHASE3A_COMMIT = "617355f874d949431eb93d8ac2d3ecc7b6479aa3"
 PHASE3B_COMMIT = "f21f3bc2e18ab64d2b92e203c4202144eabf7eac"
+PHASE3C_ACQUIRE_BASELINE_COMMIT = "36de8bf79f9ee985456a73aee8e56118d85b3727"
 
 
 def git(*args: str) -> str:
@@ -41,8 +42,67 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     for f in changed:
         allowed = (f.startswith("docs/PHASE3C_") or f.startswith("intel/autopsyx/research/phase3c_")
                   or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")
+                  or f == "intel/autopsyx/data/acquire.py"
+                  or f == "intel/tests/test_acquisition_window.py"
                   or f in infra_allowed or f.startswith("intel/datasets/phase3c/runs/"))
         assert allowed, f"Phase 3C touched a file outside its namespace: {f}"
+
+
+
+def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
+    """Allow the one necessary timing fix while proving all other acquisition
+    behavior remains byte-for-byte identical to the reviewed PR base."""
+    baseline = git("show", f"{PHASE3C_ACQUIRE_BASELINE_COMMIT}:intel/autopsyx/data/acquire.py")
+    expected = baseline
+
+    def substitute(old: str, new: str) -> None:
+        nonlocal expected
+        assert expected.count(old) == 1, old
+        expected = expected.replace(old, new, 1)
+
+    substitute(
+        '    started = now_ms()\n'
+        '    meta = {"started_ms": started, "plan": plan.__dict__, "code_version": os.environ.get("GITHUB_SHA", "local"),\n'
+        '            "runner": os.environ.get("RUNNER_NAME", "local"), "execution": "none: acquisition only, no orders"}\n',
+        '    run_started_ms = now_ms()\n'
+        '    meta = {"started_ms": run_started_ms, "plan": plan.__dict__, "code_version": os.environ.get("GITHUB_SHA", "local"),\n'
+        '            "runner": os.environ.get("RUNNER_NAME", "local"), "execution": "none: acquisition only, no orders",\n'
+        '            "poll_window_started_ms": None, "poll_window_duration_s": plan.duration_s,\n'
+        '            "poll_window_cycles": 0, "poll_window_elapsed_s": 0.0}\n'
+    )
+    substitute(
+        '    if plan.phase3a:\n'
+        '        meta["enrichment"] = enrich(f, plan, picked, 0)\n'
+        '        raw.write_json("run.json", meta)\n'
+        '    cycle = 0\n',
+        '    if plan.phase3a:\n'
+        '        meta["enrichment"] = enrich(f, plan, picked, 0)\n'
+        '        raw.write_json("run.json", meta)\n'
+        '    # Setup work must not consume the live observation budget.\n'
+        '    # Start the timer only after discovery, backfill, and initial enrichment.\n'
+        '    poll_window_started_ms = now_ms()\n'
+        '    meta["poll_window_started_ms"] = poll_window_started_ms\n'
+        '    raw.write_json("run.json", meta)\n'
+        '    cycle = 0\n'
+    )
+    substitute(
+        '        if (t0 - started) / 1000 >= plan.duration_s or (max_cycles is not None and cycle >= max_cycles):\n',
+        '        if (t0 - poll_window_started_ms) / 1000 >= plan.duration_s or (max_cycles is not None and cycle >= max_cycles):\n'
+    )
+    substitute(
+        '    meta.update({"ended_ms": now_ms(), "cycles": cycle, "exchanges": len(entries), "circuit_waits": f.waited,\n'
+        '                 "final_gt_rate_per_s": f.clients[gt.NAME].limiter.rate,\n'
+        '                 "errors": sum(1 for e in entries if e.error), "status": "COMPLETE"})\n',
+        '    ended_ms = now_ms()\n'
+        '    meta.update({"ended_ms": ended_ms, "cycles": cycle, "poll_window_cycles": cycle,\n'
+        '                 "poll_window_elapsed_s": max(0.0, (ended_ms - poll_window_started_ms) / 1000),\n'
+        '                 "exchanges": len(entries), "circuit_waits": f.waited,\n'
+        '                 "final_gt_rate_per_s": f.clients[gt.NAME].limiter.rate,\n'
+        '                 "errors": sum(1 for e in entries if e.error), "status": "COMPLETE"})\n'
+    )
+
+    actual = (ROOT / "intel" / "autopsyx" / "data" / "acquire.py").read_text()
+    assert actual.rstrip("\n") == expected.rstrip("\n"), "acquire.py contains changes beyond the reviewed poll-window timing repair"
 
 
 def test_phase3c_workflow_mirrors_phase3a_workflow_procedure():

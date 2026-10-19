@@ -396,9 +396,11 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
     raw = RawStore(run_dir)
     f = Fetcher(raw, clients or default_clients(plan, now_ms), now_ms, sleep, plan.circuit_waits,
                 display={rpc.NAME: rpc.display_base(rpc.BASE)})
-    started = now_ms()
-    meta = {"started_ms": started, "plan": plan.__dict__, "code_version": os.environ.get("GITHUB_SHA", "local"),
-            "runner": os.environ.get("RUNNER_NAME", "local"), "execution": "none: acquisition only, no orders"}
+    run_started_ms = now_ms()
+    meta = {"started_ms": run_started_ms, "plan": plan.__dict__, "code_version": os.environ.get("GITHUB_SHA", "local"),
+            "runner": os.environ.get("RUNNER_NAME", "local"), "execution": "none: acquisition only, no orders",
+            "poll_window_started_ms": None, "poll_window_duration_s": plan.duration_s,
+            "poll_window_cycles": 0, "poll_window_elapsed_s": 0.0}
     raw.write_json("run.json", meta)
     if plan.universe_file:
         u = load_universe(plan.universe_file)
@@ -420,10 +422,15 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
     if plan.phase3a:
         meta["enrichment"] = enrich(f, plan, picked, 0)
         raw.write_json("run.json", meta)
+    # Setup work must not consume the live observation budget.
+    # Start the timer only after discovery, backfill, and initial enrichment.
+    poll_window_started_ms = now_ms()
+    meta["poll_window_started_ms"] = poll_window_started_ms
+    raw.write_json("run.json", meta)
     cycle = 0
     while True:
         t0 = now_ms()
-        if (t0 - started) / 1000 >= plan.duration_s or (max_cycles is not None and cycle >= max_cycles):
+        if (t0 - poll_window_started_ms) / 1000 >= plan.duration_s or (max_cycles is not None and cycle >= max_cycles):
             break
         poll_cycle(f, plan, picked, cycle)
         cycle += 1
@@ -433,7 +440,10 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
     if plan.phase3a:
         meta["enrichment"] += enrich(f, plan, picked, 1)
     entries = raw.entries()
-    meta.update({"ended_ms": now_ms(), "cycles": cycle, "exchanges": len(entries), "circuit_waits": f.waited,
+    ended_ms = now_ms()
+    meta.update({"ended_ms": ended_ms, "cycles": cycle, "poll_window_cycles": cycle,
+                 "poll_window_elapsed_s": max(0.0, (ended_ms - poll_window_started_ms) / 1000),
+                 "exchanges": len(entries), "circuit_waits": f.waited,
                  "final_gt_rate_per_s": f.clients[gt.NAME].limiter.rate,
                  "errors": sum(1 for e in entries if e.error), "status": "COMPLETE"})
     raw.write_json("run.json", meta)
