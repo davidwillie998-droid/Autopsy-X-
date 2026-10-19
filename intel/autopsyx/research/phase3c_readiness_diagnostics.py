@@ -416,7 +416,9 @@ def classify_historical_signal_readiness(
     normalization_replay: dict,
     pool_reports: dict,
 ) -> dict:
-    """Fail closed: no model or signal eligibility from incomplete evidence."""
+    """Fail closed while separating archive checks from frozen cross-archive inference."""
+    from . import phase3b_contract
+
     blockers = []
     if archive_integrity.get("status") != "PASS":
         blockers.append("raw archive integrity/reconciliation did not pass")
@@ -428,20 +430,27 @@ def classify_historical_signal_readiness(
         blockers.append("canonical normalization replay is missing or does not match")
     if not pool_reports:
         blockers.append("no pool-level historical coverage was measured")
-    # Do not invent liquidity/continuity thresholds or turn an unapproved gate
-    # into READY. The numeric Phase 3C signal-eligibility policy needs explicit
-    # approval and a separate evaluation before this diagnostic can pass.
-    blockers.append("no approved Phase 3C numeric signal-eligibility gate is evaluated by this diagnostic")
+    # The frozen Phase 3C acquisition protocol specifies no additional liquidity
+    # floor or per-token minimum. Statistical eligibility is defined by the frozen
+    # Phase 3B hypothesis joins and must be evaluated across eligible archives;
+    # this single-archive diagnostic cannot calculate that pooled sample.
+    blockers.append(
+        "cross-archive Phase 3C statistical evaluation has not established the frozen distinct-token sample per hypothesis"
+    )
     return {
         "status": "NOT_READY",
         "eligible_pool_count": None,
-        "eligibility_count_status": "NOT_COMPUTED_WITHOUT_APPROVED_GATE",
+        "eligibility_count_status": "NOT_EVALUATED_BY_SINGLE_ARCHIVE_DIAGNOSTIC",
+        "pool_level_eligibility_policy": "NO_ADDITIONAL_LIQUIDITY_FLOOR_OR_PER_TOKEN_MINIMUM_IN_FROZEN_PHASE3C_PROTOCOL",
+        "minimum_distinct_tokens_required": phase3b_contract.MIN_SAMPLE,
+        "distinct_token_sample_status": "REQUIRES_CROSS_ARCHIVE_PHASE3C_PIPELINE",
         "blockers": blockers,
         "measured_pool_count": len(pool_reports),
         "normalization_replay_match": normalization_replay.get("stored_vs_recomputed_match"),
         "interpretation": (
-            "This report cannot authorize model training or live trading. It intentionally does not invent "
-            "or weaken thresholds; pool eligibility remains uncomputed until an approved gate is evaluated."
+            "This report cannot authorize model training or live trading. Provider reliability, transaction history, "
+            "archive integrity, and normalization remain independent evidence checks. No extra pool-level liquidity "
+            "threshold is invented; the frozen 85-token statistical gate is evaluated by the cross-archive Phase 3C pipeline."
         ),
     }
 
