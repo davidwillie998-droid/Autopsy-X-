@@ -248,7 +248,9 @@ def test_archive_integrity_reconciles_rpc_request_bodies_as_well_as_responses(tm
     assert report["unreferenced_raw_files"] == []
 
 
-def test_historical_readiness_fails_closed_without_approved_gate():
+def test_historical_readiness_uses_frozen_protocol_and_defers_pooled_sample():
+    from autopsyx.research import phase3b_contract
+
     report = classify_historical_signal_readiness(
         {"status": "PASS"},
         {"status": "HEALTHY"},
@@ -258,8 +260,15 @@ def test_historical_readiness_fails_closed_without_approved_gate():
     )
     assert report["status"] == "NOT_READY"
     assert report["eligible_pool_count"] is None
-    assert report["eligibility_count_status"] == "NOT_COMPUTED_WITHOUT_APPROVED_GATE"
-    assert any("no approved Phase 3C numeric" in reason for reason in report["blockers"])
+    assert report["eligibility_count_status"] == "NOT_EVALUATED_BY_SINGLE_ARCHIVE_DIAGNOSTIC"
+    assert report["pool_level_eligibility_policy"] == (
+        "NO_ADDITIONAL_LIQUIDITY_FLOOR_OR_PER_TOKEN_MINIMUM_IN_FROZEN_PHASE3C_PROTOCOL"
+    )
+    assert report["minimum_distinct_tokens_required"] is phase3b_contract.MIN_SAMPLE
+    assert report["minimum_distinct_tokens_required"] == 85
+    assert report["distinct_token_sample_status"] == "REQUIRES_CROSS_ARCHIVE_PHASE3C_PIPELINE"
+    assert any("cross-archive Phase 3C statistical evaluation" in reason for reason in report["blockers"])
+    assert not any("no approved Phase 3C numeric" in reason for reason in report["blockers"])
 
 
 def test_latest_phase3c_archive_has_explicit_evidence_readiness_verdict():
