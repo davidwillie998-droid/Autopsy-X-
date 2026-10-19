@@ -62,3 +62,8 @@ def test_archived_phase3c_run_exposes_the_historical_backfill_ceiling():
     assert report["run_window"]["observed_elapsed_s"] is None
     assert report["request_accounting"]["poll_request_count_matches_cycle_count"] is True
     assert report["selected_pool_count"] > 0
+    replay = report["normalization_replay"]
+    assert replay["stored_summary_present"] is True
+    assert isinstance(replay["stored_vs_recomputed_match"], bool)
+    assert "MALFORMED_RECORD" in replay["recomputed_issue_counts"]
+    assert len(replay["issue_samples"].get("MALFORMED_RECORD", [])) <= 5
