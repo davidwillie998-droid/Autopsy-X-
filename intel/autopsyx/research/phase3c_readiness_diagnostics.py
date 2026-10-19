@@ -93,7 +93,7 @@ def summarize_coverage_intervals(intervals: list[tuple[int, int]]) -> dict:
     valid = sorted((int(start), int(end)) for start, end in intervals if end > start)
     if not valid:
         return {
-            "coverage_claim_count": len(intervals), "coverage_union_ms": 0,
+            "audited_interval_count": len(intervals), "coverage_union_ms": 0,
             "first_coverage_ms": None, "last_coverage_ms": None,
             "uncovered_gap_count": None, "longest_uncovered_gap_ms": None,
             "coverage_union_ratio_inside_claim_span": None,
@@ -108,7 +108,7 @@ def summarize_coverage_intervals(intervals: list[tuple[int, int]]) -> dict:
     span_ms = merged[-1][1] - merged[0][0]
     gaps = [merged[i + 1][0] - merged[i][1] for i in range(len(merged) - 1)]
     return {
-        "coverage_claim_count": len(intervals),
+        "audited_interval_count": len(intervals),
         "coverage_union_ms": union_ms,
         "first_coverage_ms": merged[0][0],
         "last_coverage_ms": merged[-1][1],
@@ -116,6 +116,21 @@ def summarize_coverage_intervals(intervals: list[tuple[int, int]]) -> dict:
         "longest_uncovered_gap_ms": max(gaps, default=0),
         "coverage_union_ratio_inside_claim_span": union_ms / span_ms if span_ms > 0 else 1.0,
     }
+
+
+def conservative_coverage_intervals(bar_timestamps: list[int], parser_claims: list[tuple[int, int]],
+                                    *, is_backfill: bool, interval_ms: int = MINUTE_MS) -> list[tuple[int, int]]:
+    """Avoid the frozen parser's generic end-at-response-time claim on historical pages.
+
+    For backfill pages, only claim the span actually bounded by returned bars.
+    For live latest-page polls, retain the parser's claimed complete interval.
+    This is a diagnostic-side correction; frozen normalization is not modified.
+    """
+    if is_backfill:
+        if not bar_timestamps:
+            return []
+        return [(min(bar_timestamps), max(bar_timestamps) + interval_ms)]
+    return [(int(start), int(end)) for start, end in parser_claims if end > start]
 
 
 def _entry_error(entry) -> bool:
@@ -174,6 +189,8 @@ def audit_archive(run_dir: Path) -> dict:
             continue
         response_counts["successful_ohlcv"] += 1
         parsed = gt.parse_ohlcv(entry, raw.body(entry.raw_id), lag_ms)
+        request_bar_timestamps = []
+        request_coverage_claims = []
         for issue in parsed.issues:
             issue_counts[issue.code] += 1
             if pool:
@@ -181,10 +198,22 @@ def audit_archive(run_dir: Path) -> dict:
         for record in parsed.records:
             if type(record).__name__ == "ProviderBar":
                 bars_by_pool[record.pool].append(int(record.ts))
+                request_bar_timestamps.append(int(record.ts))
                 bars_by_pool_token[record.pool] = record.token
                 raw_bars_by_pool[record.pool] += 1
             elif type(record).__name__ == "Coverage" and record.kind == "bars":
-                bar_coverage_by_pool[record.pool].append((int(record.start_ts), int(record.end_ts)))
+                request_coverage_claims.append((int(record.start_ts), int(record.end_ts)))
+        if pool:
+            audited_intervals = conservative_coverage_intervals(
+                request_bar_timestamps, request_coverage_claims,
+                is_backfill=("page" in ctx), interval_ms=interval_ms,
+            )
+            bar_coverage_by_pool[pool].extend(audited_intervals)
+            if "page" in ctx:
+                if request_bar_timestamps:
+                    request_counts["backfill_coverage_intervals_clipped"] += 1
+                else:
+                    request_counts["backfill_pages_without_valid_bars"] += 1
 
     # Re-run the frozen normalizer over the same immutable archive to compare its
     # output with the archived normalization summary and expose issue examples.
@@ -280,6 +309,8 @@ def audit_archive(run_dir: Path) -> dict:
             "ohlcv_backfill_requests": int(request_counts["backfill_ohlcv"]),
             "ohlcv_poll_requests": actual_poll_calls,
             "ohlcv_failed_requests": int(request_counts["failed_ohlcv"]),
+            "backfill_coverage_intervals_clipped": int(request_counts["backfill_coverage_intervals_clipped"]),
+            "backfill_pages_without_valid_bars": int(request_counts["backfill_pages_without_valid_bars"]),
             "expected_poll_requests_from_cycle_count": expected_poll_calls,
             "poll_request_count_matches_cycle_count": (
                 actual_poll_calls == expected_poll_calls if expected_poll_calls is not None else None
@@ -302,7 +333,8 @@ def audit_archive(run_dir: Path) -> dict:
         },
         "pools": pool_reports,
         "limitations": [
-            "GeckoTerminal omits minute bars when no trades occur. Missing nonempty bars inside a claimed interval are not labelled missing data; the report separately measures provider completeness-claim coverage and nonempty-bar density.",
+            "GeckoTerminal omits minute bars when no trades occur. Missing nonempty bars inside a claimed interval are not labelled missing data; the report separately measures audited completeness-interval coverage and nonempty-bar density.",
+            "The frozen parser's generic bars Coverage record ends at response time even for historical before_timestamp pages. This diagnostic clips historical-page coverage to the returned bar range without changing the frozen parser.",
             "Coverage claims indicate completeness of nonempty bars, not executable liquidity. A zero-trade minute may be complete data and still be a liquidity/tradability warning.",
             "The created-to-last interval count is a density diagnostic, not a claim that every minute after pool creation should trade.",
             "No readiness thresholds are inferred or changed by this tool.",
