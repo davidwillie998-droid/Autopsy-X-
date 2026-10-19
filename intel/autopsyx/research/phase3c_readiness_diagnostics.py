@@ -170,6 +170,12 @@ def audit_archive(run_dir: Path) -> dict:
         }
 
     cycles_raw = meta.get("poll_window_cycles")
+    cycle_source = "poll_window_cycles"
+    if not isinstance(cycles_raw, (int, float)):
+        # Older archives used the same counter under `cycles` but did not save
+        # the actual elapsed polling-window duration.
+        cycles_raw = meta.get("cycles")
+        cycle_source = "legacy_cycles_field"
     cycles = int(cycles_raw) if isinstance(cycles_raw, (int, float)) else None
     every = max(1, int(plan.get("ohlcv_every") or 1))
     expected_poll_calls = math.ceil(cycles / every) * len(selected) if selected and cycles is not None else None
@@ -190,6 +196,7 @@ def audit_archive(run_dir: Path) -> dict:
             "observed_elapsed_s": elapsed_s,
             "completed_cycles": cycles,
             "cycle_telemetry_available": cycles is not None,
+            "cycle_count_source": cycle_source if cycles is not None else None,
             "window_duration_reached": (
                 elapsed_s >= duration_s if isinstance(elapsed_s, (int, float))
                 and isinstance(duration_s, (int, float)) else None
