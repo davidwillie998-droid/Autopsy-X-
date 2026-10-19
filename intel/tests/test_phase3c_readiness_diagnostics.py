@@ -98,9 +98,15 @@ def test_immutable_phase3c_run_f_readiness_diagnostic_and_endpoint_attribution()
     attribution = report["normalization_issue_attribution"]
     unsupported_count = attribution["unsupported_endpoint_response_count"]
     residual_count = attribution["malformed_record_residual_count_after_unsupported_endpoints"]
-    assert unsupported_count == 465
-    assert residual_count == 16
+    assert attribution["unsupported_endpoint_response_counts"] == {
+        "news.gdelt": 16,
+        "rpc.signatures": 56,
+        "rpc.transaction": 409,
+    }
+    assert unsupported_count == 481
+    assert residual_count == 0
     assert unsupported_count + residual_count == 481
+    assert attribution["malformed_record_issues_fully_explained_by_unsupported_endpoints"] is True
     samples = replay["issue_samples"]["MALFORMED_RECORD"]
     assert all(sample["classification"] == "UNSUPPORTED_NORMALIZER_ENDPOINT" for sample in samples)
     assert all(sample["endpoint"] in {"rpc.signatures", "rpc.transaction"} for sample in samples)
