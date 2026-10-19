@@ -42,4 +42,35 @@ jobs:
           python-version: "3.11"
       - run: pip install pytest
       - run: python -m pytest -q -rs
+      - name: Audit latest immutable Phase 3C evidence readiness
+        run: |
+          python -m autopsyx.research.phase3c_readiness_diagnostics datasets/phase3c/runs/p3c-sol-20261019a --out ../phase3c-readiness-p3c-sol-20261019a.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("../phase3c-readiness-p3c-sol-20261019a.json").read_text(encoding="utf-8"))
+          assert report["diagnostic_only"] is True
+          assert report["archive_integrity"]["status"] == "PASS"
+          assert report["provider_reliability"]["status"] == "DEGRADED"
+          assert report["transaction_history_completeness"]["status"] == "INCOMPLETE"
+          assert report["historical_signal_readiness"]["status"] == "NOT_READY"
+          assert report["normalization_replay"]["stored_vs_recomputed_match"] is True
+          print(json.dumps({
+              "archive": report["archive"],
+              "archive_integrity": report["archive_integrity"]["status"],
+              "provider_reliability": report["provider_reliability"]["status"],
+              "provider_terminal_errors": report["provider_reliability"]["overall"]["terminal_errors"],
+              "transaction_history": report["transaction_history_completeness"]["status"],
+              "signatures_not_fetched": report["transaction_history_completeness"]["totals"]["signatures_not_fetched_reported"],
+              "historical_signal_readiness": report["historical_signal_readiness"]["status"],
+              "normalization_replay_match": report["normalization_replay"]["stored_vs_recomputed_match"],
+          }, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase3c-evidence-readiness
+          path: phase3c-readiness-p3c-sol-20261019a.json
+          if-no-files-found: error
+          retention-days: 30
       - run: python -m autopsyx demo
