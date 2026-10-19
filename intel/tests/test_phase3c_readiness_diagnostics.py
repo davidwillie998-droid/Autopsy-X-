@@ -50,14 +50,29 @@ def test_timestamp_summary_flags_off_minute_timestamps():
         ("p3c-sol-20261004f", 2, 5_629, 481),
     ],
 )
-def test_immutable_archived_phase3c_runs_expose_readiness_limits(
-    archive_name, expected_cycles, expected_bar_rows, expected_malformed,
-):
+def test_immutable_archive_baseline_metadata(archive_name, expected_cycles, expected_bar_rows, expected_malformed):
+    import json
+    from pathlib import Path
+
+    intel_root = Path(__file__).resolve().parents[1]
+    archive = intel_root / "datasets" / "phase3c" / "runs" / archive_name
+    if not archive.exists():
+        pytest.skip("immutable Phase 3C archive not present in this checkout")
+
+    run = json.loads((archive / "run.json").read_text(encoding="utf-8"))
+    summary = json.loads((archive / "normalize_stdout.json").read_text(encoding="utf-8"))
+    assert run["status"] == "COMPLETE"
+    assert run["cycles"] == expected_cycles
+    assert summary["records"]["ProviderBar"] == expected_bar_rows
+    assert summary["issues"]["MALFORMED_RECORD"] == expected_malformed
+
+
+def test_immutable_phase3c_run_f_readiness_diagnostic_and_endpoint_attribution():
     from pathlib import Path
     from autopsyx.research.phase3c_readiness_diagnostics import audit_archive
 
     intel_root = Path(__file__).resolve().parents[1]
-    archive = intel_root / "datasets" / "phase3c" / "runs" / archive_name
+    archive = intel_root / "datasets" / "phase3c" / "runs" / "p3c-sol-20261004f"
     if not archive.exists():
         pytest.skip("immutable Phase 3C archive not present in this checkout")
 
@@ -66,35 +81,36 @@ def test_immutable_archived_phase3c_runs_expose_readiness_limits(
     assert report["acquisition_status"] == "COMPLETE"
     assert report["configured_history_cap"]["maximum_requested_minute_bars_per_pool"] == 2_000
     assert report["configured_history_cap"]["maximum_requested_history_hours_per_pool"] == pytest.approx(2000 / 60)
-    assert report["run_window"]["completed_cycles"] == expected_cycles
+    assert report["run_window"]["completed_cycles"] == 2
     assert report["run_window"]["cycle_count_source"] == "legacy_cycles_field"
     assert report["run_window"]["observed_elapsed_s"] is None
     assert report["request_accounting"]["poll_request_count_matches_cycle_count"] is True
-    assert report["request_accounting"]["parsed_bar_rows"] == expected_bar_rows
+    assert report["request_accounting"]["parsed_bar_rows"] == 5_629
     assert "MALFORMED_RECORD" not in report["request_accounting"]["parser_issue_counts"]
-    assert report["selected_pool_count"] > 0
+    assert report["selected_pool_count"] == 14
+
     replay = report["normalization_replay"]
     assert replay["stored_summary_present"] is True
     assert replay["stored_vs_recomputed_match"] is True
-    assert replay["recomputed_issue_counts"]["MALFORMED_RECORD"] == expected_malformed
+    assert replay["recomputed_issue_counts"]["MALFORMED_RECORD"] == 481
     assert len(replay["issue_samples"].get("MALFORMED_RECORD", [])) <= 5
+
     attribution = report["normalization_issue_attribution"]
     unsupported_count = attribution["unsupported_endpoint_response_count"]
     residual_count = attribution["malformed_record_residual_count_after_unsupported_endpoints"]
-    assert unsupported_count > 0
-    assert residual_count >= 0
-    assert unsupported_count + residual_count == expected_malformed
+    assert unsupported_count == 465
+    assert residual_count == 16
+    assert unsupported_count + residual_count == 481
     samples = replay["issue_samples"]["MALFORMED_RECORD"]
     assert all(sample["classification"] == "UNSUPPORTED_NORMALIZER_ENDPOINT" for sample in samples)
     assert all(sample["endpoint"] in {"rpc.signatures", "rpc.transaction"} for sample in samples)
-    if archive_name == "p3c-sol-20261004f":
-        endpoints = report["endpoint_accounting"]
-        assert endpoints["news.gdelt"]["failed_requests"] == 12
-        assert endpoints["news.gdelt"]["failure_classes"] == {"HTTP_429": 12}
-        assert endpoints["social.reddit"]["failed_requests"] == 28
-        assert endpoints["social.reddit"]["failure_classes"] == {"HTTP_403": 28}
-        assert endpoints["gt.ohlcv"]["failed_requests"] == 0
 
+    endpoints = report["endpoint_accounting"]
+    assert endpoints["news.gdelt"]["failed_requests"] == 12
+    assert endpoints["news.gdelt"]["failure_classes"] == {"HTTP_429": 12}
+    assert endpoints["social.reddit"]["failed_requests"] == 28
+    assert endpoints["social.reddit"]["failure_classes"] == {"HTTP_403": 28}
+    assert endpoints["gt.ohlcv"]["failed_requests"] == 0
 
 def test_coverage_claims_merge_overlap_and_report_only_true_uncovered_gaps():
     report = summarize_coverage_intervals([(0, 120), (60, 180), (300, 360)])
