@@ -169,9 +169,10 @@ def audit_archive(run_dir: Path) -> dict:
             **stats,
         }
 
-    cycles = int(meta.get("poll_window_cycles") or 0)
+    cycles_raw = meta.get("poll_window_cycles")
+    cycles = int(cycles_raw) if isinstance(cycles_raw, (int, float)) else None
     every = max(1, int(plan.get("ohlcv_every") or 1))
-    expected_poll_calls = math.ceil(cycles / every) * len(selected) if selected else None
+    expected_poll_calls = math.ceil(cycles / every) * len(selected) if selected and cycles is not None else None
     actual_poll_calls = int(request_counts["poll_ohlcv"])
     duration_s = plan.get("duration_s")
     elapsed_s = meta.get("poll_window_elapsed_s")
@@ -188,6 +189,7 @@ def audit_archive(run_dir: Path) -> dict:
             "configured_duration_s": duration_s,
             "observed_elapsed_s": elapsed_s,
             "completed_cycles": cycles,
+            "cycle_telemetry_available": cycles is not None,
             "window_duration_reached": (
                 elapsed_s >= duration_s if isinstance(elapsed_s, (int, float))
                 and isinstance(duration_s, (int, float)) else None
