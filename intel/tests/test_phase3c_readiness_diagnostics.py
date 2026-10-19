@@ -71,7 +71,7 @@ def test_archived_phase3c_run_exposes_the_historical_backfill_ceiling():
 
 def test_coverage_claims_merge_overlap_and_report_only_true_uncovered_gaps():
     report = summarize_coverage_intervals([(0, 120), (60, 180), (300, 360)])
-    assert report["coverage_claim_count"] == 3
+    assert report["audited_interval_count"] == 3
     assert report["coverage_union_ms"] == 240
     assert report["uncovered_gap_count"] == 1
     assert report["longest_uncovered_gap_ms"] == 120
@@ -80,7 +80,7 @@ def test_coverage_claims_merge_overlap_and_report_only_true_uncovered_gaps():
 
 def test_no_coverage_claim_is_unknown_not_zero_coverage():
     report = summarize_coverage_intervals([])
-    assert report["coverage_claim_count"] == 0
+    assert report["audited_interval_count"] == 0
     assert report["coverage_union_ratio_inside_claim_span"] is None
     assert report["uncovered_gap_count"] is None
 
