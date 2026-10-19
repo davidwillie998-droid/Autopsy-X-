@@ -133,6 +133,16 @@ def conservative_coverage_intervals(bar_timestamps: list[int], parser_claims: li
     return [(int(start), int(end)) for start, end in parser_claims if end > start]
 
 
+# Keep this list aligned with the frozen dispatch in data.normalize._parse.
+# Unsupported endpoints are not malformed provider payloads; the normalizer
+# currently reports them under MALFORMED_RECORD, so the diagnostic attributes
+# those skips separately without changing the frozen normalization contract.
+NORMALIZER_SUPPORTED_ENDPOINTS = frozenset({
+    "gt.new_pools", "gt.trending", "gt.top_pools", "gt.pools_multi",
+    "gt.trades", "gt.ohlcv", "gt.token_info", "ds.pairs",
+})
+
+
 def _entry_error(entry) -> bool:
     return bool(entry.error or entry.raw_id is None or (entry.status is not None and entry.status != 200))
 
@@ -226,12 +236,43 @@ def audit_archive(run_dir: Path) -> dict:
         and stored_normalization.get("issues") == recomputed_issues
         and stored_normalization.get("records") == recomputed_records
     )
-    issue_samples = {
-        code: [
-            {**sample, "detail": str(sample.get("detail", ""))[:400]}
-            for sample in samples[:5]
-        ]
-        for code, samples in normalization_report.issue_samples.items()
+    entry_by_raw_id = {entry.raw_id: entry for entry in entries if entry.raw_id}
+    unsupported_endpoint_counts = Counter(
+        entry.endpoint for entry in entries
+        if not _entry_error(entry)
+        and entry.endpoint not in NORMALIZER_SUPPORTED_ENDPOINTS
+    )
+    issue_samples = {}
+    for code, samples in normalization_report.issue_samples.items():
+        enriched = []
+        for sample in samples[:5]:
+            item = {**sample, "detail": str(sample.get("detail", ""))[:400]}
+            entry = entry_by_raw_id.get(sample.get("raw_id"))
+            if entry is not None:
+                item["endpoint"] = entry.endpoint
+            detail = str(sample.get("detail", ""))
+            if detail.startswith("no parser for "):
+                item["classification"] = "UNSUPPORTED_NORMALIZER_ENDPOINT"
+            elif detail.startswith("body is not JSON") or detail.startswith("response has no 'data' member"):
+                item["classification"] = "INVALID_PROVIDER_PAYLOAD"
+            else:
+                item["classification"] = "RECORD_VALIDATION_OR_SCHEMA"
+            enriched.append(item)
+        issue_samples[code] = enriched
+
+    malformed_record_count = int(recomputed_issues.get("MALFORMED_RECORD", 0))
+    unsupported_endpoint_response_count = int(sum(unsupported_endpoint_counts.values()))
+    normalization_issue_attribution = {
+        "unsupported_endpoint_response_counts": dict(sorted(unsupported_endpoint_counts.items())),
+        "unsupported_endpoint_response_count": unsupported_endpoint_response_count,
+        "malformed_record_issue_count": malformed_record_count,
+        "malformed_record_issues_fully_explained_by_unsupported_endpoints": (
+            unsupported_endpoint_response_count == malformed_record_count
+        ),
+        "interpretation": (
+            "Unsupported endpoint responses are currently labelled MALFORMED_RECORD by the frozen normalizer. "
+            "This diagnostic attributes them separately; it does not rewrite or suppress normalization issues."
+        ),
     }
 
     pool_reports = {}
@@ -331,6 +372,7 @@ def audit_archive(run_dir: Path) -> dict:
             "recomputed_record_counts": recomputed_records,
             "issue_samples": issue_samples,
         },
+        "normalization_issue_attribution": normalization_issue_attribution,
         "pools": pool_reports,
         "limitations": [
             "GeckoTerminal omits minute bars when no trades occur. Missing nonempty bars inside a claimed interval are not labelled missing data; the report separately measures audited completeness-interval coverage and nonempty-bar density.",
