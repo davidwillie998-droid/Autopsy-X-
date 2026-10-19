@@ -154,6 +154,37 @@ def audit_archive(run_dir: Path) -> dict:
     selection_source, selected = phase3a_coverage.universe(raw)
     selected_by_pool = {p["pool"]: p for p in selected if p.get("pool")}
     entries = raw.entries()
+    endpoint_totals: dict[str, Counter] = defaultdict(Counter)
+    for entry in entries:
+        endpoint = str(entry.endpoint)
+        endpoint_totals[endpoint]["requests"] += 1
+        if _entry_error(entry):
+            endpoint_totals[endpoint]["failed_requests"] += 1
+            error_text = str(entry.error or "")
+            if "429" in error_text:
+                failure_class = "HTTP_429"
+            elif "403" in error_text:
+                failure_class = "HTTP_403"
+            elif entry.status is not None and entry.status != 200:
+                failure_class = f"HTTP_{entry.status}"
+            else:
+                failure_class = "REQUEST_ERROR"
+            endpoint_totals[endpoint][f"failure:{failure_class}"] += 1
+        else:
+            endpoint_totals[endpoint]["successful_responses"] += 1
+    endpoint_accounting = {
+        endpoint: {
+            "requests": counts["requests"],
+            "successful_responses": counts["successful_responses"],
+            "failed_requests": counts["failed_requests"],
+            "failure_classes": {
+                key.removeprefix("failure:"): value
+                for key, value in sorted(counts.items())
+                if key.startswith("failure:")
+            },
+        }
+        for endpoint, counts in sorted(endpoint_totals.items())
+    }
     plan = meta.get("plan") or {}
     lag_ms = int(plan.get("lag_ms", 60_000))
     interval_ms = MINUTE_MS
@@ -348,6 +379,7 @@ def audit_archive(run_dir: Path) -> dict:
             ),
             "interpretation": "Configured upper bound only; actual bars can be lower because pools are younger, provider pages are short, requests fail, or validation rejects records.",
         },
+        "endpoint_accounting": endpoint_accounting,
         "request_accounting": {
             "ohlcv_requests_total": int(request_counts["total_ohlcv"]),
             "ohlcv_backfill_requests": int(request_counts["backfill_ohlcv"]),
