@@ -34,9 +34,10 @@ def summarize_timestamps(timestamps: list[int], *, created_ts: int | None = None
         return {
             "observed_rows": len(timestamps), "unique_bars": 0, "duplicate_rows": duplicates,
             "first_bar_ms": None, "last_bar_ms": None, "observed_span_intervals": 0,
-            "missing_intervals_inside_observed_span": None, "coverage_inside_observed_span": None,
-            "longest_contiguous_run_bars": 0, "longest_internal_gap_intervals": 0, "misaligned_timestamps": 0,
-            "created_to_last_expected_intervals": None, "missing_intervals_since_creation": None,
+            "nonempty_bar_slots_without_observation": None, "bar_density_inside_observed_span": None,
+            "longest_consecutive_nonempty_bar_run": 0, "longest_gap_between_nonempty_bars_minutes": 0,
+            "misaligned_timestamps": 0, "created_to_last_expected_intervals": None,
+            "observed_bars_since_creation": 0, "nonempty_bar_slots_without_observation_since_creation": None,
         }
 
     expected_span = ((unique[-1] - unique[0]) // interval_ms) + 1
@@ -72,13 +73,48 @@ def summarize_timestamps(timestamps: list[int], *, created_ts: int | None = None
         "first_bar_ms": unique[0],
         "last_bar_ms": unique[-1],
         "observed_span_intervals": expected_span,
-        "missing_intervals_inside_observed_span": missing_inside,
-        "coverage_inside_observed_span": len(unique) / expected_span if expected_span else None,
-        "longest_contiguous_run_bars": longest_run,
-        "longest_internal_gap_intervals": longest_gap,
+        # GeckoTerminal omits minutes without trades. These are nonempty-bar
+        # density metrics, NOT missing-data or coverage metrics.
+        "nonempty_bar_slots_without_observation": missing_inside,
+        "bar_density_inside_observed_span": len(unique) / expected_span if expected_span else None,
+        "longest_consecutive_nonempty_bar_run": longest_run,
+        "longest_gap_between_nonempty_bars_minutes": longest_gap,
         "misaligned_timestamps": misaligned_timestamps,
         "created_to_last_expected_intervals": created_expected,
-        "missing_intervals_since_creation": missing_since_creation,
+        "observed_bars_since_creation": sum(
+            first_expected <= ts <= unique[-1] for ts in unique
+        ) if created_ts is not None and created_ts <= unique[-1] else 0,
+        "nonempty_bar_slots_without_observation_since_creation": missing_since_creation,
+    }
+
+
+def summarize_coverage_intervals(intervals: list[tuple[int, int]]) -> dict:
+    """Merge provider completeness claims; do not treat zero-trade minutes as missing data."""
+    valid = sorted((int(start), int(end)) for start, end in intervals if end > start)
+    if not valid:
+        return {
+            "coverage_claim_count": len(intervals), "coverage_union_ms": 0,
+            "first_coverage_ms": None, "last_coverage_ms": None,
+            "uncovered_gap_count": None, "longest_uncovered_gap_ms": None,
+            "coverage_union_ratio_inside_claim_span": None,
+        }
+    merged: list[list[int]] = []
+    for start, end in valid:
+        if not merged or start > merged[-1][1]:
+            merged.append([start, end])
+        else:
+            merged[-1][1] = max(merged[-1][1], end)
+    union_ms = sum(end - start for start, end in merged)
+    span_ms = merged[-1][1] - merged[0][0]
+    gaps = [merged[i + 1][0] - merged[i][1] for i in range(len(merged) - 1)]
+    return {
+        "coverage_claim_count": len(intervals),
+        "coverage_union_ms": union_ms,
+        "first_coverage_ms": merged[0][0],
+        "last_coverage_ms": merged[-1][1],
+        "uncovered_gap_count": len(gaps),
+        "longest_uncovered_gap_ms": max(gaps, default=0),
+        "coverage_union_ratio_inside_claim_span": union_ms / span_ms if span_ms > 0 else 1.0,
     }
 
 
@@ -102,6 +138,7 @@ def audit_archive(run_dir: Path) -> dict:
     error_counts = Counter()
     issue_counts = Counter()
     bars_by_pool: dict[str, list[int]] = defaultdict(list)
+    bar_coverage_by_pool: dict[str, list[tuple[int, int]]] = defaultdict(list)
     bars_by_pool_token: dict[str, str] = {}
     response_counts = Counter()
     pool_errors: dict[str, Counter] = defaultdict(Counter)
@@ -142,11 +179,12 @@ def audit_archive(run_dir: Path) -> dict:
             if pool:
                 pool_errors[pool][issue.code] += 1
         for record in parsed.records:
-            if type(record).__name__ != "ProviderBar":
-                continue
-            bars_by_pool[record.pool].append(int(record.ts))
-            bars_by_pool_token[record.pool] = record.token
-            raw_bars_by_pool[record.pool] += 1
+            if type(record).__name__ == "ProviderBar":
+                bars_by_pool[record.pool].append(int(record.ts))
+                bars_by_pool_token[record.pool] = record.token
+                raw_bars_by_pool[record.pool] += 1
+            elif type(record).__name__ == "Coverage" and record.kind == "bars":
+                bar_coverage_by_pool[record.pool].append((int(record.start_ts), int(record.end_ts)))
 
     # Re-run the frozen normalizer over the same immutable archive to compare its
     # output with the archived normalization summary and expose issue examples.
@@ -168,13 +206,14 @@ def audit_archive(run_dir: Path) -> dict:
     }
 
     pool_reports = {}
-    for pool in sorted(set(selected_by_pool) | set(bars_by_pool) | set(pool_errors)):
+    for pool in sorted(set(selected_by_pool) | set(bars_by_pool) | set(pool_errors) | set(bar_coverage_by_pool)):
         selected_item = selected_by_pool.get(pool, {})
         created_ts = selected_item.get("created_ts")
         if not isinstance(created_ts, int):
             created_ts = None
         timestamps = bars_by_pool.get(pool, [])
         stats = summarize_timestamps(timestamps, created_ts=created_ts, interval_ms=interval_ms)
+        coverage_stats = summarize_coverage_intervals(bar_coverage_by_pool.get(pool, []))
         cycles = sorted(poll_cycles_by_pool.get(pool, set()))
         pages = sorted(pages_by_pool.get(pool, set()))
         pool_reports[pool] = {
@@ -186,6 +225,7 @@ def audit_archive(run_dir: Path) -> dict:
             "first_poll_cycle": cycles[0] if cycles else None,
             "last_poll_cycle": cycles[-1] if cycles else None,
             "request_errors": dict(sorted(pool_errors.get(pool, {}).items())),
+            "bar_coverage_claims": coverage_stats,
             **stats,
         }
 
@@ -262,8 +302,9 @@ def audit_archive(run_dir: Path) -> dict:
         },
         "pools": pool_reports,
         "limitations": [
-            "This report measures observed minute-bar continuity; it does not prove executable liquidity.",
-            "The created-to-last interval count is a coverage diagnostic, not a claim that every minute after pool creation should trade.",
+            "GeckoTerminal omits minute bars when no trades occur. Missing nonempty bars inside a claimed interval are not labelled missing data; the report separately measures provider completeness-claim coverage and nonempty-bar density.",
+            "Coverage claims indicate completeness of nonempty bars, not executable liquidity. A zero-trade minute may be complete data and still be a liquidity/tradability warning.",
+            "The created-to-last interval count is a density diagnostic, not a claim that every minute after pool creation should trade.",
             "No readiness thresholds are inferred or changed by this tool.",
             "Repeated bars across polling responses are reported as duplicate observations, not silently removed from the raw archive.",
             "Historical OHLCV backfill uses a provider page size of 1000 minute bars; configured page count therefore caps the maximum requested history and may be insufficient for multi-day requirements.",
