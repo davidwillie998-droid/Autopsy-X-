@@ -73,4 +73,52 @@ jobs:
           path: phase3c-readiness-p3c-sol-20261019a.json
           if-no-files-found: error
           retention-days: 30
+      - name: Recompute offline Phase 3C cross-archive evidence
+        working-directory: intel
+        run: |
+          python - <<'PY'
+          import csv, json
+          from pathlib import Path
+          from autopsyx.research import phase3c_pipeline as pipeline
+          from autopsyx.research import phase3c_render as render
+
+          out = pipeline.run(Path("/tmp/phase3c-cross-archive-work"))
+          dest = Path("../phase3c-cross-archive-refresh")
+          dest.mkdir(parents=True, exist_ok=True)
+          (dest / "evidence.json").write_text(json.dumps(out, indent=2, sort_keys=True, default=str) + "\\n", encoding="utf-8")
+          pipeline.write_ledger(out, dest / "research_ledger.csv")
+          (dest / "statistical_report.md").write_text(render.render_statistical_report(out), encoding="utf-8")
+          (dest / "data_audit.md").write_text(render.render_data_audit(out), encoding="utf-8")
+          (dest / "provenance_report.md").write_text(render.render_provenance_report(out), encoding="utf-8")
+          (dest / "replication_report.md").write_text(render.render_replication_report(out), encoding="utf-8")
+          (dest / "system_status.md").write_text(render.render_system_status(out), encoding="utf-8")
+
+          summary = {
+              "repository_commit": out["repository_commit"],
+              "contract_hash": out["contract_hash"],
+              "min_sample": out["min_sample"],
+              "included_archives": out["included_archives"],
+              "new_archives_excluded": out["new_archives_excluded"],
+              "contamination_free": out["contamination"]["contamination_free"],
+              "overlap_count": len(out["contamination"]["overlaps"]),
+              "hypotheses": [{
+                  "id": h["hypothesis_id"],
+                  "distinct_tokens": h.get("n_distinct_tokens"),
+                  "rows": h.get("n_rows_joined"),
+                  "classification": h["classification"],
+                  "reason": h["reason"],
+              } for h in out["hypotheses"]],
+              "overall": out["overall_classification"],
+          }
+          (dest / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+          print(json.dumps(summary, sort_keys=True))
+          assert out["min_sample"] == 85, "Frozen minimum sample changed"
+          assert "p3c-sol-20261019a" in out["included_archives"], "Latest archive did not pass the pipeline's eligibility gate"
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase3c-cross-archive-refresh
+          path: phase3c-cross-archive-refresh/
+          if-no-files-found: error
+          retention-days: 30
       - run: python -m autopsyx demo
