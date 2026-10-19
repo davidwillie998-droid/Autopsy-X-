@@ -269,6 +269,27 @@ def test_historical_readiness_uses_frozen_protocol_and_defers_pooled_sample():
     assert report["distinct_token_sample_status"] == "REQUIRES_CROSS_ARCHIVE_PHASE3C_PIPELINE"
     assert any("cross-archive Phase 3C statistical evaluation" in reason for reason in report["blockers"])
     assert not any("no approved Phase 3C numeric" in reason for reason in report["blockers"])
+    assert report["quality_warnings"] == []
+    assert report["provider_reliability_status"] == "HEALTHY"
+    assert report["transaction_history_status"] == "SAMPLED_COMPLETE"
+
+
+def test_optional_provider_and_transaction_gaps_are_warnings_not_global_gates():
+    report = classify_historical_signal_readiness(
+        {"status": "PASS"},
+        {"status": "DEGRADED"},
+        {"status": "INCOMPLETE"},
+        {"stored_vs_recomputed_match": True},
+        {"pool-1": {"unique_bars": 10}},
+    )
+    assert report["status"] == "NOT_READY"
+    assert report["provider_reliability_status"] == "DEGRADED"
+    assert report["transaction_history_status"] == "INCOMPLETE"
+    assert any("provider reliability is degraded" in item for item in report["quality_warnings"])
+    assert any("transaction history is incomplete" in item for item in report["quality_warnings"])
+    assert not any("provider reliability" in item for item in report["blockers"])
+    assert not any("transaction-history samples" in item for item in report["blockers"])
+    assert any("cross-archive Phase 3C statistical evaluation" in item for item in report["blockers"])
 
 
 def test_latest_phase3c_archive_has_explicit_evidence_readiness_verdict():
