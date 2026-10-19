@@ -13,6 +13,7 @@ import math
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from ..data.normalize import normalize as normalize_all
 from ..data.providers import geckoterminal as gt
 from ..data.raw import RawStore
 from . import phase3a_coverage
@@ -147,6 +148,25 @@ def audit_archive(run_dir: Path) -> dict:
             bars_by_pool_token[record.pool] = record.token
             raw_bars_by_pool[record.pool] += 1
 
+    # Re-run the frozen normalizer over the same immutable archive to compare its
+    # output with the archived normalization summary and expose issue examples.
+    _, normalization_report = normalize_all(str(run_dir), lag_ms)
+    stored_normalization = raw.read_json("normalize_stdout.json") or {}
+    recomputed_issues = normalization_report.issues
+    recomputed_records = normalization_report.records
+    stored_vs_recomputed_match = bool(stored_normalization) and (
+        stored_normalization.get("dataset_sha256") == normalization_report.dataset_sha256
+        and stored_normalization.get("issues") == recomputed_issues
+        and stored_normalization.get("records") == recomputed_records
+    )
+    issue_samples = {
+        code: [
+            {**sample, "detail": str(sample.get("detail", ""))[:400]}
+            for sample in samples[:5]
+        ]
+        for code, samples in normalization_report.issue_samples.items()
+    }
+
     pool_reports = {}
     for pool in sorted(set(selected_by_pool) | set(bars_by_pool) | set(pool_errors)):
         selected_item = selected_by_pool.get(pool, {})
@@ -228,6 +248,17 @@ def audit_archive(run_dir: Path) -> dict:
             "provider_error_details": dict(sorted(error_counts.items())),
             "parsed_bar_rows": sum(raw_bars_by_pool.values()),
             "parser_issue_counts": dict(sorted(issue_counts.items())),
+        },
+        "normalization_replay": {
+            "stored_summary_present": bool(stored_normalization),
+            "stored_vs_recomputed_match": stored_vs_recomputed_match if stored_normalization else None,
+            "stored_dataset_sha256": stored_normalization.get("dataset_sha256"),
+            "recomputed_dataset_sha256": normalization_report.dataset_sha256,
+            "stored_issue_counts": stored_normalization.get("issues"),
+            "recomputed_issue_counts": recomputed_issues,
+            "stored_record_counts": stored_normalization.get("records"),
+            "recomputed_record_counts": recomputed_records,
+            "issue_samples": issue_samples,
         },
         "pools": pool_reports,
         "limitations": [
