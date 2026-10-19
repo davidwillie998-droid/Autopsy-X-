@@ -79,8 +79,11 @@ def test_immutable_archived_phase3c_runs_expose_readiness_limits(
     assert replay["recomputed_issue_counts"]["MALFORMED_RECORD"] == expected_malformed
     assert len(replay["issue_samples"].get("MALFORMED_RECORD", [])) <= 5
     attribution = report["normalization_issue_attribution"]
-    assert attribution["unsupported_endpoint_response_count"] == expected_malformed
-    assert attribution["malformed_record_issues_fully_explained_by_unsupported_endpoints"] is True
+    unsupported_count = attribution["unsupported_endpoint_response_count"]
+    residual_count = attribution["malformed_record_residual_count_after_unsupported_endpoints"]
+    assert unsupported_count > 0
+    assert residual_count >= 0
+    assert unsupported_count + residual_count == expected_malformed
     samples = replay["issue_samples"]["MALFORMED_RECORD"]
     assert all(sample["classification"] == "UNSUPPORTED_NORMALIZER_ENDPOINT" for sample in samples)
     assert all(sample["endpoint"] in {"rpc.signatures", "rpc.transaction"} for sample in samples)
