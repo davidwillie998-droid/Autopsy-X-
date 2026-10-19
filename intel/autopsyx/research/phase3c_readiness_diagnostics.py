@@ -420,20 +420,24 @@ def classify_historical_signal_readiness(
     from . import phase3b_contract
 
     blockers = []
+    quality_warnings = []
     if archive_integrity.get("status") != "PASS":
         blockers.append("raw archive integrity/reconciliation did not pass")
+    # The frozen Phase 3C protocol says provider/wallet/creator coverage and
+    # transaction coverage are measured, not preconditions for token inclusion.
+    # Keep these failures visible, but do not make unrelated hypotheses fail
+    # globally; their usable rows and sample sizes are assessed by the frozen
+    # Phase 3B joins and the cross-archive Phase 3C pipeline.
     if provider_reliability.get("status") != "HEALTHY":
-        blockers.append("provider reliability is degraded or retry pressure remains")
+        quality_warnings.append("provider reliability is degraded or retry pressure remains; inspect endpoint-level coverage")
     if transaction_history.get("status") != "SAMPLED_COMPLETE":
-        blockers.append("transaction-history samples are incomplete or unknown")
+        quality_warnings.append("transaction history is incomplete or unknown; missing records remain missing, not zero")
     if normalization_replay.get("stored_vs_recomputed_match") is not True:
         blockers.append("canonical normalization replay is missing or does not match")
     if not pool_reports:
         blockers.append("no pool-level historical coverage was measured")
-    # The frozen Phase 3C acquisition protocol specifies no additional liquidity
-    # floor or per-token minimum. Statistical eligibility is defined by the frozen
-    # Phase 3B hypothesis joins and must be evaluated across eligible archives;
-    # this single-archive diagnostic cannot calculate that pooled sample.
+    # The frozen Phase 3C statistical gate is pooled per hypothesis; a
+    # single-archive diagnostic cannot calculate or certify that sample.
     blockers.append(
         "cross-archive Phase 3C statistical evaluation has not established the frozen distinct-token sample per hypothesis"
     )
@@ -445,12 +449,16 @@ def classify_historical_signal_readiness(
         "minimum_distinct_tokens_required": phase3b_contract.MIN_SAMPLE,
         "distinct_token_sample_status": "REQUIRES_CROSS_ARCHIVE_PHASE3C_PIPELINE",
         "blockers": blockers,
+        "quality_warnings": quality_warnings,
+        "provider_reliability_status": provider_reliability.get("status", "UNKNOWN"),
+        "transaction_history_status": transaction_history.get("status", "UNKNOWN"),
         "measured_pool_count": len(pool_reports),
         "normalization_replay_match": normalization_replay.get("stored_vs_recomputed_match"),
         "interpretation": (
-            "This report cannot authorize model training or live trading. Provider reliability, transaction history, "
-            "archive integrity, and normalization remain independent evidence checks. No extra pool-level liquidity "
-            "threshold is invented; the frozen 85-token statistical gate is evaluated by the cross-archive Phase 3C pipeline."
+            "This report cannot authorize model training or live trading. Provider reliability and transaction-history "
+            "quality remain independently reported warnings under the frozen Phase 3C protocol; actual usable evidence "
+            "is determined by the unchanged Phase 3B hypothesis joins and cross-archive 85-token statistical gate. "
+            "No missing value is imputed and no extra pool-level liquidity threshold is invented."
         ),
     }
 
