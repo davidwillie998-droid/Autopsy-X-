@@ -47,9 +47,9 @@ class Plan:
     poll_ohlcv_limit: int = 5
     holders_per_cycle: int = 2
     lag_ms: int = 60_000
-    gt_rate_per_s: float = 0.45  # below GeckoTerminal's published free-tier limit (30/min)
+    gt_rate_per_s: float = 0.25  # conservative response to observed HTTP 429 retry pressure
     ds_rate_per_s: float = 2.0
-    gt_min_rate_per_s: float = 0.05  # adaptive floor after 429s
+    gt_min_rate_per_s: float = 0.05  # adaptive floor after 429s; fail closed on persistent throttling
     ohlcv_every: int = 1  # poll OHLCV every N cycles
     circuit_waits: int = 3  # times a call waits out an open circuit before being recorded as failed
     rpc_rate_per_s: float = 2.0
@@ -252,7 +252,7 @@ def enrich(f: Fetcher, plan: Plan, picked: list[dict], round_: int) -> list[dict
 
 def default_clients(plan: Plan, now_ms: Callable[[], int]) -> dict[str, HttpClient]:
     return {
-        gt.NAME: HttpClient(gt.BASE, TokenBucket(plan.gt_rate_per_s, 2), dict(gt.HEADERS), max_retries=3,
+        gt.NAME: HttpClient(gt.BASE, TokenBucket(plan.gt_rate_per_s, 1), dict(gt.HEADERS), max_retries=3,
                             timeout_s=15, backoff_s=2.0, breaker=CircuitBreaker(8, 90), now_ms=now_ms,
                             adaptive_min_rate=plan.gt_min_rate_per_s, adaptive_step=0.005),
         ds.NAME: HttpClient(ds.BASE, TokenBucket(plan.ds_rate_per_s, 4), dict(ds.HEADERS), max_retries=3,
