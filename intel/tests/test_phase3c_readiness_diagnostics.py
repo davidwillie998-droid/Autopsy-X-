@@ -87,6 +87,13 @@ def test_immutable_archived_phase3c_runs_expose_readiness_limits(
     samples = replay["issue_samples"]["MALFORMED_RECORD"]
     assert all(sample["classification"] == "UNSUPPORTED_NORMALIZER_ENDPOINT" for sample in samples)
     assert all(sample["endpoint"] in {"rpc.signatures", "rpc.transaction"} for sample in samples)
+    if archive_name == "p3c-sol-20261004f":
+        endpoints = report["endpoint_accounting"]
+        assert endpoints["news.gdelt"]["failed_requests"] == 12
+        assert endpoints["news.gdelt"]["failure_classes"] == {"HTTP_429": 12}
+        assert endpoints["social.reddit"]["failed_requests"] == 28
+        assert endpoints["social.reddit"]["failure_classes"] == {"HTTP_403": 28}
+        assert endpoints["gt.ohlcv"]["failed_requests"] == 0
 
 
 def test_coverage_claims_merge_overlap_and_report_only_true_uncovered_gaps():
