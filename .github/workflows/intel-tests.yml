@@ -85,7 +85,7 @@ jobs:
           out = pipeline.run(Path("/tmp/phase3c-cross-archive-work"))
           dest = Path("../phase3c-cross-archive-refresh")
           dest.mkdir(parents=True, exist_ok=True)
-          (dest / "evidence.json").write_text(json.dumps(out, indent=2, sort_keys=True, default=str) + "\\n", encoding="utf-8")
+          (dest / "evidence.json").write_text(json.dumps(out, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
           pipeline.write_ledger(out, dest / "research_ledger.csv")
           (dest / "statistical_report.md").write_text(render.render_statistical_report(out), encoding="utf-8")
           (dest / "data_audit.md").write_text(render.render_data_audit(out), encoding="utf-8")
@@ -110,7 +110,7 @@ jobs:
               } for h in out["hypotheses"]],
               "overall": out["overall_classification"],
           }
-          (dest / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+          (dest / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           print(json.dumps(summary, sort_keys=True))
           assert out["min_sample"] == 85, "Frozen minimum sample changed"
           assert "p3c-sol-20261019a" in out["included_archives"], "Latest archive did not pass the pipeline's eligibility gate"
