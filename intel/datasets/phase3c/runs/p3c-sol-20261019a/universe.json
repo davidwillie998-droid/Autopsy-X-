@@ -1,0 +1,93 @@
+{
+  "exclusions": [],
+  "fingerprint": "b0a14e277f90f4002ab57242e7588c79086f5336f7e263caebdaac47e5cd2d8d",
+  "frozen_at_ms": 1792393640468,
+  "mechanism": {
+    "candidate_counts": {
+      "established": 20,
+      "quiet_young": 21,
+      "trending": 20,
+      "young": 60
+    },
+    "network": "solana",
+    "procedure": "seeded stratified random selection (acquire.select_universe)",
+    "seed": 20261019,
+    "strata_targets": {
+      "established": 1,
+      "quiet_young": 1,
+      "trending": 1,
+      "young": 2
+    }
+  },
+  "metadata": {
+    "3UEQ58XYczpXNVFAAtdu8iXMrd1ELfYrSF41fcGYRLYw": {
+      "h1_txns_at_selection": 2,
+      "liquidity_usd_at_selection": 0.0,
+      "total_supply_at_selection": 1000000000.0251578
+    },
+    "8RpybikpGLbKsYJ4FXz12ExDz89R7VXAUZ3JXNcKpump": {
+      "h1_txns_at_selection": 304,
+      "liquidity_usd_at_selection": 37861.0761,
+      "total_supply_at_selection": 972849056.5802271
+    },
+    "8tT2gSy1dU2auqUAceMntELVQmhovYfUeMqiuyYLt69u": {
+      "h1_txns_at_selection": 99,
+      "liquidity_usd_at_selection": 2652.9135,
+      "total_supply_at_selection": 999999999.8993298
+    },
+    "GrHgi7F9YLhMuZjFsB7PbfchGcJrBWAfPYbKEV8Jrxqk": {
+      "h1_txns_at_selection": 0,
+      "liquidity_usd_at_selection": 1e-05,
+      "total_supply_at_selection": 9842425211752.959
+    },
+    "JhqjLa2Cyq37b8Z9zfCcezLNLw5vpGGN9MwN3iZpump": {
+      "h1_txns_at_selection": 9,
+      "liquidity_usd_at_selection": 3030.4335,
+      "total_supply_at_selection": 1061664891.875675
+    }
+  },
+  "pools": [
+    {
+      "created_ts": 1792300334000,
+      "dex": "pumpswap",
+      "pool": "4YQbqJ7v2N8awVZ5JUVjgTBfKsdYSEBJT4KbMpW4sKhD",
+      "stratum": "established",
+      "token": "GrHgi7F9YLhMuZjFsB7PbfchGcJrBWAfPYbKEV8Jrxqk"
+    },
+    {
+      "created_ts": 1792393368000,
+      "dex": "meteora-dbc",
+      "pool": "2iMyx9bojMedAD5yM6Zp3uXLjaMJsDc613pBUydEvc3P",
+      "stratum": "quiet_young",
+      "token": "3UEQ58XYczpXNVFAAtdu8iXMrd1ELfYrSF41fcGYRLYw"
+    },
+    {
+      "created_ts": 1792340914000,
+      "dex": "pumpswap",
+      "pool": "C1gR6idrfxx3NeG8qCkAK452QTNBiu4oRzM13NRZT4i8",
+      "stratum": "trending",
+      "token": "8RpybikpGLbKsYJ4FXz12ExDz89R7VXAUZ3JXNcKpump"
+    },
+    {
+      "created_ts": 1792393448000,
+      "dex": "pump-fun",
+      "pool": "EDMBbGKwHMJB3q2G1g82t9k1TJcRRyd1SBV1VHHCHb6C",
+      "stratum": "young",
+      "token": "8tT2gSy1dU2auqUAceMntELVQmhovYfUeMqiuyYLt69u"
+    },
+    {
+      "created_ts": 1792393521000,
+      "dex": "pump-fun",
+      "pool": "ErrGruN8dozCWD9SKqWkx81c1AsBWq1RJrv7QqtxEK6p",
+      "stratum": "young",
+      "token": "JhqjLa2Cyq37b8Z9zfCcezLNLw5vpGGN9MwN3iZpump"
+    }
+  ],
+  "tokens": [
+    "3UEQ58XYczpXNVFAAtdu8iXMrd1ELfYrSF41fcGYRLYw",
+    "8RpybikpGLbKsYJ4FXz12ExDz89R7VXAUZ3JXNcKpump",
+    "8tT2gSy1dU2auqUAceMntELVQmhovYfUeMqiuyYLt69u",
+    "GrHgi7F9YLhMuZjFsB7PbfchGcJrBWAfPYbKEV8Jrxqk",
+    "JhqjLa2Cyq37b8Z9zfCcezLNLw5vpGGN9MwN3iZpump"
+  ]
+}

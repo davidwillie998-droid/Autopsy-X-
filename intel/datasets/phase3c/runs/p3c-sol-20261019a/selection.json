@@ -1,0 +1,70 @@
+{
+  "candidates": {
+    "established": 20,
+    "quiet_young": 21,
+    "trending": 20,
+    "young": 60
+  },
+  "excluded": [],
+  "picked": [
+    {
+      "created_ts": 1792393368000,
+      "dex": "meteora-dbc",
+      "h1_txns": 2,
+      "liquidity_usd": 0.0,
+      "pool": "2iMyx9bojMedAD5yM6Zp3uXLjaMJsDc613pBUydEvc3P",
+      "stratum": "quiet_young",
+      "token": "3UEQ58XYczpXNVFAAtdu8iXMrd1ELfYrSF41fcGYRLYw",
+      "total_supply": 1000000000.0251578
+    },
+    {
+      "created_ts": 1792393448000,
+      "dex": "pump-fun",
+      "h1_txns": 99,
+      "liquidity_usd": 2652.9135,
+      "pool": "EDMBbGKwHMJB3q2G1g82t9k1TJcRRyd1SBV1VHHCHb6C",
+      "stratum": "young",
+      "token": "8tT2gSy1dU2auqUAceMntELVQmhovYfUeMqiuyYLt69u",
+      "total_supply": 999999999.8993298
+    },
+    {
+      "created_ts": 1792393521000,
+      "dex": "pump-fun",
+      "h1_txns": 9,
+      "liquidity_usd": 3030.4335,
+      "pool": "ErrGruN8dozCWD9SKqWkx81c1AsBWq1RJrv7QqtxEK6p",
+      "stratum": "young",
+      "token": "JhqjLa2Cyq37b8Z9zfCcezLNLw5vpGGN9MwN3iZpump",
+      "total_supply": 1061664891.875675
+    },
+    {
+      "created_ts": 1792340914000,
+      "dex": "pumpswap",
+      "h1_txns": 304,
+      "liquidity_usd": 37861.0761,
+      "pool": "C1gR6idrfxx3NeG8qCkAK452QTNBiu4oRzM13NRZT4i8",
+      "stratum": "trending",
+      "token": "8RpybikpGLbKsYJ4FXz12ExDz89R7VXAUZ3JXNcKpump",
+      "total_supply": 972849056.5802271
+    },
+    {
+      "created_ts": 1792300334000,
+      "dex": "pumpswap",
+      "h1_txns": 0,
+      "liquidity_usd": 1e-05,
+      "pool": "4YQbqJ7v2N8awVZ5JUVjgTBfKsdYSEBJT4KbMpW4sKhD",
+      "stratum": "established",
+      "token": "GrHgi7F9YLhMuZjFsB7PbfchGcJrBWAfPYbKEV8Jrxqk",
+      "total_supply": 9842425211752.959
+    }
+  ],
+  "procedure": "Stratified random selection, recorded in full so it can be audited.\n\n    Strata (evaluated on data available at selection time only):\n      young        random pools from the newest-pools pages\n      quiet_young  newest pools with fewer than 5 txns in the last hour\n      trending     random pools from GeckoTerminal's trending list\n      established  random pools from the top-24h-volume list\n    Tokens already picked in an earlier stratum are skipped, and non-meme\n    base assets (SOL, USDC, USDT) are excluded.\n    ",
+  "seed": 20261019,
+  "selected_at_ms": 1792393640468,
+  "strata_targets": {
+    "established": 1,
+    "quiet_young": 1,
+    "trending": 1,
+    "young": 2
+  }
+}
