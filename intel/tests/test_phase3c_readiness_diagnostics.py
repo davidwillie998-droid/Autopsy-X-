@@ -43,12 +43,21 @@ def test_timestamp_summary_flags_off_minute_timestamps():
     assert report["misaligned_timestamps"] == 3
 
 
-def test_archived_phase3c_run_exposes_the_historical_backfill_ceiling():
+@pytest.mark.parametrize(
+    ("archive_name", "expected_cycles", "expected_bar_rows", "expected_malformed"),
+    [
+        ("p3c-sol-20261004e", 0, 8_102, 2_300),
+        ("p3c-sol-20261004f", 2, 5_629, 481),
+    ],
+)
+def test_immutable_archived_phase3c_runs_expose_readiness_limits(
+    archive_name, expected_cycles, expected_bar_rows, expected_malformed,
+):
     from pathlib import Path
     from autopsyx.research.phase3c_readiness_diagnostics import audit_archive
 
     intel_root = Path(__file__).resolve().parents[1]
-    archive = intel_root / "datasets" / "phase3c" / "runs" / "p3c-sol-20261004f"
+    archive = intel_root / "datasets" / "phase3c" / "runs" / archive_name
     if not archive.exists():
         pytest.skip("immutable Phase 3C archive not present in this checkout")
 
@@ -57,15 +66,17 @@ def test_archived_phase3c_run_exposes_the_historical_backfill_ceiling():
     assert report["acquisition_status"] == "COMPLETE"
     assert report["configured_history_cap"]["maximum_requested_minute_bars_per_pool"] == 2_000
     assert report["configured_history_cap"]["maximum_requested_history_hours_per_pool"] == pytest.approx(2000 / 60)
-    assert report["run_window"]["completed_cycles"] == 2
+    assert report["run_window"]["completed_cycles"] == expected_cycles
     assert report["run_window"]["cycle_count_source"] == "legacy_cycles_field"
     assert report["run_window"]["observed_elapsed_s"] is None
     assert report["request_accounting"]["poll_request_count_matches_cycle_count"] is True
+    assert report["request_accounting"]["parsed_bar_rows"] == expected_bar_rows
+    assert report["request_accounting"]["parser_issue_counts"]["MALFORMED_RECORD"] == expected_malformed
     assert report["selected_pool_count"] > 0
     replay = report["normalization_replay"]
     assert replay["stored_summary_present"] is True
     assert isinstance(replay["stored_vs_recomputed_match"], bool)
-    assert "MALFORMED_RECORD" in replay["recomputed_issue_counts"]
+    assert replay["recomputed_issue_counts"]["MALFORMED_RECORD"] == expected_malformed
     assert len(replay["issue_samples"].get("MALFORMED_RECORD", [])) <= 5
 
 
