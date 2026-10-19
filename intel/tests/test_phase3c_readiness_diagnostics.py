@@ -41,3 +41,24 @@ def test_timestamp_summary_rejects_invalid_interval():
 def test_timestamp_summary_flags_off_minute_timestamps():
     report = summarize_timestamps([1_000, 61_000, 121_000], interval_ms=60_000)
     assert report["misaligned_timestamps"] == 3
+
+
+def test_archived_phase3c_run_exposes_the_historical_backfill_ceiling():
+    from pathlib import Path
+    from autopsyx.research.phase3c_readiness_diagnostics import audit_archive
+
+    intel_root = Path(__file__).resolve().parents[1]
+    archive = intel_root / "datasets" / "phase3c" / "runs" / "p3c-sol-20261004f"
+    if not archive.exists():
+        pytest.skip("immutable Phase 3C archive not present in this checkout")
+
+    report = audit_archive(archive)
+    assert report["diagnostic_only"] is True
+    assert report["acquisition_status"] == "COMPLETE"
+    assert report["configured_history_cap"]["maximum_requested_minute_bars_per_pool"] == 2_000
+    assert report["configured_history_cap"]["maximum_requested_history_hours_per_pool"] == pytest.approx(2000 / 60)
+    assert report["run_window"]["completed_cycles"] == 2
+    assert report["run_window"]["cycle_count_source"] == "legacy_cycles_field"
+    assert report["run_window"]["observed_elapsed_s"] is None
+    assert report["request_accounting"]["poll_request_count_matches_cycle_count"] is True
+    assert report["selected_pool_count"] > 0
