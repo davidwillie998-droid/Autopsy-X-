@@ -266,6 +266,9 @@ def audit_archive(run_dir: Path) -> dict:
         "unsupported_endpoint_response_counts": dict(sorted(unsupported_endpoint_counts.items())),
         "unsupported_endpoint_response_count": unsupported_endpoint_response_count,
         "malformed_record_issue_count": malformed_record_count,
+        "malformed_record_residual_count_after_unsupported_endpoints": (
+            malformed_record_count - unsupported_endpoint_response_count
+        ),
         "malformed_record_issues_fully_explained_by_unsupported_endpoints": (
             unsupported_endpoint_response_count == malformed_record_count
         ),
