@@ -59,6 +59,9 @@ class Plan:
     rpc_page_limit: int = 100
     rpc_max_pages: int = 3
     rpc_max_txs: int = 40
+    # Optional fail-closed minimum for Phase 3C: do not spend collection budget
+    # unless discovery actually returns this many distinct token addresses.
+    min_selected_tokens: int = 0
 
 
 class Fetcher:
@@ -416,6 +419,15 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
             picked = select_universe(f, plan)["picked"]
     if not picked:
         meta["status"] = "BLOCKED: no pools selectable (discovery failed)"
+        raw.write_json("run.json", meta)
+        return meta
+    selected_token_count = len({p.get("token") for p in picked if p.get("token")})
+    if plan.min_selected_tokens and selected_token_count < plan.min_selected_tokens:
+        meta["status"] = (
+            f"BLOCKED: discovery selected {selected_token_count} distinct tokens; "
+            f"minimum is {plan.min_selected_tokens}; no backfill, enrichment, or polling performed"
+        )
+        meta["selected_distinct_tokens"] = selected_token_count
         raw.write_json("run.json", meta)
         return meta
     backfill(f, plan, picked)
