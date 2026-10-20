@@ -32,24 +32,42 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Validate Phase 3C request
+        id: validate
+        working-directory: intel
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from autopsyx.data.request_validation import validate_phase3c_request
+
+          request_path = Path("datasets/phase3c/REQUEST.json")
+          request = json.loads(request_path.read_text(encoding="utf-8"))
+          validate_phase3c_request(request, minimum=20)
+          run_dir = Path("datasets/phase3c/runs") / request["run_id"]
+          if run_dir.exists():
+              raise SystemExit(f"refusing to overwrite existing archive: {run_dir}")
+          print(f"Validated {request['run_id']}: requested stratum total >= 20; archive path is new")
+          PY
       - name: Acquire
+        if: steps.validate.outcome == 'success'
         working-directory: intel
         env:
           AUTOPSYX_SOLANA_RPC_URL: ${{ secrets.AUTOPSYX_SOLANA_RPC_URL }}
         run: |
           RUN_ID=$(python -c "import json;print(json.load(open('datasets/phase3c/REQUEST.json'))['run_id'])")
           echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
-          python -m autopsyx --log acquire --live --request datasets/phase3c/REQUEST.json --out "datasets/phase3c/runs/$RUN_ID"
+          python -m autopsyx --log acquire --live --request datasets/phase3c/REQUEST.json --out "datasets/phase3c/runs/$RUN_ID" --min-strata-total 20
       - name: Seal canonical dataset on the runner
-        if: always()
+        if: always() && steps.validate.outcome == 'success'
         working-directory: intel
         run: python -m autopsyx seal "datasets/phase3c/runs/$RUN_ID"
       - name: Verify provenance on the runner
-        if: always()
+        if: always() && steps.validate.outcome == 'success'
         working-directory: intel
         run: python -m autopsyx verify-provenance "datasets/phase3c/runs/$RUN_ID" > "datasets/phase3c/runs/$RUN_ID/runner_verify.json" || true
       - name: Commit raw archive
-        if: always()
+        if: always() && steps.validate.outcome == 'success'
         run: |
           git config user.name "autopsyx-acquisition"
           git config user.email "actions@users.noreply.github.com"
