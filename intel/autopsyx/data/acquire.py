@@ -421,7 +421,8 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
         meta["status"] = "BLOCKED: no pools selectable (discovery failed)"
         raw.write_json("run.json", meta)
         return meta
-    selected_token_count = len({p.get("token") for p in picked if p.get("token")})
+    from .request_validation import distinct_token_count
+    selected_token_count = distinct_token_count(picked)
     if plan.min_selected_tokens and selected_token_count < plan.min_selected_tokens:
         meta["status"] = (
             f"BLOCKED: discovery selected {selected_token_count} distinct tokens; "
