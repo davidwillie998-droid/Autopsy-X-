@@ -74,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
     aq.add_argument("--live", action="store_true", help="required: confirms network access to vendor APIs is intended")
     aq.add_argument("--request", required=True, help="JSON file with run_id and plan overrides")
     aq.add_argument("--out", required=True)
+    aq.add_argument("--min-strata-total", type=int, default=0,
+                    help="refuse acquisition if requested stratum targets sum below this value")
     rr = sub.add_parser("replay-run", help="deterministic point-in-time replay of an acquired raw archive")
     rr.add_argument("run_dir")
     rr.add_argument("--step-min", type=int, default=5)
@@ -130,7 +132,16 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         from .data import acquire
         req = json.load(open(args.request))
-        plan = acquire.Plan(**{k: v for k, v in req.items() if k in acquire.Plan.__dataclass_fields__})
+        plan_values = {k: v for k, v in req.items() if k in acquire.Plan.__dataclass_fields__}
+        if args.min_strata_total:
+            from .data.request_validation import validate_minimum_strata
+            try:
+                validate_minimum_strata(req.get("strata"), args.min_strata_total)
+            except ValueError as exc:
+                print(f"refusing acquisition: {exc}", file=sys.stderr)
+                return 2
+            plan_values["min_selected_tokens"] = args.min_strata_total
+        plan = acquire.Plan(**plan_values)
         meta = acquire.run(args.out, plan)
         print(json.dumps({k: meta.get(k) for k in ("status", "cycles", "exchanges", "errors")}))
         return 0 if meta.get("status") == "COMPLETE" else 1
