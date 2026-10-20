@@ -134,9 +134,9 @@ def main(argv: list[str] | None = None) -> int:
         req = json.load(open(args.request))
         plan_values = {k: v for k, v in req.items() if k in acquire.Plan.__dataclass_fields__}
         if args.min_strata_total:
-            from .data.request_validation import validate_minimum_strata
+            from .data.request_validation import validate_phase3c_request
             try:
-                validate_minimum_strata(req.get("strata"), args.min_strata_total)
+                validate_phase3c_request(req, args.min_strata_total)
             except ValueError as exc:
                 print(f"refusing acquisition: {exc}", file=sys.stderr)
                 return 2
