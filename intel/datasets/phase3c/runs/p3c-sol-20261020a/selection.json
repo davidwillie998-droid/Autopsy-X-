@@ -1,0 +1,241 @@
+{
+  "candidates": {
+    "established": 20,
+    "quiet_young": 14,
+    "trending": 20,
+    "young": 60
+  },
+  "excluded": [
+    {
+      "created_ts": 1723037760000,
+      "dex": "raydium-clmm",
+      "h1_txns": 2239,
+      "liquidity_usd": 7631836.5567,
+      "pool": "3ucNos4NbumPLZNWztqGHNFFgkHeRMBQAVemeeomsUxv",
+      "reason": "non-meme base asset",
+      "token": "So11111111111111111111111111111111111111112",
+      "total_supply": 12653464.004485453
+    },
+    {
+      "created_ts": 1711766880000,
+      "dex": "meteora",
+      "h1_txns": 806,
+      "liquidity_usd": 4509969.8232,
+      "pool": "5rCf1DM8LjKTw4YqhnoLcngyZYeNnQqztScTogYHAS6",
+      "reason": "non-meme base asset",
+      "token": "So11111111111111111111111111111111111111112",
+      "total_supply": 12653464.004485453
+    }
+  ],
+  "picked": [
+    {
+      "created_ts": 1792468232000,
+      "dex": "pump-fun",
+      "h1_txns": 4,
+      "liquidity_usd": 1891.32314550254,
+      "pool": "3q9yYm6fmjmNe4VkWURYVikTnfrA4okTLw3gtc5Tycim",
+      "stratum": "quiet_young",
+      "token": "4JrDQQTDSRa2hNP4UNerkjZ11FdLazch7k1oYTPepump",
+      "total_supply": 1999999999.986047
+    },
+    {
+      "created_ts": 1792468233000,
+      "dex": "pump-fun",
+      "h1_txns": 3,
+      "liquidity_usd": 2382.6517,
+      "pool": "8suEVC5D5wvgapZafS6yAYQyksrVZA5bxWCUGq6jjXRh",
+      "stratum": "quiet_young",
+      "token": "A7yjVe8Xq44tVMmbatKF7bhUoSkKMgpierbkYdnCpump",
+      "total_supply": 1000000000.020713
+    },
+    {
+      "created_ts": 1792468222000,
+      "dex": "pump-fun",
+      "h1_txns": 3,
+      "liquidity_usd": 2331.3753,
+      "pool": "9vk8r7e99CP2ZjSUkQQYQvRz5V3yWkuNvJJDziDZNpkc",
+      "stratum": "quiet_young",
+      "token": "3kPbABgh4tSbpNG3q84R1fbpNiVB58d9pVsApRNypump",
+      "total_supply": 999999999.9392685
+    },
+    {
+      "created_ts": 1792468228000,
+      "dex": "pump-fun",
+      "h1_txns": 1,
+      "liquidity_usd": 2332.352,
+      "pool": "DWcZSiADyZqeXe8s1388XzKKVDqPDYzCqD81mk7Z73zd",
+      "stratum": "quiet_young",
+      "token": "C3MSPhj9JTHaBn1XxDyPRsg3fu99rdb4o8sxVMpipump",
+      "total_supply": 999731344.9323653
+    },
+    {
+      "created_ts": 1792468253000,
+      "dex": "pump-fun",
+      "h1_txns": 44,
+      "liquidity_usd": 4764.0278,
+      "pool": "FxFRC2vBeRykkMzWopY4GoAZUiWn2MPr13dMzBFspyLk",
+      "stratum": "young",
+      "token": "7ZMnDqVNz87BGEohYp1x3VsN1aMFdhRdTKaXU7QJpump",
+      "total_supply": 1999999999.742538
+    },
+    {
+      "created_ts": 1792468216000,
+      "dex": "pump-fun",
+      "h1_txns": 60,
+      "liquidity_usd": 431.0081,
+      "pool": "AgCcakWweopqmaYn6Md5fFBBLVfDKJgwsgraYbZrpSXY",
+      "stratum": "young",
+      "token": "EqzquYFEgPu8cuTfrZPQg1x84usxXSE5qt4rZeiZpump",
+      "total_supply": 2000000000.0157504
+    },
+    {
+      "created_ts": 1792468229000,
+      "dex": "pumpswap",
+      "h1_txns": 320,
+      "liquidity_usd": 14088.8728,
+      "pool": "A6WCEd1DcHXiCsomAWqjV5qf3PwKTyNRoy64vZU3LQgG",
+      "stratum": "young",
+      "token": "67oWn9YNFadYNhuL9PzahVfuV5PA9ACvKmHe3hfyMDpd",
+      "total_supply": 1000000000.0895518
+    },
+    {
+      "created_ts": 1792468279000,
+      "dex": "pump-fun",
+      "h1_txns": 40,
+      "liquidity_usd": 2524.1123,
+      "pool": "DyYcTTMESi2dK1CuExzgWYGrhza9FZDXhxPkHyH1jQ6r",
+      "stratum": "young",
+      "token": "99AVJDunSTW4gM5kusTNN9XSZTyJJyTXyAKRx5u4pump",
+      "total_supply": 1000000000.053754
+    },
+    {
+      "created_ts": 1792468239000,
+      "dex": "pump-fun",
+      "h1_txns": 65,
+      "liquidity_usd": 2626.557,
+      "pool": "BForfc4nP5MSUY6FW8Zxktf7FeHx2VALYqzfL4mLQ9tN",
+      "stratum": "young",
+      "token": "6xo3Ha1uNLovMkHrpsMrhoQDW4kAf32jEssDoKFupump",
+      "total_supply": 1000000000.1015836
+    },
+    {
+      "created_ts": 1792468240000,
+      "dex": "pump-fun",
+      "h1_txns": 5,
+      "liquidity_usd": 2655.3431,
+      "pool": "8LqNmnub6y88LG81itoDajdjC1y5BjRum6BrJqkuKobz",
+      "stratum": "young",
+      "token": "8CaiYCv1VREUKH6DL5mQajJTqDnHbKXp1KL5rwX8pump",
+      "total_supply": 1000000000.1287891
+    },
+    {
+      "created_ts": 1792468214000,
+      "dex": "pump-fun",
+      "h1_txns": 114,
+      "liquidity_usd": 5267.4458,
+      "pool": "6m1LAXCte55eerPz2n3SwovrxUFLwDo7NX6jBCtXfsir",
+      "stratum": "young",
+      "token": "3xBE38idSUHNnPMWvXwrpZE6iZBQLN3ve6atsrYzpump",
+      "total_supply": 711034130.9813026
+    },
+    {
+      "created_ts": 1792468281000,
+      "dex": "pump-fun",
+      "h1_txns": 29,
+      "liquidity_usd": 2364.0988,
+      "pool": "2Pzux8qLVM5YW2UMFfVDGfp86R85aFtS5KP6TLpMfbTJ",
+      "stratum": "young",
+      "token": "DxSazfz9PW5YwQD1zZijDCejVzUEJpvgkBe37ydh5sen",
+      "total_supply": 1009945207.1627196
+    },
+    {
+      "created_ts": 1792357232000,
+      "dex": "pumpswap",
+      "h1_txns": 90,
+      "liquidity_usd": 11016.7697,
+      "pool": "CkEeZKJpcro2dEp8RXJpSYfjF3TPoijmH8xVGuEAxoue",
+      "stratum": "trending",
+      "token": "ArpPsesHXKbGeJsHdquM6acT3uNs7BChyetJjiNYpump",
+      "total_supply": 845339701.8765192
+    },
+    {
+      "created_ts": 1789500144000,
+      "dex": "pumpswap",
+      "h1_txns": 97,
+      "liquidity_usd": 412870.5265,
+      "pool": "6e3jZLtf4tQbWZm3f7A66jF8tfZn6MRQVrbDFgcNWarA",
+      "stratum": "trending",
+      "token": "98kfF7rmsg1QDUEoCqNE7g7M1FdrTt92TEp2CLzypump",
+      "total_supply": 874650769.7874229
+    },
+    {
+      "created_ts": 1792370815000,
+      "dex": "pumpswap",
+      "h1_txns": 807,
+      "liquidity_usd": 59313.1182,
+      "pool": "3ENsvQnHuHtQzMBxpDG4pkxwbBnzJvFcz2yyCfxC9QNH",
+      "stratum": "trending",
+      "token": "FGkCj28xhabWTYg9QyzACvs4NsN6LUyesP6EwiHepump",
+      "total_supply": 926655514.3835108
+    },
+    {
+      "created_ts": 1791717419000,
+      "dex": "pumpswap",
+      "h1_txns": 2994,
+      "liquidity_usd": 308643.8152,
+      "pool": "G2UuRbmVDzDFP4qyoBJrSKBXSi7d6V4bPP9tHPs36y4b",
+      "stratum": "trending",
+      "token": "nxPqZ4F7ux8Vph5NFu25rEP6Kx9Gr1U6Fmj36Rjpump",
+      "total_supply": 973193191.0777977
+    },
+    {
+      "created_ts": 1792415424000,
+      "dex": "pumpswap",
+      "h1_txns": 0,
+      "liquidity_usd": 10.4149,
+      "pool": "6uhML5azAPFkK9BskxiHmYUgB9VppNTst5KR4zgZbXk9",
+      "stratum": "established",
+      "token": "DkpRkr3AUSX1sLLrnA5knCwdxNMyJagSLLY5FqSt2zea",
+      "total_supply": 2244327008.7591386
+    },
+    {
+      "created_ts": 1792405808000,
+      "dex": "pumpswap",
+      "h1_txns": 0,
+      "liquidity_usd": 5.979212443e-07,
+      "pool": "BkoJbnvzDVnMx64rC3G2okQumt2tdoxtitN8eHJhkM8F",
+      "stratum": "established",
+      "token": "2UhJZJKVQ2efeVauoNc2zdCPuzJEaXN9VUp79d2vm8Km",
+      "total_supply": 99999999985.72218
+    },
+    {
+      "created_ts": 1792425548000,
+      "dex": "pumpswap",
+      "h1_txns": 0,
+      "liquidity_usd": 0.002634656739,
+      "pool": "9Cs9QdCx7wTduNrA2f7na6aqSA8WrTQB83D5fWw944UJ",
+      "stratum": "established",
+      "token": "9NeWwUenkEghAMXpvT6nszKZU862fJh49w8N1VHFkJ6U",
+      "total_supply": 135645.09057796322
+    },
+    {
+      "created_ts": 1792449385000,
+      "dex": "pumpswap",
+      "h1_txns": 0,
+      "liquidity_usd": 0.0002611897479,
+      "pool": "AsmUNDFbCxy7Z2JgARKQTunUSUneig5fd2MVZWATUYLv",
+      "stratum": "established",
+      "token": "6ubSkhy9aJLMQDw5R1CHWrWtyFftr5o3nJubEET4AAxo",
+      "total_supply": 100000000008.2693
+    }
+  ],
+  "procedure": "Stratified random selection, recorded in full so it can be audited.\n\n    Strata (evaluated on data available at selection time only):\n      young        random pools from the newest-pools pages\n      quiet_young  newest pools with fewer than 5 txns in the last hour\n      trending     random pools from GeckoTerminal's trending list\n      established  random pools from the top-24h-volume list\n    Tokens already picked in an earlier stratum are skipped, and non-meme\n    base assets (SOL, USDC, USDT) are excluded.\n    ",
+  "seed": 20261020,
+  "selected_at_ms": 1792468413776,
+  "strata_targets": {
+    "established": 4,
+    "quiet_young": 4,
+    "trending": 4,
+    "young": 8
+  }
+}
