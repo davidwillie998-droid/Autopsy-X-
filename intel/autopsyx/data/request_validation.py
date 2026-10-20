@@ -35,3 +35,31 @@ def validate_minimum_strata(strata: object, minimum: int = 20) -> int:
     if total == 0:
         raise ValueError("stratum targets must not all be zero")
     return total
+
+def validate_phase3c_request(request: object, minimum: int = 20) -> int:
+    """Validate the Phase 3C request envelope before any network call."""
+    import re
+
+    if not isinstance(request, dict):
+        raise ValueError("request must be a JSON object")
+    run_id = request.get("run_id")
+    if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", run_id):
+        raise ValueError("run_id must be 1-80 safe filename characters (letters, digits, dot, underscore, hyphen)")
+    if request.get("network") != "solana":
+        raise ValueError("Phase 3C is frozen to network='solana'; refusing scope change")
+    seed = request.get("seed")
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        raise ValueError("seed must be a non-negative integer")
+    return validate_minimum_strata(request.get("strata"), minimum)
+
+
+def distinct_token_count(picked: object) -> int:
+    """Count independent token addresses, never pool rows or repeated tokens."""
+    if not isinstance(picked, list):
+        raise ValueError("picked universe must be a list")
+    tokens = {
+        row.get("token")
+        for row in picked
+        if isinstance(row, dict) and isinstance(row.get("token"), str) and row.get("token")
+    }
+    return len(tokens)
