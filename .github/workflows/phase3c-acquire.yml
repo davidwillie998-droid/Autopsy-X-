@@ -32,6 +32,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Validate frozen Phase 3C request (network-free)
+        working-directory: intel
+        run: python scripts/validate_phase3c_request.py datasets/phase3c/REQUEST.json
       - name: Acquire
         working-directory: intel
         env:
@@ -41,15 +44,15 @@ jobs:
           echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
           python -m autopsyx --log acquire --live --request datasets/phase3c/REQUEST.json --out "datasets/phase3c/runs/$RUN_ID"
       - name: Seal canonical dataset on the runner
-        if: always()
+        if: always() && steps.acquire.outcome != 'skipped'
         working-directory: intel
         run: python -m autopsyx seal "datasets/phase3c/runs/$RUN_ID"
       - name: Verify provenance on the runner
-        if: always()
+        if: always() && steps.acquire.outcome != 'skipped'
         working-directory: intel
         run: python -m autopsyx verify-provenance "datasets/phase3c/runs/$RUN_ID" > "datasets/phase3c/runs/$RUN_ID/runner_verify.json" || true
       - name: Commit raw archive
-        if: always()
+        if: always() && steps.acquire.outcome != 'skipped'
         run: |
           git config user.name "autopsyx-acquisition"
           git config user.email "actions@users.noreply.github.com"
