@@ -219,6 +219,8 @@ def verify(run_dir: str) -> dict:
     out = {"archive": d.name, "acquisition_status": meta.get("status"),
            "rebuild_1": {"phase2_records": r1["phase2_records_sha256"], "phase3a_observations": r1["phase3a_observations_sha256"]},
            "rebuild_2": {"phase2_records": r2["phase2_records_sha256"], "phase3a_observations": r2["phase3a_observations_sha256"]},
+           "rebuild_counts": {"phase2_records": len(r1["records"]), "phase2_by_type": r1["report"].records,
+                              "phase3a_observations": len(r1["observations"])},
            "committed_canonical": {"phase2_records": c2, "phase3a_observations": c3}}
     out["reproducible"] = out["rebuild_1"] == out["rebuild_2"]
     if prov:
