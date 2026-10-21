@@ -86,3 +86,27 @@ def test_frozen_phase3c_request_passes_preflight():
     assert "rpc_rate" not in request
     assert module.validate(request, allow_frozen_baseline=True) == []
     assert any("below distinct-token sample minimum 85" in e for e in module.validate(request))
+
+
+
+def test_expanded_phase3c_effective_sample_passes_strict_gate():
+    request = good_request()
+    request["strata"] = {"young": 100, "quiet_young": 20, "trending": 30, "established": 30}
+    request["new_pool_pages"] = 10
+    request["gt_rate_per_s"] = 0.15
+    request["rpc_max_pages"] = 3
+    request["rpc_max_txs"] = 8
+    assert sum(request["strata"].values()) == 180
+    assert module.validate(request) == []
+
+
+def test_cli_explicitly_accepts_undersized_frozen_baseline_only(tmp_path, capsys):
+    import json
+
+    frozen_request = Path(__file__).parents[1] / "datasets" / "phase3c" / "REQUEST.json"
+    request = json.loads(frozen_request.read_text(encoding="utf-8"))
+    path = tmp_path / "frozen.json"
+    path.write_text(json.dumps(request), encoding="utf-8")
+    assert module.main([str(path), "--frozen-baseline"]) == 0
+    assert module.main([str(path)]) == 1
+    assert "distinct-token sample minimum 85" in capsys.readouterr().err
