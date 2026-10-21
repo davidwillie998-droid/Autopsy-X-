@@ -123,6 +123,11 @@ def seal(run_dir: str) -> dict:
             )
         return existing
 
+    if meta.get("status") != "COMPLETE" or not isinstance(meta.get("ended_ms"), int):
+        raise RuntimeError(
+            f"refusing to seal incomplete acquisition: status={meta.get('status')!r}, ended_ms={meta.get('ended_ms')!r}"
+        )
+
     marker = d / ".seal-in-progress"
     try:
         with marker.open("x", encoding="utf-8") as stream:
@@ -225,13 +230,22 @@ def verify(run_dir: str) -> dict:
         out["config_hash_local"] = Config.load().fingerprint()
         out["normalization_version_match"] = prov["normalization_version"]["sha256"] == normalization_version()["sha256"]
         current_manifest_sha256 = _manifest_sha256(d)
+        actual_manifest_count = len(raw.entries())
+        expected_manifest_count = prov.get("record_counts", {}).get("manifest_exchanges")
         out["manifest_sha256_current"] = current_manifest_sha256
+        out["manifest_sha256_runner"] = prov.get("manifest_sha256")
         out["manifest_matches_runner"] = bool(prov.get("manifest_sha256") and
                                                prov.get("manifest_sha256") == current_manifest_sha256)
+        out["manifest_exchanges_current"] = actual_manifest_count
+        out["manifest_exchanges_runner"] = expected_manifest_count
+        out["manifest_count_matches_runner"] = (
+            expected_manifest_count is not None and expected_manifest_count == actual_manifest_count
+        )
         out["committed_matches_runner"] = (c2, c3) == (rh["phase2_records"], rh["phase3a_observations"])
         out["rebuild_matches_runner"] = out["rebuild_1"] == rh
         out["verified"] = bool(out["reproducible"] and out["committed_matches_runner"] and out["rebuild_matches_runner"]
-                               and out["manifest_matches_runner"] and meta.get("status") == "COMPLETE")
+                               and out["normalization_version_match"] and out["manifest_matches_runner"]
+                               and out["manifest_count_matches_runner"] and meta.get("status") == "COMPLETE")
         out["scope"] = "phase2_records and phase3a_observations"
     elif legacy:
         # Phase 2 archives: the runner hashed the Phase 2 records only; Phase 3A
