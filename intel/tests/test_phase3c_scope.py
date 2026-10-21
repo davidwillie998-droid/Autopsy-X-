@@ -47,6 +47,8 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
                   # Explicit narrow exception; a method-level comparison below freezes all
                   # transport behavior outside deadline-aware entry points.
                   or f == "intel/autopsyx/providers/http.py"
+                  # The shared transport test file may only append the two deadline regressions below.
+                  or f == "intel/tests/test_transport.py"
                   or f in infra_allowed or f.startswith("intel/datasets/phase3c/runs/"))
         assert allowed, f"Phase 3C touched a file outside its namespace: {f}"
 
@@ -83,6 +85,35 @@ def test_transport_changes_are_confined_to_opt_in_deadline_support():
         return src
     assert frozen_regions(actual) == frozen_regions(baseline), (
         "http.py changed outside TokenBucket.acquire and HttpClient deadline-aware request methods"
+    )
+
+
+def test_transport_test_changes_are_only_deadline_regressions():
+    baseline = git("show", f"{PHASE3B_COMMIT}:intel/tests/test_transport.py")
+    actual = (ROOT / "intel" / "tests" / "test_transport.py").read_text().rstrip("\n")
+    expected_addition = """
+
+def test_request_refuses_to_start_after_deadline():
+    calls = []
+    bucket = TokenBucket(1000, 10, clock=lambda: 10.0, sleep=lambda _: None)
+    c = HttpClient("https://x.test", bucket, opener=lambda *a, **k: calls.append(a))
+    with pytest.raises(ProviderError, match="deadline reached"):
+        c.get_raw("/late", deadline_monotonic=9.0)
+    assert calls == []
+
+
+def test_rate_limiter_refuses_wait_that_would_cross_deadline():
+    from autopsyx.providers.http import TokenBucket
+
+    clock = [0.0]
+    bucket = TokenBucket(1.0, 1, clock=lambda: clock[0], sleep=lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    bucket.tokens = 0.0
+    with pytest.raises(ProviderError, match="deadline reached"):
+        bucket.acquire(deadline_monotonic=0.5)
+    assert clock[0] == 0.0
+"""
+    assert actual == baseline + expected_addition, (
+        "test_transport.py may only append the two deadline-specific regression tests"
     )
 
 
