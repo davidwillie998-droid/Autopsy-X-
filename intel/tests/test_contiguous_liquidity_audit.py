@@ -1,4 +1,4 @@
-from autopsyx.research.audit_contiguous_liquidity import audit_pool_snapshots
+from autopsyx.research.audit_contiguous_liquidity import audit_pool_cycles, audit_pool_snapshots
 
 
 def test_contiguous_positive_snapshots_pass_all_horizons():
@@ -103,3 +103,69 @@ def test_out_of_window_snapshots_cannot_mask_missing_live_cycles():
     assert out["eligible_all_horizons"] is False
     assert all(v["status"] == "NON_CONTIGUOUS" for v in out["horizons"].values())
 
+
+
+
+def _cycle_rows(cycles, cadence=60_000):
+    start = 1_000_000
+    return [
+        {"cycle": cycle, "timestamp_ms": start + cycle * cadence, "liquidity_usd": 12_000.0}
+        for cycle in cycles
+    ]
+
+
+def test_cycle_audit_passes_only_when_every_expected_cycle_has_one_valid_snapshot():
+    start = 1_000_000
+    out = audit_pool_cycles(
+        _cycle_rows([0, 1, 2, 3, 4]),
+        expected_cycles=[0, 1, 2, 3, 4],
+        expected_start_ms=start,
+        expected_cadence_ms=60_000,
+    )
+    assert out["eligible_all_horizons"] is True
+    assert all(v["status"] == "PASS" for v in out["horizons"].values())
+
+
+def test_extra_snapshot_cannot_mask_missing_expected_cycle():
+    start = 1_000_000
+    rows = _cycle_rows([0, 1, 2, 2, 4])
+    out = audit_pool_cycles(
+        rows,
+        expected_cycles=[0, 1, 2, 3, 4],
+        expected_start_ms=start,
+        expected_cadence_ms=60_000,
+    )
+    assert out["eligible_all_horizons"] is False
+    assert out["missing_cycles"] == [2, 3]
+    assert out["duplicate_cycles"] == [2]
+    assert all(v["status"] == "NON_CONTIGUOUS" for v in out["horizons"].values())
+
+
+def test_failed_live_poll_fails_closed_even_if_other_cycles_have_snapshots():
+    start = 1_000_000
+    out = audit_pool_cycles(
+        _cycle_rows([0, 1, 3, 4]),
+        expected_cycles=[0, 1, 2, 3, 4],
+        expected_start_ms=start,
+        expected_cadence_ms=60_000,
+        failed_cycles={2: "HTTP 429"},
+    )
+    assert out["eligible_all_horizons"] is False
+    assert out["missing_cycles"] == [2]
+    assert any("HTTP 429" in v["reason"] for v in out["cycle_results"] if v["cycle"] == 2)
+
+
+def test_discovery_timestamp_cannot_substitute_for_live_cycle():
+    start = 1_000_000
+    # Discovery records have no cycle ID and are therefore not observations
+    # accepted by audit_pool_cycles, even if their timestamps fill the gap.
+    rows = _cycle_rows([0, 1, 3, 4])
+    rows.append({"timestamp_ms": start + 2 * 60_000, "liquidity_usd": 12_000.0})
+    out = audit_pool_cycles(
+        rows,
+        expected_cycles=[0, 1, 2, 3, 4],
+        expected_start_ms=start,
+        expected_cadence_ms=60_000,
+    )
+    assert out["eligible_all_horizons"] is False
+    assert out["missing_cycles"] == [2]
