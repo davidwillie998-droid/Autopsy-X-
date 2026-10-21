@@ -16,7 +16,6 @@ from pathlib import Path
 from autopsyx.data import provenance
 from autopsyx.research import phase3c_manifest_integrity
 from autopsyx.data.normalize import normalize
-from autopsyx.data.raw import RawStore
 from autopsyx.providers.store import decode_record
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,7 +46,8 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
 
     manifest_verification = phase3c_manifest_integrity.verify(str(ARCHIVE))
     committed = _load_committed_records()
-    rebuilt_records, _ = normalize(str(ARCHIVE))
+    runner_counts = recorded["record_counts"]["phase2_records"]
+    rebuilt_counts = verification["rebuild_counts"]["phase2_by_type"]
 
     # The immutable runner metadata records 925 exchanges, but the current
     # manifest has 926. The final OHLCV response contributes exactly six bars.
