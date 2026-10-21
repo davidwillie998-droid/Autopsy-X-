@@ -188,3 +188,13 @@ def test_phase3c_request_preservation_step_has_no_stray_heredoc_terminator():
     request_step = request_step.split("- name: Snapshot Phase 3C raw manifest", 1)[0]
     assert 'request_hashes.sha256"\n          PY' not in request_step
     assert 'request_hashes.sha256"\n      - name:' in workflow
+
+def test_phase3c_dispatch_uses_maximum_frozen_rpc_enrichment_budget():
+    workflow = (ROOT / ".github" / "workflows" / "phase3c-acquire.yml").read_text()
+    dispatch = workflow.split('if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then', 1)[1]
+    dispatch = dispatch.split('REQUEST_PATH="$RUNNER_TEMP/phase3c-request.json"', 1)[0]
+    assert 'request["rpc_max_pages"] = 3' in dispatch
+    assert 'request["rpc_max_txs"] = 40' in dispatch
+    request = __import__("json").loads((ROOT / "intel" / "datasets" / "phase3c" / "REQUEST.json").read_text())
+    assert request["rpc_max_pages"] == 1
+    assert request["rpc_max_txs"] == 8
