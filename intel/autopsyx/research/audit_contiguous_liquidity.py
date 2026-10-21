@@ -217,7 +217,6 @@ def audit_archive(run_dir: str | Path) -> dict:
 
     by_pool: dict[str, list[dict]] = defaultdict(list)
     failed_by_pool: dict[str, dict[int, str]] = defaultdict(dict)
-    seen_cycle_batches: dict[int, set[str]] = defaultdict(set)
     missing_cycle_batches: dict[int, list[str]] = defaultdict(list)
 
     # Crucially, only authoritative live polls are used. Discovery/backfill
@@ -242,7 +241,6 @@ def audit_archive(run_dir: str | Path) -> dict:
             for pool_id in targets:
                 failed_by_pool[pool_id][cycle] = entry.error or "response body missing"
             continue
-        seen_cycle_batches[cycle].update(_pools_from_multi_url(entry.url))
         parsed = gt.parse_pools(entry, body)
         for rec in parsed.records:
             if type(rec).__name__ != "PoolSnapshot":
