@@ -122,3 +122,23 @@ def test_attempt_log_travels_with_final_failure():
     log = e.value.attempt_log
     assert [a["status"] for a in log] == [503] * 5
     assert all(a["wait_s"] > 0 for a in log[:-1]) and log[-1]["wait_s"] == 0.0
+
+
+def test_request_refuses_to_start_after_deadline():
+    calls = []
+    bucket = TokenBucket(1000, 10, clock=lambda: 10.0, sleep=lambda _: None)
+    c = HttpClient("https://x.test", bucket, opener=lambda *a, **k: calls.append(a))
+    with pytest.raises(ProviderError, match="deadline reached"):
+        c.get_raw("/late", deadline_monotonic=9.0)
+    assert calls == []
+
+
+def test_rate_limiter_refuses_wait_that_would_cross_deadline():
+    from autopsyx.providers.http import TokenBucket
+
+    clock = [0.0]
+    bucket = TokenBucket(1.0, 1, clock=lambda: clock[0], sleep=lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    bucket.tokens = 0.0
+    with pytest.raises(ProviderError, match="deadline reached"):
+        bucket.acquire(deadline_monotonic=0.5)
+    assert clock[0] == 0.0
