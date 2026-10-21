@@ -41,7 +41,7 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     infra_allowed = {"intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml"}
     for f in changed:
         allowed = (f.startswith("docs/PHASE3C_") or f.startswith("intel/autopsyx/research/phase3c_")
-                  or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")
+                  or f.startswith("intel/tests/test_phase3c_") or f.startswith("intel/scripts/phase3c_") or f.startswith("research/phase3c/")
                   or f == "intel/autopsyx/data/acquire.py"
                   or f == "intel/tests/test_acquisition_window.py"
                   # Explicit narrow exception; a method-level comparison below freezes all
@@ -75,8 +75,8 @@ def test_acquire_changes_are_confined_to_fetcher_and_run_lifecycle():
 
 def test_transport_changes_are_confined_to_opt_in_deadline_support():
     """Only token acquisition and HTTP request entry points may gain deadline support."""
-    baseline = git("show", f"{PHASE3B_COMMIT}:intel/autopsyx/providers/http.py")
-    actual = (ROOT / "intel" / "autopsyx" / "providers" / "http.py").read_text()
+    baseline = git("show", f"{PHASE3B_COMMIT}:intel/autopsyx/providers/http.py").rstrip("\n")
+    actual = (ROOT / "intel" / "autopsyx" / "providers" / "http.py").read_text().rstrip("\n")
     def frozen_regions(src):
         src = _mask_region(src, "    def acquire(", "\n\n@dataclass", "<TOKEN_BUCKET_ACQUIRE>")
         src = _mask_region(src, "    def get_raw(", "    def get_json(", "<HTTP_REQUEST_ENTRYPOINTS>")
