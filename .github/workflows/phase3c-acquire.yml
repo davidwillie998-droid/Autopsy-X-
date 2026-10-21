@@ -5,6 +5,8 @@ name: Phase 3C data acquisition
 # Read-only acquisition: no orders, no wallets, no keys.
 
 on:
+  # Manual dispatch allows a fresh run against the exact frozen request without editing it.
+  workflow_dispatch:
   push:
     branches: [ccr-dea9382c-vwhvi6]
     paths: ["intel/datasets/phase3c/REQUEST.json"]
