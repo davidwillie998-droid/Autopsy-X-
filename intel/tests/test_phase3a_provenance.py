@@ -106,7 +106,7 @@ def test_hash_independent_of_process_hash_seed(tmp_path, monkeypatch):
 def test_tampered_manifest_fails_verification(tmp_path, monkeypatch):
     d = sealed(tmp_path, monkeypatch)
     manifest = d / "manifest.jsonl"
-    manifest.write_text(manifest.read_text(encoding="utf-8") + "\\n", encoding="utf-8")
+    manifest.write_text(manifest.read_text(encoding="utf-8") + "\n", encoding="utf-8")
     result = pv.verify(str(d))
     assert result["reproducible"]
     assert result["rebuild_matches_runner"]
