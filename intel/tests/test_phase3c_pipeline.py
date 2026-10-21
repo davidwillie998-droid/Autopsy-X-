@@ -172,6 +172,24 @@ def test_attack_zero_variance_feature_cannot_replicate():
 
 
 # -------------------------------------------------- walk-forward OOS mechanics ----
+def test_discovery_rows_are_strictly_pre_holdout_and_horizon_purged():
+    rows = [
+        {"token": f"t{i}", "as_of": step * 1000, "step_index": step,
+         "x": float(i + step), "y_direction": float(i + step)}
+        for i in range(12) for step in range(20)
+    ]
+    train, report = p3c.chronological_training_rows(rows)
+    assert report["available"] is True
+    assert report["cutoff_as_of"] == 10_000
+    assert report["n_train_rows_after_purge"] == len(train)
+    assert report["n_train_tokens_after_purge"] == 12
+    assert train
+    assert all(r["as_of"] < report["cutoff_as_of"] for r in train)
+    first_oos_step = 10
+    assert all(r["step_index"] + contract.HORIZON_STEPS < first_oos_step for r in train)
+    assert report["n_train_rows_purged"] > 0
+
+
 def test_walk_forward_oos_uses_future_timestamps_and_purges_label_overlap():
     by_token = {
         f"t{i}": [
