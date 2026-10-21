@@ -62,3 +62,21 @@ def test_same_count_manifest_mutation_before_integrity_seal_is_refused(tmp_path,
 
     with pytest.raises(ValueError, match="manifest changed between acquisition snapshot and canonical sealing"):
         phase3c_manifest_integrity.seal(str(d))
+
+
+def test_manifest_drift_against_completed_runner_count_fails_before_normalization(tmp_path, monkeypatch):
+    run3(tmp_path / "d")
+    d = tmp_path / "d"
+    manifest = d / "manifest.jsonl"
+    lines = manifest.read_text(encoding="utf-8").splitlines()
+    last = json.loads(lines[-1])
+    last["seq"] = len(lines) + 1
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + json.dumps(last, sort_keys=True) + "\\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="manifest exchange count differs from completed acquisition metadata"):
+        phase3c_manifest_integrity.snapshot(str(d))
+    assert not (d / phase3c_manifest_integrity.SNAPSHOT_FILE).exists()
+    assert not (d / "canonical" / "phase2_records.jsonl.gz").exists()
