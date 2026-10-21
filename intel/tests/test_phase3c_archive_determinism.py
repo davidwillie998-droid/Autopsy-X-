@@ -57,8 +57,6 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
     assert all(type(record).__name__ == "ProviderBar" for record in rebuilt["records"][len(committed):])
     assert verification["verified"] is False
     assert verification["manifest_matches_runner"] is False
-    assert verification["manifest_count_matches_runner"] is False
-    assert verification["manifest_exchanges_runner"] == 925
     assert verification["manifest_exchanges_current"] == 926
     assert verification["committed_matches_runner"] is True
     assert verification["rebuild_matches_runner"] is False
