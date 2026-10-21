@@ -103,11 +103,21 @@ jobs:
         if: steps.acquire.outcome == 'success'
         working-directory: intel
         run: python -m autopsyx seal "datasets/phase3c/runs/$RUN_ID"
-      - name: Verify provenance on the runner
-        id: verify
+      - name: Seal Phase 3C raw-manifest integrity
+        id: manifest_seal
         if: steps.seal.outcome == 'success'
         working-directory: intel
+        run: python -m autopsyx.research.phase3c_manifest_integrity seal "datasets/phase3c/runs/$RUN_ID"
+      - name: Verify provenance on the runner
+        id: verify
+        if: steps.manifest_seal.outcome == 'success'
+        working-directory: intel
         run: python -m autopsyx verify-provenance "datasets/phase3c/runs/$RUN_ID" > "datasets/phase3c/runs/$RUN_ID/runner_verify.json"
+      - name: Verify Phase 3C raw-manifest integrity
+        id: verify_manifest
+        if: always() && steps.manifest_seal.outcome == 'success'
+        working-directory: intel
+        run: python -m autopsyx.research.phase3c_manifest_integrity verify "datasets/phase3c/runs/$RUN_ID" > "datasets/phase3c/runs/$RUN_ID/manifest_integrity_verify.json"
       - name: Commit raw archive and verification evidence
         if: always() && env.RUN_ID != ''
         run: |
