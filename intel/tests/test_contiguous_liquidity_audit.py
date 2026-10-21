@@ -1,4 +1,4 @@
-from autopsyx.research.audit_contiguous_liquidity import audit_pool_cycles, audit_pool_snapshots
+from autopsyx.research.audit_contiguous_liquidity import audit_archive, audit_pool_cycles, audit_pool_snapshots
 
 
 def test_contiguous_positive_snapshots_pass_all_horizons():
@@ -190,3 +190,14 @@ def test_snapshot_timestamp_outside_actual_acquisition_window_fails_closed():
     assert out["eligible_all_horizons"] is False
     assert out["missing_cycles"] == [4]
     assert all(v["status"] == "NON_CONTIGUOUS" for v in out["horizons"].values())
+
+
+
+def test_archive_audit_is_read_only_when_manifest_is_missing(tmp_path):
+    import json
+    import pytest
+
+    (tmp_path / "run.json").write_text(json.dumps({"status": "COMPLETE"}), encoding="utf-8")
+    with pytest.raises(ValueError, match="manifest missing"):
+        audit_archive(tmp_path)
+    assert not (tmp_path / "raw").exists()
