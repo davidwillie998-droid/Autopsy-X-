@@ -131,7 +131,7 @@ def test_sealed_archive_rejects_raw_append(tmp_path, monkeypatch):
 def test_manifest_tamper_fails_verification(tmp_path, monkeypatch):
     d = sealed(tmp_path, monkeypatch)
     with (d / "manifest.jsonl").open("a", encoding="utf-8") as stream:
-        stream.write("\\n")
+        stream.write("\n")
     result = pv.verify(str(d))
     assert result["verified"] is False
     assert result["manifest_matches_runner"] is False
