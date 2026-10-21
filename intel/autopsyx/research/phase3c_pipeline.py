@@ -173,6 +173,45 @@ def chronological_training_rows(rows: list[dict]) -> tuple[list[dict], dict]:
     return train, report
 
 
+def assert_temporal_isolation(rows: list[dict], train_rows: list[dict], split_report: dict) -> None:
+    """Fail closed if discovery and validation timestamps overlap or labels cross the embargo."""
+    if not split_report.get("available"):
+        return
+    cutoff = split_report.get("cutoff_as_of")
+    if not isinstance(cutoff, (int, float)):
+        raise ValueError("Phase 3C temporal isolation failed: missing numeric holdout cutoff")
+
+    validation_rows = [
+        r for r in rows
+        if isinstance(r.get("as_of"), (int, float))
+        and isinstance(r.get("step_index"), int)
+        and r["as_of"] >= cutoff
+        and r.get("token")
+    ]
+    if not train_rows or not validation_rows:
+        raise ValueError("Phase 3C temporal isolation failed: empty discovery or validation partition")
+
+    max_discovery_timestamp = max(r["as_of"] for r in train_rows)
+    min_validation_timestamp = min(r["as_of"] for r in validation_rows)
+    if not max_discovery_timestamp < min_validation_timestamp:
+        raise ValueError(
+            "Phase 3C temporal leakage: max(discovery_timestamp) must be strictly less "
+            "than min(validation_timestamp)"
+        )
+
+    first_oos_step = {}
+    for r in validation_rows:
+        token = r["token"]
+        first_oos_step[token] = min(first_oos_step.get(token, r["step_index"]), r["step_index"])
+    horizon = contract.HORIZON_STEPS
+    for r in train_rows:
+        first_step = first_oos_step.get(r.get("token"))
+        if first_step is None or r["step_index"] + horizon >= first_step:
+            raise ValueError(
+                "Phase 3C label leakage: discovery row overlaps the per-token validation horizon"
+            )
+
+
 # --------------------------------------------------------------- classify ----
 def classify_hypothesis_3c(hid: str, n_tokens: int, n_rows: int, targets: dict, per_archive: dict,
                            oos: dict) -> tuple[str, str]:
@@ -251,6 +290,9 @@ def run(work: Path) -> dict:
         engine_ok = p3b._engine_ok_share(included, all_journal, spec["engine_fields"])
         full_rows = rows_by_h.get(hid, [])
         train_rows, split_report = chronological_training_rows(full_rows)
+        # Enforce temporal separation at runtime, not only in regression tests.
+        # Any overlap or label-horizon breach fails closed before discovery statistics run.
+        assert_temporal_isolation(full_rows, train_rows, split_report)
         train_rows_by_h[hid] = train_rows
         split_reports[hid] = split_report
         # Discovery statistics, FDR correction, archive breakdowns and robustness
