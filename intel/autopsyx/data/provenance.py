@@ -236,14 +236,14 @@ def verify(run_dir: str) -> dict:
         out["manifest_sha256_current"] = current_manifest_sha256
         out["manifest_sha256_runner"] = prov.get("manifest_sha256")
         expected_manifest_sha256 = prov.get("manifest_sha256")
-        # Older sealed archives predate the manifest digest. Preserve backward
-        # compatibility only when their recorded exchange count still matches.
-        manifest_hash_matches = (
-            expected_manifest_sha256 is None or expected_manifest_sha256 == current_manifest_sha256
+        # A record count cannot prove byte-level manifest integrity. Archives
+        # without the runner-recorded digest remain unverified, even if counts match.
+        out["manifest_matches_runner"] = bool(
+            expected_manifest_sha256
+            and expected_manifest_sha256 == current_manifest_sha256
+            and expected_manifest_count is not None
+            and expected_manifest_count == actual_manifest_count
         )
-        out["manifest_matches_runner"] = bool(manifest_hash_matches and
-                                               expected_manifest_count is not None and
-                                               expected_manifest_count == actual_manifest_count)
         out["manifest_exchanges_current"] = actual_manifest_count
         out["manifest_exchanges_runner"] = expected_manifest_count
         out["manifest_count_matches_runner"] = (
