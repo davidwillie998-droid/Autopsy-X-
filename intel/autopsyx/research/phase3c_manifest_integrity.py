@@ -55,6 +55,14 @@ def snapshot(run_dir: str) -> dict:
     if path.exists():
         raise ValueError(f"refusing to overwrite immutable Phase 3C manifest snapshot: {path}")
     snap = {"version": 1, **_snapshot(directory)}
+    # The acquisition runner records the manifest length before returning.
+    # Reject drift before normalization can consume a different raw dataset.
+    runner_count = meta.get("exchanges")
+    if type(runner_count) is not int or runner_count != snap["manifest_exchanges"]:
+        raise ValueError(
+            "manifest exchange count differs from completed acquisition metadata: "
+            f"runner={runner_count!r}, current={snap['manifest_exchanges']}"
+        )
     (directory / SNAPSHOT_FILE).write_text(json.dumps(snap, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return snap
 
