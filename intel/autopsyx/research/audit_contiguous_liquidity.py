@@ -96,15 +96,17 @@ def audit_archive(run_dir: str | Path) -> dict:
     if not pools:
         raise ValueError("archive has no frozen pool universe; refusing to infer eligibility")
 
-    started = meta.get("started_ms")
-    ended = meta.get("ended_ms")
-    if not isinstance(started, int) or not isinstance(ended, int) or ended < started:
-        raise ValueError("run.json lacks a valid started_ms/ended_ms acquisition window")
-    cycle_ms = int(plan.get("cycle_s", 60)) * 1000
-    rotating = plan.get("poll_pools_per_cycle")
-    cadence_ms = cycle_ms * (math.ceil(len(pools) / int(rotating)) if rotating else 1)
+    poll_start = meta.get("poll_window_started_ms")
+    cycles = meta.get("poll_window_cycles", meta.get("cycles"))
+    if not isinstance(poll_start, int) or not isinstance(cycles, int) or cycles < 1:
+        raise ValueError("run.json lacks a valid live polling window and cycle count")
+    cadence_ms = int(plan.get("cycle_s", 60)) * 1000
     if cadence_ms <= 0:
-        raise ValueError("invalid per-pool polling cadence in run plan")
+        raise ValueError("invalid polling cadence in run plan")
+    # gt.pools_multi snapshots every selected pool on every cycle, even when
+    # trades/OHLCV requests rotate across a smaller per-cycle pool budget.
+    expected_start_ms = poll_start
+    expected_end_ms = poll_start + (cycles - 1) * cadence_ms
 
     by_pool: dict[str, list[dict]] = defaultdict(list)
     request_errors: dict[str, int] = defaultdict(int)
@@ -131,8 +133,8 @@ def audit_archive(run_dir: str | Path) -> dict:
         pool_id, token_id = pool["pool"], pool["token"]
         audit = audit_pool_snapshots(
             by_pool.get(pool_id, []),
-            expected_start_ms=started,
-            expected_end_ms=ended,
+            expected_start_ms=expected_start_ms,
+            expected_end_ms=expected_end_ms,
             expected_cadence_ms=cadence_ms,
         )
         audit.update({"pool": pool_id, "token": token_id, "request_errors": request_errors.get(pool_id, 0)})
