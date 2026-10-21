@@ -67,6 +67,8 @@ class RawStore:
         # A provenance block marks the raw archive as sealed. Never append to it:
         # doing so changes normalization output without changing the runner's
         # canonical files or hashes (the Phase 3C archive drift incident).
+        if (self.dir / ".seal-in-progress").exists():
+            raise RuntimeError("raw archive sealing is in progress; refusing concurrent append")
         run_path = self.dir / "run.json"
         if run_path.exists():
             try:
