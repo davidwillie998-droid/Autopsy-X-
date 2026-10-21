@@ -181,3 +181,10 @@ def test_phase3c_workflow_invalidates_complete_run_after_pipeline_failure():
     assert workflow.index("Verify Phase 3C raw-manifest integrity") < workflow.index(
         "Record failed or interrupted acquisition"
     ) < workflow.index("Commit raw archive and verification evidence")
+
+def test_phase3c_request_preservation_step_has_no_stray_heredoc_terminator():
+    workflow = (ROOT / ".github" / "workflows" / "phase3c-acquire.yml").read_text()
+    request_step = workflow.split("- name: Preserve effective and frozen request inputs", 1)[1]
+    request_step = request_step.split("- name: Snapshot Phase 3C raw manifest", 1)[0]
+    assert 'request_hashes.sha256"\n          PY' not in request_step
+    assert 'request_hashes.sha256"\n      - name:' in workflow
