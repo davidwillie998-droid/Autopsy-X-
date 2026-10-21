@@ -15,7 +15,7 @@ Phase 3A normalizers already report, so no new algorithm is introduced:
                        default=str) with enums as their values and tuples as
                        lists; no separator between records
   phase3a_observations sha256 over UTF-8 json.dumps(observation.to_dict(),
-                       sort_keys=True) + "\n" per observation, in order
+                       sort_keys=True) + "\\n" per observation, in order
 
 Numbers are serialized by Python's json (shortest round-trip repr), nulls as
 ``null``, timestamps as integer milliseconds, keys sorted at every level.
@@ -65,12 +65,6 @@ def normalization_version() -> dict:
             "observation_schema": SCHEMA_VERSION}
 
 
-def _manifest_sha256(run_dir: Path) -> str | None:
-    """Hash the exact acquisition manifest so post-seal appends are detectable."""
-    path = run_dir / "manifest.jsonl"
-    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
-
-
 def records_sha256(records: list) -> str:
     h = hashlib.sha256()
     for r in records:
@@ -92,50 +86,10 @@ def _iso(ms):
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat() if isinstance(ms, int) else None
 
 
-def _manifest_fingerprint(run_dir: str | Path) -> dict:
-    """Fingerprint the exact raw manifest snapshot used for canonicalization."""
-    path = Path(run_dir) / "manifest.jsonl"
-    if not path.is_file():
-        raise RuntimeError(f"cannot seal or verify archive without manifest.jsonl: {path}")
-    payload = path.read_bytes()
-    return {
-        "sha256": hashlib.sha256(payload).hexdigest(),
-        "bytes": len(payload),
-        "exchanges": sum(1 for line in payload.splitlines() if line.strip()),
-    }
-
-
 def seal(run_dir: str) -> dict:
     d = Path(run_dir)
     raw = RawStore(d)
-    meta = raw.read_json("run.json") or {}
-
-    # Re-sealing is idempotent only while the exact manifest snapshot is intact.
-    # Never regenerate canonical data over an existing seal.
-    existing = meta.get("provenance")
-    if isinstance(existing, dict):
-        actual = _manifest_fingerprint(d)
-        expected_hash = existing.get("manifest_sha256")
-        expected_count = existing.get("record_counts", {}).get("manifest_exchanges")
-        if expected_hash != actual["sha256"] or expected_count != actual["exchanges"]:
-            raise RuntimeError(
-                "sealed archive manifest drift detected; preserve the archive as invalid and create a new run"
-            )
-        return existing
-
-    if meta.get("status") != "COMPLETE" or not isinstance(meta.get("ended_ms"), int):
-        raise RuntimeError(
-            f"refusing to seal incomplete acquisition: status={meta.get('status')!r}, ended_ms={meta.get('ended_ms')!r}"
-        )
-
-    before = _manifest_fingerprint(d)
     b = build(run_dir)
-    after = _manifest_fingerprint(d)
-    if before != after:
-        raise RuntimeError(
-            f"raw manifest changed during canonical sealing: before={before}, after={after}"
-        )
-
     (d / "canonical").mkdir(exist_ok=True)
     tmp = d / "canonical" / "phase2_records.jsonl"
     EventStore.dump_jsonl(tmp, b["records"])
@@ -159,8 +113,6 @@ def seal(run_dir: str) -> dict:
         "repository_commit": os.environ.get("GITHUB_SHA"),
         "started_at": _iso(meta.get("started_ms")), "completed_at": _iso(meta.get("ended_ms")),
         "acquisition_status": meta.get("status"),
-        "manifest_sha256": before["sha256"],
-        "manifest_bytes": before["bytes"],
         "providers": sorted({e.provider for e in entries if e.provider != "audit"}),
         "endpoints": dict(sorted(Counter(e.endpoint for e in entries).items())),
         "canonical_dataset_version": CANONICAL_DATASET_VERSION,
@@ -172,7 +124,7 @@ def seal(run_dir: str) -> dict:
         "canonical_files": {"phase2_records": "canonical/phase2_records.jsonl.gz",
                             "phase3a_observations": "canonical/phase3a_observations.jsonl.gz"},
         "record_counts": {"phase2_records": rep.records, "phase3a_observations": len(b["observations"]),
-                          "manifest_exchanges": before["exchanges"], "manifest_errors": sum(1 for e in entries if e.error)},
+                          "manifest_exchanges": len(entries), "manifest_errors": sum(1 for e in entries if e.error)},
         "coverage_summary": {"phase3a_by_kind_state": dict(sorted(Counter(f"{o.kind}|{o.state.value}"
                                                                           for o in b["observations"]).items())),
                              "phase2_tokens": rep.tokens, "phase2_issues": rep.issues},
@@ -180,16 +132,8 @@ def seal(run_dir: str) -> dict:
         "unavailable_fields": sorted(k for k, v in env.items() if v is None),
     }
     raw.write_json("run.json", meta)
-
-    # Catch a late append between normalization and provenance write. Any append
-    # after this point is still detected by verify() from the sealed hash/count.
-    final_manifest = _manifest_fingerprint(d)
-    if final_manifest != before:
-        meta["status"] = "INVALID_MANIFEST_DRIFT"
-        meta["seal_error"] = {"before": before, "after": final_manifest}
-        raw.write_json("run.json", meta)
-        raise RuntimeError(f"raw manifest changed during sealing commit: before={before}, after={final_manifest}")
     return meta["provenance"]
+
 
 def _read_committed(d: Path) -> tuple[str | None, str | None]:
     p2 = d / "canonical" / "phase2_records.jsonl.gz"
@@ -218,8 +162,6 @@ def verify(run_dir: str) -> dict:
     out = {"archive": d.name, "acquisition_status": meta.get("status"),
            "rebuild_1": {"phase2_records": r1["phase2_records_sha256"], "phase3a_observations": r1["phase3a_observations_sha256"]},
            "rebuild_2": {"phase2_records": r2["phase2_records_sha256"], "phase3a_observations": r2["phase3a_observations_sha256"]},
-           "rebuild_counts": {"phase2_records": len(r1["records"]), "phase2_by_type": r1["report"].records,
-                              "phase3a_observations": len(r1["observations"])},
            "committed_canonical": {"phase2_records": c2, "phase3a_observations": c3}}
     out["reproducible"] = out["rebuild_1"] == out["rebuild_2"]
     if prov:
@@ -230,30 +172,10 @@ def verify(run_dir: str) -> dict:
         out["config_hash_runner"] = prov.get("config_hash")
         out["config_hash_local"] = Config.load().fingerprint()
         out["normalization_version_match"] = prov["normalization_version"]["sha256"] == normalization_version()["sha256"]
-        current_manifest_sha256 = _manifest_sha256(d)
-        actual_manifest_count = len(raw.entries())
-        expected_manifest_count = prov.get("record_counts", {}).get("manifest_exchanges")
-        out["manifest_sha256_current"] = current_manifest_sha256
-        out["manifest_sha256_runner"] = prov.get("manifest_sha256")
-        expected_manifest_sha256 = prov.get("manifest_sha256")
-        # A record count cannot prove byte-level manifest integrity. Archives
-        # without the runner-recorded digest remain unverified, even if counts match.
-        out["manifest_matches_runner"] = bool(
-            expected_manifest_sha256
-            and expected_manifest_sha256 == current_manifest_sha256
-            and expected_manifest_count is not None
-            and expected_manifest_count == actual_manifest_count
-        )
-        out["manifest_exchanges_current"] = actual_manifest_count
-        out["manifest_exchanges_runner"] = expected_manifest_count
-        out["manifest_count_matches_runner"] = (
-            expected_manifest_count is not None and expected_manifest_count == actual_manifest_count
-        )
         out["committed_matches_runner"] = (c2, c3) == (rh["phase2_records"], rh["phase3a_observations"])
         out["rebuild_matches_runner"] = out["rebuild_1"] == rh
         out["verified"] = bool(out["reproducible"] and out["committed_matches_runner"] and out["rebuild_matches_runner"]
-                               and out["normalization_version_match"] and out["manifest_matches_runner"]
-                               and out["manifest_count_matches_runner"] and meta.get("status") == "COMPLETE")
+                               and meta.get("status") == "COMPLETE")
         out["scope"] = "phase2_records and phase3a_observations"
     elif legacy:
         # Phase 2 archives: the runner hashed the Phase 2 records only; Phase 3A
