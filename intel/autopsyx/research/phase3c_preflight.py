@@ -85,7 +85,7 @@ def validate(request: object) -> list[str]:
             and gt_min > gt_rate):
         errors.append("gt_min_rate_per_s cannot exceed gt_rate_per_s")
 
-    for key, low, high in (("rpc_max_pages", 1, 3), ("rpc_max_txs", 1, 40)):
+    for key, low, high in (("rpc_max_pages", 1, 3), ("rpc_max_txs", 1, 300)):
         value = request.get(key)
         if type(value) is not int or not low <= value <= high:
             errors.append(f"{key} must be an integer in [{low}, {high}]")
