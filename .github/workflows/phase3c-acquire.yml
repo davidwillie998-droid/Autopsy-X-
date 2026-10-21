@@ -54,7 +54,7 @@ jobs:
           from pathlib import Path
           request = json.loads(Path("datasets/phase3c/REQUEST.json").read_text(encoding="utf-8"))
           request["run_id"] = sys.argv[1]
-          Path(sys.argv[2]).write_text(json.dumps(request, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+          Path(sys.argv[2]).write_text(json.dumps(request, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
             REQUEST_PATH="$RUNNER_TEMP/phase3c-request.json"
           else
