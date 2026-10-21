@@ -190,6 +190,41 @@ def test_discovery_rows_are_strictly_pre_holdout_and_horizon_purged():
     assert report["n_train_rows_purged"] > 0
 
 
+
+def test_runtime_temporal_isolation_rejects_timestamp_overlap():
+    rows = [
+        {"token": f"t{i}", "as_of": step * 1000, "step_index": step,
+         "x": float(step), "y_direction": float(step)}
+        for i in range(4) for step in range(20)
+    ]
+    train, report = p3c.chronological_training_rows(rows)
+    assert report["available"] is True
+    # Force a future timestamp into discovery; the runtime guard must fail closed.
+    contaminated = [dict(r) for r in train]
+    contaminated[0]["as_of"] = report["cutoff_as_of"]
+    with pytest.raises(ValueError, match="max\(discovery_timestamp\)"):
+        p3c.assert_temporal_isolation(rows, contaminated, report)
+
+
+def test_runtime_temporal_isolation_rejects_label_horizon_overlap():
+    rows = [
+        {"token": f"t{i}", "as_of": step * 1000, "step_index": step,
+         "x": float(step), "y_direction": float(step)}
+        for i in range(4) for step in range(20)
+    ]
+    train, report = p3c.chronological_training_rows(rows)
+    assert report["available"] is True
+    # Put a row back into discovery that crosses its token's first OOS label horizon.
+    token = train[0]["token"]
+    contaminated = [dict(r) for r in train]
+    bad = dict(next(r for r in rows if r["token"] == token and r["as_of"] < report["cutoff_as_of"]))
+    bad["step_index"] = 9
+    bad["as_of"] = report["cutoff_as_of"] - 1
+    contaminated.append(bad)
+    with pytest.raises(ValueError, match="label leakage"):
+        p3c.assert_temporal_isolation(rows, contaminated, report)
+
+
 def test_walk_forward_oos_uses_future_timestamps_and_purges_label_overlap():
     by_token = {
         f"t{i}": [
