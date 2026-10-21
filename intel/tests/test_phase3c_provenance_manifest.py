@@ -43,7 +43,7 @@ def test_manifest_append_between_canonical_and_manifest_seal_is_refused(tmp_path
     last["seq"] = len(lines) + 1
     manifest.write_text(manifest.read_text(encoding="utf-8") + json.dumps(last, sort_keys=True) + "\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="manifest changed during canonical sealing"):
+    with pytest.raises(ValueError, match="manifest changed between acquisition snapshot and canonical sealing"):
         phase3c_manifest_integrity.seal(str(d))
 
 
