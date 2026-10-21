@@ -21,6 +21,7 @@ def test_poll_window_telemetry_is_persisted():
     source = (Path(__file__).parents[1] / "autopsyx" / "data" / "acquire.py").read_text()
     for field in (
         '"poll_window_started_ms"',
+        '"poll_window_ended_ms"',
         '"poll_window_duration_s"',
         '"poll_window_cycles"',
         '"poll_window_elapsed_s"',
