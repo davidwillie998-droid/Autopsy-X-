@@ -58,7 +58,7 @@ def test_same_count_manifest_mutation_before_integrity_seal_is_refused(tmp_path,
     manifest = d / "manifest.jsonl"
     entries = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()]
     entries[0]["status"] = 201  # same entry count, but a changed raw-manifest byte sequence
-    manifest.write_text("".join(json.dumps(entry, sort_keys=True) + "\\n" for entry in entries), encoding="utf-8")
+    manifest.write_text("".join(json.dumps(entry, sort_keys=True) + "\n" for entry in entries), encoding="utf-8")
 
     with pytest.raises(ValueError, match="manifest changed between acquisition snapshot and canonical sealing"):
         phase3c_manifest_integrity.seal(str(d))
