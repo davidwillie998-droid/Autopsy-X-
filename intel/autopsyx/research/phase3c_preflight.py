@@ -10,11 +10,12 @@ import sys
 from pathlib import Path
 
 REQUIRED_STRATA = ("young", "quiet_young", "trending", "established")
-MIN_STRATA_TOTAL = 20
+FROZEN_BASELINE_MIN_STRATA_TOTAL = 20
+MIN_STATISTICAL_SAMPLE = 85
 MIN_DURATION_SECONDS = 7200
 
 
-def validate(request: object) -> list[str]:
+def validate(request: object, *, allow_frozen_baseline: bool = False) -> list[str]:
     errors: list[str] = []
     if not isinstance(request, dict):
         return ["request must be a JSON object"]
@@ -43,10 +44,12 @@ def validate(request: object) -> list[str]:
             errors.append("each stratum must be a non-negative integer")
         else:
             strata_total = sum(values)
-            if strata_total < MIN_STRATA_TOTAL:
+            minimum = FROZEN_BASELINE_MIN_STRATA_TOTAL if allow_frozen_baseline else MIN_STATISTICAL_SAMPLE
+            if strata_total < minimum:
+                label = "frozen baseline structural minimum" if allow_frozen_baseline else "distinct-token sample minimum"
                 errors.append(
-                    f"strata total {strata_total} is below frozen protocol minimum "
-                    f"{MIN_STRATA_TOTAL}; do not lower the 85-token statistical gate"
+                    f"strata total {strata_total} is below {label} {minimum}; "
+                    "the >=85-token statistical gate must not be weakened"
                 )
 
     duration = request.get("duration_s")
@@ -95,9 +98,12 @@ def validate(request: object) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = argv if argv is not None else sys.argv[1:]
+    args = list(argv if argv is not None else sys.argv[1:])
+    allow_frozen_baseline = bool(args and args[0] == "--frozen-baseline")
+    if allow_frozen_baseline:
+        args = args[1:]
     if len(args) != 1:
-        print("usage: phase3c_preflight.py REQUEST.json", file=sys.stderr)
+        print("usage: phase3c_preflight.py [--frozen-baseline] REQUEST.json", file=sys.stderr)
         return 2
     path = Path(args[0])
     try:
@@ -105,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, json.JSONDecodeError) as exc:
         print(f"FAIL: cannot read valid request JSON: {exc}", file=sys.stderr)
         return 2
-    errors = validate(request)
+    errors = validate(request, allow_frozen_baseline=allow_frozen_baseline)
     if errors:
         for error in errors:
             print(f"FAIL: {error}", file=sys.stderr)
