@@ -80,7 +80,6 @@ jobs:
           cp datasets/phase3c/REQUEST.json "datasets/phase3c/runs/$RUN_ID/frozen_request.json"
           cp "$REQUEST_PATH" "datasets/phase3c/runs/$RUN_ID/request.json"
           sha256sum "datasets/phase3c/runs/$RUN_ID/frozen_request.json" "datasets/phase3c/runs/$RUN_ID/request.json" > "datasets/phase3c/runs/$RUN_ID/request_hashes.sha256"
-          PY
       - name: Snapshot Phase 3C raw manifest before canonical normalization
         id: manifest_snapshot
         if: steps.acquire.outcome == 'success'
