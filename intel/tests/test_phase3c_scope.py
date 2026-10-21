@@ -111,7 +111,7 @@ def test_rate_limiter_refuses_wait_that_would_cross_deadline():
     with pytest.raises(ProviderError, match="deadline reached"):
         bucket.acquire(deadline_monotonic=0.5)
     assert clock[0] == 0.0
-"""
+""".rstrip("\n")
     assert actual == baseline + expected_addition, (
         "test_transport.py may only append the two deadline-specific regression tests"
     )
