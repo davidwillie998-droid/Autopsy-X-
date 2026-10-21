@@ -423,20 +423,30 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
             "poll_window_started_ms": None, "poll_window_duration_s": plan.duration_s,
             "poll_window_cycles": 0, "poll_window_elapsed_s": 0.0}
     raw.write_json("run.json", meta)
-    if plan.universe_file:
-        u = load_universe(plan.universe_file)
-        raw.write_json("universe.json", u)
-        picked = [{**p, "total_supply": u["metadata"][p["token"]]["total_supply_at_selection"]} for p in u["pools"]]
-        meta["universe"] = {"source": "reused", "fingerprint": u["fingerprint"], "from": plan.universe_file}
-    else:
-        if plan.phase3a:
-            u = freeze_universe(f, plan)
-            meta["universe"] = {"source": "frozen_this_run", "fingerprint": u["fingerprint"]}
+    try:
+        if plan.universe_file:
+            u = load_universe(plan.universe_file)
+            raw.write_json("universe.json", u)
             picked = [{**p, "total_supply": u["metadata"][p["token"]]["total_supply_at_selection"]} for p in u["pools"]]
+            meta["universe"] = {"source": "reused", "fingerprint": u["fingerprint"], "from": plan.universe_file}
         else:
-            picked = select_universe(f, plan)["picked"]
-    if not picked:
-        meta["status"] = "BLOCKED: no pools selectable (discovery failed)"
+            if plan.phase3a:
+                u = freeze_universe(f, plan)
+                meta["universe"] = {"source": "frozen_this_run", "fingerprint": u["fingerprint"]}
+                picked = [{**p, "total_supply": u["metadata"][p["token"]]["total_supply_at_selection"]} for p in u["pools"]]
+            else:
+                picked = select_universe(f, plan)["picked"]
+        if not picked:
+            meta["status"] = "BLOCKED: no pools selectable (discovery failed)"
+            raw.write_json("run.json", meta)
+            return meta
+    
+    except RuntimeError as exc:
+        if "acquisition deadline reached" not in str(exc):
+            raise
+        meta.update({"ended_ms": now_ms(), "status": "INCOMPLETE_SETUP_DEADLINE",
+                     "deadline_stage": "discovery", "deadline_error": str(exc),
+                     "exchanges": len(raw.entries()), "circuit_waits": f.waited})
         raw.write_json("run.json", meta)
         return meta
     try:
@@ -491,7 +501,7 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
         lifecycle_error = lifecycle_error or "acquisition deadline reached before final enrichment"
     entries = raw.entries()
     ended_ms = now_ms()
-    complete = lifecycle_error is None and poll_elapsed >= plan.duration_s and (max_cycles is None or cycle >= max_cycles)
+    complete = lifecycle_error is None and ((max_cycles is not None and cycle >= max_cycles) or poll_elapsed >= plan.duration_s)
     meta.update({"ended_ms": ended_ms, "cycles": cycle, "poll_window_cycles": cycle,
                  "poll_window_elapsed_s": poll_elapsed,
                  "lifecycle_elapsed_s": max(0.0, time.monotonic() - run_started_monotonic),
