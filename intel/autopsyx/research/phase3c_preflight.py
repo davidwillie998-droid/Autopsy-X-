@@ -75,7 +75,7 @@ def validate(request: object) -> list[str]:
         if type(value) is not int or value < 0:
             errors.append(f"{key} must be a non-negative integer")
 
-    for key in ("gt_rate_per_s", "gt_min_rate_per_s", "rpc_rate"):
+    for key in ("gt_rate_per_s", "gt_min_rate_per_s", "rpc_rate_per_s"):
         value = request.get(key)
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
             errors.append(f"{key} must be a finite positive number")
