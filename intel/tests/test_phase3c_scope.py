@@ -44,6 +44,7 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
                   or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")
                   or f == "intel/autopsyx/data/acquire.py"
                   or f == "intel/autopsyx/research/audit_contiguous_liquidity.py"
+                  or f == "intel/tests/test_contiguous_liquidity_audit.py"
                   or f == "intel/tests/test_acquisition_window.py"
                   or f in infra_allowed or f.startswith("intel/datasets/phase3c/runs/"))
         assert allowed, f"Phase 3C touched a file outside its namespace: {f}"
