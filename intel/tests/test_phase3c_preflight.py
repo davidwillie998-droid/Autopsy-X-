@@ -1,7 +1,7 @@
 import importlib.util
 from pathlib import Path
 
-MODULE = Path(__file__).parents[1] / "scripts" / "phase3c_preflight.py"
+MODULE = Path(__file__).parents[1] / "autopsyx" / "research" / "phase3c_preflight.py"
 spec = importlib.util.spec_from_file_location("phase3c_preflight", MODULE)
 module = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
