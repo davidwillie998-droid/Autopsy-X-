@@ -13,7 +13,7 @@ def good_request():
         "run_id": "p3c-sol-test",
         "network": "solana",
         "seed": 20261020,
-        "strata": {"young": 8, "quiet_young": 4, "trending": 4, "established": 4},
+        "strata": {"young": 45, "quiet_young": 10, "trending": 15, "established": 15},
         "new_pool_pages": 3,
         "backfill_pages": 2,
         "duration_s": 7200,
@@ -40,7 +40,7 @@ def test_valid_request_passes():
 def test_rejects_undersized_universe():
     request = good_request()
     request["strata"] = {"young": 2, "quiet_young": 1, "trending": 1, "established": 1}
-    assert any("below frozen protocol minimum 20" in e for e in module.validate(request))
+    assert any("below distinct-token sample minimum 85" in e for e in module.validate(request))
 
 
 def test_rejects_boolean_as_integer():
@@ -84,4 +84,5 @@ def test_frozen_phase3c_request_passes_preflight():
     request = json.loads(frozen_request.read_text(encoding="utf-8"))
     assert "rpc_rate_per_s" in request
     assert "rpc_rate" not in request
-    assert module.validate(request) == []
+    assert module.validate(request, allow_frozen_baseline=True) == []
+    assert any("below distinct-token sample minimum 85" in e for e in module.validate(request))
