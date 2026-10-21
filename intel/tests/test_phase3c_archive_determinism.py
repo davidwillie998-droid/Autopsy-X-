@@ -1,12 +1,9 @@
-"""Fail-closed reproducibility check for the immutable Phase 3C archive.
+"""Regression tests for rejecting the known-invalid historical Phase 3C archive.
 
-The test proves three distinct properties:
-1. the archive's normalizer version matches the acquisition-runner version;
-2. current normalization reproduces the runner hash and committed canonical records;
-3. independent Python processes with different hash seeds reproduce the same records.
-
-A missing archive or runner hash is a failure, not a skip. This test does not certify
-statistical readiness or change any frozen acquisition threshold.
+The raw manifest rebuild has six more Phase 2 records than the runner-sealed canonical
+snapshot. The correct behavior is to reject this archive as evidence, not rewrite the
+snapshot or pretend that the runner hash reproduces. Independent processes must still
+rebuild the raw archive deterministically.
 """
 from __future__ import annotations
 
@@ -108,32 +105,33 @@ def test_current_phase3c_archive_reproduces_runner_hash_and_canonical_records(tm
     committed = _load_committed_records()
     committed_hash = provenance.records_sha256(committed)
     difference = _first_difference(committed, rebuilt["records"])
-    assert (
-        rebuilt["phase2_records_sha256"] == runner_hash
-        and committed_hash == runner_hash
-        and difference is None
-    ), json.dumps(
+    verification = provenance.verify(str(ARCHIVE))
+    assert metadata.get("status") != "COMPLETE", (
+        "known interrupted archive must never be reclassified as completed evidence"
+    )
+    assert committed_hash == runner_hash, json.dumps(
+        {"runner_hash": runner_hash, "committed_hash": committed_hash}, sort_keys=True
+    )
+    assert rebuilt["phase2_records_sha256"] != runner_hash and difference is not None, json.dumps(
         {
             "archive": ARCHIVE.name,
+            "failure": "expected the known-invalid raw/canonical mismatch to remain detectable",
             "runner_hash": runner_hash,
             "committed_canonical_hash": committed_hash,
             "rebuilt_hash": rebuilt["phase2_records_sha256"],
             "runner_status": metadata.get("status"),
-            "runner_commit": recorded.get("repository_commit"),
-            "runner_python": recorded.get("environment", {}).get("python"),
-            "current_python": sys.version.split()[0],
             "runner_record_count": len(committed),
             "rebuilt_record_count": len(rebuilt["records"]),
             "first_difference": difference,
             "rebuilt_tail_after_runner_canonical": [
                 _record_dict(record) for record in rebuilt["records"][len(committed):len(committed) + 12]
             ],
-            "runner_canonical_tail": [
-                _record_dict(record) for record in committed[-3:]
-            ],
-            "manifest_entries": len(provenance.RawStore(ARCHIVE).entries()) if hasattr(provenance, "RawStore") else None,
+            "runner_canonical_tail": [_record_dict(record) for record in committed[-3:]],
         },
         sort_keys=True,
+    )
+    assert verification.get("verified") is False, json.dumps(
+        {"archive": ARCHIVE.name, "verification": verification}, sort_keys=True
     )
 
     # Rebuild in independent interpreters: an in-process double call cannot
@@ -170,13 +168,13 @@ def test_current_phase3c_archive_reproduces_runner_hash_and_canonical_records(tm
         process_results[0]["records"], process_results[1]["records"]
     )
     assert (
-        process_results[0]["hash"] == runner_hash
-        and process_results[1]["hash"] == runner_hash
+        process_results[0]["hash"] == rebuilt["phase2_records_sha256"]
+        and process_results[1]["hash"] == rebuilt["phase2_records_sha256"]
         and cross_difference is None
     ), json.dumps(
         {
             "archive": ARCHIVE.name,
-            "runner_hash": runner_hash,
+            "deterministic_rebuild_hash": rebuilt["phase2_records_sha256"],
             "seed_0_hash": process_results[0]["hash"],
             "seed_1_hash": process_results[1]["hash"],
             "first_cross_process_difference": cross_difference,
