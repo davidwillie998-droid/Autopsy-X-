@@ -68,21 +68,76 @@ def h10_replication_audit(rows_h10: list[dict], archives_order: list[str]) -> di
 
 
 def walk_forward_oos(by_token: dict, target: str) -> dict | None:
-    """Tokens ordered by their earliest as_of; the chronologically later half
-    is the OOS set. A token is wholly in one half. Returns None (not run)
-    when there are too few tokens on either side to assign a sign to."""
-    tokens = sorted(by_token, key=lambda t: min(r["as_of"] for r in by_token[t]))
-    mid = len(tokens) // 2
-    halves = {"in_sample": tokens[:mid], "oos": tokens[mid:]}
+    """Chronological holdout with a per-token label-horizon embargo.
+
+    The cutoff is chosen from observation timestamps, not token identity. Rows
+    from the future period are never moved into the in-sample set. For each
+    token, in-sample rows whose forward label could reach the first OOS step
+    are purged using the frozen Phase 3B horizon. This is a validation sign
+    check, not proof of profitability or independent IID observations.
+    """
+    rows = [r for token_rows in by_token.values() for r in token_rows
+            if isinstance(r.get("as_of"), (int, float)) and target in r
+            and isinstance(r.get("step_index"), int)]
+    timestamps = sorted({r["as_of"] for r in rows})
+    if len(timestamps) < 4:
+        return None
+    cutoff = timestamps[len(timestamps) // 2]
+    oos_rows = [r for r in rows if r["as_of"] >= cutoff]
+    if not oos_rows:
+        return None
+
+    first_oos_step = {}
+    for token, token_rows in by_token.items():
+        future_steps = [r["step_index"] for r in token_rows
+                        if r.get("as_of", float("-inf")) >= cutoff
+                        and isinstance(r.get("step_index"), int)]
+        if future_steps:
+            first_oos_step[token] = min(future_steps)
+
+    horizon = contract.HORIZON_STEPS
+    in_rows = [
+        r for token, token_rows in by_token.items()
+        for r in token_rows
+        if r.get("as_of", float("inf")) < cutoff
+        and token in first_oos_step
+        and isinstance(r.get("step_index"), int)
+        and r["step_index"] + horizon < first_oos_step[token]
+        and target in r
+    ]
+    in_tokens = {r.get("token") for r in in_rows if r.get("token")}
+    oos_tokens = {r.get("token") for r in oos_rows if r.get("token")}
+    if len(in_rows) < 3 or len(oos_rows) < 3 or len(in_tokens) < 3 or len(oos_tokens) < 3:
+        return None
+
     signs = {}
-    for name, toks in halves.items():
-        xs = [r["x"] for t in toks for r in by_token[t]]
-        ys = [r[target] for t in toks for r in by_token[t]]
+    for name, sample in (("in_sample", in_rows), ("oos", oos_rows)):
+        xs = [r["x"] for r in sample]
+        ys = [r[target] for r in sample]
         s = stats.spearman(xs, ys)
-        signs[name] = {"n_tokens": len(toks), "spearman": s, "sign": (0 if s is None else math.copysign(1, s))}
+        signs[name] = {
+            "n_rows": len(sample),
+            "n_tokens": len({r.get("token") for r in sample if r.get("token")}),
+            "spearman": s,
+            "sign": 0 if s is None or s == 0 else math.copysign(1, s),
+        }
     if signs["in_sample"]["spearman"] is None or signs["oos"]["spearman"] is None:
         return None
-    return {**signs, "signs_agree": signs["in_sample"]["sign"] == signs["oos"]["sign"] != 0}
+    return {
+        **signs,
+        "method": "chronological_timestamp_split_with_label_horizon_embargo",
+        "cutoff_as_of": cutoff,
+        "horizon_steps_embargo": horizon,
+        "in_sample_purged_rows": sum(
+            1 for token, token_rows in by_token.items()
+            for r in token_rows
+            if r.get("as_of", float("inf")) < cutoff
+            and token in first_oos_step
+            and isinstance(r.get("step_index"), int)
+            and r["step_index"] + horizon >= first_oos_step[token]
+        ),
+        "signs_agree": signs["in_sample"]["sign"] == signs["oos"]["sign"] != 0,
+    }
 
 
 # --------------------------------------------------------------- classify ----
