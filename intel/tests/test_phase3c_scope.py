@@ -82,7 +82,7 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
         '    run_started_ms = now_ms()\n'
         '    meta = {"started_ms": run_started_ms, "plan": plan.__dict__, "code_version": os.environ.get("GITHUB_SHA", "local"),\n'
         '            "runner": os.environ.get("RUNNER_NAME", "local"), "execution": "none: acquisition only, no orders",\n'
-        '            "poll_window_started_ms": None, "poll_window_duration_s": plan.duration_s,\n'
+        '            "poll_window_started_ms": None, "poll_window_ended_ms": None, "poll_window_duration_s": plan.duration_s,\n'
         '            "poll_window_cycles": 0, "poll_window_elapsed_s": 0.0}\n'
     )
     substitute(
@@ -125,17 +125,24 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
         '        if (t0 - poll_window_started_ms) / 1000 >= plan.duration_s or (max_cycles is not None and cycle >= max_cycles):\n'
     )
     substitute(
+        '    if plan.phase3a:\n'
+        '        meta["enrichment"] += enrich(f, plan, picked, 1)\n'
+        '    entries = raw.entries()\n'
         '    meta.update({"ended_ms": now_ms(), "cycles": cycle, "exchanges": len(entries), "circuit_waits": f.waited,\n'
         '                 "final_gt_rate_per_s": f.clients[gt.NAME].limiter.rate,\n'
         '                 "errors": sum(1 for e in entries if e.error), "status": "COMPLETE"})\n',
+        '    poll_window_ended_ms = now_ms()\n'
+        '    if plan.phase3a:\n'
+        '        meta["enrichment"] += enrich(f, plan, picked, 1)\n'
+        '    entries = raw.entries()\n'
         '    ended_ms = now_ms()\n'
         '    meta.update({"ended_ms": ended_ms, "cycles": cycle, "poll_window_cycles": cycle,\n'
-        '                 "poll_window_elapsed_s": max(0.0, (ended_ms - poll_window_started_ms) / 1000),\n'
+        '                 "poll_window_ended_ms": poll_window_ended_ms,\n'
+        '                 "poll_window_elapsed_s": max(0.0, (poll_window_ended_ms - poll_window_started_ms) / 1000),\n'
         '                 "exchanges": len(entries), "circuit_waits": f.waited,\n'
         '                 "final_gt_rate_per_s": f.clients[gt.NAME].limiter.rate,\n'
         '                 "errors": sum(1 for e in entries if e.error), "status": "COMPLETE"})\n'
     )
-
     actual = (ROOT / "intel" / "autopsyx" / "data" / "acquire.py").read_text()
     assert actual.rstrip("\n") == expected.rstrip("\n"), "acquire.py contains changes beyond the reviewed poll-window timing repair"
 
