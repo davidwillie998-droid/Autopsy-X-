@@ -64,21 +64,6 @@ class RawStore:
                status: int | None, body: bytes | None, attempts: int | None, error: str | None,
                context: dict | None = None, attempt_log: list | tuple = (), method: str = "GET",
                request_body: bytes | None = None) -> ManifestEntry:
-        # A provenance block marks the raw archive as sealed. Never append to it:
-        # doing so changes normalization output without changing the runner's
-        # canonical files or hashes (the Phase 3C archive drift incident).
-        if (self.dir / ".seal-in-progress").exists():
-            raise RuntimeError("raw archive sealing is in progress; refusing concurrent append")
-        run_path = self.dir / "run.json"
-        if run_path.exists():
-            try:
-                run_meta = json.loads(run_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as exc:
-                raise RuntimeError(f"cannot safely append to archive with unreadable run metadata: {exc}") from exc
-            if isinstance(run_meta, dict) and run_meta.get("provenance"):
-                raise RuntimeError(
-                    "raw archive is sealed by provenance; create a new run instead of appending"
-                )
         raw_id = None
         if body is not None:
             raw_id = sha256(body)
