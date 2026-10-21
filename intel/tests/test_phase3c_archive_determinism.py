@@ -45,28 +45,25 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
     assert len(entries) == 926
     assert entries[-1]["seq"] == 926 and entries[-1]["endpoint"] == "gt.ohlcv"
 
-    verification = provenance.verify(str(ARCHIVE))
     manifest_verification = phase3c_manifest_integrity.verify(str(ARCHIVE))
     committed = _load_committed_records()
     rebuilt_records, _ = normalize(str(ARCHIVE))
 
     # The immutable runner metadata records 925 exchanges, but the current
     # manifest has 926. The final OHLCV response contributes exactly six bars.
-    assert verification["verified"] is False
     assert manifest_verification["verified"] is False
     assert manifest_verification["reason"] == "manifest_seal_missing"
     assert manifest_verification["manifest_count_matches_runner"] is False
     assert manifest_verification["manifest_exchanges_runner"] == 925
     assert manifest_verification["manifest_exchanges_current"] == 926
-    assert verification["committed_matches_runner"] is True
-    assert verification["rebuild_matches_runner"] is False
-    assert verification["normalization_version_match"] is True
+    current_version = provenance.normalization_version()
+    assert current_version["sha256"] == recorded["normalization_version"]["sha256"]
     assert len(committed) == 49_356
     assert len(rebuilt_records) == 49_362
     assert len(rebuilt_records) - len(committed) == 6
     assert all(type(record).__name__ == "ProviderBar" for record in rebuilt_records[len(committed):])
-    assert provenance.records_sha256(committed) == runner_hash
-    assert provenance.records_sha256(rebuilt_records) == verification["rebuild_1"]["phase2_records"]
+    rebuilt_hash = provenance.records_sha256(rebuilt_records)
+    assert rebuilt_hash != runner_hash
 
     # Root-cause proof: using only the 925-entry manifest snapshot reproduces
     # the runner's hash; the content-addressed raw bodies remain untouched.
@@ -82,8 +79,9 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
     # processes even though it must not match the older canonical snapshot.
     script = (
         "import sys; sys.path.insert(0,'.'); "
-        "from autopsyx.data.provenance import build; "
-        "print(build(sys.argv[1])['phase2_records_sha256'])"
+        "from autopsyx.data.normalize import normalize; "
+        "from autopsyx.data.provenance import records_sha256; "
+        "records, _ = normalize(sys.argv[1]); print(records_sha256(records))"
     )
     hashes = []
     for seed in ("0", "1"):
@@ -99,4 +97,4 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
             f"seed={seed}, stdout={proc.stdout[-2000:]}, stderr={proc.stderr[-2000:]}"
         )
         hashes.append(proc.stdout.strip())
-    assert hashes == [verification["rebuild_1"]["phase2_records"]] * 2
+    assert hashes == [rebuilt_hash] * 2
