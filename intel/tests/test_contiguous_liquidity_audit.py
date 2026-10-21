@@ -120,6 +120,7 @@ def test_cycle_audit_passes_only_when_every_expected_cycle_has_one_valid_snapsho
         _cycle_rows([0, 1, 2, 3, 4]),
         expected_cycles=[0, 1, 2, 3, 4],
         expected_start_ms=start,
+        expected_end_ms=start + 4 * 60_000,
         expected_cadence_ms=60_000,
     )
     assert out["eligible_all_horizons"] is True
@@ -133,6 +134,7 @@ def test_extra_snapshot_cannot_mask_missing_expected_cycle():
         rows,
         expected_cycles=[0, 1, 2, 3, 4],
         expected_start_ms=start,
+        expected_end_ms=start + 4 * 60_000,
         expected_cadence_ms=60_000,
     )
     assert out["eligible_all_horizons"] is False
@@ -147,6 +149,7 @@ def test_failed_live_poll_fails_closed_even_if_other_cycles_have_snapshots():
         _cycle_rows([0, 1, 3, 4]),
         expected_cycles=[0, 1, 2, 3, 4],
         expected_start_ms=start,
+        expected_end_ms=start + 4 * 60_000,
         expected_cadence_ms=60_000,
         failed_cycles={2: "HTTP 429"},
     )
@@ -165,7 +168,25 @@ def test_discovery_timestamp_cannot_substitute_for_live_cycle():
         rows,
         expected_cycles=[0, 1, 2, 3, 4],
         expected_start_ms=start,
+        expected_end_ms=start + 4 * 60_000,
         expected_cadence_ms=60_000,
     )
     assert out["eligible_all_horizons"] is False
     assert out["missing_cycles"] == [2]
+
+
+
+def test_snapshot_timestamp_outside_actual_acquisition_window_fails_closed():
+    start = 1_000_000
+    rows = _cycle_rows([0, 1, 2, 3, 4])
+    rows[-1]["timestamp_ms"] = start + 10 * 60_000
+    out = audit_pool_cycles(
+        rows,
+        expected_cycles=[0, 1, 2, 3, 4],
+        expected_start_ms=start,
+        expected_end_ms=start + 4 * 60_000,
+        expected_cadence_ms=60_000,
+    )
+    assert out["eligible_all_horizons"] is False
+    assert out["missing_cycles"] == [4]
+    assert all(v["status"] == "NON_CONTIGUOUS" for v in out["horizons"].values())
