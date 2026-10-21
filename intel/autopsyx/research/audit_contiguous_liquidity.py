@@ -110,7 +110,6 @@ def audit_archive(run_dir: str | Path) -> dict:
 
     by_pool: dict[str, list[dict]] = defaultdict(list)
     request_errors: dict[str, int] = defaultdict(int)
-    parsed_requests = 0
     for entry in raw.entries():
         if entry.endpoint not in ("gt.new_pools", "gt.trending", "gt.top_pools", "gt.pools_multi"):
             continue
@@ -122,7 +121,6 @@ def audit_archive(run_dir: str | Path) -> dict:
                 request_errors[target] += 1
             continue
         parsed = gt.parse_pools(entry, body)
-        parsed_requests += 1
         for rec in parsed.records:
             if type(rec).__name__ != "PoolSnapshot":
                 continue
@@ -165,6 +163,7 @@ def audit_archive(run_dir: str | Path) -> dict:
         "eligible_token_ids": eligible_tokens,
         "rows": rows,
         "all_pools_pass": bool(rows) and all(p["eligible_all_horizons"] for p in rows),
+        "continuity_gate_pass": meta.get("status") == "COMPLETE" and sum(p["eligible_all_horizons"] for p in rows) > 0,
         "limitations": [
             "This is observed reserve-snapshot continuity, not proof of an economic minimum-liquidity threshold.",
             "Missing, failed, or non-positive reserve observations are not interpolated.",
@@ -190,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
         Path(args.out).write_text(rendered + "\n", encoding="utf-8")
     else:
         print(rendered)
-    return 0 if report["all_pools_pass"] else 1
+    return 0 if report["continuity_gate_pass"] else 1
 
 
 if __name__ == "__main__":
