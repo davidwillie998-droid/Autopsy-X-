@@ -80,3 +80,26 @@ def test_horizon_gap_thresholds_are_applied_independently():
     assert out["horizons"]["5m"]["status"] == "NON_CONTIGUOUS"
     assert out["horizons"]["15m"]["status"] == "PASS"
     assert out["horizons"]["60m"]["status"] == "PASS"
+
+def test_out_of_window_snapshots_cannot_mask_missing_live_cycles():
+    start = 1_000_000
+    cadence = 60_000
+    rows = [
+        {"timestamp_ms": start - cadence, "liquidity_usd": 12_000.0},  # discovery snapshot
+        {"timestamp_ms": start, "liquidity_usd": 12_000.0},
+        {"timestamp_ms": start + 2 * cadence, "liquidity_usd": 12_000.0},  # missing cycle at +1m
+        {"timestamp_ms": start + 3 * cadence, "liquidity_usd": 12_000.0},
+        {"timestamp_ms": start + 4 * cadence, "liquidity_usd": 12_000.0},
+        {"timestamp_ms": start + 5 * cadence, "liquidity_usd": 12_000.0},  # post-window
+    ]
+    out = audit_pool_snapshots(
+        rows,
+        expected_start_ms=start,
+        expected_end_ms=start + 4 * cadence,
+        expected_cadence_ms=cadence,
+    )
+    assert out["out_of_window_records_ignored"] == 2
+    assert out["horizons"]["5m"]["observed_positive_liquidity_snapshots"] == 4
+    assert out["eligible_all_horizons"] is False
+    assert all(v["status"] == "NON_CONTIGUOUS" for v in out["horizons"].values())
+
