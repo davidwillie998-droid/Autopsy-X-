@@ -51,7 +51,7 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
         rebuilt_counts[kind] = rebuilt_counts.get(kind, 0) + 1
 
     # The immutable runner metadata records 925 exchanges, but the current
-    # manifest has 926. The final OHLCV response contributes exactly six bars.
+    # manifest has 926. The extra OHLCV response contributes five bars and one coverage record.
     assert manifest_verification["verified"] is False
     assert manifest_verification["reason"] == "manifest_seal_missing"
     assert manifest_verification["manifest_count_matches_runner"] is False
@@ -61,9 +61,11 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
     assert len(rebuilt_records) == 49_362
     assert len(rebuilt_records) - len(committed) == 6
     assert runner_counts["ProviderBar"] == 9_975
-    assert rebuilt_counts["ProviderBar"] == 9_981
+    assert rebuilt_counts["ProviderBar"] == 9_980
+    assert rebuilt_counts.get("Coverage", 0) - runner_counts.get("Coverage", 0) == 1
     assert all(
-        rebuilt_counts.get(kind, 0) - runner_counts.get(kind, 0) == (6 if kind == "ProviderBar" else 0)
+        rebuilt_counts.get(kind, 0) - runner_counts.get(kind, 0)
+        == (5 if kind == "ProviderBar" else 1 if kind == "Coverage" else 0)
         for kind in set(runner_counts) | set(rebuilt_counts)
     )
     assert provenance.records_sha256(committed) == runner_hash
