@@ -66,3 +66,17 @@ def test_duplicate_timestamps_do_not_inflate_observed_count():
     out = audit_pool_snapshots(rows, expected_start_ms=start, expected_end_ms=start + 60_000,
                                expected_cadence_ms=60_000)
     assert out["horizons"]["5m"]["observed_positive_liquidity_snapshots"] == 2
+
+
+def test_horizon_gap_thresholds_are_applied_independently():
+    start = 1_000_000
+    cadence = 6 * 60_000
+    rows = [
+        {"timestamp_ms": start, "liquidity_usd": 10_000.0},
+        {"timestamp_ms": start + cadence, "liquidity_usd": 10_000.0},
+    ]
+    out = audit_pool_snapshots(rows, expected_start_ms=start, expected_end_ms=start + cadence,
+                               expected_cadence_ms=cadence)
+    assert out["horizons"]["5m"]["status"] == "NON_CONTIGUOUS"
+    assert out["horizons"]["15m"]["status"] == "PASS"
+    assert out["horizons"]["60m"]["status"] == "PASS"
