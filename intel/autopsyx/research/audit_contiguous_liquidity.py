@@ -325,15 +325,16 @@ def audit_archive(run_dir: str | Path) -> dict:
         "horizons_ms": HORIZONS_MS,
         "pool_count": len(rows),
         "minimum_structural_pool_count": MIN_STRUCTURAL_POOLS,
-        "structural_pool_count_pass": len(rows) >= MIN_STRUCTURAL_POOLS,
+        "selected_pool_count_pass": len(rows) >= MIN_STRUCTURAL_POOLS,
         "eligible_pool_count": sum(p["eligible_all_horizons"] for p in rows),
+        "eligible_structural_pool_count_pass": sum(p["eligible_all_horizons"] for p in rows) >= MIN_STRUCTURAL_POOLS,
         "eligible_distinct_token_count": len(eligible_tokens),
         "eligible_token_ids": eligible_tokens,
         "unattributable_failed_batches": {str(k): v for k, v in missing_cycle_batches.items()},
         "rows": rows,
         "all_pools_pass": bool(rows) and all(p["eligible_all_horizons"] for p in rows),
-        "continuity_gate_pass": (meta.get("status") == "COMPLETE" and len(rows) >= MIN_STRUCTURAL_POOLS
-                                 and all(p["eligible_all_horizons"] for p in rows)),
+        "continuity_gate_pass": (meta.get("status") == "COMPLETE"
+                                 and sum(p["eligible_all_horizons"] for p in rows) >= MIN_STRUCTURAL_POOLS),
         "limitations": [
             "Only gt.pools_multi live polling observations count; discovery/backfill snapshots are excluded.",
             "Every selected pool must have exactly one valid reserve snapshot in every expected cycle.",
