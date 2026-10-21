@@ -71,8 +71,8 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
     )
 
     substitute(
-        '        f.get(gt.NAME, "gt.pools_multi", gt.path_pools_multi(n, chunk), {"chain": n, "cycle": cycle})\\n',
-        '        f.get(gt.NAME, "gt.pools_multi", gt.path_pools_multi(n, chunk), {"chain": n, "cycle": cycle, "pools": list(chunk)})\\n'
+        '        f.get(gt.NAME, "gt.pools_multi", gt.path_pools_multi(n, chunk), {"chain": n, "cycle": cycle})\n',
+        '        f.get(gt.NAME, "gt.pools_multi", gt.path_pools_multi(n, chunk), {"chain": n, "cycle": cycle, "pools": list(chunk)})\n'
     )
 
     substitute(
