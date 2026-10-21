@@ -80,25 +80,6 @@ jobs:
           cp datasets/phase3c/REQUEST.json "datasets/phase3c/runs/$RUN_ID/frozen_request.json"
           cp "$REQUEST_PATH" "datasets/phase3c/runs/$RUN_ID/request.json"
           sha256sum "datasets/phase3c/runs/$RUN_ID/frozen_request.json" "datasets/phase3c/runs/$RUN_ID/request.json" > "datasets/phase3c/runs/$RUN_ID/request_hashes.sha256"
-      - name: Record failed or interrupted acquisition
-        if: (failure() || cancelled()) && env.RUN_ID != ''
-        working-directory: intel
-        env:
-          RUN_ID: ${{ env.RUN_ID }}
-        run: |
-          python - <<'PY'
-          import json, time
-          from pathlib import Path
-          p = Path("datasets/phase3c/runs") / __import__("os").environ["RUN_ID"] / "run.json"
-          if p.exists():
-              meta = json.loads(p.read_text(encoding="utf-8"))
-              # Preserve COMPLETE only when acquisition itself finished cleanly.
-              # Any other status, including RUNNING, must not masquerade as a resumable run.
-              if meta.get("status") != "COMPLETE":
-                  meta["status"] = "FAILED_OR_INTERRUPTED"
-              meta.setdefault("ended_ms", int(time.time() * 1000))
-              meta["workflow_failure_recorded"] = True
-              p.write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
       - name: Snapshot Phase 3C raw manifest before canonical normalization
         id: manifest_snapshot
@@ -125,6 +106,25 @@ jobs:
         if: always() && steps.manifest_seal.outcome == 'success'
         working-directory: intel
         run: python -m autopsyx.research.phase3c_manifest_integrity verify "datasets/phase3c/runs/$RUN_ID" > "datasets/phase3c/runs/$RUN_ID/manifest_integrity_verify.json"
+      - name: Record failed or interrupted acquisition
+        if: (failure() || cancelled()) && env.RUN_ID != ''
+        working-directory: intel
+        env:
+          RUN_ID: ${{ env.RUN_ID }}
+        run: |
+          python - <<'PY'
+          import json, time
+          from pathlib import Path
+          p = Path("datasets/phase3c/runs") / __import__("os").environ["RUN_ID"] / "run.json"
+          if p.exists():
+              meta = json.loads(p.read_text(encoding="utf-8"))
+              # Preserve COMPLETE only when acquisition itself finished cleanly.
+              # Any other status, including RUNNING, must not masquerade as a resumable run.
+              if meta.get("status") != "COMPLETE":
+                  meta["status"] = "FAILED_OR_INTERRUPTED"
+              meta.setdefault("ended_ms", int(time.time() * 1000))
+              meta["workflow_failure_recorded"] = True
+              p.write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
       - name: Commit raw archive and verification evidence
         if: always() && env.RUN_ID != ''
         run: |
