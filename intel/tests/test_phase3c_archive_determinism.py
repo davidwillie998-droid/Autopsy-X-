@@ -45,32 +45,28 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
     assert entries[-1]["seq"] == 926 and entries[-1]["endpoint"] == "gt.ohlcv"
 
     verification = provenance.verify(str(ARCHIVE))
-    entries = provenance.RawStore(ARCHIVE).entries()
-    # The immutable runner metadata proves that exactly one raw exchange was
-    # appended after canonical sealing: seq 926 is an OHLCV response that
-    # yields six extra ProviderBar records.
-    assert verification["manifest_exchanges_runner"] == 925
-    assert verification["manifest_exchanges_current"] == 926
-    assert verification["manifest_count_matches_runner"] is False
-    assert entries[-1].seq == 926 and entries[-1].endpoint == "gt.ohlcv"
-    assert len(rebuilt["records"]) - len(committed) == 6
-    assert all(type(record).__name__ == "ProviderBar" for record in rebuilt["records"][len(committed):])
+    committed = _load_committed_records()
+    rebuilt_records, _ = normalize(str(ARCHIVE))
+
+    # The immutable runner metadata records 925 exchanges, but the current
+    # manifest has 926. The final OHLCV response contributes exactly six bars.
     assert verification["verified"] is False
     assert verification["manifest_matches_runner"] is False
+    assert verification["manifest_count_matches_runner"] is False
+    assert verification["manifest_exchanges_runner"] == 925
     assert verification["manifest_exchanges_current"] == 926
     assert verification["committed_matches_runner"] is True
     assert verification["rebuild_matches_runner"] is False
     assert verification["normalization_version_match"] is True
-
-    committed = _load_committed_records()
-    rebuilt_count = verification["rebuild_counts"]["phase2_records"]
     assert len(committed) == 49_356
-    assert rebuilt_count == 49_362
-    assert verification["rebuild_1"]["phase2_records"] != runner_hash
+    assert len(rebuilt_records) == 49_362
+    assert len(rebuilt_records) - len(committed) == 6
+    assert all(type(record).__name__ == "ProviderBar" for record in rebuilt_records[len(committed):])
     assert provenance.records_sha256(committed) == runner_hash
+    assert provenance.records_sha256(rebuilt_records) == verification["rebuild_1"]["phase2_records"]
 
-    # Root-cause proof: use the exact manifest prefix recorded at seal time.
-    # The raw bodies remain content-addressed and are not modified.
+    # Root-cause proof: using only the 925-entry manifest snapshot reproduces
+    # the runner's hash; the content-addressed raw bodies remain untouched.
     prefix = tmp_path / "manifest-prefix"
     prefix.mkdir()
     (prefix / "manifest.jsonl").write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
@@ -79,8 +75,8 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
     assert len(prefix_records) == len(committed)
     assert provenance.records_sha256(prefix_records) == runner_hash
 
-    # Independently confirm that today's full-manifest rebuild is deterministic
-    # across interpreter processes, even though it must not match the old seal.
+    # Today's full-manifest rebuild is deterministic across independent Python
+    # processes even though it must not match the older canonical snapshot.
     script = (
         "import sys; sys.path.insert(0,'.'); "
         "from autopsyx.data.provenance import build; "
