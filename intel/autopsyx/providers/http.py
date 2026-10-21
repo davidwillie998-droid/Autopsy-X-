@@ -30,7 +30,8 @@ class TokenBucket:
         self._last = clock()
         self._lock = threading.Lock()
 
-    def acquire(self) -> None:
+    def acquire(self, deadline_monotonic: float | None = None) -> None:
+        """Acquire a token, refusing to sleep past an optional monotonic deadline."""
         with self._lock:
             while True:
                 now = self._clock()
@@ -42,6 +43,8 @@ class TokenBucket:
                 # Wait for the missing fraction, then consume the token outright. Re-checking a
                 # rounded balance (0.999...) livelocked with coarse clocks (found in Phase 2 tests).
                 wait = (1 - self.tokens) / self.rate
+                if deadline_monotonic is not None and now + wait >= deadline_monotonic:
+                    raise ProviderError("acquisition deadline reached while rate-limited", retryable=False)
                 self._sleep(wait)
                 self.tokens = 0.0
                 self._last = max(self._clock(), self._last + wait)
@@ -135,14 +138,14 @@ class HttpClient:
             log.warning("rate reduced", extra={"fields": {"from_per_s": round(old, 4),
                                                           "to_per_s": round(self.limiter.rate, 4)}})
 
-    def get_raw(self, path: str) -> RawResponse:
-        return self._request(path, None)
+    def get_raw(self, path: str, *, deadline_monotonic: float | None = None) -> RawResponse:
+        return self._request(path, None, deadline_monotonic=deadline_monotonic)
 
-    def post_raw(self, path: str, payload: dict) -> RawResponse:
+    def post_raw(self, path: str, payload: dict, *, deadline_monotonic: float | None = None) -> RawResponse:
         """POST a JSON body (JSON-RPC). Same retry, rate-limit and circuit rules as GET."""
-        return self._request(path, json.dumps(payload, sort_keys=True).encode())
+        return self._request(path, json.dumps(payload, sort_keys=True).encode(), deadline_monotonic=deadline_monotonic)
 
-    def _request(self, path: str, data: bytes | None) -> RawResponse:
+    def _request(self, path: str, data: bytes | None, *, deadline_monotonic: float | None = None) -> RawResponse:
         url = self.base_url + path
         if not self.breaker.allow():
             log.error("circuit open", extra={"fields": {"url": url}})
@@ -153,12 +156,23 @@ class HttpClient:
         attempts: list[dict] = []
         headers = dict(self.headers, **({"Content-Type": "application/json"} if data is not None else {}))
         for attempt in range(1, self.max_retries + 2):
-            self.limiter.acquire()
+            clock = self.limiter._clock
+            if deadline_monotonic is not None and clock() >= deadline_monotonic:
+                raise ProviderError("acquisition deadline reached before request", retryable=False,
+                                    attempt_log=tuple(attempts))
+            self.limiter.acquire(deadline_monotonic=deadline_monotonic)
             t0 = self.now_ms()
             status = None
             try:
                 req = urllib.request.Request(url, data=data, headers=headers, method="POST" if data is not None else "GET")
-                with self.opener(req, timeout=self.timeout_s) as resp:
+                timeout = self.timeout_s
+                if deadline_monotonic is not None:
+                    remaining = deadline_monotonic - clock()
+                    if remaining <= 0:
+                        raise ProviderError("acquisition deadline reached before request", retryable=False,
+                                            attempt_log=tuple(attempts))
+                    timeout = min(timeout, remaining)
+                with self.opener(req, timeout=timeout) as resp:
                     body = resp.read()
                     status = getattr(resp, "status", 200)
                     ctype = resp.headers.get("Content-Type", "") if getattr(resp, "headers", None) else ""
@@ -185,6 +199,9 @@ class HttpClient:
             attempts.append({"status": status, "error": type(last).__name__ + (f" {status}" if status else ""),
                              "wait_s": round(pause, 3), "latency_ms": self.now_ms() - t0})
             if attempt <= self.max_retries:
+                if deadline_monotonic is not None and self.limiter._clock() + pause >= deadline_monotonic:
+                    raise ProviderError("acquisition deadline reached before retry", retryable=False,
+                                        rate_limited=status == 429, attempt_log=tuple(attempts))
                 log.warning("retry", extra={"fields": {"url": url, "attempt": attempt, "wait_s": round(pause, 3),
                                                        "error": str(last)}})
                 self.sleep(pause)
