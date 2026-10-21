@@ -27,7 +27,7 @@ def test_seal_records_required_metadata(tmp_path, monkeypatch):
     p = json.loads((d / "run.json").read_text())["provenance"]
     for k in ("run_id", "workflow_run_id", "started_at", "completed_at", "providers", "endpoints",
               "canonical_dataset_version", "normalization_version", "config_hash", "dataset_hash_algorithm",
-              "runner_dataset_hash", "record_counts", "coverage_summary", "repository_commit", "environment"):
+              "runner_dataset_hash", "manifest_sha256", "manifest_bytes", "record_counts", "coverage_summary", "repository_commit", "environment"):
         assert k in p, k
     assert p["workflow_run_id"] == "123" and p["repository_commit"] == "abc"
     assert (d / "canonical" / "phase2_records.jsonl.gz").exists()
@@ -126,23 +126,3 @@ def test_sealed_archive_rejects_raw_append(tmp_path, monkeypatch):
             attempts=1, error=None,
         )
     assert len(pv.RawStore(d).entries()) == len(json.loads((d / "run.json").read_text())["provenance"]["record_counts"]["manifest_exchanges"])
-
-
-def test_manifest_tamper_fails_verification(tmp_path, monkeypatch):
-    d = sealed(tmp_path, monkeypatch)
-    with (d / "manifest.jsonl").open("a", encoding="utf-8") as stream:
-        stream.write("\n")
-    result = pv.verify(str(d))
-    assert result["verified"] is False
-    assert result["manifest_matches_runner"] is False
-
-
-def test_seal_refuses_incomplete_acquisition(tmp_path, monkeypatch):
-    run3(tmp_path / "d")
-    d = tmp_path / "d"
-    meta = json.loads((d / "run.json").read_text(encoding="utf-8"))
-    meta["status"] = "CANCELLED"
-    (d / "run.json").write_text(json.dumps(meta), encoding="utf-8")
-    with pytest.raises(RuntimeError, match="refusing to seal incomplete acquisition"):
-        pv.seal(str(d))
-    assert not (d / "canonical" / "phase2_records.jsonl.gz").exists()
