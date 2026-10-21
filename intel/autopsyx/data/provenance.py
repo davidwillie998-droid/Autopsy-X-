@@ -15,7 +15,7 @@ Phase 3A normalizers already report, so no new algorithm is introduced:
                        default=str) with enums as their values and tuples as
                        lists; no separator between records
   phase3a_observations sha256 over UTF-8 json.dumps(observation.to_dict(),
-                       sort_keys=True) + "\\n" per observation, in order
+                       sort_keys=True) + "\n" per observation, in order
 
 Numbers are serialized by Python's json (shortest round-trip repr), nulls as
 ``null``, timestamps as integer milliseconds, keys sorted at every level.
@@ -131,7 +131,7 @@ def seal(run_dir: str) -> dict:
     marker = d / ".seal-in-progress"
     try:
         with marker.open("x", encoding="utf-8") as stream:
-            stream.write("canonical sealing in progress\\n")
+            stream.write("canonical sealing in progress\n")
     except FileExistsError as exc:
         raise RuntimeError("another process is sealing this archive; refusing concurrent seal") from exc
 
@@ -149,7 +149,7 @@ def seal(run_dir: str) -> dict:
         EventStore.dump_jsonl(tmp, b["records"])
         (d / "canonical" / "phase2_records.jsonl.gz").write_bytes(gzip.compress(tmp.read_bytes(), mtime=0))
         tmp.unlink()
-        obs_lines = "".join(json.dumps(o.to_dict(), sort_keys=True) + "\\n" for o in b["observations"]).encode()
+        obs_lines = "".join(json.dumps(o.to_dict(), sort_keys=True) + "\n" for o in b["observations"]).encode()
         (d / "canonical" / "phase3a_observations.jsonl.gz").write_bytes(gzip.compress(obs_lines, mtime=0))
         rep = b["report"]
         raw.write_json("normalize_stdout.json", {"records": rep.records, "issues": rep.issues,
