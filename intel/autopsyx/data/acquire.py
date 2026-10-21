@@ -409,7 +409,7 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
     run_started_ms = now_ms()
     meta = {"started_ms": run_started_ms, "plan": plan.__dict__, "code_version": os.environ.get("GITHUB_SHA", "local"),
             "runner": os.environ.get("RUNNER_NAME", "local"), "execution": "none: acquisition only, no orders",
-            "poll_window_started_ms": None, "poll_window_duration_s": plan.duration_s,
+            "poll_window_started_ms": None, "poll_window_ended_ms": None, "poll_window_duration_s": plan.duration_s,
             "poll_window_cycles": 0, "poll_window_elapsed_s": 0.0}
     raw.write_json("run.json", meta)
     if plan.universe_file:
@@ -447,12 +447,14 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
         spent = (now_ms() - t0) / 1000
         if spent < plan.cycle_s:
             sleep(plan.cycle_s - spent)
+    poll_window_ended_ms = now_ms()
     if plan.phase3a:
         meta["enrichment"] += enrich(f, plan, picked, 1)
     entries = raw.entries()
     ended_ms = now_ms()
     meta.update({"ended_ms": ended_ms, "cycles": cycle, "poll_window_cycles": cycle,
-                 "poll_window_elapsed_s": max(0.0, (ended_ms - poll_window_started_ms) / 1000),
+                 "poll_window_ended_ms": poll_window_ended_ms,
+                 "poll_window_elapsed_s": max(0.0, (poll_window_ended_ms - poll_window_started_ms) / 1000),
                  "exchanges": len(entries), "circuit_waits": f.waited,
                  "final_gt_rate_per_s": f.clients[gt.NAME].limiter.rate,
                  "errors": sum(1 for e in entries if e.error), "status": "COMPLETE"})
