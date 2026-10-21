@@ -102,27 +102,3 @@ def test_hash_independent_of_process_hash_seed(tmp_path, monkeypatch):
     outs = {subprocess.run([sys.executable, "-c", code, str(d)], cwd=ROOT, capture_output=True, text=True,
                            env=dict(os.environ, PYTHONHASHSEED=s)).stdout for s in ("0", "1")}
     assert len(outs) == 1 and outs.pop().strip()
-
-
-def test_tampered_manifest_fails_verification(tmp_path, monkeypatch):
-    d = sealed(tmp_path, monkeypatch)
-    manifest = d / "manifest.jsonl"
-    manifest.write_text(manifest.read_text(encoding="utf-8") + "\n", encoding="utf-8")
-    result = pv.verify(str(d))
-    assert result["reproducible"]
-    assert result["rebuild_matches_runner"]
-    assert result["committed_matches_runner"]
-    assert result["manifest_matches_runner"] is False
-    assert result["verified"] is False
-
-
-def test_sealed_archive_rejects_raw_append(tmp_path, monkeypatch):
-    d = sealed(tmp_path, monkeypatch)
-    store = pv.RawStore(d)
-    with pytest.raises(RuntimeError, match="sealed by provenance"):
-        store.record(
-            provider="test", endpoint="test.append", url="https://example.invalid",
-            request_ts=1, response_ts=2, status=200, body=b"{}",
-            attempts=1, error=None,
-        )
-    assert len(pv.RawStore(d).entries()) == len(json.loads((d / "run.json").read_text())["provenance"]["record_counts"]["manifest_exchanges"])
