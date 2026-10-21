@@ -124,7 +124,7 @@ def audit_archive(run_dir: str | Path) -> dict:
         for rec in parsed.records:
             if type(rec).__name__ != "PoolSnapshot":
                 continue
-            by_pool[rec.pool].append({"timestamp_ms": rec.observed_ts, "liquidity_usd": rec.liquidity_usd})
+            by_pool[rec.pool].append({"timestamp_ms": rec.seen_ts, "liquidity_usd": rec.liquidity_usd})
 
     rows = []
     for pool in pools:
