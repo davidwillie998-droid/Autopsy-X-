@@ -92,7 +92,9 @@ jobs:
           p = Path("datasets/phase3c/runs") / __import__("os").environ["RUN_ID"] / "run.json"
           if p.exists():
               meta = json.loads(p.read_text(encoding="utf-8"))
-              if meta.get("status") != "COMPLETE" and not meta.get("status"):
+              # Preserve COMPLETE only when acquisition itself finished cleanly.
+              # Any other status, including RUNNING, must not masquerade as a resumable run.
+              if meta.get("status") != "COMPLETE":
                   meta["status"] = "FAILED_OR_INTERRUPTED"
               meta.setdefault("ended_ms", int(time.time() * 1000))
               meta["workflow_failure_recorded"] = True
