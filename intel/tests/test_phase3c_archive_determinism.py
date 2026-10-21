@@ -75,7 +75,7 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
     # The raw bodies remain content-addressed and are not modified.
     prefix = tmp_path / "manifest-prefix"
     prefix.mkdir()
-    (prefix / "manifest.jsonl").write_text("\\n".join(lines[:-1]) + "\\n", encoding="utf-8")
+    (prefix / "manifest.jsonl").write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
     (prefix / "raw").symlink_to(ARCHIVE / "raw", target_is_directory=True)
     prefix_records, _ = normalize(str(prefix))
     assert len(prefix_records) == len(committed)
