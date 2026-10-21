@@ -99,9 +99,8 @@ def validate(request: object, *, allow_frozen_baseline: bool = False) -> list[st
 
 def main(argv: list[str] | None = None) -> int:
     args = list(argv if argv is not None else sys.argv[1:])
-    allow_frozen_baseline = bool(args and args[0] == "--frozen-baseline")
-    if allow_frozen_baseline:
-        args = args[1:]
+    allow_frozen_baseline = "--frozen-baseline" in args
+    args = [arg for arg in args if arg != "--frozen-baseline"]
     if len(args) != 1:
         print("usage: phase3c_preflight.py [--frozen-baseline] REQUEST.json", file=sys.stderr)
         return 2
