@@ -29,16 +29,16 @@ jobs:
           python-version: "3.11"
       - name: Validate frozen Phase 3C request (local-only; no provider calls)
         working-directory: intel
-        run: python -m autopsyx.research.phase3c_preflight datasets/phase3c/REQUEST.json
+        run: |
+          python -m autopsyx.research.phase3c_preflight datasets/phase3c/REQUEST.json
+          RUN_ID=$(python -c "import json;print(json.load(open('datasets/phase3c/REQUEST.json'))['run_id'])")
+          echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
       - name: Acquire
         id: acquire
         working-directory: intel
         env:
           AUTOPSYX_SOLANA_RPC_URL: ${{ secrets.AUTOPSYX_SOLANA_RPC_URL }}
-        run: |
-          RUN_ID=$(python -c "import json;print(json.load(open('datasets/phase3c/REQUEST.json'))['run_id'])")
-          echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
-          python -m autopsyx --log acquire --live --request datasets/phase3c/REQUEST.json --out "datasets/phase3c/runs/$RUN_ID"
+        run: python -m autopsyx --log acquire --live --request datasets/phase3c/REQUEST.json --out "datasets/phase3c/runs/$RUN_ID"
       - name: Record failed or interrupted acquisition
         if: (failure() || cancelled()) && env.RUN_ID != ''
         working-directory: intel
