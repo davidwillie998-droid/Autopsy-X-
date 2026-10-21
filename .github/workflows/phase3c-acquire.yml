@@ -118,10 +118,9 @@ jobs:
           p = Path("datasets/phase3c/runs") / __import__("os").environ["RUN_ID"] / "run.json"
           if p.exists():
               meta = json.loads(p.read_text(encoding="utf-8"))
-              # Preserve COMPLETE only when acquisition itself finished cleanly.
-              # Any other status, including RUNNING, must not masquerade as a resumable run.
-              if meta.get("status") != "COMPLETE":
-                  meta["status"] = "FAILED_OR_INTERRUPTED"
+              # Any workflow failure invalidates the overall evidence pipeline,
+              # even if acquisition itself had reached COMPLETE before sealing/verification failed.
+              meta["status"] = "FAILED_OR_INTERRUPTED"
               meta.setdefault("ended_ms", int(time.time() * 1000))
               meta["workflow_failure_recorded"] = True
               p.write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
