@@ -38,12 +38,19 @@ def audit_pool_snapshots(
     valid_by_ts: dict[int, float] = {}
     invalid_timestamps = 0
     invalid_liquidity = 0
+    out_of_window_records = 0
     for row in snapshots:
         ts = row.get("timestamp_ms")
-        liq = row.get("liquidity_usd")
         if not isinstance(ts, int) or isinstance(ts, bool):
             invalid_timestamps += 1
             continue
+        # Discovery/backfill responses can include snapshots outside the live
+        # observation window. They must not fill a missing poll cycle or extend
+        # the measured continuity interval.
+        if ts < expected_start_ms or ts > expected_end_ms:
+            out_of_window_records += 1
+            continue
+        liq = row.get("liquidity_usd")
         if not isinstance(liq, (int, float)) or isinstance(liq, bool) or not math.isfinite(liq) or liq <= 0:
             invalid_liquidity += 1
             continue
@@ -76,6 +83,7 @@ def audit_pool_snapshots(
         "observed_timestamps_ms": times,
         "invalid_timestamp_records": invalid_timestamps,
         "invalid_liquidity_records": invalid_liquidity,
+        "out_of_window_records_ignored": out_of_window_records,
         "horizons": results,
         "eligible_all_horizons": all(v["status"] == "PASS" for v in results.values()),
     }
