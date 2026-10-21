@@ -1,13 +1,8 @@
 name: Phase 3C data acquisition
 
-# Identical acquisition code and procedure to the Phase 3A workflow
-# (phase3a-acquire.yml): the repository's own acquisition code runs against
-# public, keyless endpoints and the raw archive is committed back to this
-# branch. Nothing about acquire/seal/verify-provenance is forked or
-# reimplemented for Phase 3C; only the watched request path and the archive
-# directory differ, so new Phase 3C archives are independently acquired and
-# independently provenance-verified under the exact same frozen procedure
-# D2 already used. Read-only acquisition: no orders, no wallets, no keys.
+# Phase 3C uses the repository's canonical acquire/seal/verify implementation.
+# A failed or interrupted acquisition must never be sealed as a completed run.
+# Read-only acquisition: no orders, no wallets, no keys.
 
 on:
   push:
@@ -36,6 +31,7 @@ jobs:
         working-directory: intel
         run: python -m autopsyx.research.phase3c_preflight datasets/phase3c/REQUEST.json
       - name: Acquire
+        id: acquire
         working-directory: intel
         env:
           AUTOPSYX_SOLANA_RPC_URL: ${{ secrets.AUTOPSYX_SOLANA_RPC_URL }}
@@ -43,20 +39,41 @@ jobs:
           RUN_ID=$(python -c "import json;print(json.load(open('datasets/phase3c/REQUEST.json'))['run_id'])")
           echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
           python -m autopsyx --log acquire --live --request datasets/phase3c/REQUEST.json --out "datasets/phase3c/runs/$RUN_ID"
+      - name: Record failed or interrupted acquisition
+        if: failure() && env.RUN_ID != ''
+        working-directory: intel
+        env:
+          RUN_ID: ${{ env.RUN_ID }}
+        run: |
+          python - <<'PY'
+          import json, time
+          from pathlib import Path
+          p = Path("datasets/phase3c/runs") / __import__("os").environ["RUN_ID"] / "run.json"
+          if p.exists():
+              meta = json.loads(p.read_text(encoding="utf-8"))
+              if meta.get("status") != "COMPLETE" and not meta.get("status"):
+                  meta["status"] = "FAILED_OR_INTERRUPTED"
+              meta.setdefault("ended_ms", int(time.time() * 1000))
+              meta["workflow_failure_recorded"] = True
+              p.write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
       - name: Seal canonical dataset on the runner
-        if: always()
+        id: seal
+        if: steps.acquire.outcome == 'success'
         working-directory: intel
         run: python -m autopsyx seal "datasets/phase3c/runs/$RUN_ID"
       - name: Verify provenance on the runner
-        if: always()
+        id: verify
+        if: steps.seal.outcome == 'success'
         working-directory: intel
-        run: python -m autopsyx verify-provenance "datasets/phase3c/runs/$RUN_ID" > "datasets/phase3c/runs/$RUN_ID/runner_verify.json" || true
-      - name: Commit raw archive
-        if: always()
+        run: python -m autopsyx verify-provenance "datasets/phase3c/runs/$RUN_ID" > "datasets/phase3c/runs/$RUN_ID/runner_verify.json"
+      - name: Commit raw archive and verification evidence
+        if: always() && env.RUN_ID != ''
         run: |
           git config user.name "autopsyx-acquisition"
           git config user.email "actions@users.noreply.github.com"
           git add "intel/datasets/phase3c/runs/$RUN_ID"
+          git diff --cached --quiet && exit 0
           git commit -m "Phase 3C raw archive: $RUN_ID (acquired by workflow run ${{ github.run_id }})"
           for i in 1 2 3 4; do git pull --rebase origin "${{ github.ref_name }}" && git push origin "HEAD:${{ github.ref_name }}" && exit 0; sleep $((2**i)); done
           exit 1
