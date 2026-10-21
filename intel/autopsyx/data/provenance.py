@@ -65,6 +65,12 @@ def normalization_version() -> dict:
             "observation_schema": SCHEMA_VERSION}
 
 
+def _manifest_sha256(run_dir: Path) -> str | None:
+    """Hash the exact acquisition manifest so post-seal appends are detectable."""
+    path = run_dir / "manifest.jsonl"
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+
+
 def records_sha256(records: list) -> str:
     h = hashlib.sha256()
     for r in records:
@@ -123,6 +129,7 @@ def seal(run_dir: str) -> dict:
                                 "phase3a_observations": b["phase3a_observations_sha256"]},
         "canonical_files": {"phase2_records": "canonical/phase2_records.jsonl.gz",
                             "phase3a_observations": "canonical/phase3a_observations.jsonl.gz"},
+        "manifest_sha256": _manifest_sha256(d),
         "record_counts": {"phase2_records": rep.records, "phase3a_observations": len(b["observations"]),
                           "manifest_exchanges": len(entries), "manifest_errors": sum(1 for e in entries if e.error)},
         "coverage_summary": {"phase3a_by_kind_state": dict(sorted(Counter(f"{o.kind}|{o.state.value}"
@@ -172,10 +179,14 @@ def verify(run_dir: str) -> dict:
         out["config_hash_runner"] = prov.get("config_hash")
         out["config_hash_local"] = Config.load().fingerprint()
         out["normalization_version_match"] = prov["normalization_version"]["sha256"] == normalization_version()["sha256"]
+        current_manifest_sha256 = _manifest_sha256(d)
+        out["manifest_sha256_current"] = current_manifest_sha256
+        out["manifest_matches_runner"] = bool(prov.get("manifest_sha256") and
+                                               prov.get("manifest_sha256") == current_manifest_sha256)
         out["committed_matches_runner"] = (c2, c3) == (rh["phase2_records"], rh["phase3a_observations"])
         out["rebuild_matches_runner"] = out["rebuild_1"] == rh
         out["verified"] = bool(out["reproducible"] and out["committed_matches_runner"] and out["rebuild_matches_runner"]
-                               and meta.get("status") == "COMPLETE")
+                               and out["manifest_matches_runner"] and meta.get("status") == "COMPLETE")
         out["scope"] = "phase2_records and phase3a_observations"
     elif legacy:
         # Phase 2 archives: the runner hashed the Phase 2 records only; Phase 3A
