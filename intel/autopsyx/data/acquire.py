@@ -428,6 +428,24 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
         meta["status"] = "BLOCKED: no pools selectable (discovery failed)"
         raw.write_json("run.json", meta)
         return meta
+    # Phase 3C must not spend hours collecting a sample that cannot satisfy
+    # its frozen distinct-token gate. Fail before backfill/polling if selection
+    # did not produce every requested unique token.
+    if plan.poll_pools_per_cycle is not None:
+        target = sum(plan.strata.values())
+        selected_tokens = len({p["token"] for p in picked})
+        meta["selection_gate"] = {
+            "requested_unique_tokens": target,
+            "selected_unique_tokens": selected_tokens,
+            "pass": selected_tokens >= target,
+        }
+        if selected_tokens < target:
+            meta["status"] = (
+                f"BLOCKED: selected {selected_tokens} unique tokens; "
+                f"Phase 3C acquisition target is {target}"
+            )
+            raw.write_json("run.json", meta)
+            return meta
     backfill(f, plan, picked)
     if plan.phase3a:
         meta["enrichment"] = enrich(f, plan, picked, 0)
