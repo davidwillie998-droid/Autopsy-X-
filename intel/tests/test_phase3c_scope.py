@@ -170,3 +170,14 @@ def test_phase3c_reuses_frozen_min_sample_without_redefining_it():
     from autopsyx.research import phase3b_contract as contract
     from autopsyx.research import phase3c_pipeline as p3c
     assert p3c.MIN_SAMPLE is contract.MIN_SAMPLE  # literally the same object, not a re-derived copy
+
+
+def test_phase3c_workflow_invalidates_complete_run_after_pipeline_failure():
+    workflow = (ROOT / ".github" / "workflows" / "phase3c-acquire.yml").read_text()
+    failure_step = workflow.split("- name: Record failed or interrupted acquisition", 1)[1]
+    failure_step = failure_step.split("- name: Commit raw archive and verification evidence", 1)[0]
+    assert 'meta["status"] = "FAILED_OR_INTERRUPTED"' in failure_step
+    assert 'if meta.get("status") != "COMPLETE"' not in failure_step
+    assert workflow.index("Verify Phase 3C raw-manifest integrity") < workflow.index(
+        "Record failed or interrupted acquisition"
+    ) < workflow.index("Commit raw archive and verification evidence")
