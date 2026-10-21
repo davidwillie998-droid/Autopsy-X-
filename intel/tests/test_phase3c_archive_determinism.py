@@ -61,7 +61,9 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
     assert len(committed) == 49_356
     assert len(rebuilt_records) == 49_362
     assert len(rebuilt_records) - len(committed) == 6
-    assert all(type(record).__name__ == "ProviderBar" for record in rebuilt_records[len(committed):])
+    extra_records = rebuilt_records[len(committed):]
+    assert sum(type(record).__name__ == "ProviderBar" for record in extra_records) == 5
+    assert sum(type(record).__name__ == "Coverage" for record in extra_records) == 1
     rebuilt_hash = provenance.records_sha256(rebuilt_records)
     assert rebuilt_hash != runner_hash
 
