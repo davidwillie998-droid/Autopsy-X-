@@ -88,12 +88,13 @@ def audit_pool_cycles(
     *,
     expected_cycles: list[int],
     expected_start_ms: int,
+    expected_end_ms: int,
     expected_cadence_ms: int,
     failed_cycles: dict[int, str] | None = None,
 ) -> dict:
-    """Require one valid live reserve observation in every expected cycle."""
-    if expected_cadence_ms <= 0 or not expected_cycles:
-        raise ValueError("expected cycles and positive cadence are required")
+    """Require one valid, in-window live reserve observation in every cycle."""
+    if expected_cadence_ms <= 0 or not expected_cycles or expected_end_ms < expected_start_ms:
+        raise ValueError("expected cycles, valid time window, and positive cadence are required")
     expected = set(expected_cycles)
     by_cycle: dict[int, list[dict]] = defaultdict(list)
     invalid_cycle_records = 0
@@ -127,6 +128,9 @@ def audit_pool_cycles(
             if type(ts) is not int:
                 invalid_cycle_records += 1
                 reason = "invalid snapshot timestamp"
+            elif ts < expected_start_ms or ts > expected_end_ms:
+                invalid_cycle_records += 1
+                reason = f"snapshot timestamp {ts} outside live acquisition window"
             elif not isinstance(liq, (int, float)) or isinstance(liq, bool) or not math.isfinite(liq) or liq <= 0:
                 invalid_liquidity += 1
                 reason = "missing/non-positive liquidity"
@@ -165,7 +169,7 @@ def audit_pool_cycles(
         }
     return {
         "expected_start_ms": expected_start_ms,
-        "expected_end_ms": expected_start_ms + (expected_count - 1) * expected_cadence_ms,
+        "expected_end_ms": expected_end_ms,
         "expected_cadence_ms": expected_cadence_ms,
         "expected_cycles": expected_cycles,
         "observed_cycles": sorted(c for c, rows in by_cycle.items() if rows),
@@ -258,6 +262,7 @@ def audit_archive(run_dir: str | Path) -> dict:
             by_pool.get(pool_id, []),
             expected_cycles=expected_cycles,
             expected_start_ms=poll_start,
+            expected_end_ms=meta.get("ended_ms") if type(meta.get("ended_ms")) is int else poll_start + (cycles * cadence_ms),
             expected_cadence_ms=cadence_ms,
             failed_cycles=failed_by_pool.get(pool_id, {}),
         )
@@ -286,7 +291,7 @@ def audit_archive(run_dir: str | Path) -> dict:
         "unattributable_failed_batches": {str(k): v for k, v in missing_cycle_batches.items()},
         "rows": rows,
         "all_pools_pass": bool(rows) and all(p["eligible_all_horizons"] for p in rows),
-        "continuity_gate_pass": meta.get("status") == "COMPLETE" and sum(p["eligible_all_horizons"] for p in rows) > 0,
+        "continuity_gate_pass": meta.get("status") == "COMPLETE" and bool(rows) and all(p["eligible_all_horizons"] for p in rows),
         "limitations": [
             "Only gt.pools_multi live polling observations count; discovery/backfill snapshots are excluded.",
             "Every selected pool must have exactly one valid reserve snapshot in every expected cycle.",
