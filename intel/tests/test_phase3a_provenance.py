@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import pytest
 from pathlib import Path
 
 from autopsyx.data import provenance as pv
@@ -113,3 +114,35 @@ def test_tampered_manifest_fails_verification(tmp_path, monkeypatch):
     assert result["committed_matches_runner"]
     assert result["manifest_matches_runner"] is False
     assert result["verified"] is False
+
+
+def test_sealed_archive_rejects_raw_append(tmp_path, monkeypatch):
+    d = sealed(tmp_path, monkeypatch)
+    store = pv.RawStore(d)
+    with pytest.raises(RuntimeError, match="sealed by provenance"):
+        store.record(
+            provider="test", endpoint="test.append", url="https://example.invalid",
+            request_ts=1, response_ts=2, status=200, body=b"{}",
+            attempts=1, error=None,
+        )
+    assert len(pv.RawStore(d).entries()) == len(json.loads((d / "run.json").read_text())["provenance"]["record_counts"]["manifest_exchanges"])
+
+
+def test_manifest_tamper_fails_verification(tmp_path, monkeypatch):
+    d = sealed(tmp_path, monkeypatch)
+    with (d / "manifest.jsonl").open("a", encoding="utf-8") as stream:
+        stream.write("\\n")
+    result = pv.verify(str(d))
+    assert result["verified"] is False
+    assert result["manifest_matches_runner"] is False
+
+
+def test_seal_refuses_incomplete_acquisition(tmp_path, monkeypatch):
+    run3(tmp_path / "d")
+    d = tmp_path / "d"
+    meta = json.loads((d / "run.json").read_text(encoding="utf-8"))
+    meta["status"] = "CANCELLED"
+    (d / "run.json").write_text(json.dumps(meta), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="refusing to seal incomplete acquisition"):
+        pv.seal(str(d))
+    assert not (d / "canonical" / "phase2_records.jsonl.gz").exists()
