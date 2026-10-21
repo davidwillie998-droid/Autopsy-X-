@@ -12,6 +12,8 @@ python -m autopsyx.research.audit_contiguous_liquidity RUN_DIR
 from __future__ import annotations
 
 import argparse
+import gzip
+import hashlib
 import json
 import math
 from collections import defaultdict
@@ -19,9 +21,44 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from ..data.providers import geckoterminal as gt
-from ..data.raw import RawStore
+from ..data.raw import ManifestEntry
 
 HORIZONS_MS = {"5m": 5 * 60_000, "15m": 15 * 60_000, "60m": 60 * 60_000}
+MIN_STRUCTURAL_POOLS = 20
+
+
+class ReadOnlyRawArchive:
+    """Read an immutable raw archive without creating or modifying any files."""
+
+    def __init__(self, directory: str | Path):
+        self.dir = Path(directory)
+        if not self.dir.is_dir():
+            raise ValueError(f"archive directory missing: {self.dir}")
+        self.manifest = self.dir / "manifest.jsonl"
+        if not self.manifest.is_file():
+            raise ValueError(f"manifest missing: {self.manifest}")
+
+    def read_json(self, name: str):
+        path = self.dir / name
+        return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+
+    def entries(self) -> list[ManifestEntry]:
+        entries = []
+        for line_no, line in enumerate(self.manifest.read_text(encoding="utf-8").splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                entries.append(ManifestEntry(**json.loads(line)))
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise ValueError(f"invalid manifest entry at line {line_no}: {exc}") from exc
+        return entries
+
+    def body(self, raw_id: str) -> bytes:
+        path = self.dir / "raw" / f"{raw_id}.json.gz"
+        data = gzip.decompress(path.read_bytes())
+        if hashlib.sha256(data).hexdigest() != raw_id:
+            raise ValueError(f"raw body {raw_id} fails its content hash")
+        return data
 
 
 def audit_pool_snapshots(
@@ -198,7 +235,7 @@ def _pools_from_multi_url(url: str) -> list[str]:
 def audit_archive(run_dir: str | Path) -> dict:
     """Audit every selected pool against every expected live polling cycle."""
     run_dir = Path(run_dir)
-    raw = RawStore(run_dir)
+    raw = ReadOnlyRawArchive(run_dir)
     meta = raw.read_json("run.json") or {}
     plan = meta.get("plan") or {}
     universe_doc = raw.read_json("universe.json") or {}
@@ -287,13 +324,16 @@ def audit_archive(run_dir: str | Path) -> dict:
         "expected_cycle_count": cycles,
         "horizons_ms": HORIZONS_MS,
         "pool_count": len(rows),
+        "minimum_structural_pool_count": MIN_STRUCTURAL_POOLS,
+        "structural_pool_count_pass": len(rows) >= MIN_STRUCTURAL_POOLS,
         "eligible_pool_count": sum(p["eligible_all_horizons"] for p in rows),
         "eligible_distinct_token_count": len(eligible_tokens),
         "eligible_token_ids": eligible_tokens,
         "unattributable_failed_batches": {str(k): v for k, v in missing_cycle_batches.items()},
         "rows": rows,
         "all_pools_pass": bool(rows) and all(p["eligible_all_horizons"] for p in rows),
-        "continuity_gate_pass": meta.get("status") == "COMPLETE" and bool(rows) and all(p["eligible_all_horizons"] for p in rows),
+        "continuity_gate_pass": (meta.get("status") == "COMPLETE" and len(rows) >= MIN_STRUCTURAL_POOLS
+                                 and all(p["eligible_all_horizons"] for p in rows)),
         "limitations": [
             "Only gt.pools_multi live polling observations count; discovery/backfill snapshots are excluded.",
             "Every selected pool must have exactly one valid reserve snapshot in every expected cycle.",
