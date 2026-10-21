@@ -5,8 +5,13 @@ name: Phase 3C data acquisition
 # Read-only acquisition: no orders, no wallets, no keys.
 
 on:
-  # Manual dispatch allows a fresh run against the exact frozen request without editing it.
+  # Each dispatch must supply a new immutable run ID; the frozen request stays unchanged.
   workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Unique run ID, e.g. p3c-sol-20261021b (never reuse an archive ID)"
+        required: true
+        type: string
   push:
     branches: [ccr-dea9382c-vwhvi6]
     paths: ["intel/datasets/phase3c/REQUEST.json"]
@@ -29,18 +34,52 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Validate frozen Phase 3C request (local-only; no provider calls)
+      - name: Validate request and reserve a new immutable run ID (local-only)
         working-directory: intel
+        env:
+          DISPATCH_RUN_ID: ${{ inputs.run_id }}
         run: |
+          set -euo pipefail
           python -m autopsyx.research.phase3c_preflight datasets/phase3c/REQUEST.json
-          RUN_ID=$(python -c "import json;print(json.load(open('datasets/phase3c/REQUEST.json'))['run_id'])")
+          FROZEN_RUN_ID=$(python -c "import json;print(json.load(open('datasets/phase3c/REQUEST.json'))['run_id'])")
+          REQUEST_PATH="datasets/phase3c/REQUEST.json"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            RUN_ID="$DISPATCH_RUN_ID"
+            if [[ ! "$RUN_ID" =~ ^p3c-sol-[A-Za-z0-9_-]{1,64}$ ]]; then
+              echo "FAIL: run_id must match p3c-sol-[A-Za-z0-9_-]{1,64}" >&2
+              exit 2
+            fi
+            python - "$RUN_ID" "$RUNNER_TEMP/phase3c-request.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          request = json.loads(Path("datasets/phase3c/REQUEST.json").read_text(encoding="utf-8"))
+          request["run_id"] = sys.argv[1]
+          Path(sys.argv[2]).write_text(json.dumps(request, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+          PY
+            REQUEST_PATH="$RUNNER_TEMP/phase3c-request.json"
+          else
+            RUN_ID="$FROZEN_RUN_ID"
+          fi
+          python -m autopsyx.research.phase3c_preflight "$REQUEST_PATH"
+          if [ -e "datasets/phase3c/runs/$RUN_ID" ]; then
+            echo "FAIL: refusing to reuse immutable archive ID $RUN_ID" >&2
+            exit 2
+          fi
           echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          echo "REQUEST_PATH=$REQUEST_PATH" >> "$GITHUB_ENV"
       - name: Acquire
         id: acquire
         working-directory: intel
         env:
           AUTOPSYX_SOLANA_RPC_URL: ${{ secrets.AUTOPSYX_SOLANA_RPC_URL }}
-        run: python -m autopsyx --log acquire --live --request datasets/phase3c/REQUEST.json --out "datasets/phase3c/runs/$RUN_ID"
+        run: python -m autopsyx --log acquire --live --request "$REQUEST_PATH" --out "datasets/phase3c/runs/$RUN_ID"
+      - name: Preserve effective and frozen request inputs
+        if: steps.acquire.outcome == 'success'
+        working-directory: intel
+        run: |
+          cp datasets/phase3c/REQUEST.json "datasets/phase3c/runs/$RUN_ID/frozen_request.json"
+          cp "$REQUEST_PATH" "datasets/phase3c/runs/$RUN_ID/request.json"
+          sha256sum "datasets/phase3c/runs/$RUN_ID/frozen_request.json" "datasets/phase3c/runs/$RUN_ID/request.json" > "datasets/phase3c/runs/$RUN_ID/request_hashes.sha256"
       - name: Record failed or interrupted acquisition
         if: (failure() || cancelled()) && env.RUN_ID != ''
         working-directory: intel
