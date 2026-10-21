@@ -60,7 +60,8 @@ jobs:
           # Over-select to allow downstream eligibility attrition; never lower gates.
           request["new_pool_pages"] = 10
           request["strata"] = {"young": 100, "quiet_young": 20, "trending": 30, "established": 30}
-          request["seed"] = int(request["seed"]) + 1
+          import hashlib
+          request["seed"] = int(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:8], 16)
           request["duration_s"] = 7200
           request["cycle_s"] = 60
           request["poll_pools_per_cycle"] = 3
