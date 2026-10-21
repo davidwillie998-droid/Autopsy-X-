@@ -239,12 +239,12 @@ def test_phase3c_dispatch_uses_maximum_frozen_rpc_enrichment_budget():
     dispatch = workflow.split('if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then', 1)[1]
     dispatch = dispatch.split('REQUEST_PATH="$RUNNER_TEMP/phase3c-request.json"', 1)[0]
     assert 'request["rpc_max_pages"] = 3' in dispatch
-    assert 'request["rpc_max_txs"] = 300' in dispatch
+    assert 'request["rpc_max_txs"] = 15' in dispatch
     assert 'request["new_pool_pages"] = 10' in dispatch
     assert 'request["strata"] = {"young": 100, "quiet_young": 20, "trending": 30, "established": 30}' in dispatch
     assert 'request["poll_pools_per_cycle"] = 3' in dispatch
     assert 'request["ohlcv_every"] = 5' in dispatch
-    assert 'request["phase3a"] = False' in dispatch
+    assert 'request["phase3a"] = True' in dispatch
     request = __import__("json").loads((ROOT / "intel" / "datasets" / "phase3c" / "REQUEST.json").read_text())
     assert request["rpc_max_pages"] == 1
     assert request["rpc_max_txs"] == 8
