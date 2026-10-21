@@ -128,69 +128,68 @@ def seal(run_dir: str) -> dict:
             f"refusing to seal incomplete acquisition: status={meta.get('status')!r}, ended_ms={meta.get('ended_ms')!r}"
         )
 
-    marker = d / ".seal-in-progress"
-    try:
-        with marker.open("x", encoding="utf-8") as stream:
-            stream.write("canonical sealing in progress\n")
-    except FileExistsError as exc:
-        raise RuntimeError("another process is sealing this archive; refusing concurrent seal") from exc
+    before = _manifest_fingerprint(d)
+    b = build(run_dir)
+    after = _manifest_fingerprint(d)
+    if before != after:
+        raise RuntimeError(
+            f"raw manifest changed during canonical sealing: before={before}, after={after}"
+        )
 
-    try:
-        before = _manifest_fingerprint(d)
-        b = build(run_dir)
-        after = _manifest_fingerprint(d)
-        if before != after:
-            raise RuntimeError(
-                f"raw manifest changed during canonical sealing: before={before}, after={after}"
-            )
+    (d / "canonical").mkdir(exist_ok=True)
+    tmp = d / "canonical" / "phase2_records.jsonl"
+    EventStore.dump_jsonl(tmp, b["records"])
+    (d / "canonical" / "phase2_records.jsonl.gz").write_bytes(gzip.compress(tmp.read_bytes(), mtime=0))
+    tmp.unlink()
+    obs_lines = "".join(json.dumps(o.to_dict(), sort_keys=True) + "\n" for o in b["observations"]).encode()
+    (d / "canonical" / "phase3a_observations.jsonl.gz").write_bytes(gzip.compress(obs_lines, mtime=0))
+    rep = b["report"]
+    raw.write_json("normalize_stdout.json", {"records": rep.records, "issues": rep.issues,
+                                             "dataset_sha256": rep.dataset_sha256})
+    meta = raw.read_json("run.json") or {}
+    entries = raw.entries()
+    from collections import Counter
+    env = {"python": sys.version.split()[0], "platform": platform.platform(),
+           "runner_name": os.environ.get("RUNNER_NAME"), "runner_os": os.environ.get("RUNNER_OS"),
+           "github_workflow": os.environ.get("GITHUB_WORKFLOW"), "github_repository": os.environ.get("GITHUB_REPOSITORY")}
+    meta["provenance"] = {
+        "run_id": d.name,
+        "workflow_run_id": os.environ.get("GITHUB_RUN_ID"),
+        "workflow_run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+        "repository_commit": os.environ.get("GITHUB_SHA"),
+        "started_at": _iso(meta.get("started_ms")), "completed_at": _iso(meta.get("ended_ms")),
+        "acquisition_status": meta.get("status"),
+        "manifest_sha256": before["sha256"],
+        "manifest_bytes": before["bytes"],
+        "providers": sorted({e.provider for e in entries if e.provider != "audit"}),
+        "endpoints": dict(sorted(Counter(e.endpoint for e in entries).items())),
+        "canonical_dataset_version": CANONICAL_DATASET_VERSION,
+        "normalization_version": normalization_version(),
+        "config_hash": Config.load().fingerprint(),
+        "dataset_hash_algorithm": HASH_ALGORITHM,
+        "runner_dataset_hash": {"phase2_records": b["phase2_records_sha256"],
+                                "phase3a_observations": b["phase3a_observations_sha256"]},
+        "canonical_files": {"phase2_records": "canonical/phase2_records.jsonl.gz",
+                            "phase3a_observations": "canonical/phase3a_observations.jsonl.gz"},
+        "record_counts": {"phase2_records": rep.records, "phase3a_observations": len(b["observations"]),
+                          "manifest_exchanges": before["exchanges"], "manifest_errors": sum(1 for e in entries if e.error)},
+        "coverage_summary": {"phase3a_by_kind_state": dict(sorted(Counter(f"{o.kind}|{o.state.value}"
+                                                                          for o in b["observations"]).items())),
+                             "phase2_tokens": rep.tokens, "phase2_issues": rep.issues},
+        "environment": {k: v for k, v in env.items()},
+        "unavailable_fields": sorted(k for k, v in env.items() if v is None),
+    }
+    raw.write_json("run.json", meta)
 
-        (d / "canonical").mkdir(exist_ok=True)
-        tmp = d / "canonical" / "phase2_records.jsonl"
-        EventStore.dump_jsonl(tmp, b["records"])
-        (d / "canonical" / "phase2_records.jsonl.gz").write_bytes(gzip.compress(tmp.read_bytes(), mtime=0))
-        tmp.unlink()
-        obs_lines = "".join(json.dumps(o.to_dict(), sort_keys=True) + "\n" for o in b["observations"]).encode()
-        (d / "canonical" / "phase3a_observations.jsonl.gz").write_bytes(gzip.compress(obs_lines, mtime=0))
-        rep = b["report"]
-        raw.write_json("normalize_stdout.json", {"records": rep.records, "issues": rep.issues,
-                                                 "dataset_sha256": rep.dataset_sha256})
-        meta = raw.read_json("run.json") or {}
-        entries = raw.entries()
-        from collections import Counter
-        env = {"python": sys.version.split()[0], "platform": platform.platform(),
-               "runner_name": os.environ.get("RUNNER_NAME"), "runner_os": os.environ.get("RUNNER_OS"),
-               "github_workflow": os.environ.get("GITHUB_WORKFLOW"), "github_repository": os.environ.get("GITHUB_REPOSITORY")}
-        meta["provenance"] = {
-            "run_id": d.name,
-            "workflow_run_id": os.environ.get("GITHUB_RUN_ID"),
-            "workflow_run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
-            "repository_commit": os.environ.get("GITHUB_SHA"),
-            "started_at": _iso(meta.get("started_ms")), "completed_at": _iso(meta.get("ended_ms")),
-            "acquisition_status": meta.get("status"),
-            "manifest_sha256": before["sha256"],
-            "manifest_bytes": before["bytes"],
-            "providers": sorted({e.provider for e in entries if e.provider != "audit"}),
-            "endpoints": dict(sorted(Counter(e.endpoint for e in entries).items())),
-            "canonical_dataset_version": CANONICAL_DATASET_VERSION,
-            "normalization_version": normalization_version(),
-            "config_hash": Config.load().fingerprint(),
-            "dataset_hash_algorithm": HASH_ALGORITHM,
-            "runner_dataset_hash": {"phase2_records": b["phase2_records_sha256"],
-                                    "phase3a_observations": b["phase3a_observations_sha256"]},
-            "canonical_files": {"phase2_records": "canonical/phase2_records.jsonl.gz",
-                                "phase3a_observations": "canonical/phase3a_observations.jsonl.gz"},
-            "record_counts": {"phase2_records": rep.records, "phase3a_observations": len(b["observations"]),
-                              "manifest_exchanges": before["exchanges"], "manifest_errors": sum(1 for e in entries if e.error)},
-            "coverage_summary": {"phase3a_by_kind_state": dict(sorted(Counter(f"{o.kind}|{o.state.value}"
-                                                                              for o in b["observations"]).items())),
-                                 "phase2_tokens": rep.tokens, "phase2_issues": rep.issues},
-            "environment": {k: v for k, v in env.items()},
-            "unavailable_fields": sorted(k for k, v in env.items() if v is None),
-        }
+    # Catch a late append between normalization and provenance write. Any append
+    # after this point is still detected by verify() from the sealed hash/count.
+    final_manifest = _manifest_fingerprint(d)
+    if final_manifest != before:
+        meta["status"] = "INVALID_MANIFEST_DRIFT"
+        meta["seal_error"] = {"before": before, "after": final_manifest}
         raw.write_json("run.json", meta)
-        return meta["provenance"]
-    finally:
-        marker.unlink(missing_ok=True)
+        raise RuntimeError(f"raw manifest changed during sealing commit: before={before}, after={final_manifest}")
+    return meta["provenance"]
 
 def _read_committed(d: Path) -> tuple[str | None, str | None]:
     p2 = d / "canonical" / "phase2_records.jsonl.gz"
