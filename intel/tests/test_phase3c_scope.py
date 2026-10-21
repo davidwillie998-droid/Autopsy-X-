@@ -143,6 +143,37 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
         '                 "final_gt_rate_per_s": f.clients[gt.NAME].limiter.rate,\n'
         '                 "errors": sum(1 for e in entries if e.error), "status": "COMPLETE"})\n'
     )
+    substitute(
+        '    if not picked:\n'
+        '        meta["status"] = "BLOCKED: no pools selectable (discovery failed)"\n'
+        '        raw.write_json("run.json", meta)\n'
+        '        return meta\n'
+        '    backfill(f, plan, picked)\n',
+        '    if not picked:\n'
+        '        meta["status"] = "BLOCKED: no pools selectable (discovery failed)"\n'
+        '        raw.write_json("run.json", meta)\n'
+        '        return meta\n'
+        '    # Phase 3C must not spend hours collecting a sample that cannot satisfy\n'
+        '    # its frozen distinct-token gate. Fail before backfill/polling if selection\n'
+        '    # did not produce every requested unique token.\n'
+        '    if plan.poll_pools_per_cycle is not None:\n'
+        '        target = sum(plan.strata.values())\n'
+        '        selected_tokens = len({p["token"] for p in picked})\n'
+        '        meta["selection_gate"] = {\n'
+        '            "requested_unique_tokens": target,\n'
+        '            "selected_unique_tokens": selected_tokens,\n'
+        '            "pass": selected_tokens >= target,\n'
+        '        }\n'
+        '        if selected_tokens < target:\n'
+        '            meta["status"] = (\n'
+        '                f"BLOCKED: selected {selected_tokens} unique tokens; "\n'
+        '                f"Phase 3C acquisition target is {target}"\n'
+        '            )\n'
+        '            raw.write_json("run.json", meta)\n'
+        '            return meta\n'
+        '    backfill(f, plan, picked)\n'
+    )
+
     actual = (ROOT / "intel" / "autopsyx" / "data" / "acquire.py").read_text()
     assert actual.rstrip("\n") == expected.rstrip("\n"), "acquire.py contains changes beyond the reviewed poll-window timing repair"
 
@@ -209,6 +240,11 @@ def test_phase3c_dispatch_uses_maximum_frozen_rpc_enrichment_budget():
     dispatch = dispatch.split('REQUEST_PATH="$RUNNER_TEMP/phase3c-request.json"', 1)[0]
     assert 'request["rpc_max_pages"] = 3' in dispatch
     assert 'request["rpc_max_txs"] = 300' in dispatch
+    assert 'request["new_pool_pages"] = 10' in dispatch
+    assert 'request["strata"] = {"young": 100, "quiet_young": 20, "trending": 30, "established": 30}' in dispatch
+    assert 'request["poll_pools_per_cycle"] = 3' in dispatch
+    assert 'request["ohlcv_every"] = 5' in dispatch
+    assert 'request["phase3a"] = False' in dispatch
     request = __import__("json").loads((ROOT / "intel" / "datasets" / "phase3c" / "REQUEST.json").read_text())
     assert request["rpc_max_pages"] == 1
     assert request["rpc_max_txs"] == 8
