@@ -54,13 +54,26 @@ jobs:
           from pathlib import Path
           request = json.loads(Path("datasets/phase3c/REQUEST.json").read_text(encoding="utf-8"))
           request["run_id"] = sys.argv[1]
-          # The archived 2026-10-20 run requested only 8 transactions from each
-          # 100-signature page, leaving 92 signatures unfetched per address.
-          # Use the frozen preflight maximums for a new run without editing the
-          # checked-in request; archive this effective request and its hash.
+          # Keep the checked-in request immutable, but create a larger, explicit
+          # effective sample for this acquisition. The old request selected only
+          # 20 pools, which cannot supply the frozen >=85-token hypothesis sample.
+          # Over-select to allow downstream eligibility attrition; never lower gates.
+          request["new_pool_pages"] = 10
+          request["strata"] = {"young": 100, "quiet_young": 20, "trending": 30, "established": 30}
+          request["seed"] = int(request["seed"]) + 1
+          request["duration_s"] = 7200
+          request["cycle_s"] = 60
+          request["poll_pools_per_cycle"] = 3
+          request["ohlcv_every"] = 5
+          request["holders_per_cycle"] = 0
+          request["gt_rate_per_s"] = 0.25
+          # This run is for broad OHLCV/swap/live-liquidity coverage. Running
+          # creator/pool RPC enrichment for every selected token here would
+          # exceed the runner budget; enrichment remains a separate stage.
+          request["phase3a"] = False
           request["rpc_max_pages"] = 3
           request["rpc_max_txs"] = 300
-          Path(sys.argv[2]).write_text(json.dumps(request, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          Path(sys.argv[2]).write_text(json.dumps(request, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
           PY
             REQUEST_PATH="$RUNNER_TEMP/phase3c-request.json"
           else
