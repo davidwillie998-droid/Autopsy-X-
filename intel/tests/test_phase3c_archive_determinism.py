@@ -45,6 +45,16 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
     assert entries[-1]["seq"] == 926 and entries[-1]["endpoint"] == "gt.ohlcv"
 
     verification = provenance.verify(str(ARCHIVE))
+    entries = provenance.RawStore(ARCHIVE).entries()
+    # The immutable runner metadata proves that exactly one raw exchange was
+    # appended after canonical sealing: seq 926 is an OHLCV response that
+    # yields six extra ProviderBar records.
+    assert verification["manifest_exchanges_runner"] == 925
+    assert verification["manifest_exchanges_current"] == 926
+    assert verification["manifest_count_matches_runner"] is False
+    assert entries[-1].seq == 926 and entries[-1].endpoint == "gt.ohlcv"
+    assert len(rebuilt["records"]) - len(committed) == 6
+    assert all(type(record).__name__ == "ProviderBar" for record in rebuilt["records"][len(committed):])
     assert verification["verified"] is False
     assert verification["manifest_matches_runner"] is False
     assert verification["manifest_count_matches_runner"] is False
