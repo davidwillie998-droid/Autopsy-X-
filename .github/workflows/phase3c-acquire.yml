@@ -68,12 +68,12 @@ jobs:
           request["ohlcv_every"] = 5
           request["holders_per_cycle"] = 0
           request["gt_rate_per_s"] = 0.25
-          # This run is for broad OHLCV/swap/live-liquidity coverage. Running
-          # creator/pool RPC enrichment for every selected token here would
-          # exceed the runner budget; enrichment remains a separate stage.
-          request["phase3a"] = False
+          # Preserve the required Phase 3A enrichment, but bound transaction
+          # detail per address so the expanded sample can finish within the runner
+          # budget. Truncation is recorded and remains a readiness limitation.
+          request["phase3a"] = True
           request["rpc_max_pages"] = 3
-          request["rpc_max_txs"] = 300
+          request["rpc_max_txs"] = 15
           Path(sys.argv[2]).write_text(json.dumps(request, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
             REQUEST_PATH="$RUNNER_TEMP/phase3c-request.json"
