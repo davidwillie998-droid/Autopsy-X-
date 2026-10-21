@@ -71,6 +71,11 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
     )
 
     substitute(
+        '        f.get(gt.NAME, "gt.pools_multi", gt.path_pools_multi(n, chunk), {"chain": n, "cycle": cycle})\\n',
+        '        f.get(gt.NAME, "gt.pools_multi", gt.path_pools_multi(n, chunk), {"chain": n, "cycle": cycle, "pools": list(chunk)})\\n'
+    )
+
+    substitute(
         '    started = now_ms()\n'
         '    meta = {"started_ms": started, "plan": plan.__dict__, "code_version": os.environ.get("GITHUB_SHA", "local"),\n'
         '            "runner": os.environ.get("RUNNER_NAME", "local"), "execution": "none: acquisition only, no orders"}\n',
