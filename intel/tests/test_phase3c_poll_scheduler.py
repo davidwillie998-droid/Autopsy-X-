@@ -20,6 +20,10 @@ def test_phase3c_poll_budget_rotates_all_tokens_without_polling_all_each_cycle()
     for cycle in range(4):
         f = FakeFetcher()
         acquire.poll_cycle(f, plan, picked, cycle)
+        multi_calls = [call for call in f.calls if call[1] == "gt.pools_multi"]
+        assert len(multi_calls) == 1
+        assert multi_calls[0][3]["cycle"] == cycle
+        assert multi_calls[0][3]["pools"] == [p["pool"] for p in picked]
         trade_calls = [call for call in f.calls if call[1] == "gt.trades"]
         ohlcv_calls = [call for call in f.calls if call[1] == "gt.ohlcv"]
         assert len(trade_calls) == 5
