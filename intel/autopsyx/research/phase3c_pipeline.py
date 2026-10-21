@@ -140,6 +140,39 @@ def walk_forward_oos(by_token: dict, target: str) -> dict | None:
     }
 
 
+def chronological_training_rows(rows: list[dict]) -> tuple[list[dict], dict]:
+    """Return only pre-cutoff rows after purging labels that overlap the future holdout."""
+    valid = [r for r in rows if isinstance(r.get("as_of"), (int, float))
+             and isinstance(r.get("step_index"), int)]
+    timestamps = sorted({r["as_of"] for r in valid})
+    if len(timestamps) < 4:
+        return [], {"available": False, "reason": "fewer_than_four_distinct_timestamps"}
+    cutoff = timestamps[len(timestamps) // 2]
+    first_oos_step = {}
+    for r in valid:
+        if r["as_of"] >= cutoff:
+            token = r.get("token")
+            if token:
+                first_oos_step[token] = min(first_oos_step.get(token, r["step_index"]), r["step_index"])
+    horizon = contract.HORIZON_STEPS
+    train = [r for r in valid if r["as_of"] < cutoff
+             and r.get("token") in first_oos_step
+             and r["step_index"] + horizon < first_oos_step[r["token"]]]
+    purged = sum(1 for r in valid if r["as_of"] < cutoff
+                 and r.get("token") in first_oos_step
+                 and r["step_index"] + horizon >= first_oos_step[r["token"]])
+    report = {
+        "available": True, "method": "chronological_timestamp_split_with_label_horizon_embargo",
+        "cutoff_as_of": cutoff, "horizon_steps_embargo": horizon,
+        "n_train_rows_after_purge": len(train),
+        "n_train_tokens_after_purge": len({r["token"] for r in train if r.get("token")}),
+        "n_oos_rows": sum(1 for r in valid if r["as_of"] >= cutoff),
+        "n_oos_tokens": len({r["token"] for r in valid if r["as_of"] >= cutoff and r.get("token")}),
+        "n_train_rows_purged": purged,
+    }
+    return train, report
+
+
 # --------------------------------------------------------------- classify ----
 def classify_hypothesis_3c(hid: str, n_tokens: int, n_rows: int, targets: dict, per_archive: dict,
                            oos: dict) -> tuple[str, str]:
@@ -211,12 +244,22 @@ def run(work: Path) -> dict:
 
     results = []
     raw_pvals, raw_idx = [], []
+    train_rows_by_h = {}
+    split_reports = {}
     for hid in HYPOTHESIS_IDS:
         spec = contract.HYPOTHESIS_SPECS[hid]
         engine_ok = p3b._engine_ok_share(included, all_journal, spec["engine_fields"])
-        base = p3b.evaluate_hypothesis(hid, rows_by_h.get(hid, []), engine_ok)
+        full_rows = rows_by_h.get(hid, [])
+        train_rows, split_report = chronological_training_rows(full_rows)
+        train_rows_by_h[hid] = train_rows
+        split_reports[hid] = split_report
+        # Discovery statistics, FDR correction, archive breakdowns and robustness
+        # are computed on purged pre-cutoff data only. The future holdout is used
+        # only by the separate OOS validation below.
+        base = p3b.evaluate_hypothesis(hid, train_rows, engine_ok)
         base.pop("classification", None)
         base.pop("reason", None)
+        base["chronological_split"] = split_report
         results.append(base)
         for target, t in base.get("targets", {}).items():
             if t.get("permutation_p") is not None:
@@ -231,9 +274,11 @@ def run(work: Path) -> dict:
     archive_names = [d.name for d in included]
     for r in results:
         hid = r["hypothesis_id"]
-        rows = rows_by_h.get(hid, [])
+        # Full rows are retained only for the independent chronological holdout.
+        full_rows = rows_by_h.get(hid, [])
+        rows = train_rows_by_h.get(hid, [])
         by_token: dict[str, list] = defaultdict(list)
-        for row in rows:
+        for row in full_rows:
             by_token[row["token"]].append(row)
         per_archive = {t: per_archive_breakdown(rows, t) for t in r.get("targets", {})}
         oos = {}
