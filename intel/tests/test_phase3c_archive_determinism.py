@@ -1,8 +1,7 @@
 """Regression test documenting and detecting the immutable Phase 3C archive drift.
 
 The old archive must remain rejected; do not rewrite it to make its hash pass.
-The test proves that the final manifest entry was appended after the canonical
-snapshot: removing only that final entry reproduces the runner's hash exactly.
+Removing only the final manifest entry must reproduce the runner's hash exactly.
 """
 from __future__ import annotations
 
@@ -11,8 +10,8 @@ import json
 from pathlib import Path
 
 from autopsyx.data import provenance
-from autopsyx.research import phase3c_manifest_integrity
 from autopsyx.data.normalize import normalize
+from autopsyx.research import phase3c_manifest_integrity
 from autopsyx.providers.store import decode_record
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +34,7 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
     assert isinstance(recorded, dict), "archive has no acquisition-runner provenance"
     runner_hash = recorded["runner_dataset_hash"]["phase2_records"]
     runner_count = recorded["record_counts"]["manifest_exchanges"]
+    runner_counts = recorded["record_counts"]["phase2_records"]
     lines = (ARCHIVE / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
     entries = [json.loads(line) for line in lines if line.strip()]
     assert runner_count == 925
@@ -43,26 +43,32 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
 
     manifest_verification = phase3c_manifest_integrity.verify(str(ARCHIVE))
     committed = _load_committed_records()
-    runner_counts = recorded["record_counts"]["phase2_records"]
-    rebuilt_counts = verification["rebuild_counts"]["phase2_by_type"]
+    rebuilt_records, _ = normalize(str(ARCHIVE))
+    rebuilt_hash = provenance.records_sha256(rebuilt_records)
+    rebuilt_counts = {}
+    for record in rebuilt_records:
+        kind = type(record).__name__
+        rebuilt_counts[kind] = rebuilt_counts.get(kind, 0) + 1
 
     # The immutable runner metadata records 925 exchanges, but the current
-    # manifest has 926. The final OHLCV response contributes five bars plus one Coverage record.
+    # manifest has 926. The final OHLCV response contributes exactly six bars.
     assert manifest_verification["verified"] is False
     assert manifest_verification["reason"] == "manifest_seal_missing"
     assert manifest_verification["manifest_count_matches_runner"] is False
     assert manifest_verification["manifest_exchanges_runner"] == 925
     assert manifest_verification["manifest_exchanges_current"] == 926
-    current_version = provenance.normalization_version()
-    assert current_version["sha256"] == recorded["normalization_version"]["sha256"]
     assert len(committed) == 49_356
     assert len(rebuilt_records) == 49_362
     assert len(rebuilt_records) - len(committed) == 6
-    extra_records = rebuilt_records[len(committed):]
-    assert sum(type(record).__name__ == "ProviderBar" for record in extra_records) == 5
-    assert sum(type(record).__name__ == "Coverage" for record in extra_records) == 1
-    rebuilt_hash = provenance.records_sha256(rebuilt_records)
+    assert runner_counts["ProviderBar"] == 9_975
+    assert rebuilt_counts["ProviderBar"] == 9_981
+    assert all(
+        rebuilt_counts.get(kind, 0) - runner_counts.get(kind, 0) == (6 if kind == "ProviderBar" else 0)
+        for kind in set(runner_counts) | set(rebuilt_counts)
+    )
+    assert provenance.records_sha256(committed) == runner_hash
     assert rebuilt_hash != runner_hash
+    assert recorded["normalization_version"]["sha256"] == provenance.normalization_version()["sha256"]
 
     # Root-cause proof: using only the 925-entry manifest snapshot reproduces
     # the runner's hash; the content-addressed raw bodies remain untouched.
