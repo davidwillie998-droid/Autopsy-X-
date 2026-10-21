@@ -1,9 +1,8 @@
-"""Regression tests for rejecting the known-invalid historical Phase 3C archive.
+"""Regression test documenting and detecting the immutable Phase 3C archive drift.
 
-The raw manifest rebuild has six more Phase 2 records than the runner-sealed canonical
-snapshot. The correct behavior is to reject this archive as evidence, not rewrite the
-snapshot or pretend that the runner hash reproduces. Independent processes must still
-rebuild the raw archive deterministically.
+The old archive must remain rejected; do not rewrite it to make its hash pass.
+The test proves that the final manifest entry was appended after the canonical
+snapshot: removing only that final entry reproduces the runner's hash exactly.
 """
 from __future__ import annotations
 
@@ -12,68 +11,15 @@ import json
 import os
 import subprocess
 import sys
-from dataclasses import asdict
 from pathlib import Path
 
 from autopsyx.data import provenance
-from autopsyx.providers.store import _encode, decode_record
+from autopsyx.data.normalize import normalize
+from autopsyx.data.raw import RawStore
+from autopsyx.providers.store import decode_record
 
 ROOT = Path(__file__).resolve().parents[1]
 ARCHIVE = ROOT / "datasets" / "phase3c" / "runs" / "p3c-sol-20261020a"
-
-
-def _record_dict(record):
-    return _encode(asdict(record))
-
-
-def _first_difference(left, right):
-    for i, (a, b) in enumerate(zip(left, right)):
-        da, db = _record_dict(a), _record_dict(b)
-        if da != db:
-            fields = sorted(k for k in set(da) | set(db) if da.get(k) != db.get(k))
-            return {
-                "index": i,
-                "left_type": type(a).__name__,
-                "right_type": type(b).__name__,
-                "left_raw_id": getattr(a, "raw_id", None),
-                "right_raw_id": getattr(b, "raw_id", None),
-                "different_fields": fields,
-                "left_record": da,
-                "right_record": db,
-            }
-    if len(left) != len(right):
-        i = min(len(left), len(right))
-        return {
-            "index": i,
-            "left_length": len(left),
-            "right_length": len(right),
-            "left_type": type(left[i]).__name__ if i < len(left) else None,
-            "right_type": type(right[i]).__name__ if i < len(right) else None,
-            "left_tail": [_record_dict(r) for r in left[max(0, i - 2):]],
-            "right_extra_records": [_record_dict(r) for r in right[i:i + 10]],
-        }
-    return None
-
-
-def _first_dict_difference(left, right):
-    for i, (a, b) in enumerate(zip(left, right)):
-        if a != b:
-            fields = sorted(k for k in set(a) | set(b) if a.get(k) != b.get(k))
-            return {"index": i, "different_fields": fields, "left_record": a, "right_record": b}
-    if len(left) != len(right):
-        return {"index": min(len(left), len(right)), "left_length": len(left), "right_length": len(right)}
-    return None
-
-
-def _runner_provenance():
-    run_path = ARCHIVE / "run.json"
-    assert run_path.is_file(), f"immutable archive metadata missing: {run_path}"
-    metadata = json.loads(run_path.read_text(encoding="utf-8"))
-    recorded = metadata.get("provenance")
-    assert isinstance(recorded, dict), "archive has no acquisition-runner provenance block"
-    runner_hash = recorded.get("runner_dataset_hash", {}).get("phase2_records")
-    assert runner_hash, "archive has no runner-recorded Phase 2 hash"
-    return metadata, recorded, runner_hash
 
 
 def _load_committed_records():
@@ -83,103 +29,67 @@ def _load_committed_records():
         return [decode_record(json.loads(line)) for line in stream if line.strip()]
 
 
-def test_current_phase3c_archive_reproduces_runner_hash_and_canonical_records(tmp_path):
+def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
     assert (ARCHIVE / "manifest.jsonl").is_file(), (
         f"required immutable Phase 3C archive is missing: {ARCHIVE}; refusing to skip"
     )
-    metadata, recorded, runner_hash = _runner_provenance()
+    metadata = json.loads((ARCHIVE / "run.json").read_text(encoding="utf-8"))
+    recorded = metadata.get("provenance")
+    assert isinstance(recorded, dict), "archive has no acquisition-runner provenance"
+    runner_hash = recorded["runner_dataset_hash"]["phase2_records"]
+    runner_count = recorded["record_counts"]["manifest_exchanges"]
+    lines = (ARCHIVE / "manifest.jsonl").read_text(encoding="utf-8").splitlines()
+    entries = [json.loads(line) for line in lines if line.strip()]
+    assert runner_count == 925
+    assert len(entries) == 926
+    assert entries[-1]["seq"] == 926 and entries[-1]["endpoint"] == "gt.ohlcv"
 
-    current_version = provenance.normalization_version()
-    runner_version = recorded.get("normalization_version", {})
-    assert current_version.get("sha256") == runner_version.get("sha256"), json.dumps(
-        {
-            "archive": ARCHIVE.name,
-            "failure": "normalization source version differs from acquisition runner",
-            "runner_version": runner_version.get("sha256"),
-            "current_version": current_version.get("sha256"),
-            "runner_sources": runner_version.get("sources"),
-            "current_sources": current_version.get("sources"),
-        },
-        sort_keys=True,
-    )
-
-    rebuilt = provenance.build(str(ARCHIVE))
-    committed = _load_committed_records()
-    committed_hash = provenance.records_sha256(committed)
-    difference = _first_difference(committed, rebuilt["records"])
     verification = provenance.verify(str(ARCHIVE))
-    assert metadata.get("status") != "COMPLETE", (
-        "known interrupted archive must never be reclassified as completed evidence"
-    )
-    assert committed_hash == runner_hash, json.dumps(
-        {"runner_hash": runner_hash, "committed_hash": committed_hash}, sort_keys=True
-    )
-    assert rebuilt["phase2_records_sha256"] != runner_hash and difference is not None, json.dumps(
-        {
-            "archive": ARCHIVE.name,
-            "failure": "expected the known-invalid raw/canonical mismatch to remain detectable",
-            "runner_hash": runner_hash,
-            "committed_canonical_hash": committed_hash,
-            "rebuilt_hash": rebuilt["phase2_records_sha256"],
-            "runner_status": metadata.get("status"),
-            "runner_record_count": len(committed),
-            "rebuilt_record_count": len(rebuilt["records"]),
-            "first_difference": difference,
-            "rebuilt_tail_after_runner_canonical": [
-                _record_dict(record) for record in rebuilt["records"][len(committed):len(committed) + 12]
-            ],
-            "runner_canonical_tail": [_record_dict(record) for record in committed[-3:]],
-        },
-        sort_keys=True,
-    )
-    assert verification.get("verified") is False, json.dumps(
-        {"archive": ARCHIVE.name, "verification": verification}, sort_keys=True
-    )
+    assert verification["verified"] is False
+    assert verification["manifest_matches_runner"] is False
+    assert verification["manifest_count_matches_runner"] is False
+    assert verification["manifest_exchanges_runner"] == 925
+    assert verification["manifest_exchanges_current"] == 926
+    assert verification["committed_matches_runner"] is True
+    assert verification["rebuild_matches_runner"] is False
+    assert verification["normalization_version_match"] is True
 
-    # Rebuild in independent interpreters: an in-process double call cannot
-    # detect all PYTHONHASHSEED-dependent iteration-order defects.
+    committed = _load_committed_records()
+    rebuilt_count = verification["rebuild_counts"]["phase2_records"]
+    assert len(committed) == 49_356
+    assert rebuilt_count == 49_362
+    assert verification["rebuild_1"]["phase2_records"] != runner_hash
+    assert provenance.records_sha256(committed) == runner_hash
+
+    # Root-cause proof: use the exact manifest prefix recorded at seal time.
+    # The raw bodies remain content-addressed and are not modified.
+    prefix = tmp_path / "manifest-prefix"
+    prefix.mkdir()
+    (prefix / "manifest.jsonl").write_text("\\n".join(lines[:-1]) + "\\n", encoding="utf-8")
+    (prefix / "raw").symlink_to(ARCHIVE / "raw", target_is_directory=True)
+    prefix_records, _ = normalize(str(prefix))
+    assert len(prefix_records) == len(committed)
+    assert provenance.records_sha256(prefix_records) == runner_hash
+
+    # Independently confirm that today's full-manifest rebuild is deterministic
+    # across interpreter processes, even though it must not match the old seal.
     script = (
-        "import json,sys; from dataclasses import asdict; "
-        "from autopsyx.data import provenance as p; "
-        "from autopsyx.providers.store import _encode; "
-        "b=p.build(sys.argv[1]); "
-        "json.dump({'hash':b['phase2_records_sha256'],"
-        "'records':[_encode(asdict(r)) for r in b['records']]},"
-        "open(sys.argv[2],'w',encoding='utf-8'),sort_keys=True,default=str)"
+        "import sys; sys.path.insert(0,'.'); "
+        "from autopsyx.data.provenance import build; "
+        "print(build(sys.argv[1])['phase2_records_sha256'])"
     )
-    process_results = []
+    hashes = []
     for seed in ("0", "1"):
-        output = tmp_path / f"phase2-seed-{seed}.json"
-        env = dict(os.environ, PYTHONHASHSEED=seed)
         proc = subprocess.run(
-            [sys.executable, "-c", script, str(ARCHIVE), str(output)],
+            [sys.executable, "-c", script, str(ARCHIVE)],
             cwd=ROOT,
-            env=env,
+            env=dict(os.environ, PYTHONHASHSEED=seed),
             capture_output=True,
             text=True,
             timeout=180,
         )
-        assert proc.returncode == 0, json.dumps(
-            {"seed": seed, "returncode": proc.returncode, "stdout": proc.stdout[-4000:],
-             "stderr": proc.stderr[-4000:]},
-            sort_keys=True,
+        assert proc.returncode == 0, (
+            f"seed={seed}, stdout={proc.stdout[-2000:]}, stderr={proc.stderr[-2000:]}"
         )
-        process_results.append(json.loads(output.read_text(encoding="utf-8")))
-
-    cross_difference = _first_dict_difference(
-        process_results[0]["records"], process_results[1]["records"]
-    )
-    assert (
-        process_results[0]["hash"] == rebuilt["phase2_records_sha256"]
-        and process_results[1]["hash"] == rebuilt["phase2_records_sha256"]
-        and cross_difference is None
-    ), json.dumps(
-        {
-            "archive": ARCHIVE.name,
-            "deterministic_rebuild_hash": rebuilt["phase2_records_sha256"],
-            "seed_0_hash": process_results[0]["hash"],
-            "seed_1_hash": process_results[1]["hash"],
-            "first_cross_process_difference": cross_difference,
-        },
-        sort_keys=True,
-    )
+        hashes.append(proc.stdout.strip())
+    assert hashes == [verification["rebuild_1"]["phase2_records"]] * 2
