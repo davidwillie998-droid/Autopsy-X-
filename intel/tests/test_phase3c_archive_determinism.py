@@ -50,7 +50,7 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
     rebuilt_counts = verification["rebuild_counts"]["phase2_by_type"]
 
     # The immutable runner metadata records 925 exchanges, but the current
-    # manifest has 926. The final OHLCV response contributes exactly six bars.
+    # manifest has 926. The final OHLCV response contributes five bars plus one Coverage record.
     assert manifest_verification["verified"] is False
     assert manifest_verification["reason"] == "manifest_seal_missing"
     assert manifest_verification["manifest_count_matches_runner"] is False
