@@ -101,3 +101,15 @@ def test_hash_independent_of_process_hash_seed(tmp_path, monkeypatch):
     outs = {subprocess.run([sys.executable, "-c", code, str(d)], cwd=ROOT, capture_output=True, text=True,
                            env=dict(os.environ, PYTHONHASHSEED=s)).stdout for s in ("0", "1")}
     assert len(outs) == 1 and outs.pop().strip()
+
+
+def test_tampered_manifest_fails_verification(tmp_path, monkeypatch):
+    d = sealed(tmp_path, monkeypatch)
+    manifest = d / "manifest.jsonl"
+    manifest.write_text(manifest.read_text(encoding="utf-8") + "\\n", encoding="utf-8")
+    result = pv.verify(str(d))
+    assert result["reproducible"]
+    assert result["rebuild_matches_runner"]
+    assert result["committed_matches_runner"]
+    assert result["manifest_matches_runner"] is False
+    assert result["verified"] is False
