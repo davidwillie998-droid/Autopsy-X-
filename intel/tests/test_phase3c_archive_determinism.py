@@ -125,6 +125,13 @@ def test_current_phase3c_archive_reproduces_runner_hash_and_canonical_records(tm
             "runner_record_count": len(committed),
             "rebuilt_record_count": len(rebuilt["records"]),
             "first_difference": difference,
+            "rebuilt_tail_after_runner_canonical": [
+                _record_dict(record) for record in rebuilt["records"][len(committed):len(committed) + 12]
+            ],
+            "runner_canonical_tail": [
+                _record_dict(record) for record in committed[-3:]
+            ],
+            "manifest_entries": len(provenance.RawStore(ARCHIVE).entries()) if hasattr(provenance, "RawStore") else None,
         },
         sort_keys=True,
     )
