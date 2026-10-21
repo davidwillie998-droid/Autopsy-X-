@@ -40,7 +40,7 @@ jobs:
           DISPATCH_RUN_ID: ${{ inputs.run_id }}
         run: |
           set -euo pipefail
-          python -m autopsyx.research.phase3c_preflight datasets/phase3c/REQUEST.json
+          python -m autopsyx.research.phase3c_preflight datasets/phase3c/REQUEST.json --frozen-baseline
           FROZEN_RUN_ID=$(python -c "import json;print(json.load(open('datasets/phase3c/REQUEST.json'))['run_id'])")
           REQUEST_PATH="datasets/phase3c/REQUEST.json"
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
