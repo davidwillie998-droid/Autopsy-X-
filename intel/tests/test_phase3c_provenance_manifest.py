@@ -72,7 +72,7 @@ def test_manifest_drift_against_completed_runner_count_fails_before_normalizatio
     last = json.loads(lines[-1])
     last["seq"] = len(lines) + 1
     manifest.write_text(
-        manifest.read_text(encoding="utf-8") + json.dumps(last, sort_keys=True) + "\\n",
+        manifest.read_text(encoding="utf-8") + json.dumps(last, sort_keys=True) + "\n",
         encoding="utf-8",
     )
 
