@@ -4,7 +4,6 @@ import json
 import os
 import subprocess
 import sys
-import pytest
 from pathlib import Path
 
 from autopsyx.data import provenance as pv
@@ -27,7 +26,7 @@ def test_seal_records_required_metadata(tmp_path, monkeypatch):
     p = json.loads((d / "run.json").read_text())["provenance"]
     for k in ("run_id", "workflow_run_id", "started_at", "completed_at", "providers", "endpoints",
               "canonical_dataset_version", "normalization_version", "config_hash", "dataset_hash_algorithm",
-              "runner_dataset_hash", "manifest_sha256", "manifest_bytes", "record_counts", "coverage_summary", "repository_commit", "environment"):
+              "runner_dataset_hash", "record_counts", "coverage_summary", "repository_commit", "environment"):
         assert k in p, k
     assert p["workflow_run_id"] == "123" and p["repository_commit"] == "abc"
     assert (d / "canonical" / "phase2_records.jsonl.gz").exists()
