@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 from autopsyx.data import provenance
+from autopsyx.research import phase3c_manifest_integrity
 from autopsyx.data.normalize import normalize
 from autopsyx.data.raw import RawStore
 from autopsyx.providers.store import decode_record
@@ -45,16 +46,18 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
     assert entries[-1]["seq"] == 926 and entries[-1]["endpoint"] == "gt.ohlcv"
 
     verification = provenance.verify(str(ARCHIVE))
+    manifest_verification = phase3c_manifest_integrity.verify(str(ARCHIVE))
     committed = _load_committed_records()
     rebuilt_records, _ = normalize(str(ARCHIVE))
 
     # The immutable runner metadata records 925 exchanges, but the current
     # manifest has 926. The final OHLCV response contributes exactly six bars.
     assert verification["verified"] is False
-    assert verification["manifest_matches_runner"] is False
-    assert verification["manifest_count_matches_runner"] is False
-    assert verification["manifest_exchanges_runner"] == 925
-    assert verification["manifest_exchanges_current"] == 926
+    assert manifest_verification["verified"] is False
+    assert manifest_verification["reason"] == "manifest_seal_missing"
+    assert manifest_verification["manifest_count_matches_runner"] is False
+    assert manifest_verification["manifest_exchanges_runner"] == 925
+    assert manifest_verification["manifest_exchanges_current"] == 926
     assert verification["committed_matches_runner"] is True
     assert verification["rebuild_matches_runner"] is False
     assert verification["normalization_version_match"] is True
