@@ -1,9 +1,13 @@
-"""Fail-closed continuity audit for pool-liquidity snapshots in a raw Phase 3C archive.
+"""Fail-closed live-cycle liquidity audit for a raw Phase 3C archive.
 
-This audits observed positive pool reserves and timestamp continuity. It does not
-claim an economic minimum-liquidity threshold (none is defined by the frozen
-contract) and does not interpolate missing observations.
-Run from intel/: python -m autopsyx.research.audit_contiguous_liquidity RUN_DIR
+Only gt.pools_multi responses count as live reserve observations. Discovery
+endpoints are deliberately excluded. A pool must have one valid observation
+for every expected polling cycle; duplicate timestamps or extra discovery
+snapshots cannot replace a missing cycle. No interpolation is performed.
+
+This measures observed reserve continuity, not executable liquidity at a
+particular trade size. Run from intel/:
+python -m autopsyx.research.audit_contiguous_liquidity RUN_DIR
 """
 from __future__ import annotations
 
@@ -12,6 +16,7 @@ import json
 import math
 from collections import defaultdict
 from pathlib import Path
+from urllib.parse import urlparse
 
 from ..data.providers import geckoterminal as gt
 from ..data.raw import RawStore
@@ -26,27 +31,16 @@ def audit_pool_snapshots(
     expected_end_ms: int,
     expected_cadence_ms: int,
 ) -> dict:
-    """Audit one pool. Snapshot dicts require timestamp_ms and liquidity_usd.
-
-    N_expected is based on the declared acquisition window and expected per-pool
-    polling cadence. Any absent/invalid reserve snapshot, count shortfall, or
-    gap larger than the horizon fails that horizon. Duplicate timestamps count
-    once; no interpolation/forward-fill is performed.
-    """
+    """Legacy timestamp-only helper; archive gate uses cycle-aware audit below."""
     if expected_cadence_ms <= 0 or expected_end_ms < expected_start_ms:
         raise ValueError("invalid expected acquisition window or cadence")
     valid_by_ts: dict[int, float] = {}
-    invalid_timestamps = 0
-    invalid_liquidity = 0
-    out_of_window_records = 0
+    invalid_timestamps = invalid_liquidity = out_of_window_records = 0
     for row in snapshots:
         ts = row.get("timestamp_ms")
         if not isinstance(ts, int) or isinstance(ts, bool):
             invalid_timestamps += 1
             continue
-        # Discovery/backfill responses can include snapshots outside the live
-        # observation window. They must not fill a missing poll cycle or extend
-        # the measured continuity interval.
         if ts < expected_start_ms or ts > expected_end_ms:
             out_of_window_records += 1
             continue
@@ -89,8 +83,116 @@ def audit_pool_snapshots(
     }
 
 
+def audit_pool_cycles(
+    observations: list[dict],
+    *,
+    expected_cycles: list[int],
+    expected_start_ms: int,
+    expected_cadence_ms: int,
+    failed_cycles: dict[int, str] | None = None,
+) -> dict:
+    """Require one valid live reserve observation in every expected cycle."""
+    if expected_cadence_ms <= 0 or not expected_cycles:
+        raise ValueError("expected cycles and positive cadence are required")
+    expected = set(expected_cycles)
+    by_cycle: dict[int, list[dict]] = defaultdict(list)
+    invalid_cycle_records = 0
+    out_of_window_records = 0
+    for row in observations:
+        cycle = row.get("cycle")
+        if type(cycle) is not int or cycle not in expected:
+            out_of_window_records += 1
+            continue
+        by_cycle[cycle].append(row)
+
+    valid_times: list[int] = []
+    invalid_liquidity = 0
+    duplicate_cycles = []
+    missing_cycles = []
+    cycle_results = []
+    failed_cycles = failed_cycles or {}
+    for cycle in expected_cycles:
+        rows = by_cycle.get(cycle, [])
+        reason = None
+        if cycle in failed_cycles:
+            reason = f"poll request failed: {failed_cycles[cycle]}"
+        elif not rows:
+            reason = "no gt.pools_multi observation recorded for expected cycle"
+        elif len(rows) != 1:
+            duplicate_cycles.append(cycle)
+            reason = f"expected exactly one pool snapshot in cycle; found {len(rows)}"
+        else:
+            row = rows[0]
+            ts, liq = row.get("timestamp_ms"), row.get("liquidity_usd")
+            if type(ts) is not int:
+                invalid_cycle_records += 1
+                reason = "invalid snapshot timestamp"
+            elif not isinstance(liq, (int, float)) or isinstance(liq, bool) or not math.isfinite(liq) or liq <= 0:
+                invalid_liquidity += 1
+                reason = "missing/non-positive liquidity"
+            else:
+                valid_times.append(ts)
+        if reason:
+            missing_cycles.append(cycle)
+        cycle_results.append({"cycle": cycle, "status": "PASS" if reason is None else "FAIL",
+                              "reason": reason})
+
+    valid_times.sort()
+    max_gap = max((b - a for a, b in zip(valid_times, valid_times[1:])), default=0)
+    expected_count = len(expected_cycles)
+    observed_count = len(valid_times)
+    results = {}
+    for label, horizon_ms in HORIZONS_MS.items():
+        reasons = []
+        if observed_count != expected_count:
+            reasons.append(f"valid live-cycle observations {observed_count} != expected cycles {expected_count}")
+        if missing_cycles:
+            reasons.append(f"missing/invalid expected polling cycles: {missing_cycles}")
+        if max_gap > horizon_ms:
+            reasons.append(f"maximum valid observation gap {max_gap}ms > {horizon_ms}ms")
+        if duplicate_cycles:
+            reasons.append(f"duplicate snapshots for cycles: {duplicate_cycles}")
+        if invalid_cycle_records:
+            reasons.append(f"{invalid_cycle_records} invalid cycle timestamp record(s)")
+        if invalid_liquidity:
+            reasons.append(f"{invalid_liquidity} missing/non-positive liquidity record(s)")
+        results[label] = {
+            "status": "PASS" if not reasons else "NON_CONTIGUOUS",
+            "expected_snapshots": expected_count,
+            "observed_positive_liquidity_snapshots": observed_count,
+            "max_gap_ms": max_gap,
+            "reasons": reasons,
+        }
+    return {
+        "expected_start_ms": expected_start_ms,
+        "expected_end_ms": expected_start_ms + (expected_count - 1) * expected_cadence_ms,
+        "expected_cadence_ms": expected_cadence_ms,
+        "expected_cycles": expected_cycles,
+        "observed_cycles": sorted(c for c, rows in by_cycle.items() if rows),
+        "cycle_results": cycle_results,
+        "missing_cycles": missing_cycles,
+        "duplicate_cycles": duplicate_cycles,
+        "invalid_cycle_timestamp_records": invalid_cycle_records,
+        "invalid_liquidity_records": invalid_liquidity,
+        "out_of_window_records_ignored": out_of_window_records,
+        "observed_timestamps_ms": valid_times,
+        "horizons": results,
+        "eligible_all_horizons": all(v["status"] == "PASS" for v in results.values()),
+    }
+
+
+def _pools_from_multi_url(url: str) -> list[str]:
+    """Recover a failed pools/multi batch from the recorded request URL."""
+    path = urlparse(url).path
+    marker = "/pools/multi/"
+    if marker not in path:
+        return []
+    tail = path.split(marker, 1)[1].split("/", 1)[0]
+    return [pool for pool in tail.split(",") if pool]
+
+
 def audit_archive(run_dir: str | Path) -> dict:
-    """Build a machine-readable per-pool audit directly from raw archive entries."""
+    """Audit every selected pool against every expected live polling cycle."""
     run_dir = Path(run_dir)
     raw = RawStore(run_dir)
     meta = raw.read_json("run.json") or {}
@@ -106,49 +208,62 @@ def audit_archive(run_dir: str | Path) -> dict:
 
     poll_start = meta.get("poll_window_started_ms")
     cycles = meta.get("poll_window_cycles", meta.get("cycles"))
-    if not isinstance(poll_start, int) or not isinstance(cycles, int) or cycles < 1:
+    if type(poll_start) is not int or type(cycles) is not int or cycles < 1:
         raise ValueError("run.json lacks a valid live polling window and cycle count")
     cadence_ms = int(plan.get("cycle_s", 60)) * 1000
     if cadence_ms <= 0:
         raise ValueError("invalid polling cadence in run plan")
-    # gt.pools_multi snapshots every selected pool on every cycle, even when
-    # trades/OHLCV requests rotate across a smaller per-cycle pool budget.
-    expected_start_ms = poll_start
-    expected_end_ms = poll_start + (cycles - 1) * cadence_ms
+    expected_cycles = list(range(cycles))
 
     by_pool: dict[str, list[dict]] = defaultdict(list)
-    request_errors: dict[str, int] = defaultdict(int)
+    failed_by_pool: dict[str, dict[int, str]] = defaultdict(dict)
+    seen_cycle_batches: dict[int, set[str]] = defaultdict(set)
+    missing_cycle_batches: dict[int, list[str]] = defaultdict(list)
+
+    # Crucially, only authoritative live polls are used. Discovery/backfill
+    # endpoints are never eligible to fill a live polling cycle.
     for entry in raw.entries():
-        if entry.endpoint not in ("gt.new_pools", "gt.trending", "gt.top_pools", "gt.pools_multi"):
+        if entry.endpoint != "gt.pools_multi":
+            continue
+        context = entry.context or {}
+        cycle = context.get("cycle")
+        if type(cycle) is not int or cycle not in set(expected_cycles):
+            missing_cycle_batches[-1].append(f"request seq {entry.seq} has invalid/out-of-window cycle {cycle!r}")
             continue
         body = raw.body(entry.raw_id) if entry.raw_id else None
         if entry.error or body is None:
-            context = entry.context or {}
-            target = context.get("pool")
-            if target:
-                request_errors[target] += 1
+            targets = context.get("pools")
+            if not isinstance(targets, list) or not targets:
+                targets = _pools_from_multi_url(entry.url)
+            if not targets:
+                missing_cycle_batches[cycle].append(
+                    f"failed request seq {entry.seq}; cannot identify its requested pool batch"
+                )
+            for pool_id in targets:
+                failed_by_pool[pool_id][cycle] = entry.error or "response body missing"
             continue
+        seen_cycle_batches[cycle].update(_pools_from_multi_url(entry.url))
         parsed = gt.parse_pools(entry, body)
         for rec in parsed.records:
             if type(rec).__name__ != "PoolSnapshot":
                 continue
-            by_pool[rec.pool].append({"timestamp_ms": rec.seen_ts, "liquidity_usd": rec.liquidity_usd})
+            by_pool[rec.pool].append({
+                "cycle": cycle,
+                "timestamp_ms": rec.seen_ts,
+                "liquidity_usd": rec.liquidity_usd,
+            })
 
     rows = []
     for pool in pools:
         pool_id, token_id = pool["pool"], pool["token"]
-        audit = audit_pool_snapshots(
+        audit = audit_pool_cycles(
             by_pool.get(pool_id, []),
-            expected_start_ms=expected_start_ms,
-            expected_end_ms=expected_end_ms,
+            expected_cycles=expected_cycles,
+            expected_start_ms=poll_start,
             expected_cadence_ms=cadence_ms,
+            failed_cycles=failed_by_pool.get(pool_id, {}),
         )
-        audit.update({"pool": pool_id, "token": token_id, "request_errors": request_errors.get(pool_id, 0)})
-        if request_errors.get(pool_id, 0):
-            for horizon in audit["horizons"].values():
-                horizon["status"] = "NON_CONTIGUOUS"
-                horizon["reasons"].append(f"{request_errors[pool_id]} recorded request error(s) for pool")
-            audit["eligible_all_horizons"] = False
+        audit.update({"pool": pool_id, "token": token_id})
         rows.append(audit)
 
     token_to_pools: dict[str, list[dict]] = defaultdict(list)
@@ -159,23 +274,26 @@ def audit_archive(run_dir: str | Path) -> dict:
         if any(p["eligible_all_horizons"] for p in token_rows)
     )
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "archive": run_dir.name,
         "acquisition_status": meta.get("status"),
-        "method": "positive_pool_reserve_snapshots_no_interpolation",
+        "method": "gt.pools_multi_live_cycle_exact_match_no_interpolation",
         "expected_cadence_ms": cadence_ms,
+        "expected_cycle_count": cycles,
         "horizons_ms": HORIZONS_MS,
         "pool_count": len(rows),
         "eligible_pool_count": sum(p["eligible_all_horizons"] for p in rows),
         "eligible_distinct_token_count": len(eligible_tokens),
         "eligible_token_ids": eligible_tokens,
+        "unattributable_failed_batches": {str(k): v for k, v in missing_cycle_batches.items()},
         "rows": rows,
         "all_pools_pass": bool(rows) and all(p["eligible_all_horizons"] for p in rows),
         "continuity_gate_pass": meta.get("status") == "COMPLETE" and sum(p["eligible_all_horizons"] for p in rows) > 0,
         "limitations": [
-            "This is observed reserve-snapshot continuity, not proof of an economic minimum-liquidity threshold.",
-            "Missing, failed, or non-positive reserve observations are not interpolated.",
-            "Expected snapshot count uses the run window and plan-derived per-pool cadence.",
+            "Only gt.pools_multi live polling observations count; discovery/backfill snapshots are excluded.",
+            "Every selected pool must have exactly one valid reserve snapshot in every expected cycle.",
+            "Missing, failed, duplicate, or non-positive observations are not interpolated.",
+            "Positive reserve continuity is not proof of executable liquidity or acceptable price impact at a specified trade size.",
             "The separate 85-distinct-token gate must be applied per hypothesis after its own eligibility filters.",
         ],
     }
