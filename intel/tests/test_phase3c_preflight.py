@@ -26,7 +26,7 @@ def good_request():
         "gt_rate_per_s": 0.15,
         "gt_min_rate_per_s": 0.05,
         "circuit_waits": 5,
-        "rpc_rate": 2,
+        "rpc_rate_per_s": 2,
         "rpc_max_pages": 1,
         "rpc_max_txs": 8,
         "phase3a": True,
@@ -74,3 +74,14 @@ def test_rejects_wrong_chain_scope():
     request = good_request()
     request["network"] = "ethereum"
     assert any("network must remain solana" in e for e in module.validate(request))
+
+
+
+def test_frozen_phase3c_request_passes_preflight():
+    import json
+
+    frozen_request = Path(__file__).parents[1] / "datasets" / "phase3c" / "REQUEST.json"
+    request = json.loads(frozen_request.read_text(encoding="utf-8"))
+    assert "rpc_rate_per_s" in request
+    assert "rpc_rate" not in request
+    assert module.validate(request) == []
