@@ -40,7 +40,7 @@ jobs:
           echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
           python -m autopsyx --log acquire --live --request datasets/phase3c/REQUEST.json --out "datasets/phase3c/runs/$RUN_ID"
       - name: Record failed or interrupted acquisition
-        if: failure() && env.RUN_ID != ''
+        if: (failure() || cancelled()) && env.RUN_ID != ''
         working-directory: intel
         env:
           RUN_ID: ${{ env.RUN_ID }}
