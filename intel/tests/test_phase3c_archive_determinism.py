@@ -49,6 +49,8 @@ def _first_difference(left, right):
             "right_length": len(right),
             "left_type": type(left[i]).__name__ if i < len(left) else None,
             "right_type": type(right[i]).__name__ if i < len(right) else None,
+            "left_tail": [_record_dict(r) for r in left[max(0, i - 2):]],
+            "right_extra_records": [_record_dict(r) for r in right[i:i + 10]],
         }
     return None
 
