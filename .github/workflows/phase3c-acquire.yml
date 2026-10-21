@@ -54,6 +54,12 @@ jobs:
           from pathlib import Path
           request = json.loads(Path("datasets/phase3c/REQUEST.json").read_text(encoding="utf-8"))
           request["run_id"] = sys.argv[1]
+          # The archived 2026-10-20 run requested only 8 transactions from each
+          # 100-signature page, leaving 92 signatures unfetched per address.
+          # Use the frozen preflight maximums for a new run without editing the
+          # checked-in request; archive this effective request and its hash.
+          request["rpc_max_pages"] = 3
+          request["rpc_max_txs"] = 40
           Path(sys.argv[2]).write_text(json.dumps(request, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
             REQUEST_PATH="$RUNNER_TEMP/phase3c-request.json"
