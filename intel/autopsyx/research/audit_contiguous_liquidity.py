@@ -212,10 +212,10 @@ def audit_archive(run_dir: str | Path) -> dict:
 
     poll_start = meta.get("poll_window_started_ms")
     cycles = meta.get("poll_window_cycles", meta.get("cycles"))
-    poll_end = meta.get("ended_ms")
+    poll_end = meta.get("poll_window_ended_ms")
     if (type(poll_start) is not int or type(poll_end) is not int or poll_end < poll_start
             or type(cycles) is not int or cycles < 1):
-        raise ValueError("run.json lacks a valid live polling start/end and cycle count")
+        raise ValueError("run.json lacks a valid live polling-window start/end and cycle count")
     cadence_ms = int(plan.get("cycle_s", 60)) * 1000
     if cadence_ms <= 0:
         raise ValueError("invalid polling cadence in run plan")
