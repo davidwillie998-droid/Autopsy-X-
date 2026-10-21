@@ -98,9 +98,14 @@ jobs:
               meta["workflow_failure_recorded"] = True
               p.write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
+      - name: Snapshot Phase 3C raw manifest before canonical normalization
+        id: manifest_snapshot
+        if: steps.acquire.outcome == 'success'
+        working-directory: intel
+        run: python -m autopsyx.research.phase3c_manifest_integrity snapshot "datasets/phase3c/runs/$RUN_ID"
       - name: Seal canonical dataset on the runner
         id: seal
-        if: steps.acquire.outcome == 'success'
+        if: steps.manifest_snapshot.outcome == 'success'
         working-directory: intel
         run: python -m autopsyx seal "datasets/phase3c/runs/$RUN_ID"
       - name: Seal Phase 3C raw-manifest integrity
