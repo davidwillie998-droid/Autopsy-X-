@@ -68,6 +68,7 @@ class Fetcher:
                  sleep: Callable[[float], None] = time.sleep, circuit_waits: int = 0,
                  display: dict[str, str] | None = None):
         self.raw, self.clients, self.now_ms = raw, clients, now_ms
+        self.deadline_monotonic: float | None = None
         # provider -> base URL written to the manifest in place of the real one
         # (a private RPC URL can embed a key; the archive must never hold it)
         self.display = display or {}
@@ -92,12 +93,24 @@ class Fetcher:
         waits = 0
         while True:
             try:
-                r = c.get_raw(path) if payload is None else c._request(path, payload)
+                if self.deadline_monotonic is not None and time.monotonic() >= self.deadline_monotonic:
+                    raise ProviderError("acquisition deadline reached before provider call", retryable=False)
+                r = (c.get_raw(path, deadline_monotonic=self.deadline_monotonic) if payload is None
+                     else c._request(path, payload, deadline_monotonic=self.deadline_monotonic))
                 break
             except ProviderError as exc:
+                if "acquisition deadline reached" in str(exc):
+                    err = exc
+                    r = None
+                    break
                 if "circuit open" in str(exc) and waits < self.circuit_waits:
                     waits += 1
                     self.waited += 1
+                    remaining = (self.deadline_monotonic - time.monotonic()) if self.deadline_monotonic is not None else c.breaker.cooldown_s
+                    if remaining <= 0 or (self.deadline_monotonic is not None and remaining < c.breaker.cooldown_s):
+                        err = ProviderError("acquisition deadline reached during circuit cooldown", retryable=False)
+                        r = None
+                        break
                     self.sleep(c.breaker.cooldown_s)
                     continue
                 err = exc
@@ -110,6 +123,8 @@ class Fetcher:
                                 context=context | ({"circuit_waits": waits} if waits else {}),
                                 attempt_log=getattr(exc, "attempt_log", ()), method="POST" if payload else "GET",
                                 request_body=payload)
+            if "acquisition deadline reached" in str(exc):
+                raise RuntimeError(str(exc))
             return e, None
         e = self.raw.record(provider=provider, endpoint=endpoint, url=shown + r.url[len(c.base_url):], request_ts=r.request_ts,
                             response_ts=r.response_ts, status=r.status, body=r.body, attempts=r.attempts,
@@ -397,6 +412,12 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
     f = Fetcher(raw, clients or default_clients(plan, now_ms), now_ms, sleep, plan.circuit_waits,
                 display={rpc.NAME: rpc.display_base(rpc.BASE)})
     run_started_ms = now_ms()
+    run_started_monotonic = time.monotonic()
+    # Preserve the frozen observation duration while bounding setup and total
+    # lifecycle time. The 165-minute cap leaves 15 minutes before CI's 180-minute timeout.
+    setup_deadline = run_started_monotonic + 1200
+    lifecycle_deadline = run_started_monotonic + plan.duration_s + 2700
+    f.deadline_monotonic = setup_deadline
     meta = {"started_ms": run_started_ms, "plan": plan.__dict__, "code_version": os.environ.get("GITHUB_SHA", "local"),
             "runner": os.environ.get("RUNNER_NAME", "local"), "execution": "none: acquisition only, no orders",
             "poll_window_started_ms": None, "poll_window_duration_s": plan.duration_s,
@@ -418,34 +439,68 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
         meta["status"] = "BLOCKED: no pools selectable (discovery failed)"
         raw.write_json("run.json", meta)
         return meta
-    backfill(f, plan, picked)
-    if plan.phase3a:
-        meta["enrichment"] = enrich(f, plan, picked, 0)
+    try:
+        backfill(f, plan, picked)
+        if plan.phase3a:
+            meta["enrichment"] = enrich(f, plan, picked, 0)
+            raw.write_json("run.json", meta)
+    except RuntimeError as exc:
+        if "acquisition deadline reached" not in str(exc):
+            raise
+        meta.update({"ended_ms": now_ms(), "status": "INCOMPLETE_SETUP_DEADLINE",
+                     "deadline_stage": "setup", "deadline_error": str(exc),
+                     "exchanges": len(raw.entries()), "circuit_waits": f.waited})
         raw.write_json("run.json", meta)
-    # Setup work must not consume the live observation budget.
-    # Start the timer only after discovery, backfill, and initial enrichment.
+        return meta
+    # Setup is bounded; observation gets its full frozen duration.
+    poll_window_started_monotonic = time.monotonic()
+    poll_deadline = min(poll_window_started_monotonic + plan.duration_s, lifecycle_deadline)
+    f.deadline_monotonic = poll_deadline
     poll_window_started_ms = now_ms()
     meta["poll_window_started_ms"] = poll_window_started_ms
     raw.write_json("run.json", meta)
     cycle = 0
+    lifecycle_error = None
     while True:
-        t0 = now_ms()
-        if (t0 - poll_window_started_ms) / 1000 >= plan.duration_s or (max_cycles is not None and cycle >= max_cycles):
+        t0 = time.monotonic()
+        if t0 >= poll_deadline or (max_cycles is not None and cycle >= max_cycles):
             break
-        poll_cycle(f, plan, picked, cycle)
+        try:
+            poll_cycle(f, plan, picked, cycle)
+        except RuntimeError as exc:
+            if "acquisition deadline reached" not in str(exc):
+                raise
+            lifecycle_error = str(exc)
+            break
         cycle += 1
-        spent = (now_ms() - t0) / 1000
+        spent = time.monotonic() - t0
         if spent < plan.cycle_s:
-            sleep(plan.cycle_s - spent)
-    if plan.phase3a:
-        meta["enrichment"] += enrich(f, plan, picked, 1)
+            remaining = poll_deadline - time.monotonic()
+            if remaining > 0:
+                sleep(min(plan.cycle_s - spent, remaining))
+    poll_elapsed = max(0.0, time.monotonic() - poll_window_started_monotonic)
+    if plan.phase3a and lifecycle_error is None and time.monotonic() < lifecycle_deadline:
+        f.deadline_monotonic = lifecycle_deadline
+        try:
+            meta["enrichment"] += enrich(f, plan, picked, 1)
+        except RuntimeError as exc:
+            if "acquisition deadline reached" not in str(exc):
+                raise
+            lifecycle_error = str(exc)
+    elif plan.phase3a:
+        lifecycle_error = lifecycle_error or "acquisition deadline reached before final enrichment"
     entries = raw.entries()
     ended_ms = now_ms()
+    complete = lifecycle_error is None and poll_elapsed >= plan.duration_s and (max_cycles is None or cycle >= max_cycles)
     meta.update({"ended_ms": ended_ms, "cycles": cycle, "poll_window_cycles": cycle,
-                 "poll_window_elapsed_s": max(0.0, (ended_ms - poll_window_started_ms) / 1000),
+                 "poll_window_elapsed_s": poll_elapsed,
+                 "lifecycle_elapsed_s": max(0.0, time.monotonic() - run_started_monotonic),
+                 "lifecycle_budget_s": plan.duration_s + 2700, "setup_budget_s": 1200,
+                 "deadline_error": lifecycle_error,
                  "exchanges": len(entries), "circuit_waits": f.waited,
                  "final_gt_rate_per_s": f.clients[gt.NAME].limiter.rate,
-                 "errors": sum(1 for e in entries if e.error), "status": "COMPLETE"})
+                 "errors": sum(1 for e in entries if e.error),
+                 "status": "COMPLETE" if complete else "INCOMPLETE_DEADLINE_OR_WINDOW"})
     raw.write_json("run.json", meta)
     log.info("acquisition done", extra={"fields": {k: meta[k] for k in ("cycles", "exchanges", "errors")}})
     return meta
