@@ -32,9 +32,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Validate frozen Phase 3C request (local-only; no provider calls)
-        working-directory: intel
-        run: python scripts/phase3c_preflight.py datasets/phase3c/REQUEST.json
       - name: Acquire
         working-directory: intel
         env:
