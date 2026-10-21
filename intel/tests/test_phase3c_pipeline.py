@@ -172,16 +172,24 @@ def test_attack_zero_variance_feature_cannot_replicate():
 
 
 # -------------------------------------------------- walk-forward OOS mechanics ----
-def test_walk_forward_oos_splits_tokens_not_rows():
-    by_token = {f"t{i}": [{"as_of": i * 1000 + j, "x": float(i % 2), f"y": float(i % 2)}
-                          for j in range(5)] for i in range(10)}
-    for rows in by_token.values():
-        for r in rows:
-            r["y"] = r["x"]
+def test_walk_forward_oos_uses_future_timestamps_and_purges_label_overlap():
+    by_token = {
+        f"t{i}": [
+            {"token": f"t{i}", "as_of": step * 1000, "step_index": step,
+             "x": float(i * 100 + step), "y": float(i * 100 + step)}
+            for step in range(20)
+        ]
+        for i in range(12)
+    }
     out = p3c.walk_forward_oos(by_token, "y")
     assert out is not None
-    assert out["in_sample"]["n_tokens"] + out["oos"]["n_tokens"] == 10
-    assert out["signs_agree"] is True  # perfectly correlated in both halves
+    assert out["method"] == "chronological_timestamp_split_with_label_horizon_embargo"
+    assert out["cutoff_as_of"] == 10_000
+    assert out["horizon_steps_embargo"] == contract.HORIZON_STEPS
+    assert out["in_sample"]["n_tokens"] == 12
+    assert out["oos"]["n_tokens"] == 12
+    assert out["in_sample_purged_rows"] > 0
+    assert out["signs_agree"] is True
 
 
 def test_walk_forward_oos_none_when_undefined():
