@@ -5,6 +5,7 @@ This performs local validation only; it never contacts providers or starts a run
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -17,10 +18,17 @@ def validate(request: object) -> list[str]:
     errors: list[str] = []
     if not isinstance(request, dict):
         return ["request must be a JSON object"]
+
     run_id = request.get("run_id")
     if not isinstance(run_id, str) or not run_id.startswith("p3c-sol-"):
         errors.append("run_id must be a non-empty Phase 3C id beginning p3c-sol-")
+    if request.get("network") != "solana":
+        errors.append("network must remain solana for the frozen Phase 3C universe")
+    if type(request.get("seed")) is not int:
+        errors.append("seed must be an integer")
+
     strata = request.get("strata")
+    strata_total = None
     if not isinstance(strata, dict):
         errors.append("strata must be an object")
     else:
@@ -33,17 +41,50 @@ def validate(request: object) -> list[str]:
         values = [strata.get(k) for k in REQUIRED_STRATA]
         if any(type(v) is not int or v < 0 for v in values):
             errors.append("each stratum must be a non-negative integer")
-        elif sum(values) < MIN_STRATA_TOTAL:
-            errors.append(
-                f"strata total {sum(values)} is below frozen protocol minimum "
-                f"{MIN_STRATA_TOTAL}; do not lower the 85-token statistical gate"
-            )
+        else:
+            strata_total = sum(values)
+            if strata_total < MIN_STRATA_TOTAL:
+                errors.append(
+                    f"strata total {strata_total} is below frozen protocol minimum "
+                    f"{MIN_STRATA_TOTAL}; do not lower the 85-token statistical gate"
+                )
+
     duration = request.get("duration_s")
     if type(duration) is not int or duration < MIN_DURATION_SECONDS:
         errors.append(f"duration_s must be an integer >= {MIN_DURATION_SECONDS}")
     cycle = request.get("cycle_s")
     if type(cycle) is not int or cycle != 60:
         errors.append("cycle_s must remain 60 seconds under the frozen protocol")
+
+    for key in ("new_pool_pages", "backfill_pages", "ohlcv_every"):
+        value = request.get(key)
+        if type(value) is not int or value < 1:
+            errors.append(f"{key} must be a positive integer")
+    limit = request.get("poll_ohlcv_limit")
+    if type(limit) is not int or not 1 <= limit <= 1000:
+        errors.append("poll_ohlcv_limit must be an integer in [1, 1000]")
+
+    poll_budget = request.get("poll_pools_per_cycle")
+    if type(poll_budget) is not int or poll_budget < 1:
+        errors.append("poll_pools_per_cycle must be a positive integer")
+    elif strata_total is not None and poll_budget > strata_total:
+        errors.append("poll_pools_per_cycle cannot exceed the selected-pool stratum total")
+
+    for key in ("holders_per_cycle", "lag_ms", "circuit_waits"):
+        value = request.get(key)
+        if type(value) is not int or value < 0:
+            errors.append(f"{key} must be a non-negative integer")
+
+    for key in ("gt_rate_per_s", "gt_min_rate_per_s", "rpc_rate"):
+        value = request.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            errors.append(f"{key} must be a finite positive number")
+    gt_rate, gt_min = request.get("gt_rate_per_s"), request.get("gt_min_rate_per_s")
+    if (isinstance(gt_rate, (int, float)) and not isinstance(gt_rate, bool)
+            and isinstance(gt_min, (int, float)) and not isinstance(gt_min, bool)
+            and gt_min > gt_rate):
+        errors.append("gt_min_rate_per_s cannot exceed gt_rate_per_s")
+
     for key, low, high in (("rpc_max_pages", 1, 3), ("rpc_max_txs", 1, 40)):
         value = request.get(key)
         if type(value) is not int or not low <= value <= high:
