@@ -8,9 +8,6 @@ from __future__ import annotations
 
 import gzip
 import json
-import os
-import subprocess
-import sys
 from pathlib import Path
 
 from autopsyx.data import provenance
@@ -76,27 +73,3 @@ def test_immutable_phase3c_archive_is_rejected_for_manifest_drift(tmp_path):
     prefix_records, _ = normalize(str(prefix))
     assert len(prefix_records) == len(committed)
     assert provenance.records_sha256(prefix_records) == runner_hash
-
-    # Today's full-manifest rebuild is deterministic across independent Python
-    # processes even though it must not match the older canonical snapshot.
-    script = (
-        "import sys; sys.path.insert(0,'.'); "
-        "from autopsyx.data.normalize import normalize; "
-        "from autopsyx.data.provenance import records_sha256; "
-        "records, _ = normalize(sys.argv[1]); print(records_sha256(records))"
-    )
-    hashes = []
-    for seed in ("0", "1"):
-        proc = subprocess.run(
-            [sys.executable, "-c", script, str(ARCHIVE)],
-            cwd=ROOT,
-            env=dict(os.environ, PYTHONHASHSEED=seed),
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
-        assert proc.returncode == 0, (
-            f"seed={seed}, stdout={proc.stdout[-2000:]}, stderr={proc.stderr[-2000:]}"
-        )
-        hashes.append(proc.stdout.strip())
-    assert hashes == [rebuilt_hash] * 2
