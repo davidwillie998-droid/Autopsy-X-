@@ -101,6 +101,35 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
         '                 "errors": sum(1 for e in entries if e.error), "status": "COMPLETE"})\n'
     )
 
+    substitute(
+        "    rpc_max_txs: int = 40\n",
+        "    rpc_max_txs: int = 40\n"
+        "    # Optional fail-closed minimum for Phase 3C: do not spend collection budget\n"
+        "    # unless discovery actually returns this many distinct token addresses.\n"
+        "    min_selected_tokens: int = 0\n"
+    )
+    substitute(
+        '    if not picked:\n'
+        '        meta["status"] = "BLOCKED: no pools selectable (discovery failed)"\n'
+        '        raw.write_json("run.json", meta)\n'
+        '        return meta\n'
+        '    backfill(f, plan, picked)\n',
+        '    if not picked:\n'
+        '        meta["status"] = "BLOCKED: no pools selectable (discovery failed)"\n'
+        '        raw.write_json("run.json", meta)\n'
+        '        return meta\n'
+        '    from .request_validation import distinct_token_count\n'
+        '    selected_token_count = distinct_token_count(picked)\n'
+        '    if plan.min_selected_tokens and selected_token_count < plan.min_selected_tokens:\n'
+        '        meta["status"] = (\n'
+        '            f"BLOCKED: discovery selected {selected_token_count} distinct tokens; "\n'
+        '            f"minimum is {plan.min_selected_tokens}; no backfill, enrichment, or polling performed"\n'
+        '        )\n'
+        '        meta["selected_distinct_tokens"] = selected_token_count\n'
+        '        raw.write_json("run.json", meta)\n'
+        '        return meta\n'
+        '    backfill(f, plan, picked)\n'
+    )
     actual = (ROOT / "intel" / "autopsyx" / "data" / "acquire.py").read_text()
     assert actual.rstrip("\n") == expected.rstrip("\n"), "acquire.py contains changes beyond the reviewed poll-window timing repair"
 
