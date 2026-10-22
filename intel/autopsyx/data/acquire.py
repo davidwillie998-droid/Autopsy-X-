@@ -421,6 +421,16 @@ def poll_cycle(f: Fetcher, plan: Plan, picked: list[dict], cycle: int) -> None:
                "pool_created_ts": p["created_ts"], "total_supply": p["total_supply"]})
 
 
+def _provider_error_count(entries: list[ManifestEntry]) -> int:
+    """Count failed provider exchanges, not audit annotations describing them.
+
+    Audit records such as ``query_not_applicable`` can carry an explanatory
+    error string without representing a failed provider request. Actual failed
+    exchanges are already preserved under their provider name in the manifest.
+    """
+    return sum(1 for entry in entries if entry.error and entry.provider != "audit")
+
+
 def _completion_status(cadence_pass: bool, cycle_overruns: int, errors: int, cycle_s: int) -> str:
     """Fail closed: any exhausted provider request makes the archive incomplete."""
     if not cadence_pass:
@@ -530,7 +540,7 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
     ended_ms = now_ms()
     cycle_overruns = sum(1 for elapsed in cycle_elapsed_s if elapsed > plan.cycle_s)
     cadence_pass = bool(meta.get("poll_schedule", {}).get("cadence_pass", True))
-    error_count = sum(1 for e in entries if e.error)
+    error_count = _provider_error_count(entries)
     status = _completion_status(cadence_pass, cycle_overruns, error_count, plan.cycle_s)
     meta.update({"ended_ms": ended_ms, "cycles": cycle, "poll_window_cycles": cycle,
                  "poll_window_ended_ms": poll_window_ended_ms,
