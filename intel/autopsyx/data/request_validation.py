@@ -50,6 +50,10 @@ def validate_phase3c_request(request: object, minimum: int = 20) -> int:
     seed = request.get("seed")
     if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
         raise ValueError("seed must be a non-negative integer")
+    selected_minimum = request.get("min_selected_tokens", minimum)
+    if (isinstance(selected_minimum, bool) or not isinstance(selected_minimum, int)
+            or selected_minimum < minimum):
+        raise ValueError(f"min_selected_tokens must be an integer >= {minimum}")
     return validate_minimum_strata(request.get("strata"), minimum)
 
 
