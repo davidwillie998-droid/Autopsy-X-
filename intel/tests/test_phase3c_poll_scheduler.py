@@ -109,3 +109,25 @@ def test_archive_is_complete_only_when_cadence_cycles_and_requests_pass():
 def test_cadence_failure_takes_priority_over_other_incomplete_reasons():
     status = acquire._completion_status(cadence_pass=False, cycle_overruns=1, errors=4, cycle_s=60)
     assert status == "INCOMPLETE: pool revisit interval exceeds the frozen 15-minute label horizon"
+
+
+def test_audit_annotations_do_not_masquerade_as_failed_provider_requests():
+    from types import SimpleNamespace
+
+    entries = [
+        SimpleNamespace(provider="audit", error="gdelt: symbol shorter than 3 characters"),
+        SimpleNamespace(provider="geckoterminal", error="HTTP 429 after retries"),
+        SimpleNamespace(provider="dexscreener", error=None),
+    ]
+    assert acquire._provider_error_count(entries) == 1
+    assert acquire._completion_status(True, 0, acquire._provider_error_count(entries), 60) == (
+        "INCOMPLETE: 1 provider request(s) failed after retries"
+    )
+
+
+def test_non_provider_audit_annotation_alone_does_not_block_completion():
+    from types import SimpleNamespace
+
+    entries = [SimpleNamespace(provider="audit", error="query_not_applicable: short symbol")]
+    assert acquire._provider_error_count(entries) == 0
+    assert acquire._completion_status(True, 0, acquire._provider_error_count(entries), 60) == "COMPLETE"
