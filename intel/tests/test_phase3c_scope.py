@@ -163,3 +163,19 @@ def test_intelligence_ci_normalizes_push_and_pull_request_concurrency_group():
     assert "group: intel-tests-${{ github.event.pull_request.head.ref || github.ref }}" not in workflow
     assert "cancel-in-progress: true" in workflow
     assert "timeout-minutes: 20" in workflow
+
+
+def test_phase3c_failure_recovery_uses_runner_exported_run_id_safely():
+    workflow = (ROOT / ".github" / "workflows" / "phase3c-acquire.yml").read_text()
+    failure_step = workflow.split("- name: Record failed or interrupted acquisition", 1)[1]
+    failure_step = failure_step.split("- name: Commit raw archive and verification evidence", 1)[0]
+    commit_step = workflow.split("- name: Commit raw archive and verification evidence", 1)[1]
+
+    # RUN_ID is written through GITHUB_ENV by an earlier step. Avoid an env
+    # expression gate or a step-level env assignment that can mask that value.
+    assert "if: failure() || cancelled()" in failure_step
+    assert "env:\n          RUN_ID: ${{ env.RUN_ID }}" not in failure_step
+    assert 'if: (failure() || cancelled()) && env.RUN_ID !=' not in failure_step
+    assert 'if: always() && env.RUN_ID !=' not in commit_step
+    assert 'if [[ -z "${RUN_ID:-}" ]]' in failure_step
+    assert 'if [[ -z "${RUN_ID:-}" ]]' in commit_step
