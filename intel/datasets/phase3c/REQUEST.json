@@ -23,5 +23,6 @@
   "rpc_rate_per_s": 2,
   "rpc_page_limit": 100,
   "rpc_max_pages": 2,
-  "rpc_max_txs": 30
+  "rpc_max_txs": 30,
+  "min_selected_tokens": 20
 }
