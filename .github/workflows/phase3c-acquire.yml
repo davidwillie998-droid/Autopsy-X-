@@ -58,7 +58,7 @@ jobs:
           # effective sample for this acquisition. The old request selected only
           # 20 pools, which cannot supply the frozen >=85-token hypothesis sample.
           # Over-select to allow downstream eligibility attrition; never lower gates.
-          # Poll five rotating pools per cycle (the frozen Phase 3C budget), and
+          # Poll twelve rotating pools per cycle to fit the frozen 15-minute observation horizon, and
           # request OHLCV on each selected visit. A one-pool/60-cycle schedule
           # would leave most tokens with extremely sparse trade/OHLCV observations.
           request["new_pool_pages"] = 10
@@ -67,12 +67,12 @@ jobs:
           request["seed"] = int(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:8], 16)
           request["duration_s"] = 7200
           request["cycle_s"] = 60
-          request["poll_pools_per_cycle"] = 5
+          request["poll_pools_per_cycle"] = 12
           request["ohlcv_every"] = 1
           request["holders_per_cycle"] = 0
-          request["gt_rate_per_s"] = 0.4
+          request["gt_rate_per_s"] = 0.45
           # Preserve the required Phase 3A enrichment, but respect the public
-          # provider's 30 calls/minute ceiling with a 24 calls/minute client cap and keep per-address transaction
+          # provider's 30 calls/minute ceiling with a 27 calls/minute client cap and keep per-address transaction
           # fetches bounded. Truncation is recorded and remains a readiness limitation.
           request["phase3a"] = True
           request["rpc_max_pages"] = 3
