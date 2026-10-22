@@ -421,6 +421,16 @@ def poll_cycle(f: Fetcher, plan: Plan, picked: list[dict], cycle: int) -> None:
                "pool_created_ts": p["created_ts"], "total_supply": p["total_supply"]})
 
 
+def _completion_status(cadence_pass: bool, cycle_overruns: int, errors: int, cycle_s: int) -> str:
+    """Fail closed: any exhausted provider request makes the archive incomplete."""
+    if not cadence_pass:
+        return "INCOMPLETE: pool revisit interval exceeds the frozen 15-minute label horizon"
+    if cycle_overruns:
+        return f"INCOMPLETE: {cycle_overruns} poll cycles exceeded the {cycle_s}s cycle budget"
+    if errors:
+        return f"INCOMPLETE: {errors} provider request(s) failed after retries"
+    return "COMPLETE"
+
 def _segment_metadata(started_ms: int) -> dict:
     """Identify this immutable collector segment and record its restart provenance."""
     run_id = os.environ.get("GITHUB_RUN_ID")
@@ -520,11 +530,8 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
     ended_ms = now_ms()
     cycle_overruns = sum(1 for elapsed in cycle_elapsed_s if elapsed > plan.cycle_s)
     cadence_pass = bool(meta.get("poll_schedule", {}).get("cadence_pass", True))
-    status = "COMPLETE"
-    if not cadence_pass:
-        status = "INCOMPLETE: pool revisit interval exceeds the frozen 15-minute label horizon"
-    elif cycle_overruns:
-        status = f"INCOMPLETE: {cycle_overruns} poll cycles exceeded the {plan.cycle_s}s cycle budget"
+    error_count = sum(1 for e in entries if e.error)
+    status = _completion_status(cadence_pass, cycle_overruns, error_count, plan.cycle_s)
     meta.update({"ended_ms": ended_ms, "cycles": cycle, "poll_window_cycles": cycle,
                  "poll_window_ended_ms": poll_window_ended_ms,
                  "poll_window_elapsed_s": max(0.0, (poll_window_ended_ms - poll_window_started_ms) / 1000),
@@ -532,7 +539,7 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
                  "poll_cycle_overruns": cycle_overruns,
                  "exchanges": len(entries), "circuit_waits": f.waited,
                  "final_gt_rate_per_s": f.clients[gt.NAME].limiter.rate,
-                 "errors": sum(1 for e in entries if e.error), "status": status})
+                 "errors": error_count, "status": status})
     raw.write_json("run.json", meta)
     log.info("acquisition done", extra={"fields": {k: meta[k] for k in ("cycles", "exchanges", "errors")}})
     return meta

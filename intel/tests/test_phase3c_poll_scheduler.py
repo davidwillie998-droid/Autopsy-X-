@@ -91,3 +91,21 @@ def test_poll_budget_none_preserves_existing_all_pool_polling():
     acquire.poll_cycle(f, plan, picked, 0)
     assert len([call for call in f.calls if call[1] == "gt.trades"]) == 7
     assert len([call for call in f.calls if call[1] == "gt.ohlcv"]) == 7
+
+
+def test_exhausted_provider_errors_prevent_complete_archive_status():
+    status = acquire._completion_status(cadence_pass=True, cycle_overruns=0, errors=1, cycle_s=60)
+    assert status == "INCOMPLETE: 1 provider request(s) failed after retries"
+    assert status != "COMPLETE"
+
+
+def test_archive_is_complete_only_when_cadence_cycles_and_requests_pass():
+    assert acquire._completion_status(True, 0, 0, 60) == "COMPLETE"
+    assert "revisit interval" in acquire._completion_status(False, 0, 0, 60)
+    assert "exceeded" in acquire._completion_status(True, 1, 0, 60)
+    assert "provider request(s) failed" in acquire._completion_status(True, 0, 3, 60)
+
+
+def test_cadence_failure_takes_priority_over_other_incomplete_reasons():
+    status = acquire._completion_status(cadence_pass=False, cycle_overruns=1, errors=4, cycle_s=60)
+    assert status == "INCOMPLETE: pool revisit interval exceeds the frozen 15-minute label horizon"
