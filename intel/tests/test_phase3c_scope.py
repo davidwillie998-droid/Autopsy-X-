@@ -154,3 +154,12 @@ def test_phase3c_reserve_trade_and_ohlcv_polling_share_the_rotating_subset():
     assert 'f.get(gt.NAME, "gt.ohlcv"' in poll
     assert "pools = [p[\"pool\"] for p in picked]" not in poll
 
+
+
+
+def test_intelligence_ci_normalizes_push_and_pull_request_concurrency_group():
+    workflow = (ROOT / ".github" / "workflows" / "intel-tests.yml").read_text()
+    assert "group: intel-tests-${{ github.event.pull_request.head.ref || github.ref_name }}" in workflow
+    assert "group: intel-tests-${{ github.event.pull_request.head.ref || github.ref }}" not in workflow
+    assert "cancel-in-progress: true" in workflow
+    assert "timeout-minutes: 20" in workflow
