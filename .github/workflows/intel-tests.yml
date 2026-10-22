@@ -9,10 +9,10 @@ on:
 permissions:
   contents: read
 
-# Push and pull_request both fire for a PR branch. Keep only the newest
-# validation for that branch instead of running duplicate full suites.
+# Push and pull_request both fire for a PR branch. Normalize both event types
+# to the same branch name so they share one concurrency group.
 concurrency:
-  group: intel-tests-${{ github.event.pull_request.head.ref || github.ref }}
+  group: intel-tests-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
