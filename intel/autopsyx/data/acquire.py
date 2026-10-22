@@ -11,6 +11,7 @@ visible from the first poll that returned it, not from its block time.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import random
 import time
@@ -45,6 +46,9 @@ class Plan:
     duration_s: int = 3600
     cycle_s: int = 60
     poll_ohlcv_limit: int = 5
+    # Optional Phase 3C request budget: rotate this many pools per poll cycle.
+    # None preserves the frozen Phase 3A/Phase 2 behavior exactly.
+    poll_pools_per_cycle: int | None = None
     holders_per_cycle: int = 2
     lag_ms: int = 60_000
     gt_rate_per_s: float = 0.45  # below GeckoTerminal's published free-tier limit (30/min)
@@ -314,10 +318,27 @@ def select_universe(f: Fetcher, plan: Plan) -> dict:
                          response_ts=None, status=None, body=None, attempts=None,
                          error=f"new_pools page {page} failed; later pages still fetched", context={"page": page})
         cands["young"] += _pools_from(e, b)
-    e, b = f.get(gt.NAME, "gt.trending", gt.path_trending(n), {"chain": n, "stratum": "trending"})
-    cands["trending"] = _pools_from(e, b)
-    e, b = f.get(gt.NAME, "gt.top_pools", gt.path_top_pools(n), {"chain": n, "stratum": "established"})
-    cands["established"] = _pools_from(e, b)
+    # Page every candidate source, not only newest pools. The Phase 3C
+    # request can require 30 trending and 30 established tokens; reading only
+    # page 1 silently caps those strata at one provider page and makes the
+    # frozen 180-token selection impossible whenever a page has fewer than 30
+    # distinct eligible tokens. Keep each source's pagination evidence in raw.
+    for page in range(1, plan.new_pool_pages + 1):
+        e, b = f.get(gt.NAME, "gt.trending", gt.path_trending(n, page),
+                     {"chain": n, "stratum": "trending", "page": page})
+        if b is None:
+            f.raw.record(provider="audit", endpoint="pagination_gap", url=e.url, request_ts=e.request_ts,
+                         response_ts=None, status=None, body=None, attempts=None,
+                         error=f"trending page {page} failed; later pages still fetched", context={"page": page})
+        cands["trending"] += _pools_from(e, b)
+    for page in range(1, plan.new_pool_pages + 1):
+        e, b = f.get(gt.NAME, "gt.top_pools", gt.path_top_pools(n, page),
+                     {"chain": n, "stratum": "established", "page": page})
+        if b is None:
+            f.raw.record(provider="audit", endpoint="pagination_gap", url=e.url, request_ts=e.request_ts,
+                         response_ts=None, status=None, body=None, attempts=None,
+                         error=f"top_pools page {page} failed; later pages still fetched", context={"page": page})
+        cands["established"] += _pools_from(e, b)
 
     rng = random.Random(plan.seed)
     picked: list[dict] = []
@@ -370,15 +391,25 @@ def backfill(f: Fetcher, plan: Plan, picked: list[dict]) -> None:
 
 def poll_cycle(f: Fetcher, plan: Plan, picked: list[dict], cycle: int) -> None:
     n = plan.network
-    pools = [p["pool"] for p in picked]
+    poll_picked = picked
+    if plan.poll_pools_per_cycle is not None:
+        if plan.poll_pools_per_cycle < 1:
+            raise ValueError("poll_pools_per_cycle must be >= 1 when configured")
+        count = min(plan.poll_pools_per_cycle, len(picked))
+        start = (cycle * count) % len(picked)
+        poll_picked = [picked[(start + offset) % len(picked)] for offset in range(count)]
+    # Reserve/trade/OHLCV observations share the same rotating subset. Polling
+    # every pool's reserves before rotating trades/OHLCV made the cycle exceed
+    # the provider budget and invalidated the nominal revisit calculation.
+    pools = [p["pool"] for p in poll_picked]
     for i in range(0, len(pools), 30):
         chunk = pools[i:i + 30]
-        f.get(gt.NAME, "gt.pools_multi", gt.path_pools_multi(n, chunk), {"chain": n, "cycle": cycle})
-    for i in range(0, len(picked), ds.MAX_PAIRS_PER_CALL):
-        chunk = picked[i:i + ds.MAX_PAIRS_PER_CALL]
+        f.get(gt.NAME, "gt.pools_multi", gt.path_pools_multi(n, chunk), {"chain": n, "cycle": cycle, "pools": list(chunk)})
+    for i in range(0, len(poll_picked), ds.MAX_PAIRS_PER_CALL):
+        chunk = poll_picked[i:i + ds.MAX_PAIRS_PER_CALL]
         f.get(ds.NAME, "ds.pairs", ds.path_pairs(n, [p["pool"] for p in chunk]),
               {"chain": n, "cycle": cycle, "pool_tokens": {p["pool"]: p["token"] for p in chunk}})
-    for p in picked:
+    for p in poll_picked:
         ctx = {"chain": n, "pool": p["pool"], "token": p["token"], "cycle": cycle}
         f.get(gt.NAME, "gt.trades", gt.path_trades(n, p["pool"]), ctx)
         if cycle % plan.ohlcv_every == 0:
@@ -390,17 +421,70 @@ def poll_cycle(f: Fetcher, plan: Plan, picked: list[dict], cycle: int) -> None:
                "pool_created_ts": p["created_ts"], "total_supply": p["total_supply"]})
 
 
+def _provider_error_count(entries: list[ManifestEntry]) -> int:
+    """Count failed provider exchanges, not audit annotations describing them.
+
+    Audit records such as ``query_not_applicable`` can carry an explanatory
+    error string without representing a failed provider request. Actual failed
+    exchanges are already preserved under their provider name in the manifest.
+    """
+    return sum(1 for entry in entries if entry.error and entry.provider != "audit")
+
+
+def _completion_status(cadence_pass: bool, cycle_overruns: int, errors: int, cycle_s: int) -> str:
+    """Fail closed: any exhausted provider request makes the archive incomplete."""
+    if not cadence_pass:
+        return "INCOMPLETE: pool revisit interval exceeds the frozen 15-minute label horizon"
+    if cycle_overruns:
+        return f"INCOMPLETE: {cycle_overruns} poll cycles exceeded the {cycle_s}s cycle budget"
+    if errors:
+        return f"INCOMPLETE: {errors} provider request(s) failed after retries"
+    return "COMPLETE"
+
+def _segment_metadata(started_ms: int) -> dict:
+    """Identify this immutable collector segment and record its restart provenance."""
+    run_id = os.environ.get("GITHUB_RUN_ID")
+    attempt = os.environ.get("GITHUB_RUN_ATTEMPT")
+    return {"acquisition_segment": {
+        "segment_id": f"{run_id}.{attempt}" if run_id and attempt else None,
+        "workflow_run_id": run_id,
+        "workflow_run_attempt": attempt,
+        "event": os.environ.get("GITHUB_EVENT_NAME"),
+        "commit_sha": os.environ.get("GITHUB_SHA", "local"),
+        "restart_reason": os.environ.get("AUTOPSYX_RESTART_REASON", "not_provided"),
+        "started_ms": started_ms,
+    }}
+
+def _assert_fresh_run_dir(run_dir: str) -> None:
+    """Refuse to reuse any non-empty acquisition directory.
+
+    RawStore can write content-addressed bodies before appending the manifest,
+    and run()/selection overwrite metadata. Checking only known metadata files
+    misses interrupted writes that leave a raw/ directory behind. A new
+    acquisition must start in an empty directory; resume requires a separate,
+    explicit protocol.
+    """
+    if os.path.isdir(run_dir) and os.listdir(run_dir):
+        artifacts = ", ".join(sorted(os.listdir(run_dir))[:8])
+        suffix = " ..." if len(os.listdir(run_dir)) > 8 else ""
+        raise FileExistsError(
+            f"refusing to reuse non-empty acquisition directory {run_dir!r}; "
+            f"existing entries: {artifacts}{suffix}. Start a new immutable segment directory."
+        )
+
 def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
         now_ms: Callable[[], int] = lambda: int(time.time() * 1000),
         sleep: Callable[[float], None] = time.sleep, max_cycles: int | None = None) -> dict:
+    _assert_fresh_run_dir(run_dir)
     raw = RawStore(run_dir)
     f = Fetcher(raw, clients or default_clients(plan, now_ms), now_ms, sleep, plan.circuit_waits,
                 display={rpc.NAME: rpc.display_base(rpc.BASE)})
     run_started_ms = now_ms()
     meta = {"started_ms": run_started_ms, "plan": plan.__dict__, "code_version": os.environ.get("GITHUB_SHA", "local"),
             "runner": os.environ.get("RUNNER_NAME", "local"), "execution": "none: acquisition only, no orders",
-            "poll_window_started_ms": None, "poll_window_duration_s": plan.duration_s,
+            "poll_window_started_ms": None, "poll_window_ended_ms": None, "poll_window_duration_s": plan.duration_s,
             "poll_window_cycles": 0, "poll_window_elapsed_s": 0.0}
+    meta.update(_segment_metadata(run_started_ms))
     raw.write_json("run.json", meta)
     if plan.universe_file:
         u = load_universe(plan.universe_file)
@@ -418,6 +502,24 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
         meta["status"] = "BLOCKED: no pools selectable (discovery failed)"
         raw.write_json("run.json", meta)
         return meta
+    # Phase 3C must not spend hours collecting a sample that cannot satisfy
+    # its frozen distinct-token gate. Fail before backfill/polling if selection
+    # did not produce every requested unique token.
+    if plan.poll_pools_per_cycle is not None:
+        target = sum(plan.strata.values())
+        selected_tokens = len({p["token"] for p in picked})
+        meta["selection_gate"] = {
+            "requested_unique_tokens": target,
+            "selected_unique_tokens": selected_tokens,
+            "pass": selected_tokens >= target,
+        }
+        if selected_tokens < target:
+            meta["status"] = (
+                f"BLOCKED: selected {selected_tokens} unique tokens; "
+                f"Phase 3C acquisition target is {target}"
+            )
+            raw.write_json("run.json", meta)
+            return meta
     backfill(f, plan, picked)
     if plan.phase3a:
         meta["enrichment"] = enrich(f, plan, picked, 0)
@@ -426,26 +528,46 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
     # Start the timer only after discovery, backfill, and initial enrichment.
     poll_window_started_ms = now_ms()
     meta["poll_window_started_ms"] = poll_window_started_ms
+    poll_count = min(plan.poll_pools_per_cycle or len(picked), len(picked))
+    expected_revisit_s = math.ceil(len(picked) / poll_count) * plan.cycle_s
+    meta["poll_schedule"] = {
+        "selected_pools": len(picked),
+        "pools_per_cycle": poll_count,
+        "cycle_s": plan.cycle_s,
+        "expected_pool_revisit_s": expected_revisit_s,
+        "label_horizon_s": 3 * 5 * 60,
+        "cadence_pass": expected_revisit_s <= 3 * 5 * 60,
+    }
     raw.write_json("run.json", meta)
     cycle = 0
+    cycle_elapsed_s: list[float] = []
     while True:
         t0 = now_ms()
         if (t0 - poll_window_started_ms) / 1000 >= plan.duration_s or (max_cycles is not None and cycle >= max_cycles):
             break
         poll_cycle(f, plan, picked, cycle)
         cycle += 1
-        spent = (now_ms() - t0) / 1000
+        spent = max(0.0, (now_ms() - t0) / 1000)
+        cycle_elapsed_s.append(spent)
         if spent < plan.cycle_s:
             sleep(plan.cycle_s - spent)
+    poll_window_ended_ms = now_ms()
     if plan.phase3a:
         meta["enrichment"] += enrich(f, plan, picked, 1)
     entries = raw.entries()
     ended_ms = now_ms()
+    cycle_overruns = sum(1 for elapsed in cycle_elapsed_s if elapsed > plan.cycle_s)
+    cadence_pass = bool(meta.get("poll_schedule", {}).get("cadence_pass", True))
+    error_count = _provider_error_count(entries)
+    status = _completion_status(cadence_pass, cycle_overruns, error_count, plan.cycle_s)
     meta.update({"ended_ms": ended_ms, "cycles": cycle, "poll_window_cycles": cycle,
-                 "poll_window_elapsed_s": max(0.0, (ended_ms - poll_window_started_ms) / 1000),
+                 "poll_window_ended_ms": poll_window_ended_ms,
+                 "poll_window_elapsed_s": max(0.0, (poll_window_ended_ms - poll_window_started_ms) / 1000),
+                 "poll_cycle_max_elapsed_s": max(cycle_elapsed_s, default=0.0),
+                 "poll_cycle_overruns": cycle_overruns,
                  "exchanges": len(entries), "circuit_waits": f.waited,
                  "final_gt_rate_per_s": f.clients[gt.NAME].limiter.rate,
-                 "errors": sum(1 for e in entries if e.error), "status": "COMPLETE"})
+                 "errors": error_count, "status": status})
     raw.write_json("run.json", meta)
     log.info("acquisition done", extra={"fields": {k: meta[k] for k in ("cycles", "exchanges", "errors")}})
     return meta

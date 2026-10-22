@@ -1,15 +1,22 @@
 name: Phase 3C data acquisition
 
-# Identical acquisition code and procedure to the Phase 3A workflow
-# (phase3a-acquire.yml): the repository's own acquisition code runs against
-# public, keyless endpoints and the raw archive is committed back to this
-# branch. Nothing about acquire/seal/verify-provenance is forked or
-# reimplemented for Phase 3C; only the watched request path and the archive
-# directory differ, so new Phase 3C archives are independently acquired and
-# independently provenance-verified under the exact same frozen procedure
-# D2 already used. Read-only acquisition: no orders, no wallets, no keys.
+# Phase 3C uses the repository's canonical acquire/seal/verify implementation.
+# A failed or interrupted acquisition must never be sealed as a completed run.
+# Read-only acquisition: no orders, no wallets, no keys.
 
 on:
+  # Each dispatch must supply a new immutable run ID; the frozen request stays unchanged.
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Unique run ID, e.g. p3c-sol-20261021b (never reuse an archive ID)"
+        required: true
+        type: string
+      restart_reason:
+        description: "Why this collector segment is starting or restarting"
+        required: false
+        type: string
+        default: "initial acquisition"
   push:
     branches: [ccr-dea9382c-vwhvi6]
     paths: ["intel/datasets/phase3c/REQUEST.json"]
@@ -24,7 +31,7 @@ concurrency:
 jobs:
   acquire:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,28 +39,133 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - name: Validate request and reserve a new immutable run ID (local-only)
+        working-directory: intel
+        env:
+          DISPATCH_RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -euo pipefail
+          python -m autopsyx.research.phase3c_preflight datasets/phase3c/REQUEST.json --frozen-baseline
+          FROZEN_RUN_ID=$(python -c "import json;print(json.load(open('datasets/phase3c/REQUEST.json'))['run_id'])")
+          REQUEST_PATH="datasets/phase3c/REQUEST.json"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            RUN_ID="$DISPATCH_RUN_ID"
+            if [[ ! "$RUN_ID" =~ ^p3c-sol-[A-Za-z0-9_-]{1,64}$ ]]; then
+              echo "FAIL: run_id must match p3c-sol-[A-Za-z0-9_-]{1,64}" >&2
+              exit 2
+            fi
+            python - "$RUN_ID" "$RUNNER_TEMP/phase3c-request.json" <<'PY'
+          import json, sys
+          from pathlib import Path
+          request = json.loads(Path("datasets/phase3c/REQUEST.json").read_text(encoding="utf-8"))
+          request["run_id"] = sys.argv[1]
+          # Keep the checked-in request immutable, but create a larger, explicit
+          # effective sample for this acquisition. The old request selected only
+          # 20 pools, which cannot supply the frozen >=85-token hypothesis sample.
+          # Over-select to allow downstream eligibility attrition; never lower gates.
+          # Poll a rotating subset across reserve, trade, DexScreener, and OHLCV endpoints.
+          # Runtime telemetry fails closed if the configured cadence cannot fit the 60s budget.
+          request["new_pool_pages"] = 10
+          request["strata"] = {"young": 100, "quiet_young": 20, "trending": 30, "established": 30}
+          import hashlib
+          request["seed"] = int(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:8], 16)
+          request["duration_s"] = 7200
+          request["cycle_s"] = 60
+          request["poll_pools_per_cycle"] = 12
+          request["ohlcv_every"] = 1
+          request["holders_per_cycle"] = 0
+          request["gt_rate_per_s"] = 0.45
+          # Preserve the required Phase 3A enrichment, but respect the public
+          # provider's 30 calls/minute ceiling with a 27 calls/minute client cap and keep per-address transaction
+          # fetches bounded. Truncation is recorded and remains a readiness limitation.
+          request["phase3a"] = True
+          request["rpc_max_pages"] = 3
+          request["rpc_max_txs"] = 8
+          Path(sys.argv[2]).write_text(json.dumps(request, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+            REQUEST_PATH="$RUNNER_TEMP/phase3c-request.json"
+          else
+            RUN_ID="$FROZEN_RUN_ID"
+          fi
+          python -m autopsyx.research.phase3c_preflight "$REQUEST_PATH"
+          if [ -e "datasets/phase3c/runs/$RUN_ID" ]; then
+            echo "FAIL: refusing to reuse immutable archive ID $RUN_ID" >&2
+            exit 2
+          fi
+          echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          echo "REQUEST_PATH=$REQUEST_PATH" >> "$GITHUB_ENV"
       - name: Acquire
+        id: acquire
         working-directory: intel
         env:
           AUTOPSYX_SOLANA_RPC_URL: ${{ secrets.AUTOPSYX_SOLANA_RPC_URL }}
+          AUTOPSYX_RESTART_REASON: ${{ inputs.restart_reason || 'trigger did not supply a restart reason' }}
+        run: python -m autopsyx --log acquire --live --request "$REQUEST_PATH" --out "datasets/phase3c/runs/$RUN_ID"
+      - name: Preserve effective and frozen request inputs
+        if: steps.acquire.outcome == 'success'
+        working-directory: intel
         run: |
-          RUN_ID=$(python -c "import json;print(json.load(open('datasets/phase3c/REQUEST.json'))['run_id'])")
-          echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
-          python -m autopsyx --log acquire --live --request datasets/phase3c/REQUEST.json --out "datasets/phase3c/runs/$RUN_ID"
+          cp datasets/phase3c/REQUEST.json "datasets/phase3c/runs/$RUN_ID/frozen_request.json"
+          cp "$REQUEST_PATH" "datasets/phase3c/runs/$RUN_ID/request.json"
+          sha256sum "datasets/phase3c/runs/$RUN_ID/frozen_request.json" "datasets/phase3c/runs/$RUN_ID/request.json" > "datasets/phase3c/runs/$RUN_ID/request_hashes.sha256"
+      - name: Snapshot Phase 3C raw manifest before canonical normalization
+        id: manifest_snapshot
+        if: steps.acquire.outcome == 'success'
+        working-directory: intel
+        run: python -m autopsyx.research.phase3c_manifest_integrity snapshot "datasets/phase3c/runs/$RUN_ID"
       - name: Seal canonical dataset on the runner
-        if: always()
+        id: seal
+        if: steps.manifest_snapshot.outcome == 'success'
         working-directory: intel
         run: python -m autopsyx seal "datasets/phase3c/runs/$RUN_ID"
-      - name: Verify provenance on the runner
-        if: always()
+      - name: Seal Phase 3C raw-manifest integrity
+        id: manifest_seal
+        if: steps.seal.outcome == 'success'
         working-directory: intel
-        run: python -m autopsyx verify-provenance "datasets/phase3c/runs/$RUN_ID" > "datasets/phase3c/runs/$RUN_ID/runner_verify.json" || true
-      - name: Commit raw archive
+        run: python -m autopsyx.research.phase3c_manifest_integrity seal "datasets/phase3c/runs/$RUN_ID"
+      - name: Verify provenance on the runner
+        id: verify
+        if: steps.manifest_seal.outcome == 'success'
+        working-directory: intel
+        run: python -m autopsyx verify-provenance "datasets/phase3c/runs/$RUN_ID" > "datasets/phase3c/runs/$RUN_ID/runner_verify.json"
+      - name: Verify Phase 3C raw-manifest integrity
+        id: verify_manifest
+        if: always() && steps.manifest_seal.outcome == 'success'
+        working-directory: intel
+        run: python -m autopsyx.research.phase3c_manifest_integrity verify "datasets/phase3c/runs/$RUN_ID" > "datasets/phase3c/runs/$RUN_ID/manifest_integrity_verify.json"
+      - name: Record failed or interrupted acquisition
+        if: failure() || cancelled()
+        working-directory: intel
+        run: |
+          # GITHUB_ENV values are reliably available to the shell in later steps;
+          # do not gate on the expression env context or override the inherited value.
+          if [[ -z "${RUN_ID:-}" ]]; then
+            echo "No run ID was reserved; nothing to mark failed."
+            exit 0
+          fi
+          python - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          p = Path("datasets/phase3c/runs") / os.environ["RUN_ID"] / "run.json"
+          if p.exists():
+              meta = json.loads(p.read_text(encoding="utf-8"))
+              # Any workflow failure invalidates the overall evidence pipeline,
+              # even if acquisition itself had reached COMPLETE before sealing/verification failed.
+              meta["status"] = "FAILED_OR_INTERRUPTED"
+              meta.setdefault("ended_ms", int(time.time() * 1000))
+              meta["workflow_failure_recorded"] = True
+              p.write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+      - name: Commit raw archive and verification evidence
         if: always()
         run: |
+          if [[ -z "${RUN_ID:-}" ]]; then
+            echo "No run ID was reserved; nothing to commit."
+            exit 0
+          fi
           git config user.name "autopsyx-acquisition"
           git config user.email "actions@users.noreply.github.com"
           git add "intel/datasets/phase3c/runs/$RUN_ID"
+          git diff --cached --quiet && exit 0
           git commit -m "Phase 3C raw archive: $RUN_ID (acquired by workflow run ${{ github.run_id }})"
           for i in 1 2 3 4; do git pull --rebase origin "${{ github.ref_name }}" && git push origin "HEAD:${{ github.ref_name }}" && exit 0; sleep $((2**i)); done
           exit 1

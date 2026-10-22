@@ -68,21 +68,148 @@ def h10_replication_audit(rows_h10: list[dict], archives_order: list[str]) -> di
 
 
 def walk_forward_oos(by_token: dict, target: str) -> dict | None:
-    """Tokens ordered by their earliest as_of; the chronologically later half
-    is the OOS set. A token is wholly in one half. Returns None (not run)
-    when there are too few tokens on either side to assign a sign to."""
-    tokens = sorted(by_token, key=lambda t: min(r["as_of"] for r in by_token[t]))
-    mid = len(tokens) // 2
-    halves = {"in_sample": tokens[:mid], "oos": tokens[mid:]}
+    """Chronological holdout with a per-token label-horizon embargo.
+
+    The cutoff is chosen from observation timestamps, not token identity. Rows
+    from the future period are never moved into the in-sample set. For each
+    token, in-sample rows whose forward label could reach the first OOS step
+    are purged using the frozen Phase 3B horizon. This is a validation sign
+    check, not proof of profitability or independent IID observations.
+    """
+    rows = [r for token_rows in by_token.values() for r in token_rows
+            if isinstance(r.get("as_of"), (int, float)) and target in r
+            and isinstance(r.get("step_index"), int)]
+    timestamps = sorted({r["as_of"] for r in rows})
+    if len(timestamps) < 4:
+        return None
+    cutoff = timestamps[len(timestamps) // 2]
+    oos_rows = [r for r in rows if r["as_of"] >= cutoff]
+    if not oos_rows:
+        return None
+
+    first_oos_step = {}
+    for token, token_rows in by_token.items():
+        future_steps = [r["step_index"] for r in token_rows
+                        if r.get("as_of", float("-inf")) >= cutoff
+                        and isinstance(r.get("step_index"), int)]
+        if future_steps:
+            first_oos_step[token] = min(future_steps)
+
+    horizon = contract.HORIZON_STEPS
+    in_rows = [
+        r for token, token_rows in by_token.items()
+        for r in token_rows
+        if r.get("as_of", float("inf")) < cutoff
+        and token in first_oos_step
+        and isinstance(r.get("step_index"), int)
+        and r["step_index"] + horizon < first_oos_step[token]
+        and target in r
+    ]
+    in_tokens = {r.get("token") for r in in_rows if r.get("token")}
+    oos_tokens = {r.get("token") for r in oos_rows if r.get("token")}
+    if len(in_rows) < 3 or len(oos_rows) < 3 or len(in_tokens) < 3 or len(oos_tokens) < 3:
+        return None
+
     signs = {}
-    for name, toks in halves.items():
-        xs = [r["x"] for t in toks for r in by_token[t]]
-        ys = [r[target] for t in toks for r in by_token[t]]
+    for name, sample in (("in_sample", in_rows), ("oos", oos_rows)):
+        xs = [r["x"] for r in sample]
+        ys = [r[target] for r in sample]
         s = stats.spearman(xs, ys)
-        signs[name] = {"n_tokens": len(toks), "spearman": s, "sign": (0 if s is None else math.copysign(1, s))}
+        signs[name] = {
+            "n_rows": len(sample),
+            "n_tokens": len({r.get("token") for r in sample if r.get("token")}),
+            "spearman": s,
+            "sign": 0 if s is None or s == 0 else math.copysign(1, s),
+        }
     if signs["in_sample"]["spearman"] is None or signs["oos"]["spearman"] is None:
         return None
-    return {**signs, "signs_agree": signs["in_sample"]["sign"] == signs["oos"]["sign"] != 0}
+    return {
+        **signs,
+        "method": "chronological_timestamp_split_with_label_horizon_embargo",
+        "cutoff_as_of": cutoff,
+        "horizon_steps_embargo": horizon,
+        "in_sample_purged_rows": sum(
+            1 for token, token_rows in by_token.items()
+            for r in token_rows
+            if r.get("as_of", float("inf")) < cutoff
+            and token in first_oos_step
+            and isinstance(r.get("step_index"), int)
+            and r["step_index"] + horizon >= first_oos_step[token]
+        ),
+        "signs_agree": signs["in_sample"]["sign"] == signs["oos"]["sign"] != 0,
+    }
+
+
+def chronological_training_rows(rows: list[dict]) -> tuple[list[dict], dict]:
+    """Return only pre-cutoff rows after purging labels that overlap the future holdout."""
+    valid = [r for r in rows if isinstance(r.get("as_of"), (int, float))
+             and isinstance(r.get("step_index"), int)]
+    timestamps = sorted({r["as_of"] for r in valid})
+    if len(timestamps) < 4:
+        return [], {"available": False, "reason": "fewer_than_four_distinct_timestamps"}
+    cutoff = timestamps[len(timestamps) // 2]
+    first_oos_step = {}
+    for r in valid:
+        if r["as_of"] >= cutoff:
+            token = r.get("token")
+            if token:
+                first_oos_step[token] = min(first_oos_step.get(token, r["step_index"]), r["step_index"])
+    horizon = contract.HORIZON_STEPS
+    train = [r for r in valid if r["as_of"] < cutoff
+             and r.get("token") in first_oos_step
+             and r["step_index"] + horizon < first_oos_step[r["token"]]]
+    purged = sum(1 for r in valid if r["as_of"] < cutoff
+                 and r.get("token") in first_oos_step
+                 and r["step_index"] + horizon >= first_oos_step[r["token"]])
+    report = {
+        "available": True, "method": "chronological_timestamp_split_with_label_horizon_embargo",
+        "cutoff_as_of": cutoff, "horizon_steps_embargo": horizon,
+        "n_train_rows_after_purge": len(train),
+        "n_train_tokens_after_purge": len({r["token"] for r in train if r.get("token")}),
+        "n_oos_rows": sum(1 for r in valid if r["as_of"] >= cutoff),
+        "n_oos_tokens": len({r["token"] for r in valid if r["as_of"] >= cutoff and r.get("token")}),
+        "n_train_rows_purged": purged,
+    }
+    return train, report
+
+
+def assert_temporal_isolation(rows: list[dict], train_rows: list[dict], split_report: dict) -> None:
+    """Fail closed if discovery and validation timestamps overlap or labels cross the embargo."""
+    if not split_report.get("available"):
+        return
+    cutoff = split_report.get("cutoff_as_of")
+    if not isinstance(cutoff, (int, float)):
+        raise ValueError("Phase 3C temporal isolation failed: missing numeric holdout cutoff")
+
+    validation_rows = [
+        r for r in rows
+        if isinstance(r.get("as_of"), (int, float))
+        and isinstance(r.get("step_index"), int)
+        and r["as_of"] >= cutoff
+        and r.get("token")
+    ]
+    if not train_rows or not validation_rows:
+        raise ValueError("Phase 3C temporal isolation failed: empty discovery or validation partition")
+
+    max_discovery_timestamp = max(r["as_of"] for r in train_rows)
+    min_validation_timestamp = min(r["as_of"] for r in validation_rows)
+    if not max_discovery_timestamp < min_validation_timestamp:
+        raise ValueError(
+            "Phase 3C temporal leakage: max(discovery_timestamp) must be strictly less "
+            "than min(validation_timestamp)"
+        )
+
+    first_oos_step = {}
+    for r in validation_rows:
+        token = r["token"]
+        first_oos_step[token] = min(first_oos_step.get(token, r["step_index"]), r["step_index"])
+    horizon = contract.HORIZON_STEPS
+    for r in train_rows:
+        first_step = first_oos_step.get(r.get("token"))
+        if first_step is None or r["step_index"] + horizon >= first_step:
+            raise ValueError(
+                "Phase 3C label leakage: discovery row overlaps the per-token validation horizon"
+            )
 
 
 # --------------------------------------------------------------- classify ----
@@ -156,12 +283,25 @@ def run(work: Path) -> dict:
 
     results = []
     raw_pvals, raw_idx = [], []
+    train_rows_by_h = {}
+    split_reports = {}
     for hid in HYPOTHESIS_IDS:
         spec = contract.HYPOTHESIS_SPECS[hid]
         engine_ok = p3b._engine_ok_share(included, all_journal, spec["engine_fields"])
-        base = p3b.evaluate_hypothesis(hid, rows_by_h.get(hid, []), engine_ok)
+        full_rows = rows_by_h.get(hid, [])
+        train_rows, split_report = chronological_training_rows(full_rows)
+        # Enforce temporal separation at runtime, not only in regression tests.
+        # Any overlap or label-horizon breach fails closed before discovery statistics run.
+        assert_temporal_isolation(full_rows, train_rows, split_report)
+        train_rows_by_h[hid] = train_rows
+        split_reports[hid] = split_report
+        # Discovery statistics, FDR correction, archive breakdowns and robustness
+        # are computed on purged pre-cutoff data only. The future holdout is used
+        # only by the separate OOS validation below.
+        base = p3b.evaluate_hypothesis(hid, train_rows, engine_ok)
         base.pop("classification", None)
         base.pop("reason", None)
+        base["chronological_split"] = split_report
         results.append(base)
         for target, t in base.get("targets", {}).items():
             if t.get("permutation_p") is not None:
@@ -176,9 +316,11 @@ def run(work: Path) -> dict:
     archive_names = [d.name for d in included]
     for r in results:
         hid = r["hypothesis_id"]
-        rows = rows_by_h.get(hid, [])
+        # Full rows are retained only for the independent chronological holdout.
+        full_rows = rows_by_h.get(hid, [])
+        rows = train_rows_by_h.get(hid, [])
         by_token: dict[str, list] = defaultdict(list)
-        for row in rows:
+        for row in full_rows:
             by_token[row["token"]].append(row)
         per_archive = {t: per_archive_breakdown(rows, t) for t in r.get("targets", {})}
         oos = {}

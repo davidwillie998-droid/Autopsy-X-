@@ -172,16 +172,77 @@ def test_attack_zero_variance_feature_cannot_replicate():
 
 
 # -------------------------------------------------- walk-forward OOS mechanics ----
-def test_walk_forward_oos_splits_tokens_not_rows():
-    by_token = {f"t{i}": [{"as_of": i * 1000 + j, "x": float(i % 2), f"y": float(i % 2)}
-                          for j in range(5)] for i in range(10)}
-    for rows in by_token.values():
-        for r in rows:
-            r["y"] = r["x"]
+def test_discovery_rows_are_strictly_pre_holdout_and_horizon_purged():
+    rows = [
+        {"token": f"t{i}", "as_of": step * 1000, "step_index": step,
+         "x": float(i + step), "y_direction": float(i + step)}
+        for i in range(12) for step in range(20)
+    ]
+    train, report = p3c.chronological_training_rows(rows)
+    assert report["available"] is True
+    assert report["cutoff_as_of"] == 10_000
+    assert report["n_train_rows_after_purge"] == len(train)
+    assert report["n_train_tokens_after_purge"] == 12
+    assert train
+    assert all(r["as_of"] < report["cutoff_as_of"] for r in train)
+    first_oos_step = 10
+    assert all(r["step_index"] + contract.HORIZON_STEPS < first_oos_step for r in train)
+    assert report["n_train_rows_purged"] > 0
+
+
+
+def test_runtime_temporal_isolation_rejects_timestamp_overlap():
+    rows = [
+        {"token": f"t{i}", "as_of": step * 1000, "step_index": step,
+         "x": float(step), "y_direction": float(step)}
+        for i in range(4) for step in range(20)
+    ]
+    train, report = p3c.chronological_training_rows(rows)
+    assert report["available"] is True
+    # Force a future timestamp into discovery; the runtime guard must fail closed.
+    contaminated = [dict(r) for r in train]
+    contaminated[0]["as_of"] = report["cutoff_as_of"]
+    with pytest.raises(ValueError, match="max\(discovery_timestamp\)"):
+        p3c.assert_temporal_isolation(rows, contaminated, report)
+
+
+def test_runtime_temporal_isolation_rejects_label_horizon_overlap():
+    rows = [
+        {"token": f"t{i}", "as_of": step * 1000, "step_index": step,
+         "x": float(step), "y_direction": float(step)}
+        for i in range(4) for step in range(20)
+    ]
+    train, report = p3c.chronological_training_rows(rows)
+    assert report["available"] is True
+    # Put a row back into discovery that crosses its token's first OOS label horizon.
+    token = train[0]["token"]
+    contaminated = [dict(r) for r in train]
+    bad = dict(next(r for r in rows if r["token"] == token and r["as_of"] < report["cutoff_as_of"]))
+    bad["step_index"] = 9
+    bad["as_of"] = report["cutoff_as_of"] - 1
+    contaminated.append(bad)
+    with pytest.raises(ValueError, match="label leakage"):
+        p3c.assert_temporal_isolation(rows, contaminated, report)
+
+
+def test_walk_forward_oos_uses_future_timestamps_and_purges_label_overlap():
+    by_token = {
+        f"t{i}": [
+            {"token": f"t{i}", "as_of": step * 1000, "step_index": step,
+             "x": float(i * 100 + step), "y": float(i * 100 + step)}
+            for step in range(20)
+        ]
+        for i in range(12)
+    }
     out = p3c.walk_forward_oos(by_token, "y")
     assert out is not None
-    assert out["in_sample"]["n_tokens"] + out["oos"]["n_tokens"] == 10
-    assert out["signs_agree"] is True  # perfectly correlated in both halves
+    assert out["method"] == "chronological_timestamp_split_with_label_horizon_embargo"
+    assert out["cutoff_as_of"] == 10_000
+    assert out["horizon_steps_embargo"] == contract.HORIZON_STEPS
+    assert out["in_sample"]["n_tokens"] == 12
+    assert out["oos"]["n_tokens"] == 12
+    assert out["in_sample_purged_rows"] > 0
+    assert out["signs_agree"] is True
 
 
 def test_walk_forward_oos_none_when_undefined():
