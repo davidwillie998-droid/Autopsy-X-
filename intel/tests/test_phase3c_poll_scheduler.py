@@ -71,16 +71,18 @@ def test_non_divisible_pool_count_has_fair_wraparound_coverage():
     assert set(counts.values()) == {12}
 
 
-def test_restart_resets_local_cycle_index_and_repeats_the_head_of_the_universe():
-    picked = _picked(180)
-    plan = acquire.Plan(poll_pools_per_cycle=12, holders_per_cycle=0)
-    before_restart = _cycle_pools(plan, picked, cycle=0)
-    # acquire.run() initializes cycle = 0 for each new process. A restarted job
-    # therefore repeats cycle zero unless an external persisted offset is supplied.
-    after_restart = _cycle_pools(plan, picked, cycle=0)
-    assert after_restart == before_restart
-    assert len(before_restart) == 12
-    assert len({p["pool"] for p in picked} - before_restart) == 168
+def test_acquisition_refuses_to_overwrite_existing_segment_metadata(tmp_path):
+    (tmp_path / "run.json").write_text('{"status": "INCOMPLETE"}')
+    try:
+        acquire._assert_fresh_run_dir(str(tmp_path))
+    except FileExistsError as exc:
+        assert "new immutable segment directory" in str(exc)
+    else:
+        raise AssertionError("existing acquisition segment must not be reused")
+
+
+def test_acquisition_allows_a_new_empty_segment_directory(tmp_path):
+    acquire._assert_fresh_run_dir(str(tmp_path))
 
 
 def test_poll_budget_none_preserves_existing_all_pool_polling():
