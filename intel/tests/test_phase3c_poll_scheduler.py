@@ -12,32 +12,75 @@ class FakeFetcher:
         return None, None
 
 
+def _picked(count):
+    return [{"pool": f"pool-{i}", "token": f"token-{i}", "created_ts": 0, "total_supply": 1}
+            for i in range(count)]
+
+
+def _cycle_pools(plan, picked, cycle):
+    fetcher = FakeFetcher()
+    acquire.poll_cycle(fetcher, plan, picked, cycle)
+    reserves = [call for call in fetcher.calls if call[1] == "gt.pools_multi"]
+    trades = [call for call in fetcher.calls if call[1] == "gt.trades"]
+    ohlcv = [call for call in fetcher.calls if call[1] == "gt.ohlcv"]
+    dex = [call for call in fetcher.calls if call[1] == "ds.pairs"]
+    assert len(reserves) == 1
+    assert len(dex) == 1
+    assert len(trades) == len(ohlcv) == plan.poll_pools_per_cycle
+    reserve_pools = set(reserves[0][3]["pools"])
+    trade_pools = {call[3]["pool"] for call in trades}
+    ohlcv_pools = {call[3]["pool"] for call in ohlcv}
+    dex_pools = set(dex[0][3]["pool_tokens"])
+    assert reserve_pools == trade_pools == ohlcv_pools == dex_pools
+    return trade_pools
+
+
 def test_phase3c_poll_budget_rotates_all_tokens_without_polling_all_each_cycle():
-    picked = [{"pool": f"pool-{i}", "token": f"token-{i}", "created_ts": 0, "total_supply": 1}
-              for i in range(20)]
+    picked = _picked(20)
     plan = acquire.Plan(poll_pools_per_cycle=5, holders_per_cycle=0)
-    seen = []
+    visits = []
     for cycle in range(4):
-        f = FakeFetcher()
-        acquire.poll_cycle(f, plan, picked, cycle)
-        multi_calls = [call for call in f.calls if call[1] == "gt.pools_multi"]
-        assert len(multi_calls) == 1
-        assert multi_calls[0][3]["cycle"] == cycle
-        expected = [picked[(cycle * 5 + offset) % len(picked)] for offset in range(5)]
-        assert multi_calls[0][3]["pools"] == [p["pool"] for p in expected]
-        trade_calls = [call for call in f.calls if call[1] == "gt.trades"]
-        ohlcv_calls = [call for call in f.calls if call[1] == "gt.ohlcv"]
-        ds_calls = [call for call in f.calls if call[1] == "ds.pairs"]
-        assert len(trade_calls) == 5
-        assert len(ohlcv_calls) == 5
-        assert len(ds_calls) == 1
-        assert ds_calls[0][3]["pool_tokens"] == {p["pool"]: p["token"] for p in expected}
-        tokens = [call[3]["token"] for call in trade_calls]
-        assert len(set(tokens)) == 5
-        assert set(tokens) == {p["token"] for p in expected}
-        seen.extend(tokens)
-    assert set(seen) == {p["token"] for p in picked}
-    assert len(seen) == 20
+        selected = _cycle_pools(plan, picked, cycle)
+        assert len(selected) == 5
+        visits.extend(selected)
+    assert set(visits) == {p["pool"] for p in picked}
+    assert len(visits) == len(set(visits)) == 20
+
+
+def test_180_pools_at_12_per_cycle_visit_each_pool_once_in_15_cycles():
+    picked = _picked(180)
+    plan = acquire.Plan(poll_pools_per_cycle=12, holders_per_cycle=0)
+    visits = []
+    for cycle in range(15):
+        selected = _cycle_pools(plan, picked, cycle)
+        assert len(selected) == 12
+        visits.extend(selected)
+    assert len(visits) == 180
+    assert len(set(visits)) == 180
+    assert set(visits) == {p["pool"] for p in picked}
+
+
+def test_non_divisible_pool_count_has_fair_wraparound_coverage():
+    picked = _picked(23)
+    plan = acquire.Plan(poll_pools_per_cycle=12, holders_per_cycle=0)
+    counts = {p["pool"]: 0 for p in picked}
+    for cycle in range(23):
+        for pool in _cycle_pools(plan, picked, cycle):
+            counts[pool] += 1
+    # Across 23 cycle starts, each pool must be selected exactly 12 times.
+    assert set(counts.values()) == {12}
+
+
+def test_restart_resets_local_cycle_index_and_repeats_the_head_of_the_universe():
+    picked = _picked(180)
+    plan = acquire.Plan(poll_pools_per_cycle=12, holders_per_cycle=0)
+    before_restart = _cycle_pools(plan, picked, cycle=0)
+    # acquire.run() initializes cycle = 0 for each new process. A restarted job
+    # therefore repeats cycle zero unless an external persisted offset is supplied.
+    after_restart = _cycle_pools(plan, picked, cycle=0)
+    assert after_restart == before_restart
+    assert len(before_restart) == 12
+    assert len({p["pool"] for p in picked} - before_restart) == 168
 
 
 def test_poll_budget_none_preserves_existing_all_pool_polling():
