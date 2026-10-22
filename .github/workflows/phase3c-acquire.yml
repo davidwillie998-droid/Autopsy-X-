@@ -99,7 +99,7 @@ jobs:
               "note": "Lifecycle success does not by itself establish the frozen 85-token statistical readiness requirement."
           }
           path = Path("datasets/phase3c/runs") / os.environ["RUN_ID"] / "lifecycle_status.json"
-          path.write_text(json.dumps(status, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+          path.write_text(json.dumps(status, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           print(json.dumps(status, indent=2))
           PY
       - name: Commit raw archive and diagnostics
