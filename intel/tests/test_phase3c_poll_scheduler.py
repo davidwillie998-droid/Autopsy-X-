@@ -23,13 +23,18 @@ def test_phase3c_poll_budget_rotates_all_tokens_without_polling_all_each_cycle()
         multi_calls = [call for call in f.calls if call[1] == "gt.pools_multi"]
         assert len(multi_calls) == 1
         assert multi_calls[0][3]["cycle"] == cycle
-        assert multi_calls[0][3]["pools"] == [p["pool"] for p in picked]
+        expected = [picked[(cycle * 5 + offset) % len(picked)] for offset in range(5)]
+        assert multi_calls[0][3]["pools"] == [p["pool"] for p in expected]
         trade_calls = [call for call in f.calls if call[1] == "gt.trades"]
         ohlcv_calls = [call for call in f.calls if call[1] == "gt.ohlcv"]
+        ds_calls = [call for call in f.calls if call[1] == "ds.pairs"]
         assert len(trade_calls) == 5
         assert len(ohlcv_calls) == 5
+        assert len(ds_calls) == 1
+        assert ds_calls[0][3]["pool_tokens"] == {p["pool"]: p["token"] for p in expected}
         tokens = [call[3]["token"] for call in trade_calls]
         assert len(set(tokens)) == 5
+        assert set(tokens) == {p["token"] for p in expected}
         seen.extend(tokens)
     assert set(seen) == {p["token"] for p in picked}
     assert len(seen) == 20
