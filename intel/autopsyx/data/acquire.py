@@ -455,9 +455,27 @@ def _segment_metadata(started_ms: int) -> dict:
         "started_ms": started_ms,
     }}
 
+def _assert_fresh_run_dir(run_dir: str) -> None:
+    """Refuse to overwrite an existing archive segment or its provenance.
+
+    RawStore appends manifest entries, while run()/selection write metadata
+    from scratch. Reusing a directory therefore mixes exchanges from separate
+    polling windows and can overwrite the universe that explains old records.
+    A restart must use a new immutable segment directory.
+    """
+    existing = [name for name in ("manifest.jsonl", "run.json", "selection.json", "universe.json")
+                if os.path.exists(os.path.join(run_dir, name))]
+    if existing:
+        raise FileExistsError(
+            f"refusing to reuse acquisition directory {run_dir!r}; existing archive artifacts: "
+            + ", ".join(existing) + ". Start a new immutable segment directory."
+        )
+
+
 def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
         now_ms: Callable[[], int] = lambda: int(time.time() * 1000),
         sleep: Callable[[float], None] = time.sleep, max_cycles: int | None = None) -> dict:
+    _assert_fresh_run_dir(run_dir)
     raw = RawStore(run_dir)
     f = Fetcher(raw, clients or default_clients(plan, now_ms), now_ms, sleep, plan.circuit_waits,
                 display={rpc.NAME: rpc.display_base(rpc.BASE)})
