@@ -405,8 +405,8 @@ def poll_cycle(f: Fetcher, plan: Plan, picked: list[dict], cycle: int) -> None:
     for i in range(0, len(pools), 30):
         chunk = pools[i:i + 30]
         f.get(gt.NAME, "gt.pools_multi", gt.path_pools_multi(n, chunk), {"chain": n, "cycle": cycle, "pools": list(chunk)})
-    for i in range(0, len(picked), ds.MAX_PAIRS_PER_CALL):
-        chunk = picked[i:i + ds.MAX_PAIRS_PER_CALL]
+    for i in range(0, len(poll_picked), ds.MAX_PAIRS_PER_CALL):
+        chunk = poll_picked[i:i + ds.MAX_PAIRS_PER_CALL]
         f.get(ds.NAME, "ds.pairs", ds.path_pairs(n, [p["pool"] for p in chunk]),
               {"chain": n, "cycle": cycle, "pool_tokens": {p["pool"]: p["token"] for p in chunk}})
     for p in poll_picked:
