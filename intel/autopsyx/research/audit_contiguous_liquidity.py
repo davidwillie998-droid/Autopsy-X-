@@ -2,8 +2,10 @@
 
 Only gt.pools_multi responses count as live reserve observations. Discovery
 endpoints are deliberately excluded. A pool must have one valid observation
-for every expected polling cycle; duplicate timestamps or extra discovery
-snapshots cannot replace a missing cycle. No interpolation is performed.
+for every cycle in which the frozen rotating scheduler was supposed to poll it.
+Cycles in which that pool was not scheduled are not missing observations.
+Duplicate timestamps or extra discovery snapshots cannot replace a missed
+scheduled cycle. No interpolation is performed.
 
 This measures observed reserve continuity, not executable liquidity at a
 particular trade size. Run from intel/:
@@ -232,8 +234,29 @@ def _pools_from_multi_url(url: str) -> list[str]:
     return [pool for pool in tail.split(",") if pool]
 
 
+def expected_pool_cycles(pools: list[dict], cycle_count: int, pools_per_cycle: int | None) -> dict[str, list[int]]:
+    """Rebuild the collector's deterministic rotating schedule from frozen pool order."""
+    if not pools or cycle_count < 1:
+        raise ValueError("non-empty frozen pool list and positive cycle count are required")
+    count = len(pools) if pools_per_cycle is None else min(pools_per_cycle, len(pools))
+    if count < 1:
+        raise ValueError("poll_pools_per_cycle must be >= 1")
+    pool_ids = [p.get("pool") for p in pools]
+    if any(not isinstance(pool_id, str) or not pool_id for pool_id in pool_ids):
+        raise ValueError("frozen pool universe contains an invalid pool identifier")
+    if len(set(pool_ids)) != len(pool_ids):
+        raise ValueError("frozen pool universe contains duplicate pool identifiers")
+    schedule = {pool_id: [] for pool_id in pool_ids}
+    for cycle in range(cycle_count):
+        start = (cycle * count) % len(pool_ids)
+        for offset in range(count):
+            pool_id = pool_ids[(start + offset) % len(pool_ids)]
+            schedule[pool_id].append(cycle)
+    return schedule
+
+
 def audit_archive(run_dir: str | Path) -> dict:
-    """Audit every selected pool against every expected live polling cycle."""
+    """Audit each selected pool against its own expected live polling schedule."""
     run_dir = Path(run_dir)
     raw = ReadOnlyRawArchive(run_dir)
     meta = raw.read_json("run.json") or {}
@@ -294,17 +317,42 @@ def audit_archive(run_dir: str | Path) -> dict:
                 "liquidity_usd": rec.liquidity_usd,
             })
 
+    configured_pools_per_cycle = plan.get("poll_pools_per_cycle")
+    if configured_pools_per_cycle is not None and (
+        type(configured_pools_per_cycle) is not int or configured_pools_per_cycle < 1
+    ):
+        raise ValueError("invalid poll_pools_per_cycle in recorded run plan")
+    expected_by_pool = expected_pool_cycles(pools, cycles, configured_pools_per_cycle)
+
     rows = []
     for pool in pools:
         pool_id, token_id = pool["pool"], pool["token"]
-        audit = audit_pool_cycles(
-            by_pool.get(pool_id, []),
-            expected_cycles=expected_cycles,
-            expected_start_ms=poll_start,
-            expected_end_ms=poll_end,
-            expected_cadence_ms=cadence_ms,
-            failed_cycles=failed_by_pool.get(pool_id, {}),
-        )
+        scheduled_cycles = expected_by_pool[pool_id]
+        if not scheduled_cycles:
+            audit = {
+                "eligible_all_horizons": False,
+                "expected_cycles": [],
+                "missing_cycles": [],
+                "horizons": {
+                    label: {
+                        "status": "NON_CONTIGUOUS",
+                        "expected_snapshots": 0,
+                        "observed_positive_liquidity_snapshots": 0,
+                        "max_gap_ms": 0,
+                        "reasons": ["pool was never scheduled during the recorded live window"],
+                    }
+                    for label in HORIZONS_MS
+                },
+            }
+        else:
+            audit = audit_pool_cycles(
+                by_pool.get(pool_id, []),
+                expected_cycles=scheduled_cycles,
+                expected_start_ms=poll_start,
+                expected_end_ms=poll_end,
+                expected_cadence_ms=cadence_ms,
+                failed_cycles=failed_by_pool.get(pool_id, {}),
+            )
         audit.update({"pool": pool_id, "token": token_id})
         rows.append(audit)
 
@@ -319,7 +367,7 @@ def audit_archive(run_dir: str | Path) -> dict:
         "schema_version": 2,
         "archive": run_dir.name,
         "acquisition_status": meta.get("status"),
-        "method": "gt.pools_multi_live_cycle_exact_match_no_interpolation",
+        "method": "gt.pools_multi_live_cycle_schedule_aware_exact_match_no_interpolation",
         "expected_cadence_ms": cadence_ms,
         "expected_cycle_count": cycles,
         "horizons_ms": HORIZONS_MS,
@@ -337,7 +385,7 @@ def audit_archive(run_dir: str | Path) -> dict:
                                  and sum(p["eligible_all_horizons"] for p in rows) >= MIN_STRUCTURAL_POOLS),
         "limitations": [
             "Only gt.pools_multi live polling observations count; discovery/backfill snapshots are excluded.",
-            "Every selected pool must have exactly one valid reserve snapshot in every expected cycle.",
+            "Every selected pool must have exactly one valid reserve snapshot in each cycle assigned by the recorded rotating schedule.",
             "Missing, failed, duplicate, or non-positive observations are not interpolated.",
             "Positive reserve continuity is not proof of executable liquidity or acceptable price impact at a specified trade size.",
             "The separate 85-distinct-token gate must be applied per hypothesis after its own eligibility filters.",
