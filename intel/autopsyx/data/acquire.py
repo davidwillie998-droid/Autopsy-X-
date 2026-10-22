@@ -317,10 +317,27 @@ def select_universe(f: Fetcher, plan: Plan) -> dict:
                          response_ts=None, status=None, body=None, attempts=None,
                          error=f"new_pools page {page} failed; later pages still fetched", context={"page": page})
         cands["young"] += _pools_from(e, b)
-    e, b = f.get(gt.NAME, "gt.trending", gt.path_trending(n), {"chain": n, "stratum": "trending"})
-    cands["trending"] = _pools_from(e, b)
-    e, b = f.get(gt.NAME, "gt.top_pools", gt.path_top_pools(n), {"chain": n, "stratum": "established"})
-    cands["established"] = _pools_from(e, b)
+    # Page every candidate source, not only newest pools. The Phase 3C
+    # request can require 30 trending and 30 established tokens; reading only
+    # page 1 silently caps those strata at one provider page and makes the
+    # frozen 180-token selection impossible whenever a page has fewer than 30
+    # distinct eligible tokens. Keep each source's pagination evidence in raw.
+    for page in range(1, plan.new_pool_pages + 1):
+        e, b = f.get(gt.NAME, "gt.trending", gt.path_trending(n, page),
+                     {"chain": n, "stratum": "trending", "page": page})
+        if b is None:
+            f.raw.record(provider="audit", endpoint="pagination_gap", url=e.url, request_ts=e.request_ts,
+                         response_ts=None, status=None, body=None, attempts=None,
+                         error=f"trending page {page} failed; later pages still fetched", context={"page": page})
+        cands["trending"] += _pools_from(e, b)
+    for page in range(1, plan.new_pool_pages + 1):
+        e, b = f.get(gt.NAME, "gt.top_pools", gt.path_top_pools(n, page),
+                     {"chain": n, "stratum": "established", "page": page})
+        if b is None:
+            f.raw.record(provider="audit", endpoint="pagination_gap", url=e.url, request_ts=e.request_ts,
+                         response_ts=None, status=None, body=None, attempts=None,
+                         error=f"top_pools page {page} failed; later pages still fetched", context={"page": page})
+        cands["established"] += _pools_from(e, b)
 
     rng = random.Random(plan.seed)
     picked: list[dict] = []
