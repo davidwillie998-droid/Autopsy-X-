@@ -53,7 +53,7 @@ jobs:
         env:
           AUTOPSYX_SOLANA_RPC_URL: ${{ secrets.AUTOPSYX_SOLANA_RPC_URL }}
         run: |
-          python -m autopsyx --log acquire --live --request datasets/phase3c/REQUEST.json --out "datasets/phase3c/runs/${{ steps.validate.outputs.run_id }}" --min-strata-total 20
+          python -m autopsyx --log acquire --live --request datasets/phase3c/REQUEST.json --out "datasets/phase3c/runs/${{ steps.validate.outputs.run_id }}"
       - name: Seal canonical dataset on the runner
         id: seal
         if: steps.acquire.outcome == 'success'
