@@ -421,6 +421,20 @@ def poll_cycle(f: Fetcher, plan: Plan, picked: list[dict], cycle: int) -> None:
                "pool_created_ts": p["created_ts"], "total_supply": p["total_supply"]})
 
 
+def _segment_metadata(started_ms: int) -> dict:
+    """Identify this immutable collector segment and record its restart provenance."""
+    run_id = os.environ.get("GITHUB_RUN_ID")
+    attempt = os.environ.get("GITHUB_RUN_ATTEMPT")
+    return {"acquisition_segment": {
+        "segment_id": f"{run_id}.{attempt}" if run_id and attempt else None,
+        "workflow_run_id": run_id,
+        "workflow_run_attempt": attempt,
+        "event": os.environ.get("GITHUB_EVENT_NAME"),
+        "commit_sha": os.environ.get("GITHUB_SHA", "local"),
+        "restart_reason": os.environ.get("AUTOPSYX_RESTART_REASON", "not_provided"),
+        "started_ms": started_ms,
+    }}
+
 def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
         now_ms: Callable[[], int] = lambda: int(time.time() * 1000),
         sleep: Callable[[float], None] = time.sleep, max_cycles: int | None = None) -> dict:
@@ -432,6 +446,7 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
             "runner": os.environ.get("RUNNER_NAME", "local"), "execution": "none: acquisition only, no orders",
             "poll_window_started_ms": None, "poll_window_ended_ms": None, "poll_window_duration_s": plan.duration_s,
             "poll_window_cycles": 0, "poll_window_elapsed_s": 0.0}
+    meta.update(_segment_metadata(run_started_ms))
     raw.write_json("run.json", meta)
     if plan.universe_file:
         u = load_universe(plan.universe_file)

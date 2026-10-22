@@ -12,6 +12,11 @@ on:
         description: "Unique run ID, e.g. p3c-sol-20261021b (never reuse an archive ID)"
         required: true
         type: string
+      restart_reason:
+        description: "Why this collector segment is starting or restarting"
+        required: false
+        type: string
+        default: "initial acquisition"
   push:
     branches: [ccr-dea9382c-vwhvi6]
     paths: ["intel/datasets/phase3c/REQUEST.json"]
@@ -94,6 +99,7 @@ jobs:
         working-directory: intel
         env:
           AUTOPSYX_SOLANA_RPC_URL: ${{ secrets.AUTOPSYX_SOLANA_RPC_URL }}
+          AUTOPSYX_RESTART_REASON: ${{ inputs.restart_reason || 'trigger did not supply a restart reason' }}
         run: python -m autopsyx --log acquire --live --request "$REQUEST_PATH" --out "datasets/phase3c/runs/$RUN_ID"
       - name: Preserve effective and frozen request inputs
         if: steps.acquire.outcome == 'success'
