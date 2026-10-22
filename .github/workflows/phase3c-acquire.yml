@@ -134,15 +134,19 @@ jobs:
         working-directory: intel
         run: python -m autopsyx.research.phase3c_manifest_integrity verify "datasets/phase3c/runs/$RUN_ID" > "datasets/phase3c/runs/$RUN_ID/manifest_integrity_verify.json"
       - name: Record failed or interrupted acquisition
-        if: (failure() || cancelled()) && env.RUN_ID != ''
+        if: failure() || cancelled()
         working-directory: intel
-        env:
-          RUN_ID: ${{ env.RUN_ID }}
         run: |
+          # GITHUB_ENV values are reliably available to the shell in later steps;
+          # do not gate on the expression env context or override the inherited value.
+          if [[ -z "${RUN_ID:-}" ]]; then
+            echo "No run ID was reserved; nothing to mark failed."
+            exit 0
+          fi
           python - <<'PY'
-          import json, time
+          import json, os, time
           from pathlib import Path
-          p = Path("datasets/phase3c/runs") / __import__("os").environ["RUN_ID"] / "run.json"
+          p = Path("datasets/phase3c/runs") / os.environ["RUN_ID"] / "run.json"
           if p.exists():
               meta = json.loads(p.read_text(encoding="utf-8"))
               # Any workflow failure invalidates the overall evidence pipeline,
@@ -152,8 +156,12 @@ jobs:
               meta["workflow_failure_recorded"] = True
               p.write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
       - name: Commit raw archive and verification evidence
-        if: always() && env.RUN_ID != ''
+        if: always()
         run: |
+          if [[ -z "${RUN_ID:-}" ]]; then
+            echo "No run ID was reserved; nothing to commit."
+            exit 0
+          fi
           git config user.name "autopsyx-acquisition"
           git config user.email "actions@users.noreply.github.com"
           git add "intel/datasets/phase3c/runs/$RUN_ID"
