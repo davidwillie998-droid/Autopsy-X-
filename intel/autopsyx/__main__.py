@@ -130,8 +130,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         from .data import acquire
         req = json.load(open(args.request))
-        plan_values = {k: v for k, v in req.items() if k in acquire.Plan.__dataclass_fields__}
-        plan = acquire.Plan(**plan_values)
+        plan = acquire.Plan(**{k: v for k, v in req.items() if k in acquire.Plan.__dataclass_fields__})
         meta = acquire.run(args.out, plan)
         print(json.dumps({k: meta.get(k) for k in ("status", "cycles", "exchanges", "errors")}))
         return 0 if meta.get("status") == "COMPLETE" else 1
