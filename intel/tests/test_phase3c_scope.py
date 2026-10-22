@@ -59,8 +59,11 @@ def test_acquire_module_fails_closed_on_cadence_and_cycle_overruns():
     assert '"cadence_pass": expected_revisit_s <= 3 * 5 * 60' in source
     assert "cycle_elapsed_s.append(spent)" in source
     assert '"poll_cycle_overruns": cycle_overruns' in source
-    assert 'status = "INCOMPLETE: pool revisit interval exceeds the frozen 15-minute label horizon"' in source
-    assert 'status = f"INCOMPLETE: {cycle_overruns} poll cycles exceeded the {plan.cycle_s}s cycle budget"' in source
+    assert 'status = _completion_status(cadence_pass, cycle_overruns, error_count, plan.cycle_s)' in source
+    assert 'if not cadence_pass:' in source
+    assert 'return "INCOMPLETE: pool revisit interval exceeds the frozen 15-minute label horizon"' in source
+    assert 'return f"INCOMPLETE: {cycle_overruns} poll cycles exceeded the {cycle_s}s cycle budget"' in source
+    assert 'return f"INCOMPLETE: {errors} provider request(s) failed after retries"' in source
 
 
 def test_phase3c_workflow_mirrors_phase3a_workflow_procedure():
