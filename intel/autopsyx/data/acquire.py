@@ -391,14 +391,6 @@ def backfill(f: Fetcher, plan: Plan, picked: list[dict]) -> None:
 
 def poll_cycle(f: Fetcher, plan: Plan, picked: list[dict], cycle: int) -> None:
     n = plan.network
-    pools = [p["pool"] for p in picked]
-    for i in range(0, len(pools), 30):
-        chunk = pools[i:i + 30]
-        f.get(gt.NAME, "gt.pools_multi", gt.path_pools_multi(n, chunk), {"chain": n, "cycle": cycle, "pools": list(chunk)})
-    for i in range(0, len(picked), ds.MAX_PAIRS_PER_CALL):
-        chunk = picked[i:i + ds.MAX_PAIRS_PER_CALL]
-        f.get(ds.NAME, "ds.pairs", ds.path_pairs(n, [p["pool"] for p in chunk]),
-              {"chain": n, "cycle": cycle, "pool_tokens": {p["pool"]: p["token"] for p in chunk}})
     poll_picked = picked
     if plan.poll_pools_per_cycle is not None:
         if plan.poll_pools_per_cycle < 1:
@@ -406,6 +398,17 @@ def poll_cycle(f: Fetcher, plan: Plan, picked: list[dict], cycle: int) -> None:
         count = min(plan.poll_pools_per_cycle, len(picked))
         start = (cycle * count) % len(picked)
         poll_picked = [picked[(start + offset) % len(picked)] for offset in range(count)]
+    # Reserve/trade/OHLCV observations share the same rotating subset. Polling
+    # every pool's reserves before rotating trades/OHLCV made the cycle exceed
+    # the provider budget and invalidated the nominal revisit calculation.
+    pools = [p["pool"] for p in poll_picked]
+    for i in range(0, len(pools), 30):
+        chunk = pools[i:i + 30]
+        f.get(gt.NAME, "gt.pools_multi", gt.path_pools_multi(n, chunk), {"chain": n, "cycle": cycle, "pools": list(chunk)})
+    for i in range(0, len(picked), ds.MAX_PAIRS_PER_CALL):
+        chunk = picked[i:i + ds.MAX_PAIRS_PER_CALL]
+        f.get(ds.NAME, "ds.pairs", ds.path_pairs(n, [p["pool"] for p in chunk]),
+              {"chain": n, "cycle": cycle, "pool_tokens": {p["pool"]: p["token"] for p in chunk}})
     for p in poll_picked:
         ctx = {"chain": n, "pool": p["pool"], "token": p["token"], "cycle": cycle}
         f.get(gt.NAME, "gt.trades", gt.path_trades(n, p["pool"]), ctx)
