@@ -127,13 +127,25 @@ def test_phase3c_dispatch_uses_maximum_frozen_rpc_enrichment_budget():
     assert 'request["rpc_max_txs"] = 8' in dispatch
     assert 'request["new_pool_pages"] = 10' in dispatch
     assert 'request["strata"] = {"young": 100, "quiet_young": 20, "trending": 30, "established": 30}' in dispatch
-    assert 'request["poll_pools_per_cycle"] = 5' in dispatch
+    assert 'request["poll_pools_per_cycle"] = 12' in dispatch
     assert 'request["ohlcv_every"] = 1' in dispatch
     assert 'request["phase3a"] = True' in dispatch
-    assert 'request["gt_rate_per_s"] = 0.4' in dispatch
+    assert 'request["gt_rate_per_s"] = 0.45' in dispatch
     workflow = (ROOT / ".github" / "workflows" / "phase3c-acquire.yml").read_text()
     assert "timeout-minutes: 360" in workflow
     assert "phase3c_preflight datasets/phase3c/REQUEST.json --frozen-baseline" in workflow
     request = __import__("json").loads((ROOT / "intel" / "datasets" / "phase3c" / "REQUEST.json").read_text())
     assert request["rpc_max_pages"] == 1
     assert request["rpc_max_txs"] == 8
+
+def test_phase3c_reserve_trade_and_ohlcv_polling_share_the_rotating_subset():
+    source = (ROOT / "intel" / "autopsyx" / "data" / "acquire.py").read_text()
+    poll = source[source.index("def poll_cycle("):source.index("\ndef run(")]
+    assert poll.index("poll_picked = picked") < poll.index('f.get(gt.NAME, "gt.pools_multi"')
+    reserve_block = poll.split('f.get(gt.NAME, "gt.pools_multi"', 1)[1].split('for i in range(0, len(picked)', 1)[0]
+    assert "pools = [p[\"pool\"] for p in poll_picked]" in poll
+    assert "for p in poll_picked:" in poll
+    assert 'f.get(gt.NAME, "gt.trades"' in poll
+    assert 'f.get(gt.NAME, "gt.ohlcv"' in poll
+    assert "pools = [p[\"pool\"] for p in picked]" not in poll
+
