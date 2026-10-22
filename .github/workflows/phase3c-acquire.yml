@@ -58,9 +58,8 @@ jobs:
           # effective sample for this acquisition. The old request selected only
           # 20 pools, which cannot supply the frozen >=85-token hypothesis sample.
           # Over-select to allow downstream eligibility attrition; never lower gates.
-          # Poll twelve rotating pools per cycle to fit the frozen 15-minute observation horizon, and
-          # request OHLCV on each selected visit. A one-pool/60-cycle schedule
-          # would leave most tokens with extremely sparse trade/OHLCV observations.
+          # Poll a rotating subset across reserve, trade, DexScreener, and OHLCV endpoints.
+          # Runtime telemetry fails closed if the configured cadence cannot fit the 60s budget.
           request["new_pool_pages"] = 10
           request["strata"] = {"young": 100, "quiet_young": 20, "trending": 30, "established": 30}
           import hashlib
