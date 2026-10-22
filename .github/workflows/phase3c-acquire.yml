@@ -70,9 +70,9 @@ jobs:
           request["poll_pools_per_cycle"] = 5
           request["ohlcv_every"] = 1
           request["holders_per_cycle"] = 0
-          request["gt_rate_per_s"] = 0.15
+          request["gt_rate_per_s"] = 0.4
           # Preserve the required Phase 3A enrichment, but respect the public
-          # provider's ~10 calls/minute ceiling and keep per-address transaction
+          # provider's 30 calls/minute ceiling with a 24 calls/minute client cap and keep per-address transaction
           # fetches bounded. Truncation is recorded and remains a readiness limitation.
           request["phase3a"] = True
           request["rpc_max_pages"] = 3
