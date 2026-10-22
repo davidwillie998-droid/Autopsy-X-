@@ -11,6 +11,7 @@ visible from the first poll that returned it, not from its block time.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import random
 import time
