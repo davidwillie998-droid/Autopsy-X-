@@ -9,9 +9,16 @@ on:
 permissions:
   contents: read
 
+# Push and pull_request both fire for a PR branch. Keep only the newest
+# validation for that branch instead of running duplicate full suites.
+concurrency:
+  group: intel-tests-${{ github.event.pull_request.head.ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       # Plain PostgreSQL 16. TimescaleDB is not installed; the tests stub
       # create_hypertable, so hypertable behaviour itself is not exercised here.
