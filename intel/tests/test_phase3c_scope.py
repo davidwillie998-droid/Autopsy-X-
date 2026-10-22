@@ -144,6 +144,8 @@ def test_phase3c_reserve_trade_and_ohlcv_polling_share_the_rotating_subset():
     assert poll.index("poll_picked = picked") < poll.index('f.get(gt.NAME, "gt.pools_multi"')
     reserve_block = poll.split('f.get(gt.NAME, "gt.pools_multi"', 1)[1].split('for i in range(0, len(picked)', 1)[0]
     assert "pools = [p[\"pool\"] for p in poll_picked]" in poll
+    assert "for i in range(0, len(poll_picked), ds.MAX_PAIRS_PER_CALL)" in poll
+    assert "chunk = poll_picked[i:i + ds.MAX_PAIRS_PER_CALL]" in poll
     assert "for p in poll_picked:" in poll
     assert 'f.get(gt.NAME, "gt.trades"' in poll
     assert 'f.get(gt.NAME, "gt.ohlcv"' in poll
