@@ -53,6 +53,7 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
 
 def test_acquire_module_fails_closed_on_cadence_and_cycle_overruns():
     source = (ROOT / "intel" / "autopsyx" / "data" / "acquire.py").read_text()
+    assert "import math" in source
     assert "expected_pool_revisit_s" in source
     assert '"label_horizon_s": 3 * 5 * 60' in source
     assert '"cadence_pass": expected_revisit_s <= 3 * 5 * 60' in source
@@ -60,3 +61,79 @@ def test_acquire_module_fails_closed_on_cadence_and_cycle_overruns():
     assert '"poll_cycle_overruns": cycle_overruns' in source
     assert 'status = "INCOMPLETE: pool revisit interval exceeds the frozen 15-minute label horizon"' in source
     assert 'status = f"INCOMPLETE: {cycle_overruns} poll cycles exceeded the {plan.cycle_s}s cycle budget"' in source
+
+
+def test_phase3c_workflow_mirrors_phase3a_workflow_procedure():
+    """The new workflow changes only the watched path and archive directory;
+    every acquire/seal/verify-provenance/commit step is the same procedure."""
+    a = (ROOT / ".github" / "workflows" / "phase3a-acquire.yml").read_text()
+    c = (ROOT / ".github" / "workflows" / "phase3c-acquire.yml").read_text()
+    for step in ("seal ", "verify-provenance ", "acquire --live --request", "git commit -m"):
+        assert step in a and step in c
+
+
+def test_phase3a_evidence_and_phase3b_evidence_files_byte_identical_to_frozen():
+    for rel in ("artifacts/phase3a/PHASE3A_EVIDENCE.json", "artifacts/phase3a/PHASE3A_COVERAGE.json",
+               "docs/PHASE3A_REPORT.md", "docs/SYSTEM_STATUS.md", "docs/PHASE2_SYSTEM_STATUS.md",
+               "research/phase3b/results/phase3b_evidence.json", "docs/PHASE3B_RESEARCH_CONTRACT.md",
+               "docs/PHASE3B_STATISTICAL_REPORT.md"):
+        at_3b = git("show", f"{PHASE3B_COMMIT}:{rel}")  # git strips rstrip() in captured stdout; compare rstripped
+        at_head = (ROOT / rel).read_text().rstrip("\n")
+        assert at_3b == at_head, rel
+
+
+def test_phase3b_contract_and_stats_modules_unchanged_since_phase3b():
+    for rel in ("intel/autopsyx/research/phase3b_contract.py", "intel/autopsyx/research/phase3b_stats.py",
+               "intel/autopsyx/research/phase3b_data.py", "intel/autopsyx/research/phase3b_pipeline.py"):
+        at_3b = git("show", f"{PHASE3B_COMMIT}:{rel}")
+        at_head = (ROOT / rel).read_text().rstrip("\n")
+        assert at_3b == at_head, rel
+
+
+def test_phase3c_hypothesis_ids_are_exactly_phase3b_eligible_ids():
+    from autopsyx.research import phase3b_contract as contract
+    from autopsyx.research import phase3c_pipeline as p3c
+    assert set(p3c.HYPOTHESIS_IDS) == set(contract.ELIGIBLE_IDS) == {"H1", "H3", "H4", "H8", "H9", "H10"}
+
+
+def test_phase3c_reuses_frozen_min_sample_without_redefining_it():
+    from autopsyx.research import phase3b_contract as contract
+    from autopsyx.research import phase3c_pipeline as p3c
+    assert p3c.MIN_SAMPLE is contract.MIN_SAMPLE  # literally the same object, not a re-derived copy
+
+
+def test_phase3c_workflow_invalidates_complete_run_after_pipeline_failure():
+    workflow = (ROOT / ".github" / "workflows" / "phase3c-acquire.yml").read_text()
+    failure_step = workflow.split("- name: Record failed or interrupted acquisition", 1)[1]
+    failure_step = failure_step.split("- name: Commit raw archive and verification evidence", 1)[0]
+    assert 'meta["status"] = "FAILED_OR_INTERRUPTED"' in failure_step
+    assert 'if meta.get("status") != "COMPLETE"' not in failure_step
+    assert workflow.index("Verify Phase 3C raw-manifest integrity") < workflow.index(
+        "Record failed or interrupted acquisition"
+    ) < workflow.index("Commit raw archive and verification evidence")
+
+def test_phase3c_request_preservation_step_has_no_stray_heredoc_terminator():
+    workflow = (ROOT / ".github" / "workflows" / "phase3c-acquire.yml").read_text()
+    request_step = workflow.split("- name: Preserve effective and frozen request inputs", 1)[1]
+    request_step = request_step.split("- name: Snapshot Phase 3C raw manifest", 1)[0]
+    assert 'request_hashes.sha256"\n          PY' not in request_step
+    assert 'request_hashes.sha256"\n      - name:' in workflow
+
+def test_phase3c_dispatch_uses_maximum_frozen_rpc_enrichment_budget():
+    workflow = (ROOT / ".github" / "workflows" / "phase3c-acquire.yml").read_text()
+    dispatch = workflow.split('if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then', 1)[1]
+    dispatch = dispatch.split('REQUEST_PATH="$RUNNER_TEMP/phase3c-request.json"', 1)[0]
+    assert 'request["rpc_max_pages"] = 3' in dispatch
+    assert 'request["rpc_max_txs"] = 8' in dispatch
+    assert 'request["new_pool_pages"] = 10' in dispatch
+    assert 'request["strata"] = {"young": 100, "quiet_young": 20, "trending": 30, "established": 30}' in dispatch
+    assert 'request["poll_pools_per_cycle"] = 5' in dispatch
+    assert 'request["ohlcv_every"] = 1' in dispatch
+    assert 'request["phase3a"] = True' in dispatch
+    assert 'request["gt_rate_per_s"] = 0.4' in dispatch
+    workflow = (ROOT / ".github" / "workflows" / "phase3c-acquire.yml").read_text()
+    assert "timeout-minutes: 360" in workflow
+    assert "phase3c_preflight datasets/phase3c/REQUEST.json --frozen-baseline" in workflow
+    request = __import__("json").loads((ROOT / "intel" / "datasets" / "phase3c" / "REQUEST.json").read_text())
+    assert request["rpc_max_pages"] == 1
+    assert request["rpc_max_txs"] == 8
