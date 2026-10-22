@@ -456,21 +456,21 @@ def _segment_metadata(started_ms: int) -> dict:
     }}
 
 def _assert_fresh_run_dir(run_dir: str) -> None:
-    """Refuse to overwrite an existing archive segment or its provenance.
+    """Refuse to reuse any non-empty acquisition directory.
 
-    RawStore appends manifest entries, while run()/selection write metadata
-    from scratch. Reusing a directory therefore mixes exchanges from separate
-    polling windows and can overwrite the universe that explains old records.
-    A restart must use a new immutable segment directory.
+    RawStore can write content-addressed bodies before appending the manifest,
+    and run()/selection overwrite metadata. Checking only known metadata files
+    misses interrupted writes that leave a raw/ directory behind. A new
+    acquisition must start in an empty directory; resume requires a separate,
+    explicit protocol.
     """
-    existing = [name for name in ("manifest.jsonl", "run.json", "selection.json", "universe.json")
-                if os.path.exists(os.path.join(run_dir, name))]
-    if existing:
+    if os.path.isdir(run_dir) and os.listdir(run_dir):
+        artifacts = ", ".join(sorted(os.listdir(run_dir))[:8])
+        suffix = " ..." if len(os.listdir(run_dir)) > 8 else ""
         raise FileExistsError(
-            f"refusing to reuse acquisition directory {run_dir!r}; existing archive artifacts: "
-            + ", ".join(existing) + ". Start a new immutable segment directory."
+            f"refusing to reuse non-empty acquisition directory {run_dir!r}; "
+            f"existing entries: {artifacts}{suffix}. Start a new immutable segment directory."
         )
-
 
 def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
         now_ms: Callable[[], int] = lambda: int(time.time() * 1000),
