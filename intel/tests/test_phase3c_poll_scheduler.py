@@ -81,6 +81,17 @@ def test_acquisition_refuses_to_overwrite_existing_segment_metadata(tmp_path):
         raise AssertionError("existing acquisition segment must not be reused")
 
 
+def test_acquisition_rejects_orphaned_raw_bodies_after_interruption(tmp_path):
+    (tmp_path / "raw").mkdir()
+    (tmp_path / "raw" / "orphan.json.gz").write_bytes(b"partial")
+    try:
+        acquire._assert_fresh_run_dir(str(tmp_path))
+    except FileExistsError as exc:
+        assert "non-empty acquisition directory" in str(exc)
+    else:
+        raise AssertionError("orphaned raw bodies must not be reused")
+
+
 def test_acquisition_allows_a_new_empty_segment_directory(tmp_path):
     acquire._assert_fresh_run_dir(str(tmp_path))
 
