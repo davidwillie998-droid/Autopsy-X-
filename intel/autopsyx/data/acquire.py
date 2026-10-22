@@ -471,15 +471,27 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
     # Start the timer only after discovery, backfill, and initial enrichment.
     poll_window_started_ms = now_ms()
     meta["poll_window_started_ms"] = poll_window_started_ms
+    poll_count = min(plan.poll_pools_per_cycle or len(picked), len(picked))
+    expected_revisit_s = math.ceil(len(picked) / poll_count) * plan.cycle_s
+    meta["poll_schedule"] = {
+        "selected_pools": len(picked),
+        "pools_per_cycle": poll_count,
+        "cycle_s": plan.cycle_s,
+        "expected_pool_revisit_s": expected_revisit_s,
+        "label_horizon_s": 3 * 5 * 60,
+        "cadence_pass": expected_revisit_s <= 3 * 5 * 60,
+    }
     raw.write_json("run.json", meta)
     cycle = 0
+    cycle_elapsed_s: list[float] = []
     while True:
         t0 = now_ms()
         if (t0 - poll_window_started_ms) / 1000 >= plan.duration_s or (max_cycles is not None and cycle >= max_cycles):
             break
         poll_cycle(f, plan, picked, cycle)
         cycle += 1
-        spent = (now_ms() - t0) / 1000
+        spent = max(0.0, (now_ms() - t0) / 1000)
+        cycle_elapsed_s.append(spent)
         if spent < plan.cycle_s:
             sleep(plan.cycle_s - spent)
     poll_window_ended_ms = now_ms()
@@ -487,12 +499,21 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
         meta["enrichment"] += enrich(f, plan, picked, 1)
     entries = raw.entries()
     ended_ms = now_ms()
+    cycle_overruns = sum(1 for elapsed in cycle_elapsed_s if elapsed > plan.cycle_s)
+    cadence_pass = bool(meta.get("poll_schedule", {}).get("cadence_pass", True))
+    status = "COMPLETE"
+    if not cadence_pass:
+        status = "INCOMPLETE: pool revisit interval exceeds the frozen 15-minute label horizon"
+    elif cycle_overruns:
+        status = f"INCOMPLETE: {cycle_overruns} poll cycles exceeded the {plan.cycle_s}s cycle budget"
     meta.update({"ended_ms": ended_ms, "cycles": cycle, "poll_window_cycles": cycle,
                  "poll_window_ended_ms": poll_window_ended_ms,
                  "poll_window_elapsed_s": max(0.0, (poll_window_ended_ms - poll_window_started_ms) / 1000),
+                 "poll_cycle_max_elapsed_s": max(cycle_elapsed_s, default=0.0),
+                 "poll_cycle_overruns": cycle_overruns,
                  "exchanges": len(entries), "circuit_waits": f.waited,
                  "final_gt_rate_per_s": f.clients[gt.NAME].limiter.rate,
-                 "errors": sum(1 for e in entries if e.error), "status": "COMPLETE"})
+                 "errors": sum(1 for e in entries if e.error), "status": status})
     raw.write_json("run.json", meta)
     log.info("acquisition done", extra={"fields": {k: meta[k] for k in ("cycles", "exchanges", "errors")}})
     return meta
