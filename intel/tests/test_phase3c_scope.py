@@ -242,8 +242,8 @@ def test_phase3c_dispatch_uses_maximum_frozen_rpc_enrichment_budget():
     assert 'request["rpc_max_txs"] = 8' in dispatch
     assert 'request["new_pool_pages"] = 10' in dispatch
     assert 'request["strata"] = {"young": 100, "quiet_young": 20, "trending": 30, "established": 30}' in dispatch
-    assert 'request["poll_pools_per_cycle"] = 1' in dispatch
-    assert 'request["ohlcv_every"] = 60' in dispatch
+    assert 'request["poll_pools_per_cycle"] = 5' in dispatch
+    assert 'request["ohlcv_every"] = 1' in dispatch
     assert 'request["phase3a"] = True' in dispatch
     assert 'request["gt_rate_per_s"] = 0.15' in dispatch
     workflow = (ROOT / ".github" / "workflows" / "phase3c-acquire.yml").read_text()
