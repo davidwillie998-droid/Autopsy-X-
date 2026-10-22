@@ -66,7 +66,7 @@ def test_rejects_invalid_poll_budget_before_network_access():
     request = good_request()
     request["poll_pools_per_cycle"] = 0
     assert any("poll_pools_per_cycle must be a positive integer" in e for e in module.validate(request))
-    request["poll_pools_per_cycle"] = 21
+    request["poll_pools_per_cycle"] = 86
     assert any("cannot exceed the selected-pool stratum total" in e for e in module.validate(request))
 
 
