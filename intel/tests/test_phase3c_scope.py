@@ -273,7 +273,7 @@ def test_phase3c_dispatch_uses_maximum_frozen_rpc_enrichment_budget():
     assert 'request["poll_pools_per_cycle"] = 5' in dispatch
     assert 'request["ohlcv_every"] = 1' in dispatch
     assert 'request["phase3a"] = True' in dispatch
-    assert 'request["gt_rate_per_s"] = 0.15' in dispatch
+    assert 'request["gt_rate_per_s"] = 0.4' in dispatch
     workflow = (ROOT / ".github" / "workflows" / "phase3c-acquire.yml").read_text()
     assert "timeout-minutes: 360" in workflow
     assert "phase3c_preflight datasets/phase3c/REQUEST.json --frozen-baseline" in workflow
