@@ -64,6 +64,44 @@ jobs:
         if: steps.seal.outcome == 'success'
         working-directory: intel
         run: python -m autopsyx verify-provenance "datasets/phase3c/runs/${{ steps.validate.outputs.run_id }}" > "datasets/phase3c/runs/${{ steps.validate.outputs.run_id }}/runner_verify.json"
+      - name: Record acquisition lifecycle status
+        if: always() && steps.validate.outcome == 'success'
+        working-directory: intel
+        env:
+          RUN_ID: ${{ steps.validate.outputs.run_id }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          ACQUIRE_OUTCOME: ${{ steps.acquire.outcome }}
+          SEAL_OUTCOME: ${{ steps.seal.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+        run: |
+          set -euo pipefail
+          RUN_DIR="datasets/phase3c/runs/$RUN_ID"
+          mkdir -p "$RUN_DIR"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          outcomes = {
+              "validation": os.environ["VALIDATE_OUTCOME"],
+              "acquisition": os.environ["ACQUIRE_OUTCOME"],
+              "seal": os.environ["SEAL_OUTCOME"],
+              "provenance_verification": os.environ["VERIFY_OUTCOME"],
+          }
+          complete = all(value == "success" for value in outcomes.values())
+          status = {
+              "run_id": os.environ["RUN_ID"],
+              "workflow_run_id": os.environ["WORKFLOW_RUN_ID"],
+              "overall_status": "COMPLETE_VERIFIED" if complete else "FAILED_OR_INCOMPLETE",
+              "step_outcomes": outcomes,
+              "readiness_approved": False,
+              "note": "Lifecycle success does not by itself establish the frozen 85-token statistical readiness requirement."
+          }
+          path = Path("datasets/phase3c/runs") / os.environ["RUN_ID"] / "lifecycle_status.json"
+          path.write_text(json.dumps(status, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+          print(json.dumps(status, indent=2))
+          PY
       - name: Commit raw archive and diagnostics
         if: always() && steps.validate.outcome == 'success'
         env:
