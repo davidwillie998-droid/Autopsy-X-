@@ -340,11 +340,16 @@ def select_universe(f: Fetcher, plan: Plan) -> dict:
     picked: list[dict] = []
     tokens: set[str] = set()
     prior_tokens = set(plan.excluded_tokens)
+    prior_excluded_pools: set[str] = set()
     excluded: list[dict] = []
 
     def take(stratum: str, pool_list: list[dict], k: int) -> None:
         pool_list, prior_excluded = _exclude_prior_tokens(pool_list, prior_tokens)
-        excluded.extend(prior_excluded)
+        for row in prior_excluded:
+            pool_id = row["pool"]
+            if pool_id not in prior_excluded_pools:
+                excluded.append(row)
+                prior_excluded_pools.add(pool_id)
         pool_list = sorted(pool_list, key=lambda p: p["pool"])  # order-independent sampling
         rng.shuffle(pool_list)
         for p in pool_list:
