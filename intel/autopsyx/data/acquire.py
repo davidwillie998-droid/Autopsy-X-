@@ -300,6 +300,17 @@ def _pools_from(e: ManifestEntry, body: bytes | None) -> list[dict]:
     return out
 
 
+def _exclude_prior_tokens(pool_list: list[dict], prior_tokens: set[str]) -> tuple[list[dict], list[dict]]:
+    """Split candidates into novel tokens and auditable prior-token exclusions."""
+    novel, excluded = [], []
+    for pool in pool_list:
+        if pool["token"] in prior_tokens:
+            excluded.append({**pool, "reason": "token already present in prior evidence archive"})
+        else:
+            novel.append(pool)
+    return novel, excluded
+
+
 def select_universe(f: Fetcher, plan: Plan) -> dict:
     """Stratified random selection, recorded in full so it can be audited.
 
@@ -332,14 +343,13 @@ def select_universe(f: Fetcher, plan: Plan) -> dict:
     excluded: list[dict] = []
 
     def take(stratum: str, pool_list: list[dict], k: int) -> None:
+        pool_list, prior_excluded = _exclude_prior_tokens(pool_list, prior_tokens)
+        excluded.extend(prior_excluded)
         pool_list = sorted(pool_list, key=lambda p: p["pool"])  # order-independent sampling
         rng.shuffle(pool_list)
         for p in pool_list:
             if len([x for x in picked if x["stratum"] == stratum]) >= k:
                 return
-            if p["token"] in prior_tokens:
-                excluded.append({**p, "reason": "token already present in prior evidence archive"})
-                continue
             if p["token"] in EXCLUDED_BASES:
                 excluded.append({**p, "reason": "non-meme base asset"})
                 continue
