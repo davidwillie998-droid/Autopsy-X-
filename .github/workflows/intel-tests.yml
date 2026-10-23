@@ -9,10 +9,11 @@ on:
 permissions:
   contents: read
 
-# Push and pull_request both fire for a PR branch. Normalize both event types
-# to the same branch name so they share one concurrency group.
+# Push and pull_request both fire for a PR branch. Keep their concurrency groups
+# separate: sharing one group with cancel-in-progress can cancel the very PR
+# check we need to report, depending on which event starts last.
 concurrency:
-  group: intel-tests-${{ github.event.pull_request.head.ref || github.ref_name }}
+  group: intel-tests-${{ github.event.pull_request.head.ref || github.ref_name }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
