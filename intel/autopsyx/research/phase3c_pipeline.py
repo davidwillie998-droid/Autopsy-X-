@@ -26,6 +26,24 @@ ROOT = d3c.ROOT
 HYPOTHESIS_IDS = contract.ELIGIBLE_IDS  # same tuple object Phase 3B uses; not redefined
 MIN_SAMPLE = contract.MIN_SAMPLE  # same int Phase 3B uses; not redefined or relaxed
 
+# Exploratory coverage indicator only; never changes the frozen formal decision gate.
+EXPLORATORY_PILOT_MIN_SAMPLE = 70
+
+
+def sample_gate(n_tokens: int) -> dict:
+    """Report exploratory coverage separately from the unchanged formal sample gate."""
+    if isinstance(n_tokens, bool) or not isinstance(n_tokens, int) or n_tokens < 0:
+        raise ValueError("n_tokens must be a non-negative integer")
+    return {
+        "distinct_tokens": n_tokens,
+        "exploratory_pilot_minimum": EXPLORATORY_PILOT_MIN_SAMPLE,
+        "formal_minimum": MIN_SAMPLE,
+        "exploratory_pilot_eligible": n_tokens >= EXPLORATORY_PILOT_MIN_SAMPLE,
+        "formal_sample_minimum_met": n_tokens >= MIN_SAMPLE,
+        "note": "Exploratory pilot eligibility is not formal readiness approval and does not change hypothesis classification.",
+    }
+}
+
 
 # ------------------------------------------------------------ replication ----
 def per_archive_breakdown(rows: list[dict], target: str) -> dict:
@@ -191,6 +209,7 @@ def run(work: Path) -> dict:
         r["oos"] = oos
         r["classification"], r["reason"] = classify_hypothesis_3c(
             hid, r.get("n_distinct_tokens", 0), r.get("n_rows_joined", 0), r.get("targets", {}), per_archive, oos)
+        r["sample_gate"] = sample_gate(r.get("n_distinct_tokens", 0))
         if hid == "H10":
             r["replication_audit"] = h10_replication_audit(rows, archive_names)
 
@@ -202,6 +221,12 @@ def run(work: Path) -> dict:
         "included_archives": archive_names, "new_archives_excluded": excluded_new, "contamination": contamination,
         "deduplication": dedup_report, "data_audit": audit, "hypotheses": results, "overall_classification": overall,
         "min_sample": MIN_SAMPLE, "horizon_steps": contract.HORIZON_STEPS,
+        "exploratory_pilot": {
+            "minimum_distinct_tokens_per_hypothesis": EXPLORATORY_PILOT_MIN_SAMPLE,
+            "formal_minimum_distinct_tokens_per_hypothesis": MIN_SAMPLE,
+            "changes_formal_classification": False,
+            "readiness_approved": False,
+        },
     }
 
 
