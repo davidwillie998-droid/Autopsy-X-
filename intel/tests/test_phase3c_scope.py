@@ -142,7 +142,7 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
     )
     substitute(
         "    def take(stratum: str, pool_list: list[dict], k: int) -> None:\n"
-        "        pool_list = sorted(pool_list, key=lambda p: \"pool\")  # order-independent sampling\n",
+        "        pool_list = sorted(pool_list, key=lambda p: p[\"pool\"])  # order-independent sampling\n",
         "    def take(stratum: str, pool_list: list[dict], k: int) -> None:\n"
         "        pool_list, prior_excluded = _exclude_prior_tokens(pool_list, prior_tokens)\n"
         "        for row in prior_excluded:\n"
@@ -150,7 +150,7 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
         "            if token not in prior_excluded_tokens:\n"
         "                excluded.append(row)\n"
         "                prior_excluded_tokens.add(token)\n"
-        "        pool_list = sorted(pool_list, key=lambda p: \"pool\")  # order-independent sampling\n"
+        "        pool_list = sorted(pool_list, key=lambda p: p[\"pool\"])  # order-independent sampling\n"
     )
     substitute(
         "    sel = {\"seed\": plan.seed, \"strata_targets\": plan.strata, \"selected_at_ms\": f.now_ms(),\n"
