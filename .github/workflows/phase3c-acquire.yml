@@ -83,9 +83,9 @@ jobs:
           request_path = Path(tempfile.gettempdir()) / "phase3c-request-with-exclusions.json"
           request = json.loads(Path("datasets/phase3c/REQUEST.json").read_text(encoding="utf-8"))
           request["excluded_tokens"] = sorted(known)
-          request_path.write_text(json.dumps(request, sort_keys=True) + "\\n", encoding="utf-8")
+          request_path.write_text(json.dumps(request, sort_keys=True) + "\n", encoding="utf-8")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"request_path={request_path}\\n")
+              output.write(f"request_path={request_path}\n")
           print(f"Built request excluding {len(known)} previously archived token addresses")
           PY
       - name: Acquire
