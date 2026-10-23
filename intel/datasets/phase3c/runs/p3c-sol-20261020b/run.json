@@ -1,0 +1,731 @@
+{
+  "code_version": "649d372aef4bf21f0129551c7848c8d562a56e12",
+  "enrichment": [
+    {
+      "funding": {
+        "address": "HmSoSL4AhmxDphfSD93anyogSgUdfPjwLzy5tuuQfzp8",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "liquidity": {
+        "address": "A8jwdkn5TPFPLPc6LmoJ8DPJzgZBReXDKYawVj3Adxs5",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "Edt7HRHSYbPwgmvjN7yjoikvH5M7hFdNcr78uFSd5yNa"
+    },
+    {
+      "funding": {
+        "address": "6BbdqJCAJ7WCWhU5GqkrF2pbL2ywGrsPpRcSxGFzXex7",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 60,
+        "signatures_not_fetched": 30,
+        "transactions_requested": 30
+      },
+      "liquidity": {
+        "address": "BLjvc4NjYCyPtUv68FghNXN47LoLah5E2rWYiyxyfzzU",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "error",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "B44UptqVg1fnkc7eUJy1TmbyGxUnsgmDg1dciMsMxsM8"
+    },
+    {
+      "funding": {
+        "address": "9rgvaHDZexB6aCoqjXQU91cUsE1XW9GWkGhFg3azNmgK",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "liquidity": {
+        "address": "DTqC98n3FmV4eDF9a6NQDZ7wue3aGb3LjjEqng4Dd796",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "5h86r9mEnhhpy8kXU6vYUQLvkzLmmCSstTxdVLYDURFG"
+    },
+    {
+      "funding": "not_requested: creator address not observed",
+      "liquidity": {
+        "address": "EKJHwhNDgU819poBiVL2GLjtwEFgRE83Kuh1Agfxv53B",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 80,
+        "signatures_not_fetched": 50,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "5je7Nbhg4sETY8GEALrdTHC51BeRRipWZkcjUfia2PqU"
+    },
+    {
+      "funding": "not_requested: creator address not observed",
+      "liquidity": {
+        "address": "HxA6SKW5qA4o12fjVgTpXdq2YnZ5Zv1s7SB4FFomsyLM",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "cbbtcf3aa214zXHbiAZQwf4122FBYbraNdFqgw4iMij"
+    },
+    {
+      "funding": "not_requested: creator address not observed",
+      "liquidity": {
+        "address": "PNYTjfdF5A3PaGStXjWjcUfEt1CPPogwUxhFehr2qXK",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "2y48YY37oS7n94BSGKUrYhGCbxVTgGRZDqCfAjJ5yzG4"
+    },
+    {
+      "funding": {
+        "address": "4wDf9k9GaDx7DTWfE9MeEo7gKtV8j8s7dpnnW2prRTCA",
+        "history_truncated": false,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 135,
+        "signatures_not_fetched": 105,
+        "transactions_requested": 30
+      },
+      "liquidity": {
+        "address": "8BtLDY3sdW5U6oAukGhxxehWotF1Q23uwYpQZM7ckn1X",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 4,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 4
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "CYAWx46fin1AbLr54N2QFLHYXdouUpcwEJ7MqtjQpump"
+    },
+    {
+      "funding": {
+        "address": "51NkBNc7RVwXLv7C6rivNcENrnEfFg3LiWDXeyCX4hRL",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "liquidity": {
+        "address": "CJjgjGcomFomrxjnszGiRYFNHYkMp4f7p4M4LL8CngsQ",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "error",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "44KU8MoAMgGfxMmew33vF3m5p54PAWHjvA158UVZpump"
+    },
+    {
+      "funding": {
+        "address": "BTWHyeKAvZytzKVQ3j5fXPCuiWVScUwPGdP4UxwV9Z91",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 83,
+        "signatures_not_fetched": 53,
+        "transactions_requested": 30
+      },
+      "liquidity": {
+        "address": "DdpBKtHcnjMR1KTQWQBK69FGVeV4fPE4rYKA3aVZDtsH",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "error",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "B8SgiEDA3nTRW7SuSnruCAWTqJz8FFdGswXJC6uCpump"
+    },
+    {
+      "funding": {
+        "address": "GtNSwfBPvvjBEDWcECNkc3kkCQTEeU8wKzuquaz3P4pz",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 0,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 0
+      },
+      "liquidity": {
+        "address": "F7es2vcyxQcB2QQuUobM6KfrnT7kq8n3CzK5uFFFthnp",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 7,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 7
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "49FQdeB3WBkWiy19Jhs5QhRufMLNZs76RQGJsZFzpump"
+    },
+    {
+      "funding": {
+        "address": "CZutgB7w4WbkeCEwFv1qxhkeGyjVGn9XXPYxjwQo3NaM",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "liquidity": {
+        "address": "6iep3EgqksbZwgzMBCyAJtiVtVYkCgL9BnPBEwLR8AGQ",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "33jENUQnjoitkMFpvNJcSHyLAHFWJuHwT6E3E8CNpump"
+    },
+    {
+      "funding": {
+        "address": "BeUinB8cNsxcYNBwYuGACaLEMgjddY28njjwkyNaNf4k",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 57,
+        "signatures_not_fetched": 27,
+        "transactions_requested": 30
+      },
+      "liquidity": {
+        "address": "C73M9QWLSAY16TKQEsEjSThBVXwMpbg94ijZRzYCxbiR",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "error",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "3Xq3nspu91fEzGbzi9kSJ4FYAnBeeiLHPoxQx6cPSQj1"
+    },
+    {
+      "funding": {
+        "address": "Bkti1kEPFjRVTLnydr5ZdFYo9DBqyngYZzH1zNpkwuR6",
+        "history_truncated": false,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 135,
+        "signatures_not_fetched": 105,
+        "transactions_requested": 30
+      },
+      "liquidity": {
+        "address": "FQ75g9yWEK5jhyjVX3vWyXQ8AXKYJFNXaM5dYDBfqYyb",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "not_applicable",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "EU1MHvQvBoJ7DnLorurze1hwR2JWuyoKyAmkwymwpump"
+    },
+    {
+      "funding": {
+        "address": "5Yix3R5nj7iUVVDfrAPvbPKM9j18oAto8eiJ5BjXUn7g",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "liquidity": {
+        "address": "HSXNa3Rc2np5qu17bcMm3A69567KyQFicjjRF569A8H3",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "tybY2LFHH91VdoPJJkkFAsYaD7wnQQAm3BYg1x3mint"
+    },
+    {
+      "funding": {
+        "address": "gVDXhoGbePACvSqN7CZBtQXFW9eyJwsgudPEwSydAkx",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "liquidity": {
+        "address": "YQ4NNeQxHAtdcB8ohx21eJ9U8eTzxNRvGNHkRaA4Pnw",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "Cbkg5w7V7W2J2sUmecnyN825CbvwvXwasfhduVtNpump"
+    },
+    {
+      "funding": {
+        "address": "jjse5z4k1Ks5xKw2hs3a6zXCcLpvHLcafVQ4Ar82zkD",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "liquidity": {
+        "address": "zxTpi4BtaWX3mgdAPoezkMD1hxx8CdeCfrqXMWvSCLX",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "error",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "6GmAFSYs4gk3FDao5FzzySQpPZaWsa4rUJHacpMpUNgx"
+    },
+    {
+      "funding": {
+        "address": "BRs6AL5t2A4zSBegv3vNzJzZvZt5QwJU7iBV7nsKESs9",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 0,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 0
+      },
+      "liquidity": {
+        "address": "3AtdrBD39FoHQf8UxWjgyupCpzyx1Zt6uN8z457irKH7",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 2,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 2
+      },
+      "news_social": {
+        "gdelt": "error",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "77DRfHw7d7QrygVdtGA3DipG1e72unCLBEi6x87Jpump"
+    },
+    {
+      "funding": {
+        "address": "BFNE3fmhhUPL9hWy4j4SU45hXojQCd5hkAdjoo7AAstT",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "liquidity": {
+        "address": "94K6x7bFqzsyi56m7LLhHYrSQWM2NP9NzZyG1xxchtnF",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "error",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "C861QFVAM6k2TufHugdwGx2ZQnfCnGEt38SzFeNNpump"
+    },
+    {
+      "funding": {
+        "address": "3Wcd2z5hrmnMDE76nasW9p1gC7KoEMzYBWdrr85LRGYA",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 7,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 7
+      },
+      "liquidity": {
+        "address": "AkBMx3qpNfbjaj6SLEUqeuK3ZWs4N82BYpzXg1hA7LiK",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 4,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 4
+      },
+      "news_social": {
+        "gdelt": "error",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "H4uJUjmR9BHU1oP3Y8jZ6RQygqG4sLJyWomDmP82pump"
+    },
+    {
+      "funding": {
+        "address": "G6c8eFLPMgwnDk925vXwRiMe6XseDuSxra4enHuXvaMe",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 6,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 6
+      },
+      "liquidity": {
+        "address": "D5ZDKhGUw3Ad5rL7kKNJ4fVP3ihwHLcjdR9nTipaRJBm",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 3,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 3
+      },
+      "news_social": {
+        "gdelt": "error",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "HZJv6Rtrs5cJZZFqRjCnSCj2bA6Fp64kfvuMYHiepump"
+    },
+    {
+      "funding": {
+        "address": "9yw2bbTRX8u8Em6mVBX9pNunKUG4auWyv9kDRjDtbJc2",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "liquidity": {
+        "address": "DxofUMzQPiPYKMjhkDzK8iJNfLdBj2envQimZpY4nG9v",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "ok",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "6ANYuhkTpxJgSTApV8kKKFgLk3Bc3vxbectWTgKDLWrm"
+    },
+    {
+      "funding": {
+        "address": "AneBRKi4jEZDsG6YfJEpDidyMbaDxEEMkEB9gHoovrY",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "liquidity": {
+        "address": "GCjt3Z8BVJmenM16TjQMWb2woJgA8dgqSBcPdVsA5rGW",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 4,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 4
+      },
+      "news_social": {
+        "gdelt": "error",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "5LruJSdN4AJbnHtZ3GW8MVtGqEa3ViuGYPWLBRTJpump"
+    },
+    {
+      "funding": {
+        "address": "CkGrnKHbHwA9QLEH7WdUqyQ4G2XCbt3XL5ExxP6kCzMU",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 8,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 8
+      },
+      "liquidity": {
+        "address": "ZNhvA1FDsXRVJjx1QhTSZ8U456HWb1rnJrPikiBVZCV",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "error",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "91jrx6vepAd6SkUJvXGXqKnmN1fsGiM8ymCRT7oy4hBJ"
+    },
+    {
+      "funding": {
+        "address": "ANqdpPzoX8HQCRwpQ6aGhXENfjMkcdbg6MTAR9JF2eGR",
+        "history_truncated": false,
+        "pages": 1,
+        "pagination_gap": null,
+        "purpose": "funding",
+        "signatures": 9,
+        "signatures_not_fetched": 0,
+        "transactions_requested": 9
+      },
+      "liquidity": {
+        "address": "rrHCCuzgrLqGcacdszqMmxh1nWTQ8Ft5Fq7xc33mSNM",
+        "history_truncated": true,
+        "pages": 2,
+        "pagination_gap": null,
+        "purpose": "liquidity",
+        "signatures": 200,
+        "signatures_not_fetched": 170,
+        "transactions_requested": 30
+      },
+      "news_social": {
+        "gdelt": "error",
+        "reddit": "error"
+      },
+      "round": 0,
+      "token": "CH9oKtvyCC9RsxnF282NAWN13wFeEwPDkih2ebtNpump"
+    }
+  ],
+  "execution": "none: acquisition only, no orders",
+  "plan": {
+    "backfill_pages": 2,
+    "circuit_waits": 5,
+    "cycle_s": 60,
+    "ds_rate_per_s": 2.0,
+    "duration_s": 7200,
+    "excluded_tokens": [
+      "14s7xS1xtPaCgsiVdV53BimNqBbzQ1h2rpVfo7CeCrYS",
+      "2AVjqmGbMqg7rSyHVv2deVdggsBgBtu1Bi69BUvE5WRv",
+      "2MooLcRaMMud7H4bGJR3TyZ7ZDggZiVte4LaZtsVpump",
+      "3UEQ58XYczpXNVFAAtdu8iXMrd1ELfYrSF41fcGYRLYw",
+      "3sptUva7xnNvq7mgWPXDVLzhou8j3WSWxoBHpp8A6gnK",
+      "4EndSFFpYMFoXHwUdLbR7QCUBeigdeEeYqCQX2Ydhook",
+      "4kyKa2RdyUhv4txbG5LxJHALaZ6NkHHgUuH1Vsdcbonk",
+      "4mpyrARsWyLWncvKtHf9aoddnfv24QmVBtUFU4ic5wUp",
+      "4nzTZVUnd4crQjn2kh3m61ChDsAYf3HhbWYqZfuupump",
+      "5MNLoKPEZ2xvRVuRLjxKZuGc6Za6KbgNu6tRG3CApump",
+      "5QKRmNUUCGXRSGC1X3gwt2pM3qnjKqvmqFG4FdSspump",
+      "6UjYHb2RPQ1wfZ59qGXhX7Ysdfmf18BDEfuuxjxYpump",
+      "6hTLdzZaaCjmqtn7RtaEMQsCbXT5Pg8q76tRViEGpump",
+      "6qKkzJ9eYBH6oD2GSgY9UgvLW43vtgK65KjszvCyjups",
+      "7VertkgF9KLhxxJXHX6uaWuoYZTP9LdGj2bWmVXVpump",
+      "7ax8kvEhYuwjk4sFjZj4kNbDDhsbfTQLZ1MphzzVpump",
+      "7hBFj5rH7mLzcCkZHU5jXAv9F7n4MB9afxdzoe4upump",
+      "8RpybikpGLbKsYJ4FXz12ExDz89R7VXAUZ3JXNcKpump",
+      "8tT2gSy1dU2auqUAceMntELVQmhovYfUeMqiuyYLt69u",
+      "8wJkC9tFb24UxXcwqGRyFRbngkPaCcQSBo5fnkvopump",
+      "98S3A9sgLHhdUHUdpviZQrbEGsXFMf4ZXfNRBpeMpump",
+      "9y2CFbwmt2VfAuNsyfD4fpwVLdeswNE9bMxYgxa3pump",
+      "B2bEcw2eFAs8wopgWFtbzvx7zA8K9bnWJ3bbuTXmo5g",
+      "BJVp367xtDii597zuomJ7YREusxX69Cq1WmgZN2Mpump",
+      "BXoHJddsWJLHtAopeiSbKUSELsu8hSFMs8baGMDkpump",
+      "BjZmxrTsxvHWnBgvsovY8FLKQ3cYDtXkqqB47uFqbUY5",
+      "Bq4GWwcoSKnPpTbe6LXMrMkDwJR9MqFfX3dhpXZpump",
+      "CCpQFmAiRxYn9twQ3ArgZHzLKx3gP3KarpBunj5oURji",
+      "CQDs2BaPg21ATusn1qowTYabw61YmtLmNcd88pixpump",
+      "Cci3e47gSAqe6U7Z2ZjEtngmmiTrq1bEdFyQjPXBvDWD",
+      "Ed958fLKDxiB4cwVMfWBhCSEEf3MFos4UTYceiujAsre",
+      "EpEfnZxQyiBXppSKi8sncc8w4corn1UJbF9G91fQpump",
+      "FeY3fwbvsm72ENw2UbiEHFKqmGj4Bu85UAsrfiX7Gifj",
+      "GTBxUiw6wJdmmkCGZgRHLyYxqu1vG4KtRpeox6yDpump",
+      "GrHgi7F9YLhMuZjFsB7PbfchGcJrBWAfPYbKEV8Jrxqk",
+      "GxNDvyAqyfFeZr7GgXC96jXTWdENncptL1xK25V6pump",
+      "JKaNu32Ld4wpjT9iQiU9GMiPotf7eLcS2xsUaHkNkfs",
+      "JhqjLa2Cyq37b8Z9zfCcezLNLw5vpGGN9MwN3iZpump",
+      "dBRbUYLA9Y7QKanViRTjhPvafyHVwtGKYGocbTwpump"
+    ],
+    "gt_min_rate_per_s": 0.05,
+    "gt_rate_per_s": 0.15,
+    "holders_per_cycle": 2,
+    "lag_ms": 60000,
+    "min_selected_tokens": 20,
+    "network": "solana",
+    "new_pool_pages": 5,
+    "ohlcv_every": 1,
+    "phase3a": true,
+    "poll_ohlcv_limit": 5,
+    "rpc_max_pages": 2,
+    "rpc_max_txs": 30,
+    "rpc_page_limit": 100,
+    "rpc_rate_per_s": 2,
+    "seed": 20261021,
+    "strata": {
+      "established": 6,
+      "quiet_young": 4,
+      "trending": 6,
+      "young": 8
+    },
+    "universe_file": null
+  },
+  "poll_window_cycles": 0,
+  "poll_window_duration_s": 7200,
+  "poll_window_elapsed_s": 0.0,
+  "poll_window_started_ms": 1792776488881,
+  "runner": "GitHub Actions 1000001035",
+  "started_ms": 1792771771312,
+  "universe": {
+    "fingerprint": "bd38915061934c172889f145d0d34b04cfc5a2df9a51a766b72d7430d33fe846",
+    "source": "frozen_this_run"
+  }
+}

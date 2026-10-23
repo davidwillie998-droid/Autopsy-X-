@@ -1,0 +1,13 @@
+{
+  "note": "Lifecycle success does not by itself establish the frozen 85-token statistical readiness requirement.",
+  "overall_status": "FAILED_OR_INCOMPLETE",
+  "readiness_approved": false,
+  "run_id": "p3c-sol-20261020b",
+  "step_outcomes": {
+    "acquisition": "cancelled",
+    "provenance_verification": "skipped",
+    "seal": "skipped",
+    "validation": "success"
+  },
+  "workflow_run_id": "39984346615"
+}
