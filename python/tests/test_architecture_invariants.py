@@ -323,3 +323,18 @@ def test_partial_close_rechecks_position_ownership_after_server_fill():
         "bool              Flip", 1
     )[0]
     assert "Position ownership changed during partial close" in partial_block
+
+
+def test_successful_stop_modification_confirms_installed_broker_sl_tp():
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    modify_block = execution.split("bool              ModifyStops", 1)[1].split(
+        "bool              OpenPendingStop", 1
+    )[0]
+    done_i = modify_block.find("retcode!=TRADE_RETCODE_DONE")
+    confirm_i = modify_block.find("if(!PositionSelect(symbol))", done_i)
+    mismatch_i = modify_block.find("installed SL/TP mismatch", confirm_i)
+    success_i = modify_block.find("errorReason=\"\";\n      return(true);", mismatch_i)
+    assert done_i >= 0 and confirm_i > done_i
+    assert "POSITION_MAGIC)!=m_magic" in modify_block[confirm_i:mismatch_i]
+    assert "SYMBOL_TRADE_TICK_SIZE" in modify_block[confirm_i:mismatch_i]
+    assert mismatch_i > confirm_i and success_i > mismatch_i
