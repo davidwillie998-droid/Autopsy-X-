@@ -119,12 +119,14 @@ def test_phase3c_workflow_invalidates_complete_run_after_pipeline_failure():
         "Record failed or interrupted acquisition"
     ) < workflow.index("Commit raw archive and verification evidence")
 
+
 def test_phase3c_request_preservation_step_has_no_stray_heredoc_terminator():
     workflow = (ROOT / ".github" / "workflows" / "phase3c-acquire.yml").read_text()
     request_step = workflow.split("- name: Preserve effective and frozen request inputs", 1)[1]
     request_step = request_step.split("- name: Snapshot Phase 3C raw manifest", 1)[0]
     assert 'request_hashes.sha256"\n          PY' not in request_step
     assert 'request_hashes.sha256"\n      - name:' in workflow
+
 
 def test_phase3c_dispatch_uses_maximum_frozen_rpc_enrichment_budget():
     workflow = (ROOT / ".github" / "workflows" / "phase3c-acquire.yml").read_text()
@@ -145,12 +147,12 @@ def test_phase3c_dispatch_uses_maximum_frozen_rpc_enrichment_budget():
     assert request["rpc_max_pages"] == 1
     assert request["rpc_max_txs"] == 8
 
+
 def test_phase3c_reserve_trade_and_ohlcv_polling_share_the_rotating_subset():
     source = (ROOT / "intel" / "autopsyx" / "data" / "acquire.py").read_text()
     poll = source[source.index("def poll_cycle("):source.index("\ndef run(")]
     assert poll.index("poll_picked = picked") < poll.index('f.get(gt.NAME, "gt.pools_multi"')
-    reserve_block = poll.split('f.get(gt.NAME, "gt.pools_multi"', 1)[1].split('for i in range(0, len(picked)', 1)[0]
-    assert "pools = [p[\"pool\"] for p in poll_picked]" in poll
+    assert 'pools = [p["pool"] for p in poll_picked]' in poll
     assert "for i in range(0, len(poll_picked), ds.MAX_PAIRS_PER_CALL)" in poll
     assert "chunk = poll_picked[i:i + ds.MAX_PAIRS_PER_CALL]" in poll
     assert "for p in poll_picked:" in poll
@@ -159,12 +161,10 @@ def test_phase3c_reserve_trade_and_ohlcv_polling_share_the_rotating_subset():
     assert "pools = [p[\"pool\"] for p in picked]" not in poll
 
 
-
-
 def test_intelligence_ci_normalizes_push_and_pull_request_concurrency_group():
     workflow = (ROOT / ".github" / "workflows" / "intel-tests.yml").read_text()
-    assert "group: intel-tests-${{ github.event.pull_request.head.ref || github.ref_name }}" in workflow
-    assert "group: intel-tests-${{ github.event.pull_request.head.ref || github.ref }}" not in workflow
+    assert "group: intel-tests-${{ github.event.pull_request.head.ref || github.ref_name }}-${{ github.event_name }}" in workflow
+    assert "group: intel-tests-${{ github.event.pull_request.head.ref || github.ref_name }}" not in workflow
     assert "cancel-in-progress: true" in workflow
     assert "timeout-minutes: 20" in workflow
 
