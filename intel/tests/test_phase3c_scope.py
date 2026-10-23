@@ -150,8 +150,13 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
     substitute(
         "    sel = {\"seed\": plan.seed, \"strata_targets\": plan.strata, \"selected_at_ms\": f.now_ms(),\n"
         "           \"candidates\": {k: len(v) for k, v in cands.items()} | {\"quiet_young\": len(quiet)},\n",
+        "    prior_excluded_tokens = {\n"
+        "        row[\"token\"] for row in excluded\n"
+        "        if row.get(\"reason\") == \"token already present in prior evidence archive\"\n"
+        "    }\n"
         "    sel = {\"seed\": plan.seed, \"strata_targets\": plan.strata, \"selected_at_ms\": f.now_ms(),\n"
-        "           \"prior_distinct_tokens_excluded\": len(prior_tokens),\n"
+        "           \"prior_token_addresses_available\": len(prior_tokens),\n"
+        "           \"prior_distinct_tokens_excluded\": len(prior_excluded_tokens),\n"
         "           \"candidates\": {k: len(v) for k, v in cands.items()} | {\"quiet_young\": len(quiet)},\n"
     )
 
