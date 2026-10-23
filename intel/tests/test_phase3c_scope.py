@@ -110,6 +110,52 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
         "    min_selected_tokens: int = 0\n"
     )
     substitute(
+        "    min_selected_tokens: int = 0\n",
+        "    min_selected_tokens: int = 0\n"
+        "    # Token addresses already present in prior eligible evidence archives.\n"
+        "    # Phase 3C selection skips these to avoid spending budget on duplicate universes.\n"
+        "    excluded_tokens: list[str] = field(default_factory=list)\n"
+    )
+    substitute(
+        "def select_universe(f: Fetcher, plan: Plan) -> dict:\n",
+        "def _exclude_prior_tokens(pool_list: list[dict], prior_tokens: set[str]) -> tuple[list[dict], list[dict]]:\n"
+        "    \"\"\"Split candidates into novel tokens and auditable prior-token exclusions.\"\"\"\n"
+        "    novel, excluded = [], []\n"
+        "    for pool in pool_list:\n"
+        "        if pool[\"token\"] in prior_tokens:\n"
+        "            excluded.append({**pool, \"reason\": \"token already present in prior evidence archive\"})\n"
+        "        else:\n"
+        "            novel.append(pool)\n"
+        "    return novel, excluded\n\n"
+        "\n"
+        "def select_universe(f: Fetcher, plan: Plan) -> dict:\n"
+    )
+    substitute(
+        "    picked: list[dict] = []\n"
+        "    tokens: set[str] = set()\n"
+        "    excluded: list[dict] = []\n",
+        "    picked: list[dict] = []\n"
+        "    tokens: set[str] = set()\n"
+        "    prior_tokens = set(plan.excluded_tokens)\n"
+        "    excluded: list[dict] = []\n"
+    )
+    substitute(
+        "    def take(stratum: str, pool_list: list[dict], k: int) -> None:\n"
+        "        pool_list = sorted(pool_list, key=lambda p: p[\"pool\"])  # order-independent sampling\n",
+        "    def take(stratum: str, pool_list: list[dict], k: int) -> None:\n"
+        "        pool_list, prior_excluded = _exclude_prior_tokens(pool_list, prior_tokens)\n"
+        "        excluded.extend(prior_excluded)\n"
+        "        pool_list = sorted(pool_list, key=lambda p: p[\"pool\"])  # order-independent sampling\n"
+    )
+    substitute(
+        "    sel = {\"seed\": plan.seed, \"strata_targets\": plan.strata, \"selected_at_ms\": f.now_ms(),\n"
+        "           \"candidates\": {k: len(v) for k, v in cands.items()} | {\"quiet_young\": len(quiet)},\n",
+        "    sel = {\"seed\": plan.seed, \"strata_targets\": plan.strata, \"selected_at_ms\": f.now_ms(),\n"
+        "           \"prior_distinct_tokens_excluded\": len(prior_tokens),\n"
+        "           \"candidates\": {k: len(v) for k, v in cands.items()} | {\"quiet_young\": len(quiet)},\n"
+    )
+
+    substitute(
         '    if not picked:\n'
         '        meta["status"] = "BLOCKED: no pools selectable (discovery failed)"\n'
         '        raw.write_json("run.json", meta)\n'
