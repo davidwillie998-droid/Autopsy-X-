@@ -25,6 +25,13 @@ def test_phase3c_request_accepts_at_least_frozen_minimum():
     assert validate_phase3c_request(valid_request(), 20) == 24
 
 
+def test_phase3c_rejects_strata_target_below_selected_minimum():
+    request = valid_request()
+    request["min_selected_tokens"] = 25
+    with pytest.raises(ValueError, match="below min_selected_tokens 25"):
+        validate_phase3c_request(request, 20)
+
+
 def test_phase3c_request_rejects_undersized_universe():
     request = valid_request()
     request["strata"] = {
