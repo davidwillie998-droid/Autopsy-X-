@@ -348,6 +348,25 @@ public:
          errorReason = StringFormat("Modify failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
          return(false);
         }
+
+      // A DONE retcode confirms request processing, not that the requested protection is
+      // still installed on the live position. Re-read broker state before reporting success.
+      if(!PositionSelect(symbol))
+        { errorReason="Stop modification acknowledged but position is no longer present"; return(false); }
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+        { errorReason="Stop modification acknowledged but position ownership changed"; return(false); }
+      double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+      double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+      double tolerance=MathMax(point,tickSize)*0.51;
+      if(tolerance<=0.0) tolerance=0.0000001;
+      double installedSl=PositionGetDouble(POSITION_SL);
+      double installedTp=PositionGetDouble(POSITION_TP);
+      if(MathAbs(installedSl-slPrice)>tolerance || MathAbs(installedTp-tpPrice)>tolerance)
+        {
+         errorReason=StringFormat("Stop modification acknowledged but installed SL/TP mismatch (SL %.10f/%.10f, TP %.10f/%.10f)",
+                                  installedSl,slPrice,installedTp,tpPrice);
+         return(false);
+        }
       errorReason="";
       return(true);
      }
