@@ -60,6 +60,11 @@ def validate_phase3c_request(request: object, minimum: int = 20) -> int:
             f"requested stratum total {strata_total} is below min_selected_tokens "
             f"{selected_minimum}; refusing acquisition"
         )
+    excluded_tokens = request.get("excluded_tokens", [])
+    if not isinstance(excluded_tokens, list) or any(
+        not isinstance(token, str) or not token for token in excluded_tokens
+    ):
+        raise ValueError("excluded_tokens must be a list of non-empty token-address strings")
     return strata_total
 
 
