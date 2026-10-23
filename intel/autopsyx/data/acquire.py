@@ -275,6 +275,28 @@ def default_clients(plan: Plan, now_ms: Callable[[], int]) -> dict[str, HttpClie
     }
 
 
+def _h1_transaction_count(h1: object) -> int | float | None:
+    """Return an hourly transaction total only when both counts are observed and valid.
+
+    Missing provider fields are unknown, not zero; otherwise incomplete records
+    are incorrectly classified into the quiet_young stratum.
+    """
+    import math
+
+    if not isinstance(h1, dict):
+        return None
+    buys, sells = h1.get("buys"), h1.get("sells")
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+        for value in (buys, sells)
+    ):
+        return None
+    return buys + sells
+
+
 def _pools_from(e: ManifestEntry, body: bytes | None) -> list[dict]:
     if body is None:
         return []
@@ -295,7 +317,7 @@ def _pools_from(e: ManifestEntry, body: bytes | None) -> list[dict]:
         h1 = tx.get(p.pool, {})
         out.append({"pool": p.pool, "token": p.token, "dex": p.venue, "created_ts": p.created_ts,
                     "liquidity_usd": s.liquidity_usd if s else None,
-                    "h1_txns": (h1.get("buys") or 0) + (h1.get("sells") or 0) if isinstance(h1, dict) else None,
+                    "h1_txns": _h1_transaction_count(h1),
                     "total_supply": metas[p.token].total_supply if p.token in metas else None})
     return out
 
