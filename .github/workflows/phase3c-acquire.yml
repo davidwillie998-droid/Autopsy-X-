@@ -57,13 +57,22 @@ jobs:
           import tempfile
           from pathlib import Path
 
+          from autopsyx.data import provenance
+          from autopsyx.data.raw import RawStore
+
           datasets = Path("datasets")
           known = set()
-          # Exclude tokens already represented in archived evidence, not just
-          # duplicates from this run. Only sealed/raw archives with a manifest
-          # are considered; both frozen universes and selections are supported.
+          # Exclude tokens only from complete, independently provenance-verified
+          # archives. Invalid/incomplete archives must not suppress reacquisition.
           for manifest in datasets.rglob("manifest.jsonl"):
               archive = manifest.parent
+              try:
+                  verification = provenance.verify(str(archive))
+                  metadata = RawStore(archive).read_json("run.json") or {}
+                  if not verification.get("verified") or metadata.get("status") != "COMPLETE":
+                      continue
+              except (OSError, ValueError, KeyError, TypeError):
+                  continue
               for filename, collection in (("selection.json", "picked"), ("universe.json", "pools")):
                   path = archive / filename
                   if not path.is_file():
@@ -76,8 +85,6 @@ jobs:
                           if isinstance(row, dict) and isinstance(row.get("token"), str) and row["token"]
                       )
                   except (OSError, json.JSONDecodeError, AttributeError, TypeError):
-                      # A malformed historical archive must not crash discovery;
-                      # provenance/evidence validation reports its own failure.
                       continue
 
           request_path = Path(tempfile.gettempdir()) / "phase3c-request-with-exclusions.json"
