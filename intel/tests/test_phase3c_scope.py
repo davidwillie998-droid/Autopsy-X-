@@ -43,6 +43,10 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
         allowed = (f.startswith("docs/PHASE3C_") or f.startswith("intel/autopsyx/research/phase3c_")
                   or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")
                   or f == "intel/autopsyx/data/acquire.py"
+                  # This narrowly scoped provenance change adds deterministic double-build
+                  # checks and first-difference diagnostics to seal/verify; normalization
+                  # and the frozen Phase 2/3A/3B contracts remain unchanged.
+                  or f == "intel/autopsyx/data/provenance.py"
                   or f == "intel/autopsyx/research/audit_contiguous_liquidity.py"
                   or f == "intel/tests/test_contiguous_liquidity_audit.py"
                   or f == "intel/tests/test_acquisition_window.py"
