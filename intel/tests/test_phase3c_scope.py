@@ -166,6 +166,36 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
     )
 
     substitute(
+        "def _pools_from(e: ManifestEntry, body: bytes | None) -> list[dict]:\\n",
+        "def _h1_transaction_count(h1: object) -> int | float | None:\\n"
+        "    \\"\\"\\"Return an hourly transaction total only when both counts are observed and valid.\\n"
+        "    Missing provider fields are unknown, not zero; otherwise incomplete records\\n"
+        "    are incorrectly classified into the quiet_young stratum.\\n"
+        "    \\"\\"\\"\\n"
+        "    import math\\n"
+        "\\n"
+        "    if not isinstance(h1, dict):\\n"
+        "        return None\\n"
+        "    buys, sells = h1.get(\\"buys\\"), h1.get(\\"sells\\")\\n"
+        "    if any(\\n"
+        "        isinstance(value, bool)\\n"
+        "        or not isinstance(value, (int, float))\\n"
+        "        or not math.isfinite(value)\\n"
+        "        or value < 0\\n"
+        "        for value in (buys, sells)\\n"
+        "    ):\\n"
+        "        return None\\n"
+        "    return buys + sells\\n"
+        "\\n"
+        "\\n"
+        "def _pools_from(e: ManifestEntry, body: bytes | None) -> list[dict]:\\n"
+    )
+    substitute(
+        '"h1_txns": (h1.get("buys") or 0) + (h1.get("sells") or 0) if isinstance(h1, dict) else None,',
+        '"h1_txns": _h1_transaction_count(h1),'
+    )
+
+    substitute(
         '    if not picked:\n'
         '        meta["status"] = "BLOCKED: no pools selectable (discovery failed)"\n'
         '        raw.write_json("run.json", meta)\n'
