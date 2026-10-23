@@ -60,11 +60,18 @@ jobs:
           from autopsyx.data import provenance
           from autopsyx.data.raw import RawStore
 
-          datasets = Path("datasets")
+          # Only prior Phase 3C run archives belong in this novelty set.
+          # Scanning every dataset under intel/ could let unrelated experiments
+          # suppress Solana tokens from the frozen Phase 3C universe.
+          archive_root = Path("datasets/phase3c/runs")
           known = set()
+          if archive_root.is_dir():
+              manifests = archive_root.rglob("manifest.jsonl")
+          else:
+              manifests = ()
           # Exclude tokens only from complete, independently provenance-verified
-          # archives. Invalid/incomplete archives must not suppress reacquisition.
-          for manifest in datasets.rglob("manifest.jsonl"):
+          # Phase 3C archives. Invalid/incomplete archives must not suppress reacquisition.
+          for manifest in manifests:
               archive = manifest.parent
               try:
                   verification = provenance.verify(str(archive))
