@@ -1,0 +1,113 @@
+import pytest
+
+from autopsyx.data.acquire import _exclude_prior_tokens, _h1_transaction_count
+from autopsyx.data.request_validation import (
+    distinct_token_count,
+    validate_minimum_strata,
+    validate_phase3c_request,
+)
+
+
+@pytest.mark.parametrize(
+    ("h1", "expected"),
+    [
+        ({"buys": 3, "sells": 2}, 5),
+        ({"buys": 0, "sells": 0}, 0),
+        ({}, None),
+        ({"buys": 4}, None),
+        ({"buys": None, "sells": 0}, None),
+        ({"buys": -1, "sells": 1}, None),
+        ({"buys": True, "sells": 1}, None),
+        ({"buys": float("nan"), "sells": 1}, None),
+        (None, None),
+    ],
+)
+def test_missing_or_invalid_hourly_counts_are_unknown_not_zero(h1, expected):
+    assert _h1_transaction_count(h1) == expected
+
+
+def valid_request():
+    return {
+        "run_id": "p3c-sol-test001",
+        "network": "solana",
+        "seed": 20261020,
+        "strata": {
+            "young": 8,
+            "quiet_young": 4,
+            "trending": 6,
+            "established": 6,
+        },
+    }
+
+
+def test_phase3c_request_accepts_at_least_frozen_minimum():
+    assert validate_phase3c_request(valid_request(), 20) == 24
+
+
+def test_phase3c_rejects_strata_target_below_selected_minimum():
+    request = valid_request()
+    request["min_selected_tokens"] = 25
+    with pytest.raises(ValueError, match="below min_selected_tokens 25"):
+        validate_phase3c_request(request, 20)
+
+
+def test_phase3c_request_rejects_undersized_universe():
+    request = valid_request()
+    request["strata"] = {
+        "young": 2, "quiet_young": 1, "trending": 1, "established": 1
+    }
+    with pytest.raises(ValueError, match="requires at least 20"):
+        validate_phase3c_request(request, 20)
+
+
+@pytest.mark.parametrize("strata", [
+    None,
+    {"young": 5, "quiet_young": 5, "trending": 5},
+    {"young": 5, "quiet_young": 5, "trending": 5, "established": 5, "other": 1},
+    {"young": True, "quiet_young": 5, "trending": 5, "established": 5},
+    {"young": -1, "quiet_young": 6, "trending": 6, "established": 6},
+])
+def test_invalid_strata_fail_closed(strata):
+    with pytest.raises(ValueError):
+        validate_minimum_strata(strata, 20)
+
+
+def test_phase3c_rejects_scope_and_unsafe_run_id():
+    request = valid_request()
+    request["network"] = "ethereum"
+    with pytest.raises(ValueError, match="frozen to network"):
+        validate_phase3c_request(request, 20)
+    request = valid_request()
+    request["run_id"] = "../overwrite"
+    with pytest.raises(ValueError, match="safe filename"):
+        validate_phase3c_request(request, 20)
+
+
+def test_count_distinct_token_addresses_not_pool_rows():
+    picked = [
+        {"pool": "pool-a", "token": "token-1"},
+        {"pool": "pool-b", "token": "token-1"},
+        {"pool": "pool-c", "token": "token-2"},
+        {"pool": "pool-d", "token": ""},
+        {"pool": "pool-e"},
+    ]
+    assert distinct_token_count(picked) == 2
+
+
+def test_phase3c_selection_excludes_tokens_already_in_prior_archives():
+    candidates = [
+        {"pool": "pool-old", "token": "token-old"},
+        {"pool": "pool-new", "token": "token-new"},
+    ]
+    novel, excluded = _exclude_prior_tokens(candidates, {"token-old"})
+    assert [row["token"] for row in novel] == ["token-new"]
+    assert len(excluded) == 1
+    assert excluded[0]["token"] == "token-old"
+    assert excluded[0]["reason"] == "token already present in prior evidence archive"
+
+
+def test_phase3c_rejects_malformed_prior_token_exclusion_list():
+    request = valid_request()
+    request["excluded_tokens"] = ["valid-token", ""]
+    with pytest.raises(ValueError, match="excluded_tokens must be a list"):
+        validate_phase3c_request(request, 20)

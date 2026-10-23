@@ -59,6 +59,12 @@ class Plan:
     rpc_page_limit: int = 100
     rpc_max_pages: int = 3
     rpc_max_txs: int = 40
+    # Optional fail-closed minimum for Phase 3C: do not spend collection budget
+    # unless discovery actually returns this many distinct token addresses.
+    min_selected_tokens: int = 0
+    # Token addresses already present in prior eligible evidence archives.
+    # Phase 3C selection skips these to avoid spending budget on duplicate universes.
+    excluded_tokens: list[str] = field(default_factory=list)
 
 
 class Fetcher:
@@ -269,6 +275,28 @@ def default_clients(plan: Plan, now_ms: Callable[[], int]) -> dict[str, HttpClie
     }
 
 
+def _h1_transaction_count(h1: object) -> int | float | None:
+    """Return an hourly transaction total only when both counts are observed and valid.
+
+    Missing provider fields are unknown, not zero; otherwise incomplete records
+    are incorrectly classified into the quiet_young stratum.
+    """
+    import math
+
+    if not isinstance(h1, dict):
+        return None
+    buys, sells = h1.get("buys"), h1.get("sells")
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+        for value in (buys, sells)
+    ):
+        return None
+    return buys + sells
+
+
 def _pools_from(e: ManifestEntry, body: bytes | None) -> list[dict]:
     if body is None:
         return []
@@ -289,9 +317,20 @@ def _pools_from(e: ManifestEntry, body: bytes | None) -> list[dict]:
         h1 = tx.get(p.pool, {})
         out.append({"pool": p.pool, "token": p.token, "dex": p.venue, "created_ts": p.created_ts,
                     "liquidity_usd": s.liquidity_usd if s else None,
-                    "h1_txns": (h1.get("buys") or 0) + (h1.get("sells") or 0) if isinstance(h1, dict) else None,
+                    "h1_txns": _h1_transaction_count(h1),
                     "total_supply": metas[p.token].total_supply if p.token in metas else None})
     return out
+
+
+def _exclude_prior_tokens(pool_list: list[dict], prior_tokens: set[str]) -> tuple[list[dict], list[dict]]:
+    """Split candidates into novel tokens and auditable prior-token exclusions."""
+    novel, excluded = [], []
+    for pool in pool_list:
+        if pool["token"] in prior_tokens:
+            excluded.append({**pool, "reason": "token already present in prior evidence archive"})
+        else:
+            novel.append(pool)
+    return novel, excluded
 
 
 def select_universe(f: Fetcher, plan: Plan) -> dict:
@@ -322,9 +361,17 @@ def select_universe(f: Fetcher, plan: Plan) -> dict:
     rng = random.Random(plan.seed)
     picked: list[dict] = []
     tokens: set[str] = set()
+    prior_tokens = set(plan.excluded_tokens)
+    prior_excluded_tokens: set[str] = set()
     excluded: list[dict] = []
 
     def take(stratum: str, pool_list: list[dict], k: int) -> None:
+        pool_list, prior_excluded = _exclude_prior_tokens(pool_list, prior_tokens)
+        for row in prior_excluded:
+            token = row["token"]
+            if token not in prior_excluded_tokens:
+                excluded.append(row)
+                prior_excluded_tokens.add(token)
         pool_list = sorted(pool_list, key=lambda p: p["pool"])  # order-independent sampling
         rng.shuffle(pool_list)
         for p in pool_list:
@@ -343,7 +390,13 @@ def select_universe(f: Fetcher, plan: Plan) -> dict:
     take("young", cands["young"], plan.strata["young"])
     take("trending", cands["trending"], plan.strata["trending"])
     take("established", cands["established"], plan.strata["established"])
+    prior_excluded_tokens = {
+        row["token"] for row in excluded
+        if row.get("reason") == "token already present in prior evidence archive"
+    }
     sel = {"seed": plan.seed, "strata_targets": plan.strata, "selected_at_ms": f.now_ms(),
+           "prior_token_addresses_available": len(prior_tokens),
+           "prior_distinct_tokens_excluded": len(prior_excluded_tokens),
            "candidates": {k: len(v) for k, v in cands.items()} | {"quiet_young": len(quiet)},
            "picked": picked, "excluded": excluded,
            "procedure": select_universe.__doc__}
@@ -416,6 +469,16 @@ def run(run_dir: str, plan: Plan, clients: dict[str, HttpClient] | None = None,
             picked = select_universe(f, plan)["picked"]
     if not picked:
         meta["status"] = "BLOCKED: no pools selectable (discovery failed)"
+        raw.write_json("run.json", meta)
+        return meta
+    from .request_validation import distinct_token_count
+    selected_token_count = distinct_token_count(picked)
+    if plan.min_selected_tokens and selected_token_count < plan.min_selected_tokens:
+        meta["status"] = (
+            f"BLOCKED: discovery selected {selected_token_count} distinct tokens; "
+            f"minimum is {plan.min_selected_tokens}; no backfill, enrichment, or polling performed"
+        )
+        meta["selected_distinct_tokens"] = selected_token_count
         raw.write_json("run.json", meta)
         return meta
     backfill(f, plan, picked)

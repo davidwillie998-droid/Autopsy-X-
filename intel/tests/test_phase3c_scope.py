@@ -43,6 +43,7 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
         allowed = (f.startswith("docs/PHASE3C_") or f.startswith("intel/autopsyx/research/phase3c_")
                   or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")
                   or f == "intel/autopsyx/data/acquire.py"
+                  or f == "intel/autopsyx/data/request_validation.py"
                   or f == "intel/tests/test_acquisition_window.py"
                   or f in infra_allowed or f.startswith("intel/datasets/phase3c/runs/"))
         assert allowed, f"Phase 3C touched a file outside its namespace: {f}"
@@ -101,8 +102,124 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
         '                 "errors": sum(1 for e in entries if e.error), "status": "COMPLETE"})\n'
     )
 
+    substitute(
+        "    rpc_max_txs: int = 40\n",
+        "    rpc_max_txs: int = 40\n"
+        "    # Optional fail-closed minimum for Phase 3C: do not spend collection budget\n"
+        "    # unless discovery actually returns this many distinct token addresses.\n"
+        "    min_selected_tokens: int = 0\n"
+    )
+    substitute(
+        "    min_selected_tokens: int = 0\n",
+        "    min_selected_tokens: int = 0\n"
+        "    # Token addresses already present in prior eligible evidence archives.\n"
+        "    # Phase 3C selection skips these to avoid spending budget on duplicate universes.\n"
+        "    excluded_tokens: list[str] = field(default_factory=list)\n"
+    )
+    substitute(
+        "def select_universe(f: Fetcher, plan: Plan) -> dict:\n",
+        "def _exclude_prior_tokens(pool_list: list[dict], prior_tokens: set[str]) -> tuple[list[dict], list[dict]]:\n"
+        "    \"\"\"Split candidates into novel tokens and auditable prior-token exclusions.\"\"\"\n"
+        "    novel, excluded = [], []\n"
+        "    for pool in pool_list:\n"
+        "        if pool[\"token\"] in prior_tokens:\n"
+        "            excluded.append({**pool, \"reason\": \"token already present in prior evidence archive\"})\n"
+        "        else:\n"
+        "            novel.append(pool)\n"
+        "    return novel, excluded\n\n"
+        "\n"
+        "def select_universe(f: Fetcher, plan: Plan) -> dict:\n"
+    )
+    substitute(
+        "    picked: list[dict] = []\n"
+        "    tokens: set[str] = set()\n"
+        "    excluded: list[dict] = []\n",
+        "    picked: list[dict] = []\n"
+        "    tokens: set[str] = set()\n"
+        "    prior_tokens = set(plan.excluded_tokens)\n"
+        "    prior_excluded_tokens: set[str] = set()\n"
+        "    excluded: list[dict] = []\n"
+    )
+    substitute(
+        "    def take(stratum: str, pool_list: list[dict], k: int) -> None:\n"
+        "        pool_list = sorted(pool_list, key=lambda p: p[\"pool\"])  # order-independent sampling\n",
+        "    def take(stratum: str, pool_list: list[dict], k: int) -> None:\n"
+        "        pool_list, prior_excluded = _exclude_prior_tokens(pool_list, prior_tokens)\n"
+        "        for row in prior_excluded:\n"
+        "            token = row[\"token\"]\n"
+        "            if token not in prior_excluded_tokens:\n"
+        "                excluded.append(row)\n"
+        "                prior_excluded_tokens.add(token)\n"
+        "        pool_list = sorted(pool_list, key=lambda p: p[\"pool\"])  # order-independent sampling\n"
+    )
+    substitute(
+        "    sel = {\"seed\": plan.seed, \"strata_targets\": plan.strata, \"selected_at_ms\": f.now_ms(),\n"
+        "           \"candidates\": {k: len(v) for k, v in cands.items()} | {\"quiet_young\": len(quiet)},\n",
+        "    prior_excluded_tokens = {\n"
+        "        row[\"token\"] for row in excluded\n"
+        "        if row.get(\"reason\") == \"token already present in prior evidence archive\"\n"
+        "    }\n"
+        "    sel = {\"seed\": plan.seed, \"strata_targets\": plan.strata, \"selected_at_ms\": f.now_ms(),\n"
+        "           \"prior_token_addresses_available\": len(prior_tokens),\n"
+        "           \"prior_distinct_tokens_excluded\": len(prior_excluded_tokens),\n"
+        "           \"candidates\": {k: len(v) for k, v in cands.items()} | {\"quiet_young\": len(quiet)},\n"
+    )
+
+    substitute(
+        "def _pools_from(e: ManifestEntry, body: bytes | None) -> list[dict]:\n",
+        "def _h1_transaction_count(h1: object) -> int | float | None:\n"
+        "    \"\"\"Return an hourly transaction total only when both counts are observed and valid.\n"
+        "\n"
+        "    Missing provider fields are unknown, not zero; otherwise incomplete records\n"
+        "    are incorrectly classified into the quiet_young stratum.\n"
+        "    \"\"\"\n"
+        "    import math\n"
+        "\n"
+        "    if not isinstance(h1, dict):\n"
+        "        return None\n"
+        "    buys, sells = h1.get(\"buys\"), h1.get(\"sells\")\n"
+        "    if any(\n"
+        "        isinstance(value, bool)\n"
+        "        or not isinstance(value, (int, float))\n"
+        "        or not math.isfinite(value)\n"
+        "        or value < 0\n"
+        "        for value in (buys, sells)\n"
+        "    ):\n"
+        "        return None\n"
+        "    return buys + sells\n"
+        "\n"
+        "\n"
+        "def _pools_from(e: ManifestEntry, body: bytes | None) -> list[dict]:\n"
+    )
+    substitute(
+        "\"h1_txns\": (h1.get(\"buys\") or 0) + (h1.get(\"sells\") or 0) if isinstance(h1, dict) else None,",
+        "\"h1_txns\": _h1_transaction_count(h1),"
+    )
+
+    substitute(
+        '    if not picked:\n'
+        '        meta["status"] = "BLOCKED: no pools selectable (discovery failed)"\n'
+        '        raw.write_json("run.json", meta)\n'
+        '        return meta\n'
+        '    backfill(f, plan, picked)\n',
+        '    if not picked:\n'
+        '        meta["status"] = "BLOCKED: no pools selectable (discovery failed)"\n'
+        '        raw.write_json("run.json", meta)\n'
+        '        return meta\n'
+        '    from .request_validation import distinct_token_count\n'
+        '    selected_token_count = distinct_token_count(picked)\n'
+        '    if plan.min_selected_tokens and selected_token_count < plan.min_selected_tokens:\n'
+        '        meta["status"] = (\n'
+        '            f"BLOCKED: discovery selected {selected_token_count} distinct tokens; "\n'
+        '            f"minimum is {plan.min_selected_tokens}; no backfill, enrichment, or polling performed"\n'
+        '        )\n'
+        '        meta["selected_distinct_tokens"] = selected_token_count\n'
+        '        raw.write_json("run.json", meta)\n'
+        '        return meta\n'
+        '    backfill(f, plan, picked)\n'
+    )
     actual = (ROOT / "intel" / "autopsyx" / "data" / "acquire.py").read_text()
-    assert actual.rstrip("\n") == expected.rstrip("\n"), "acquire.py contains changes beyond the reviewed poll-window timing repair"
+    assert actual.rstrip("\n") == expected.rstrip("\n"), "acquire.py contains changes beyond the reviewed poll-window timing repair and exact Phase 3C minimum-token guard"
 
 
 def test_phase3c_workflow_mirrors_phase3a_workflow_procedure():

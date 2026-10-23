@@ -24,6 +24,23 @@ def test_reuses_frozen_hypothesis_ids_and_min_sample():
     assert p3c.MIN_SAMPLE is contract.MIN_SAMPLE
 
 
+def test_exploratory_70_token_pilot_never_relaxes_formal_85_gate():
+    below_pilot = p3c.sample_gate(69)
+    pilot_only = p3c.sample_gate(70)
+    still_formal_insufficient = p3c.sample_gate(84)
+    formal_count_met = p3c.sample_gate(85)
+
+    assert p3c.EXPLORATORY_PILOT_MIN_SAMPLE == 70
+    assert p3c.MIN_SAMPLE == contract.MIN_SAMPLE == 85
+    assert below_pilot["exploratory_pilot_eligible"] is False
+    assert pilot_only["exploratory_pilot_eligible"] is True
+    assert pilot_only["formal_sample_minimum_met"] is False
+    assert still_formal_insufficient["exploratory_pilot_eligible"] is True
+    assert still_formal_insufficient["formal_sample_minimum_met"] is False
+    assert formal_count_met["formal_sample_minimum_met"] is True
+    assert "not formal readiness approval" in pilot_only["note"]
+
+
 def test_token_level_sample_size_enforced_not_row_count(evidence):
     for h in evidence["hypotheses"]:
         if not h.get("targets"):
