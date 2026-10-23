@@ -54,7 +54,13 @@ def validate_phase3c_request(request: object, minimum: int = 20) -> int:
     if (isinstance(selected_minimum, bool) or not isinstance(selected_minimum, int)
             or selected_minimum < minimum):
         raise ValueError(f"min_selected_tokens must be an integer >= {minimum}")
-    return validate_minimum_strata(request.get("strata"), minimum)
+    strata_total = validate_minimum_strata(request.get("strata"), minimum)
+    if strata_total < selected_minimum:
+        raise ValueError(
+            f"requested stratum total {strata_total} is below min_selected_tokens "
+            f"{selected_minimum}; refusing acquisition"
+        )
+    return strata_total
 
 
 def distinct_token_count(picked: object) -> int:
