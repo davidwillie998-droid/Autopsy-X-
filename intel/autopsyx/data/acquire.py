@@ -363,8 +363,13 @@ def select_universe(f: Fetcher, plan: Plan) -> dict:
     take("young", cands["young"], plan.strata["young"])
     take("trending", cands["trending"], plan.strata["trending"])
     take("established", cands["established"], plan.strata["established"])
+    prior_excluded_tokens = {
+        row["token"] for row in excluded
+        if row.get("reason") == "token already present in prior evidence archive"
+    }
     sel = {"seed": plan.seed, "strata_targets": plan.strata, "selected_at_ms": f.now_ms(),
-           "prior_distinct_tokens_excluded": len(prior_tokens),
+           "prior_token_addresses_available": len(prior_tokens),
+           "prior_distinct_tokens_excluded": len(prior_excluded_tokens),
            "candidates": {k: len(v) for k, v in cands.items()} | {"quiet_young": len(quiet)},
            "picked": picked, "excluded": excluded,
            "procedure": select_universe.__doc__}
