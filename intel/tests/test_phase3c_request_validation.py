@@ -1,11 +1,29 @@
 import pytest
 
-from autopsyx.data.acquire import _exclude_prior_tokens
+from autopsyx.data.acquire import _exclude_prior_tokens, _h1_transaction_count
 from autopsyx.data.request_validation import (
     distinct_token_count,
     validate_minimum_strata,
     validate_phase3c_request,
 )
+
+
+@pytest.mark.parametrize(
+    ("h1", "expected"),
+    [
+        ({"buys": 3, "sells": 2}, 5),
+        ({"buys": 0, "sells": 0}, 0),
+        ({}, None),
+        ({"buys": 4}, None),
+        ({"buys": None, "sells": 0}, None),
+        ({"buys": -1, "sells": 1}, None),
+        ({"buys": True, "sells": 1}, None),
+        ({"buys": float("nan"), "sells": 1}, None),
+        (None, None),
+    ],
+)
+def test_missing_or_invalid_hourly_counts_are_unknown_not_zero(h1, expected):
+    assert _h1_transaction_count(h1) == expected
 
 
 def valid_request():
