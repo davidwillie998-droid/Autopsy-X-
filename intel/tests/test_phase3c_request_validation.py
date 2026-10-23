@@ -86,3 +86,10 @@ def test_phase3c_selection_excludes_tokens_already_in_prior_archives():
     assert len(excluded) == 1
     assert excluded[0]["token"] == "token-old"
     assert excluded[0]["reason"] == "token already present in prior evidence archive"
+
+
+def test_phase3c_rejects_malformed_prior_token_exclusion_list():
+    request = valid_request()
+    request["excluded_tokens"] = ["valid-token", ""]
+    with pytest.raises(ValueError, match="excluded_tokens must be a list"):
+        validate_phase3c_request(request, 20)
