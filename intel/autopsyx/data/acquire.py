@@ -62,6 +62,9 @@ class Plan:
     # Optional fail-closed minimum for Phase 3C: do not spend collection budget
     # unless discovery actually returns this many distinct token addresses.
     min_selected_tokens: int = 0
+    # Token addresses already present in prior eligible evidence archives.
+    # Phase 3C selection skips these to avoid spending budget on duplicate universes.
+    excluded_tokens: list[str] = field(default_factory=list)
 
 
 class Fetcher:
@@ -325,6 +328,7 @@ def select_universe(f: Fetcher, plan: Plan) -> dict:
     rng = random.Random(plan.seed)
     picked: list[dict] = []
     tokens: set[str] = set()
+    prior_tokens = set(plan.excluded_tokens)
     excluded: list[dict] = []
 
     def take(stratum: str, pool_list: list[dict], k: int) -> None:
@@ -333,6 +337,9 @@ def select_universe(f: Fetcher, plan: Plan) -> dict:
         for p in pool_list:
             if len([x for x in picked if x["stratum"] == stratum]) >= k:
                 return
+            if p["token"] in prior_tokens:
+                excluded.append({**p, "reason": "token already present in prior evidence archive"})
+                continue
             if p["token"] in EXCLUDED_BASES:
                 excluded.append({**p, "reason": "non-meme base asset"})
                 continue
@@ -347,6 +354,7 @@ def select_universe(f: Fetcher, plan: Plan) -> dict:
     take("trending", cands["trending"], plan.strata["trending"])
     take("established", cands["established"], plan.strata["established"])
     sel = {"seed": plan.seed, "strata_targets": plan.strata, "selected_at_ms": f.now_ms(),
+           "prior_distinct_tokens_excluded": len(prior_tokens),
            "candidates": {k: len(v) for k, v in cands.items()} | {"quiet_young": len(quiet)},
            "picked": picked, "excluded": excluded,
            "procedure": select_universe.__doc__}
