@@ -42,7 +42,6 @@ def sample_gate(n_tokens: int) -> dict:
         "formal_sample_minimum_met": n_tokens >= MIN_SAMPLE,
         "note": "Exploratory pilot eligibility is not formal readiness approval and does not change hypothesis classification.",
     }
-}
 
 
 # ------------------------------------------------------------ replication ----
