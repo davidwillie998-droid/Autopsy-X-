@@ -46,14 +46,56 @@ jobs:
               output.write(f"run_id={run_id}\n")
           print(f"Validated {run_id}: requested stratum total >= 20; archive path is new")
           PY
+      - name: Build novelty-exclusion request
+        id: novelty
+        if: steps.validate.outcome == 'success'
+        working-directory: intel
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import tempfile
+          from pathlib import Path
+
+          datasets = Path("datasets")
+          known = set()
+          # Exclude tokens already represented in archived evidence, not just
+          # duplicates from this run. Only sealed/raw archives with a manifest
+          # are considered; both frozen universes and selections are supported.
+          for manifest in datasets.rglob("manifest.jsonl"):
+              archive = manifest.parent
+              for filename, collection in (("selection.json", "picked"), ("universe.json", "pools")):
+                  path = archive / filename
+                  if not path.is_file():
+                      continue
+                  try:
+                      payload = json.loads(path.read_text(encoding="utf-8"))
+                      rows = payload.get(collection, [])
+                      known.update(
+                          row["token"] for row in rows
+                          if isinstance(row, dict) and isinstance(row.get("token"), str) and row["token"]
+                      )
+                  except (OSError, json.JSONDecodeError, AttributeError, TypeError):
+                      # A malformed historical archive must not crash discovery;
+                      # provenance/evidence validation reports its own failure.
+                      continue
+
+          request_path = Path(tempfile.gettempdir()) / "phase3c-request-with-exclusions.json"
+          request = json.loads(Path("datasets/phase3c/REQUEST.json").read_text(encoding="utf-8"))
+          request["excluded_tokens"] = sorted(known)
+          request_path.write_text(json.dumps(request, sort_keys=True) + "\\n", encoding="utf-8")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"request_path={request_path}\\n")
+          print(f"Built request excluding {len(known)} previously archived token addresses")
+          PY
       - name: Acquire
         id: acquire
-        if: steps.validate.outcome == 'success'
+        if: steps.novelty.outcome == 'success'
         working-directory: intel
         env:
           AUTOPSYX_SOLANA_RPC_URL: ${{ secrets.AUTOPSYX_SOLANA_RPC_URL }}
         run: |
-          python -m autopsyx --log acquire --live --request datasets/phase3c/REQUEST.json --out "datasets/phase3c/runs/${{ steps.validate.outputs.run_id }}"
+          python -m autopsyx --log acquire --live --request "${{ steps.novelty.outputs.request_path }}" --out "datasets/phase3c/runs/${{ steps.validate.outputs.run_id }}"
       - name: Seal canonical dataset on the runner
         id: seal
         if: steps.acquire.outcome == 'success'
