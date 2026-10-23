@@ -137,15 +137,20 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
         "    picked: list[dict] = []\n"
         "    tokens: set[str] = set()\n"
         "    prior_tokens = set(plan.excluded_tokens)\n"
+        "    prior_excluded_pools: set[str] = set()\n"
         "    excluded: list[dict] = []\n"
     )
     substitute(
         "    def take(stratum: str, pool_list: list[dict], k: int) -> None:\n"
-        "        pool_list = sorted(pool_list, key=lambda p: p[\"pool\"])  # order-independent sampling\n",
+        "        pool_list = sorted(pool_list, key=lambda p: \"pool\")  # order-independent sampling\n",
         "    def take(stratum: str, pool_list: list[dict], k: int) -> None:\n"
         "        pool_list, prior_excluded = _exclude_prior_tokens(pool_list, prior_tokens)\n"
-        "        excluded.extend(prior_excluded)\n"
-        "        pool_list = sorted(pool_list, key=lambda p: p[\"pool\"])  # order-independent sampling\n"
+        "        for row in prior_excluded:\n"
+        "            pool_id = row[\"pool\"]\n"
+        "            if pool_id not in prior_excluded_pools:\n"
+        "                excluded.append(row)\n"
+        "                prior_excluded_pools.add(pool_id)\n"
+        "        pool_list = sorted(pool_list, key=lambda p: \"pool\")  # order-independent sampling\n"
     )
     substitute(
         "    sel = {\"seed\": plan.seed, \"strata_targets\": plan.strata, \"selected_at_ms\": f.now_ms(),\n"
