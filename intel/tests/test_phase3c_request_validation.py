@@ -1,5 +1,6 @@
 import pytest
 
+from autopsyx.data.acquire import _exclude_prior_tokens
 from autopsyx.data.request_validation import (
     distinct_token_count,
     validate_minimum_strata,
@@ -73,3 +74,15 @@ def test_count_distinct_token_addresses_not_pool_rows():
         {"pool": "pool-e"},
     ]
     assert distinct_token_count(picked) == 2
+
+
+def test_phase3c_selection_excludes_tokens_already_in_prior_archives():
+    candidates = [
+        {"pool": "pool-old", "token": "token-old"},
+        {"pool": "pool-new", "token": "token-new"},
+    ]
+    novel, excluded = _exclude_prior_tokens(candidates, {"token-old"})
+    assert [row["token"] for row in novel] == ["token-new"]
+    assert len(excluded) == 1
+    assert excluded[0]["token"] == "token-old"
+    assert excluded[0]["reason"] == "token already present in prior evidence archive"
