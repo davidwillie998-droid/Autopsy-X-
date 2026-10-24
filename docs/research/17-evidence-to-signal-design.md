@@ -113,3 +113,27 @@ A proposed signal is accepted only when all of the following are true:
 The research supports testing **multi-source, point-in-time signals**: social information may help; token text may contain modest information; on-chain concentration and behaviour can help identify risk. It does **not** establish that our system is profitable, that social media consistently leads price, or that any single feature is a reliable buy signal.
 
 The next engineering priority is a reliable event-driven collector and normalized point-in-time event store for social/news plus market/on-chain events. Until collection and timestamps are proven, model training would risk learning from missing, delayed or future information.
+
+## User-facing signal card contract
+
+The standalone Solana intelligence system uses a compact, evidence-first signal card inspired by the AUTOPSY X signal workflow. This is a presentation contract, not a claim that live signal delivery is already implemented.
+
+Each emitted card must contain:
+
+- **Token identity:** chain, token address/mint, symbol, and pool identifier where available. Never identify a token by ticker alone.
+- **Decision:** one of `BUY`, `WATCH`, `EXIT`, or `NO TRADE`, but only where that decision's rules are implemented and tested. Existing engine outputs must not be relabelled to imply unsupported behavior.
+- **Horizon and timestamps:** the 15-minute evaluation horizon, decision timestamp, data-as-of timestamp, and signal age.
+- **Price evidence:** observed price and source; an entry zone or invalidation level only when a tested rule can derive it from available evidence. Otherwise state `not established`.
+- **Liquidity and execution risk:** observed liquidity, estimated price impact/slippage and source freshness. Mark unavailable values as unavailable; never invent them.
+- **Rationale:** passed conditions, failed conditions, and the specific evidence supporting each.
+- **Risk flags and vetoes:** manipulation/rug-risk indicators, concentration, stale or incomplete data, and any blocking rule.
+- **Outcome ledger:** preserve the original signal and its inputs; record the observed 15-minute outcome separately without rewriting the original decision.
+
+### Fail-closed display rules
+
+1. If critical price, identity, timestamp or liquidity evidence is missing or stale, emit `NO TRADE` or suppress the candidate according to the tested rule; do not substitute synthetic demo values.
+2. Do not display a numerical confidence as a calibrated probability unless calibration has been measured and validated out of sample.
+3. Do not fabricate targets, entry prices, stop levels, upside percentages, or claims of profitability.
+4. Keep upside and downside candidates in separate rankings. Returning fewer candidates is preferable to filling a quota with weak evidence.
+5. This system is read-only: it may collect public market data and emit signals, but must not sign transactions, access wallet secrets, or submit orders.
+6. Live market-data operation is not the same as validated signal performance. Readiness remains unapproved until the data-quality, point-in-time, and out-of-sample gates pass.
