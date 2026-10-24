@@ -2,7 +2,7 @@
 
 **Status:** research-backed design proposal; not a profitability claim and not authorization for live trading.  
 **Review date:** 2026-10-23  
-**Scope:** standalone Solana memecoin intelligence, with a 15-minute primary prediction horizon. Keep this work separate from the AUTOPSY X / XAUUSD MT5 EA.
+**Scope:** standalone Solana memecoin intelligence, with a 15-minute primary prediction horizon. Integrate this as a separate intelligence engine within the broader AUTOPSY X platform, while keeping its Solana data, hypotheses, and decision rules isolated from the Forex intelligence engine.
 
 ## Objective
 
