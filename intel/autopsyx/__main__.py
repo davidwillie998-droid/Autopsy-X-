@@ -74,6 +74,8 @@ def main(argv: list[str] | None = None) -> int:
     aq.add_argument("--live", action="store_true", help="required: confirms network access to vendor APIs is intended")
     aq.add_argument("--request", required=True, help="JSON file with run_id and plan overrides")
     aq.add_argument("--out", required=True)
+    aq.add_argument("--frozen-baseline", action="store_true",
+                    help="explicitly allow the undersized historical Phase 3C baseline; not a qualification run")
     rr = sub.add_parser("replay-run", help="deterministic point-in-time replay of an acquired raw archive")
     rr.add_argument("run_dir")
     rr.add_argument("--step-min", type=int, default=5)
@@ -129,7 +131,17 @@ def main(argv: list[str] | None = None) -> int:
             print("refusing: acquisition contacts external APIs; pass --live to confirm", file=sys.stderr)
             return 2
         from .data import acquire
-        req = json.load(open(args.request))
+        with open(args.request, encoding="utf-8") as request_file:
+            req = json.load(request_file)
+        # Phase 3C requests must pass the frozen protocol gate before the first
+        # network request. Phase 2 acquisition remains on its existing contract.
+        if isinstance(req, dict) and str(req.get("run_id", "")).startswith("p3c-sol-"):
+            from .research.phase3c_preflight import validate as validate_phase3c
+            errors = validate_phase3c(req, allow_frozen_baseline=args.frozen_baseline)
+            if errors:
+                for error in errors:
+                    print(f"FAIL: {error}", file=sys.stderr)
+                return 1
         plan = acquire.Plan(**{k: v for k, v in req.items() if k in acquire.Plan.__dataclass_fields__})
         meta = acquire.run(args.out, plan)
         print(json.dumps({k: meta.get(k) for k in ("status", "cycles", "exchanges", "errors")}))
