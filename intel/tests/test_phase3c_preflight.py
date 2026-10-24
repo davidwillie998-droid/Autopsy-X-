@@ -13,13 +13,13 @@ def good_request():
         "run_id": "p3c-sol-test",
         "network": "solana",
         "seed": 20261020,
-        "strata": {"young": 45, "quiet_young": 10, "trending": 15, "established": 15},
+        "strata": {"young": 100, "quiet_young": 20, "trending": 30, "established": 30},
         "new_pool_pages": 3,
         "backfill_pages": 2,
         "duration_s": 7200,
         "cycle_s": 60,
         "poll_ohlcv_limit": 5,
-        "poll_pools_per_cycle": 5,
+        "poll_pools_per_cycle": 12,
         "ohlcv_every": 1,
         "holders_per_cycle": 2,
         "lag_ms": 60000,
@@ -41,6 +41,18 @@ def test_rejects_undersized_universe():
     request = good_request()
     request["strata"] = {"young": 2, "quiet_young": 1, "trending": 1, "established": 1}
     assert any("below distinct-token sample minimum 85" in e for e in module.validate(request))
+
+
+def test_rejects_universe_that_is_large_enough_but_not_frozen_size():
+    request = good_request()
+    request["strata"] = {"young": 99, "quiet_young": 20, "trending": 30, "established": 30}
+    assert any("frozen universe size 180" in e for e in module.validate(request))
+
+
+def test_rejects_poll_budget_other_than_frozen_12():
+    request = good_request()
+    request["poll_pools_per_cycle"] = 11
+    assert any("must equal frozen protocol value 12" in e for e in module.validate(request))
 
 
 def test_rejects_boolean_as_integer():
@@ -66,7 +78,7 @@ def test_rejects_invalid_poll_budget_before_network_access():
     request = good_request()
     request["poll_pools_per_cycle"] = 0
     assert any("poll_pools_per_cycle must be a positive integer" in e for e in module.validate(request))
-    request["poll_pools_per_cycle"] = 86
+    request["poll_pools_per_cycle"] = 181
     assert any("cannot exceed the selected-pool stratum total" in e for e in module.validate(request))
 
 
@@ -97,6 +109,7 @@ def test_expanded_phase3c_effective_sample_passes_strict_gate():
     request["rpc_max_pages"] = 3
     request["rpc_max_txs"] = 8
     assert sum(request["strata"].values()) == 180
+    assert request["poll_pools_per_cycle"] == 12
     assert module.validate(request) == []
 
 
