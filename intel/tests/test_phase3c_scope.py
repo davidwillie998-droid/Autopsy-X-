@@ -50,6 +50,9 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
                   or f == "intel/autopsyx/research/audit_contiguous_liquidity.py"
                   or f == "intel/tests/test_contiguous_liquidity_audit.py"
                   or f == "intel/tests/test_acquisition_window.py"
+                  # This evidence-to-signal document defines the research contract for the new
+                  # Phase 3C Solana intelligence engine; it does not alter frozen Phase 2/3A/3B logic.
+                  or f == "docs/research/17-evidence-to-signal-design.md"
                   or f in infra_allowed or f.startswith("intel/datasets/phase3c/runs/"))
         assert allowed, f"Phase 3C touched a file outside its namespace: {f}"
 
@@ -163,8 +166,10 @@ def test_phase3c_reserve_trade_and_ohlcv_polling_share_the_rotating_subset():
 
 def test_intelligence_ci_normalizes_push_and_pull_request_concurrency_group():
     workflow = (ROOT / ".github" / "workflows" / "intel-tests.yml").read_text()
-    assert "group: intel-tests-${{ github.event.pull_request.head.ref || github.ref_name }}-${{ github.event_name }}" in workflow
-    assert "group: intel-tests-${{ github.event.pull_request.head.ref || github.ref_name }}" not in workflow
+    group_lines = [line.strip() for line in workflow.splitlines() if line.strip().startswith("group:")]
+    assert group_lines == [
+        "group: intel-tests-${{ github.event.pull_request.head.ref || github.ref_name }}-${{ github.event_name }}"
+    ]
     assert "cancel-in-progress: true" in workflow
     assert "timeout-minutes: 20" in workflow
 
