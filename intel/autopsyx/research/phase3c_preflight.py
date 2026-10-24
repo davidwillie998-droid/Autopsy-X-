@@ -11,6 +11,8 @@ from pathlib import Path
 
 REQUIRED_STRATA = ("young", "quiet_young", "trending", "established")
 FROZEN_BASELINE_MIN_STRATA_TOTAL = 20
+FROZEN_UNIVERSE_SIZE = 180
+FROZEN_POLL_POOLS_PER_CYCLE = 12
 MIN_STATISTICAL_SAMPLE = 85
 MIN_DURATION_SECONDS = 7200
 
@@ -51,6 +53,11 @@ def validate(request: object, *, allow_frozen_baseline: bool = False) -> list[st
                     f"strata total {strata_total} is below {label} {minimum}; "
                     "the >=85-token statistical gate must not be weakened"
                 )
+            if not allow_frozen_baseline and strata_total != FROZEN_UNIVERSE_SIZE:
+                errors.append(
+                    f"strata total must equal frozen universe size {FROZEN_UNIVERSE_SIZE}; "
+                    f"got {strata_total}"
+                )
 
     duration = request.get("duration_s")
     if type(duration) is not int or duration < MIN_DURATION_SECONDS:
@@ -72,6 +79,11 @@ def validate(request: object, *, allow_frozen_baseline: bool = False) -> list[st
         errors.append("poll_pools_per_cycle must be a positive integer")
     elif strata_total is not None and poll_budget > strata_total:
         errors.append("poll_pools_per_cycle cannot exceed the selected-pool stratum total")
+    elif not allow_frozen_baseline and poll_budget != FROZEN_POLL_POOLS_PER_CYCLE:
+        errors.append(
+            f"poll_pools_per_cycle must equal frozen protocol value "
+            f"{FROZEN_POLL_POOLS_PER_CYCLE}; got {poll_budget}"
+        )
 
     for key in ("holders_per_cycle", "lag_ms", "circuit_waits"):
         value = request.get(key)
