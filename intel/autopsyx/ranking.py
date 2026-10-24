@@ -18,8 +18,10 @@ def _w(a: Assessment, n: int, attr: str):
 
 
 RANKINGS: dict[str, tuple[str, Callable[[Assessment], float | None]]] = {
-    "BIGGEST_MOVES": ("move since onset", lambda a: a.move.move_since_onset if a.move.direction > 0 else None),
+    "BIGGEST_MOVES": ("upside move since onset", lambda a: a.move.move_since_onset if a.move.direction > 0 else None),
+    "BIGGEST_DROPS": ("downside move magnitude since onset", lambda a: abs(a.move.move_since_onset) if a.move.direction < 0 and a.move.move_since_onset is not None else None),
     "FASTEST_ACCELERATION": ("5-bar return acceleration", lambda a: _w(a, 5, "acceleration")),
+    "FASTEST_NEGATIVE_ACCELERATION": ("negative 5-bar return acceleration magnitude", lambda a: -_w(a, 5, "acceleration") if _w(a, 5, "acceleration") is not None and _w(a, 5, "acceleration") < 0 else None),
     "BEST_MOVE_QUALITY": ("move quality score", lambda a: a.move_quality.score if a.move_quality else None),
     "STRONGEST_PARTICIPATION": ("effective buyers x buyer growth", lambda a: (
         _v(a.participation.effective_buyers) * _v(a.participation.buyer_growth)
@@ -46,5 +48,5 @@ def rank(assessments: dict[str, Assessment], name: str, limit: int = 10) -> list
     return rows[:limit]
 
 
-def all_rankings(assessments: dict[str, Assessment], limit: int = 10) -> dict[str, list[dict]]:
+def all_rankings(assessments: dict[str, Assessment], limit: int = 20) -> dict[str, list[dict]]:
     return {n: rank(assessments, n, limit) for n in RANKINGS}
