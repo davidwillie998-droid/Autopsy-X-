@@ -155,6 +155,7 @@ jobs:
               meta.setdefault("ended_ms", int(time.time() * 1000))
               meta["workflow_failure_recorded"] = True
               p.write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
       - name: Commit raw archive and verification evidence
         if: always()
         run: |
