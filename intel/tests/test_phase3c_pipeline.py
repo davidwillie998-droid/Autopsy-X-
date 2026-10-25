@@ -202,7 +202,7 @@ def test_runtime_temporal_isolation_rejects_timestamp_overlap():
     # Force a future timestamp into discovery; the runtime guard must fail closed.
     contaminated = [dict(r) for r in train]
     contaminated[0]["as_of"] = report["cutoff_as_of"]
-    with pytest.raises(ValueError, match="max\(discovery_timestamp\)"):
+    with pytest.raises(ValueError, match=r"max\(discovery_timestamp\)"):
         p3c.assert_temporal_isolation(rows, contaminated, report)
 
 
