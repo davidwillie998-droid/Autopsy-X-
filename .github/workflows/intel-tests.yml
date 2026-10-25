@@ -49,5 +49,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install pytest
-      - run: python -m pytest -q -rs
+      # Verbose per-test output makes long-running or hanging tests identifiable
+      # in the Actions log instead of leaving the suite apparently silent.
+      - run: python -m pytest -vv -rs --durations=20
       - run: python -m autopsyx demo
