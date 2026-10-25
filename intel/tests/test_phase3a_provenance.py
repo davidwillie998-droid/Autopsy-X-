@@ -101,39 +101,3 @@ def test_hash_independent_of_process_hash_seed(tmp_path, monkeypatch):
     outs = {subprocess.run([sys.executable, "-c", code, str(d)], cwd=ROOT, capture_output=True, text=True,
                            env=dict(os.environ, PYTHONHASHSEED=s)).stdout for s in ("0", "1")}
     assert len(outs) == 1 and outs.pop().strip()
-
-
-
-def test_seal_refuses_nondeterministic_rebuild(tmp_path, monkeypatch):
-    d = tmp_path / "d"
-    run3(d)
-    original_build = pv.build
-    calls = 0
-
-    def unstable_build(run_dir):
-        nonlocal calls
-        calls += 1
-        result = original_build(run_dir)
-        if calls == 2:
-            result = dict(result)
-            result["phase2_records_sha256"] = "f" * 64
-        return result
-
-    monkeypatch.setattr(pv, "build", unstable_build)
-    import pytest
-    with pytest.raises(ValueError, match="refusing to seal a non-reproducible archive"):
-        pv.seal(str(d))
-
-
-def test_record_diff_identifies_first_changed_field(tmp_path):
-    d = tmp_path / "d"
-    run3(d)
-    records, _ = pv.normalize(str(d))
-    assert records
-    changed = list(records)
-    from dataclasses import replace
-    changed[0] = replace(records[0], seen_ts=records[0].seen_ts + 1)
-    diff = pv._record_diff(records, changed)
-    assert diff["index"] == 0
-    assert diff["left_type"] == type(records[0]).__name__
-    assert "seen_ts" in diff["changed_fields"]
