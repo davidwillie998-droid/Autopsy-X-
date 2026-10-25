@@ -2,9 +2,9 @@ name: Intelligence engine tests
 
 on:
   push:
-    paths: ["intel/**", "docs/**", ".github/workflows/intel-tests.yml"]
+    paths: ["intel/**", "docs/**", ".github/workflows/intel-tests.yml", ".github/workflows/phase3c-acquire.yml"]
   pull_request:
-    paths: ["intel/**", "docs/**", ".github/workflows/intel-tests.yml"]
+    paths: ["intel/**", "docs/**", ".github/workflows/intel-tests.yml", ".github/workflows/phase3c-acquire.yml"]
 
 permissions:
   contents: read
