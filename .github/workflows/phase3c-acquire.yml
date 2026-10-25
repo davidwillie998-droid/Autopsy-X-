@@ -87,7 +87,14 @@ jobs:
           else
             RUN_ID="$FROZEN_RUN_ID"
           fi
-          python -m autopsyx.research.phase3c_preflight "$REQUEST_PATH"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            python -m autopsyx.research.phase3c_preflight "$REQUEST_PATH"
+          else
+            # The push-triggered historical baseline is intentionally undersized.
+            # Validate it under the explicit baseline exception; never use this
+            # exception for a new strict-qualification acquisition.
+            python -m autopsyx.research.phase3c_preflight "$REQUEST_PATH" --frozen-baseline
+          fi
           if [ -e "datasets/phase3c/runs/$RUN_ID" ]; then
             echo "FAIL: refusing to reuse immutable archive ID $RUN_ID" >&2
             exit 2
