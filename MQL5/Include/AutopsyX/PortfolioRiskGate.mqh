@@ -69,13 +69,12 @@ public:
       if(MathAbs(steps-MathRound(steps))>1e-6)
         { reason="Volume is not aligned to broker volume step"; return(false); }
 
-      if(m_require_flat_account)
-        {
-         if(PositionsTotal()>0)
-           { reason="Account is not flat; one-position-at-a-time policy blocks entry"; return(false); }
-         if(OrdersTotal()>0)
-           { reason="Pending orders exist; account-wide entry gate blocks new exposure"; return(false); }
-        }
+      if(m_require_flat_account && PositionsTotal()>0)
+        { reason="Account is not flat; one-position-at-a-time policy blocks entry"; return(false); }
+      // Pending orders are always blocked: their potential stop risk is not
+      // reconstructed by this first version, so allowing them would be unsafe.
+      if(OrdersTotal()>0)
+        { reason="Pending orders exist; cancel/reconcile them before evaluating new exposure"; return(false); }
 
       double equity=AccountInfoDouble(ACCOUNT_EQUITY);
       double free_margin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
