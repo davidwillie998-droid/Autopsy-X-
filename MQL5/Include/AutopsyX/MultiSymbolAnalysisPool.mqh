@@ -90,18 +90,33 @@ public:
 
       string wanted[];
       int wanted_count=0;
-      int limit=MathMin(scanner.Count(),m_max_symbols);
-      for(int i=0;i<limit;i++)
+      // Retain current members while they remain in the eligible candidate list.
+      for(int i=0;i<m_count && wanted_count<m_max_symbols;i++)
+        {
+         string active=m_slots[i].Symbol();
+         bool eligible=false;
+         for(int j=0;j<scanner.Count();j++)
+           {
+            SAxScanCandidate candidate;
+            if(scanner.Get(j,candidate) && candidate.symbol==active)
+              { eligible=true; break; }
+           }
+         if(!eligible) continue;
+         int resized=ArrayResize(wanted,wanted_count+1);
+         if(resized!=wanted_count+1) { m_last_error="Unable to allocate symbol list"; return(false); }
+         wanted[wanted_count]=active;
+         wanted_count++;
+        }
+      // Fill spare capacity by scanner rank; existing members are not duplicated.
+      for(int j=0;j<scanner.Count() && wanted_count<m_max_symbols;j++)
         {
          SAxScanCandidate candidate;
-         if(!scanner.Get(i,candidate)) continue;
-         if(StringLen(candidate.symbol)==0) continue;
+         if(!scanner.Get(j,candidate) || StringLen(candidate.symbol)==0) continue;
+         bool duplicate=false;
+         for(int k=0;k<wanted_count;k++) if(wanted[k]==candidate.symbol) { duplicate=true; break; }
+         if(duplicate) continue;
          int resized=ArrayResize(wanted,wanted_count+1);
-         if(resized!=wanted_count+1)
-           {
-            m_last_error="Unable to allocate symbol list";
-            return(false);
-           }
+         if(resized!=wanted_count+1) { m_last_error="Unable to allocate symbol list"; return(false); }
          wanted[wanted_count]=candidate.symbol;
          wanted_count++;
         }
