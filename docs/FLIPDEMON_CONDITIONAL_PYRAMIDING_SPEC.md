@@ -1,6 +1,13 @@
 # FlipDemon Extreme: Conditional Pyramiding and Campaign Reversal Specification
 
-Status: design contract only; implementation and validation are still required.
+Status: design contract with user-approved preferences; implementation and validation are still required.
+
+## User-approved strategy preferences
+
+- Add rule: permit an add after each fresh qualifying continuation setup, only when every existing entry gate and the campaign/account risk gates pass.
+- Maximum campaign size: 10 entries total (one initial entry plus at most nine adds), not ten additional adds.
+- Execution mode remains `AX_EXEC_ANALYSIS_ONLY` by default. Conditional pyramiding remains disabled until implementation, netting/hedging validation, aggregate-risk integration, and required tests pass.
+- These preferences do not authorize live trading or relax any risk limit.
 
 ## Objective
 
@@ -43,12 +50,12 @@ An add is permitted only when all conditions pass:
 
 - The campaign is active, EA-owned, directionally consistent, and has no unresolved order/close state.
 - Current campaign P&L is positive after estimated trading costs; never add to a losing campaign.
-- A fresh continuation setup is confirmed. Require a new qualifying structure/displacement event and pullback/resumption confirmation; VWAP is supporting evidence, not a standalone trigger.
+- A fresh continuation setup is confirmed. Add after each fresh qualifying continuation setup, provided every gate passes. Require a new qualifying structure/displacement event and pullback/resumption confirmation; VWAP is supporting evidence, not a standalone trigger.
 - The signal is new, not a duplicate tick or repeated processing of the same bar/event. Enforce a configurable minimum spacing/cooldown.
 - Spread, slippage estimate, quote freshness, symbol trading status, session, and market regime remain acceptable.
 - All existing gates pass for this add independently.
 - Recalculate proposed total stop-loss risk and projected margin for the entire account/campaign after the add. Include existing positions and pending orders; use broker-aware calculations and reject if the result is unavailable or exceeds any configured hard cap.
-- Enforce a configurable maximum number of entries per campaign and maximum total account exposure. No unlimited-exposure mode.
+- Enforce a hard maximum of 10 entries total per campaign (one initial entry plus at most nine adds) and maximum total account exposure. No unlimited-exposure mode. Reject any add after the tenth total entry.
 - If the broker uses netting, track each deal/add in campaign history even though the broker aggregates the symbol into one position. If hedging, reconcile every EA-owned ticket and do not take ownership of manual or other-EA positions.
 - Reconcile actual fills and volume after execution; partial fills update the campaign with actual volume. Ambiguous timeouts/connection failures must not trigger blind retries or duplicate adds.
 
@@ -80,7 +87,7 @@ The current `CExecutionEngine::OpenMarket` rejects an existing position on the s
 
 Add explicit inputs for:
 - enable conditional pyramiding (default false until implementation and test gates pass);
-- maximum adds / maximum entries per campaign;
+- maximum entries per campaign, defaulting to the approved cap of 10 total entries (initial entry included);
 - minimum time/bar spacing between adds;
 - maximum aggregate campaign stop-risk;
 - maximum account-wide aggregate stop-risk;
