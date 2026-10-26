@@ -39,3 +39,10 @@ def test_pool_cleans_up_dynamic_slots():
     assert "delete m_slots[i]" in text
     assert "delete slot" in text
     assert "ClearSlots();" in text
+
+
+def test_pool_preserves_eligible_members_before_filling_by_rank():
+    text = source()
+    assert "Retain current members while they remain in the eligible candidate list" in text
+    assert "Fill spare capacity by scanner rank" in text
+    assert "bool duplicate=false" in text
