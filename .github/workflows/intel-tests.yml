@@ -42,4 +42,44 @@ jobs:
           python-version: "3.11"
       - run: pip install pytest
       - run: python -m pytest -q -rs
+      - name: Replay readiness diagnostics on immutable Phase 3C archives
+        run: |
+          python -m autopsyx.research.phase3c_readiness_diagnostics datasets/phase3c/runs/p3c-sol-20261004e --out ../phase3c-readiness-p3c-sol-20261004e.json
+          python -m autopsyx.research.phase3c_readiness_diagnostics datasets/phase3c/runs/p3c-sol-20261004f --out ../phase3c-readiness-p3c-sol-20261004f.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          for path in sorted(Path("..").glob("phase3c-readiness-p3c-sol-*.json")):
+              report = json.loads(path.read_text(encoding="utf-8"))
+              window = report["run_window"]
+              requests = report["request_accounting"]
+              replay = report["normalization_replay"]
+              print(json.dumps({
+                  "archive": report["archive"],
+                  "acquisition_status": report["acquisition_status"],
+                  "selected_pool_count": report["selected_pool_count"],
+                  "configured_duration_s": window["configured_duration_s"],
+                  "observed_elapsed_s": window["observed_elapsed_s"],
+                  "completed_cycles": window["completed_cycles"],
+                  "cycle_count_source": window["cycle_count_source"],
+                  "backfill_pages_per_pool": report["configured_history_cap"]["backfill_pages_per_pool"],
+                  "maximum_requested_minute_bars_per_pool": report["configured_history_cap"]["maximum_requested_minute_bars_per_pool"],
+                  "ohlcv_requests_total": requests["ohlcv_requests_total"],
+                  "ohlcv_backfill_requests": requests["ohlcv_backfill_requests"],
+                  "ohlcv_poll_requests": requests["ohlcv_poll_requests"],
+                  "ohlcv_failed_requests": requests["ohlcv_failed_requests"],
+                  "parsed_bar_rows": requests["parsed_bar_rows"],
+                  "parser_issue_counts": requests["parser_issue_counts"],
+                  "normalization_replay_match": replay["stored_vs_recomputed_match"],
+                  "normalization_issue_counts": replay["recomputed_issue_counts"],
+                  "normalization_issue_samples": replay["issue_samples"],
+              }, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase3c-readiness-diagnostic-reports
+          path: phase3c-readiness-p3c-sol-*.json
+          if-no-files-found: error
+          retention-days: 30
       - run: python -m autopsyx demo
