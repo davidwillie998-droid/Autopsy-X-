@@ -74,7 +74,7 @@ public:
          return(false);
         }
       m_scorer.Configure(min_score,min_gap);
-      m_last_bar=iTime(m_symbol,m_tf,0);
+      m_last_bar=0; // force the first update to initialize regime and liquidity state
       m_initialized=true;
       ResetResult("Initialized; waiting for sufficient live ticks and history");
       return(true);
