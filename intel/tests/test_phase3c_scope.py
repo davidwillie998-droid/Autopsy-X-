@@ -38,7 +38,7 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     # a request file and a workflow mirroring phase3a-acquire.yml's own procedure exactly
     # (checked bit-for-bit against it below), so new archives can be independently acquired.
     # This UI workflow is inherited from the PR base branch and restored byte-for-byte there; it predates the Phase 3C changes and is not a Phase 3C implementation file.
-    infra_allowed = {"intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml"}
+    infra_allowed = {"intel/datasets/phase3c/REQUEST.json", "intel/datasets/phase3c/REQUEST_20_TOKEN_TEMPLATE.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml"}
     for f in changed:
         allowed = (f.startswith("docs/PHASE3C_") or f.startswith("intel/autopsyx/research/phase3c_")
                   or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")
@@ -60,6 +60,14 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
         nonlocal expected
         assert expected.count(old) == 1, old
         expected = expected.replace(old, new, 1)
+
+    substitute(
+        '    poll_ohlcv_limit: int = 5\n',
+        '    poll_ohlcv_limit: int = 5\n'
+        '    # Optional Phase 3C request budget: rotate this many pools per poll cycle.\n'
+        '    # None preserves the frozen Phase 3A/Phase 2 behavior exactly.\n'
+        '    poll_pools_per_cycle: int | None = None\n'
+    )
 
     substitute(
         '    started = now_ms()\n'
@@ -86,6 +94,26 @@ def test_acquire_module_contains_only_the_reviewed_poll_window_repair():
         '    raw.write_json("run.json", meta)\n'
         '    cycle = 0\n'
     )
+    substitute(
+        '    for p in picked:\n'
+        '        ctx = {"chain": n, "pool": p["pool"], "token": p["token"], "cycle": cycle}\n'
+        '        f.get(gt.NAME, "gt.trades", gt.path_trades(n, p["pool"]), ctx)\n'
+        '        if cycle % plan.ohlcv_every == 0:\n'
+        '            f.get(gt.NAME, "gt.ohlcv", gt.path_ohlcv(n, p["pool"], plan.poll_ohlcv_limit), ctx)\n',
+        '    poll_picked = picked\n'
+        '    if plan.poll_pools_per_cycle is not None:\n'
+        '        if plan.poll_pools_per_cycle < 1:\n'
+        '            raise ValueError("poll_pools_per_cycle must be >= 1 when configured")\n'
+        '        count = min(plan.poll_pools_per_cycle, len(picked))\n'
+        '        start = (cycle * count) % len(picked)\n'
+        '        poll_picked = [picked[(start + offset) % len(picked)] for offset in range(count)]\n'
+        '    for p in poll_picked:\n'
+        '        ctx = {"chain": n, "pool": p["pool"], "token": p["token"], "cycle": cycle}\n'
+        '        f.get(gt.NAME, "gt.trades", gt.path_trades(n, p["pool"]), ctx)\n'
+        '        if cycle % plan.ohlcv_every == 0:\n'
+        '            f.get(gt.NAME, "gt.ohlcv", gt.path_ohlcv(n, p["pool"], plan.poll_ohlcv_limit), ctx)\n'
+    )
+
     substitute(
         '        if (t0 - started) / 1000 >= plan.duration_s or (max_cycles is not None and cycle >= max_cycles):\n',
         '        if (t0 - poll_window_started_ms) / 1000 >= plan.duration_s or (max_cycles is not None and cycle >= max_cycles):\n'
