@@ -51,7 +51,16 @@ def h10_replication_audit(rows_h10: list[dict], archives_order: list[str]) -> di
     by_token: dict[str, list] = defaultdict(list)
     for r in rows_h10:
         by_token[r["token"]].append(r)
-    collapsed = [min(rs, key=lambda r: (r["archive"], r["step_index"])) for rs in by_token.values()]
+    # Select by observation time first: archive names are identifiers, not chronology.
+    # Sorting archive names first can silently choose a later observation and bias replication.
+    collapsed = [
+        min(rs, key=lambda r: (
+            r.get("as_of") if isinstance(r.get("as_of"), (int, float)) else float("inf"),
+            r.get("step_index", float("inf")),
+            r.get("archive", ""),
+        ))
+        for rs in by_token.values()
+    ]
     arch_code = {a: i for i, a in enumerate(sorted(archives_order))}
     out = {"n_tokens_collapsed": len(collapsed), "per_target": {}}
     for target in ("y_classified", "y_direction"):
