@@ -118,3 +118,18 @@ require("95% Wilson lower bound" in kelly and "AX_KELLY_MIN_SAMPLE" in kelly,
         "Kelly sizing uses a conservative win-rate bound and minimum sample requirement")
 require("InpKellyWarmupRiskPercent" in ea and "MathMin(configuredRiskPct,kellyReport.halfKellyFraction*100.0)" in ea,
         "Kelly gate caps risk during warm-up and at no more than half conservative Kelly")
+
+require("bool              ProtectionMatches(" in execution,
+        "execution engine has a broker-state SL/TP verification helper")
+open_market_block = execution.split("bool              OpenMarket", 1)[1].split(
+    "bool              ClosePosition", 1
+)[0]
+require("POST_FILL_PROTECTION_MISSING" in open_market_block
+        and "POST_FILL_PROTECTION_INVALID" in open_market_block,
+        "post-fill missing or invalid protection enters fail-closed recovery")
+require("bool flattened=ClosePosition(symbol,closeErr)" in open_market_block
+        and "emergency_close=NOT_CONFIRMED" in open_market_block,
+        "unprotected fills trigger emergency close and report unconfirmed flattening")
+require("if(!ProtectionMatches(symbol,slPrice,tpPrice))" in execution
+        and "broker-installed SL/TP do not match request" in execution,
+        "stop modification success is not trusted until broker-installed protection is verified")
