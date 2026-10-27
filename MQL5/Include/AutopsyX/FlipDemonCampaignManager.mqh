@@ -99,6 +99,7 @@ public:
       if(actualFilledVolume<=0.0)
         { m_state=AX_CAMPAIGN_BLOCKED; m_blockReason="Initial fill volume is invalid"; reason=m_blockReason; return(false); }
       m_entryCount=1;
+      m_lastAddAt=TimeCurrent(); // last campaign entry time; enforces spacing before first add too
       m_openVolume=actualFilledVolume;
       m_realizedPnl=realizedPnl;
       m_state=AX_CAMPAIGN_ACTIVE;
@@ -134,12 +135,19 @@ public:
       return(true);
      }
 
-   bool BeginAdd(const string freshSignalId,const datetime now,string &reason)
+   bool BeginAdd(const string symbol,const ENUM_AX_DIR direction,
+                 const string freshSignalId,const datetime signalTime,
+                 const datetime now,const int minimumSpacingSeconds,
+                 const double campaignPnlAfterEstimatedCosts,
+                 const bool allEntryGatesPass,const bool aggregateRiskVerified,
+                 const bool projectedRiskAndMarginPass,string &reason)
      {
-      reason="";
-      if(m_state!=AX_CAMPAIGN_ACTIVE || freshSignalId=="" ||
-         freshSignalId==m_lastSignalId || m_entryCount>=m_maxEntries)
-        { reason="Add cannot begin from current campaign state"; return(false); }
+      // Re-run every eligibility check atomically at the state transition. A
+      // caller cannot bypass risk/continuation gates by calling BeginAdd alone.
+      if(!CanAdd(symbol,direction,freshSignalId,signalTime,now,minimumSpacingSeconds,
+                 campaignPnlAfterEstimatedCosts,allEntryGatesPass,
+                 aggregateRiskVerified,projectedRiskAndMarginPass,reason))
+         return(false);
       m_lastSignalId=freshSignalId;
       m_lastAddAt=now;
       m_state=AX_CAMPAIGN_ADD_PENDING;
