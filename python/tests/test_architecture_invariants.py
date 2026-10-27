@@ -372,4 +372,5 @@ def test_protection_repair_is_verified_and_missing_protection_triggers_emergency
     assert "if(!ProtectionMatches(symbol,slPrice,tpPrice))" in modify_block
     assert "broker-installed SL/TP do not match request" in modify_block
     assert "POST_FILL_PROTECTION_INVALID" in execution
-    assert "emergency_close=NOT_CONFIRMED" in execution
+    assert "emergency_close=%s%s" in execution
+    assert 'flattened ? "confirmed" : "NOT_CONFIRMED"' in execution
