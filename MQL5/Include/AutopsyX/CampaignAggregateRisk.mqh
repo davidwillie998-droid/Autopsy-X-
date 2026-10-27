@@ -21,14 +21,20 @@ private:
       if(positionType==POSITION_TYPE_BUY) side=ORDER_TYPE_BUY;
       else if(positionType==POSITION_TYPE_SELL) side=ORDER_TYPE_SELL;
       else { reason="Unsupported open position type"; return(false); }
-      if((side==ORDER_TYPE_BUY && stopLoss>=openPrice) ||
-         (side==ORDER_TYPE_SELL && stopLoss<=openPrice))
-        { reason="Open position stop is not on the loss side of its entry"; return(false); }
+      // A trailing stop may be beyond breakeven and legitimately lock profit.
+      // Reject a stop already crossed by the current quote as ambiguous, but do
+      // not mistake a positive P&L at the stop for a loss.
+      double market=(side==ORDER_TYPE_BUY) ? SymbolInfoDouble(symbol,SYMBOL_BID)
+                                          : SymbolInfoDouble(symbol,SYMBOL_ASK);
+      if(market<=0.0 ||
+         (side==ORDER_TYPE_BUY && stopLoss>=market) ||
+         (side==ORDER_TYPE_SELL && stopLoss<=market))
+        { reason="Open position stop is invalid or already crossed by the market"; return(false); }
       double pnl=0.0;
       if(!OrderCalcProfit(side,symbol,volume,openPrice,stopLoss,pnl))
         { reason="OrderCalcProfit failed for an open position"; return(false); }
-      risk=MathAbs(pnl)+commissionPerLot*volume;
-      if(risk<=0.0 || risk!=risk)
+      risk=MathMax(0.0,-pnl)+commissionPerLot*volume;
+      if(risk<0.0 || risk!=risk)
         { reason="Open position stop-risk is invalid"; return(false); }
       return(true);
      }
