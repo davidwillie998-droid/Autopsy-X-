@@ -1122,10 +1122,13 @@ int OnInit(void)
    AxReconcileExistingPosition();
 
    if(InpShowDashboard)
-     {
       g_dash.Init(_Symbol);
+
+   // Heatmap is a signal input as well as a dashboard diagnostic. Keep its timer alive
+   // when the dashboard is hidden; otherwise the heatmap remains stale/unavailable and
+   // silently contributes no score despite InpUseHeatmap being enabled.
+   if(InpShowDashboard || InpUseHeatmap)
       EventSetTimer(1);
-     }
 
    g_engineState = AX_ENGINE_ACTIVE;
    PrintFormat("AUTOPSY X FLIPDEMON EXTREME initialized on %s | mode=%d | risk=%.2f%%",
@@ -1135,11 +1138,10 @@ int OnInit(void)
 
 void OnDeinit(const int reason)
   {
-   if(InpShowDashboard)
-     {
+   if(InpShowDashboard || InpUseHeatmap)
       EventKillTimer();
+   if(InpShowDashboard)
       g_dash.RemoveAll();
-     }
    g_autopsy.Deinit();
    g_regime.Deinit();
    g_regimeHtf.Deinit();
@@ -1454,16 +1456,17 @@ void OnTick(void)
   }
 
 //====================================================================
-// TIMER: dashboard redraw only - never in the hot tick path
+// TIMER: low-frequency DOM refresh plus optional dashboard redraw.
+// Heatmap updates must not depend on whether the visual dashboard is enabled.
 //====================================================================
 void OnTimer(void)
   {
-   if(!InpShowDashboard) return;
-
-   // DOM refresh is heavier than a tick read and doesn't need tick-rate freshness to stay useful -
-   // the dashboard/timer's 1s cadence (the only periodic clock this EA runs) is the natural home for it
+   // DOM refresh is heavier than a tick read and doesn't need tick-rate freshness.
+   // It can affect scoring, so keep it running even when the dashboard is hidden.
    if(InpUseHeatmap)
       g_heatmap.Update(g_md.CurrentBid(),g_md.CurrentAsk(),InpHeatmapRangePoints,g_md.Point());
+
+   if(!InpShowDashboard) return;
 
    double floatingPnl = 0;
    double curPrice = g_md.CurrentMid();
