@@ -1,9 +1,22 @@
 name: Phase 3C data acquisition
 
-# Phase 3C acquisition is evidence collection only. Failed acquisition or
-# provenance verification must never be represented as a sealed valid archive.
+# Phase 3C uses the repository's canonical acquire/seal/verify implementation.
+# A failed or interrupted acquisition must never be sealed as a completed run.
+# Read-only acquisition: no orders, no wallets, no keys.
 
 on:
+  # Each dispatch must supply a new immutable run ID; the frozen request stays unchanged.
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Unique run ID, e.g. p3c-sol-20261021b (never reuse an archive ID)"
+        required: true
+        type: string
+      restart_reason:
+        description: "Why this collector segment is starting or restarting"
+        required: false
+        type: string
+        default: "initial acquisition"
   push:
     branches: [ccr-dea9382c-vwhvi6]
     paths: ["intel/datasets/phase3c/REQUEST.json"]
@@ -18,7 +31,7 @@ concurrency:
 jobs:
   acquire:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,124 +39,181 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Validate Phase 3C request
+      - name: Validate request and reserve a new immutable run ID (local-only)
         id: validate
         working-directory: intel
+        env:
+          DISPATCH_RUN_ID: ${{ inputs.run_id }}
         run: |
-          python - <<'PY'
-          import json
+          set -euo pipefail
+          python -m autopsyx.research.phase3c_preflight datasets/phase3c/REQUEST.json --frozen-baseline
+          FROZEN_RUN_ID=$(python -c "import json;print(json.load(open('datasets/phase3c/REQUEST.json'))['run_id'])")
+          REQUEST_PATH="datasets/phase3c/REQUEST.json"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            RUN_ID="$DISPATCH_RUN_ID"
+            if [[ ! "$RUN_ID" =~ ^p3c-sol-[A-Za-z0-9_-]{1,64}$ ]]; then
+              echo "FAIL: run_id must match p3c-sol-[A-Za-z0-9_-]{1,64}" >&2
+              exit 2
+            fi
+            python - "$RUN_ID" "$RUNNER_TEMP/phase3c-request.json" <<'PY'
+          import json, sys
           from pathlib import Path
-          from autopsyx.data.request_validation import validate_phase3c_request
-
-          request_path = Path("datasets/phase3c/REQUEST.json")
-          request = json.loads(request_path.read_text(encoding="utf-8"))
-          validate_phase3c_request(request, minimum=20)
-          run_id = request["run_id"]
-          run_dir = Path("datasets/phase3c/runs") / run_id
-          if run_dir.exists():
-              raise SystemExit(f"refusing to overwrite existing archive: {run_dir}")
-          with open(__import__("os").environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"run_id={run_id}\n")
-          print(f"Validated {run_id}: requested stratum total >= 20; archive path is new")
-          PY
-      - name: Build novelty-exclusion request
-        id: novelty
-        if: steps.validate.outcome == 'success'
-        working-directory: intel
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import tempfile
-          from pathlib import Path
-
+          request = json.loads(Path("datasets/phase3c/REQUEST.json").read_text(encoding="utf-8"))
+          request["run_id"] = sys.argv[1]
+          # Keep the checked-in request immutable, but create a larger, explicit
+          # effective sample for this acquisition. The old request selected only
+          # 20 pools, which cannot supply the frozen >=85-token hypothesis sample.
+          # Over-select to allow downstream eligibility attrition; never lower gates.
+          # Poll a rotating subset across reserve, trade, DexScreener, and OHLCV endpoints.
+          # Runtime telemetry fails closed if the configured cadence cannot fit the 60s budget.
+          request["new_pool_pages"] = 10
+          request["strata"] = {"young": 100, "quiet_young": 20, "trending": 30, "established": 30}
+          import hashlib
+          request["seed"] = int(hashlib.sha256(sys.argv[1].encode()).hexdigest()[:8], 16)
+          request["duration_s"] = 7200
+          request["cycle_s"] = 60
+          request["poll_pools_per_cycle"] = 12
+          request["ohlcv_every"] = 1
+          request["holders_per_cycle"] = 0
+          request["gt_rate_per_s"] = 0.45
+          # Preserve the required Phase 3A enrichment, but respect the public
+          # provider's 30 calls/minute ceiling with a 27 calls/minute client cap and keep per-address transaction
+          # fetches bounded. Truncation is recorded and remains a readiness limitation.
+          request["phase3a"] = True
+          request["rpc_max_pages"] = 3
+          request["rpc_max_txs"] = 8
+          # Exclude tokens only from complete, independently provenance-verified Phase 3C archives.
           from autopsyx.data import provenance
           from autopsyx.data.raw import RawStore
-
-          # Only prior Phase 3C run archives belong in this novelty set.
-          # Scanning every dataset under intel/ could let unrelated experiments
-          # suppress Solana tokens from the frozen Phase 3C universe.
           archive_root = Path("datasets/phase3c/runs")
           known = set()
           if archive_root.is_dir():
-              manifests = archive_root.rglob("manifest.jsonl")
-          else:
-              manifests = ()
-          # Exclude tokens only from complete, independently provenance-verified
-          # Phase 3C archives. Invalid/incomplete archives must not suppress reacquisition.
-          for manifest in manifests:
-              archive = manifest.parent
-              try:
-                  verification = provenance.verify(str(archive))
-                  metadata = RawStore(archive).read_json("run.json") or {}
-                  if not verification.get("verified") or metadata.get("status") != "COMPLETE":
-                      continue
-              except (OSError, ValueError, KeyError, TypeError):
-                  continue
-              for filename, collection in (("selection.json", "picked"), ("universe.json", "pools")):
-                  path = archive / filename
-                  if not path.is_file():
-                      continue
+              for manifest in archive_root.rglob("manifest.jsonl"):
+                  archive = manifest.parent
                   try:
-                      payload = json.loads(path.read_text(encoding="utf-8"))
-                      rows = payload.get(collection, [])
-                      known.update(
-                          row["token"] for row in rows
-                          if isinstance(row, dict) and isinstance(row.get("token"), str) and row["token"]
-                      )
-                  except (OSError, json.JSONDecodeError, AttributeError, TypeError):
+                      verification = provenance.verify(str(archive))
+                      metadata = RawStore(archive).read_json("run.json") or {}
+                      if not verification.get("verified") or metadata.get("status") != "COMPLETE":
+                          continue
+                  except (OSError, ValueError, KeyError, TypeError):
                       continue
-
-          request_path = Path(tempfile.gettempdir()) / "phase3c-request-with-exclusions.json"
-          request = json.loads(Path("datasets/phase3c/REQUEST.json").read_text(encoding="utf-8"))
+                  for filename, collection in (("selection.json", "picked"), ("universe.json", "pools")):
+                      data_path = archive / filename
+                      if not data_path.is_file():
+                          continue
+                      try:
+                          payload = json.loads(data_path.read_text(encoding="utf-8"))
+                          rows = payload.get(collection, [])
+                          known.update(row["token"] for row in rows
+                                       if isinstance(row, dict) and isinstance(row.get("token"), str) and row["token"])
+                      except (OSError, json.JSONDecodeError, AttributeError, TypeError):
+                          continue
           request["excluded_tokens"] = sorted(known)
-          request_path.write_text(json.dumps(request, sort_keys=True) + "\n", encoding="utf-8")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"request_path={request_path}\n")
-          print(f"Built request excluding {len(known)} previously archived token addresses")
+          Path(sys.argv[2]).write_text(json.dumps(request, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
+            REQUEST_PATH="$RUNNER_TEMP/phase3c-request.json"
+          else
+            RUN_ID="$FROZEN_RUN_ID"
+          fi
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            python -m autopsyx.research.phase3c_preflight "$REQUEST_PATH"
+          else
+            # The push-triggered historical baseline is intentionally undersized.
+            # Validate it under the explicit baseline exception; never use this
+            # exception for a new strict-qualification acquisition.
+            python -m autopsyx.research.phase3c_preflight "$REQUEST_PATH" --frozen-baseline
+          fi
+          if [ -e "datasets/phase3c/runs/$RUN_ID" ]; then
+            echo "FAIL: refusing to reuse immutable archive ID $RUN_ID" >&2
+            exit 2
+          fi
+          echo "RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          echo "REQUEST_PATH=$REQUEST_PATH" >> "$GITHUB_ENV"
       - name: Acquire
         id: acquire
-        if: steps.novelty.outcome == 'success'
         working-directory: intel
         env:
           AUTOPSYX_SOLANA_RPC_URL: ${{ secrets.AUTOPSYX_SOLANA_RPC_URL }}
-        run: |
-          python -m autopsyx --log acquire --live --request "${{ steps.novelty.outputs.request_path }}" --out "datasets/phase3c/runs/${{ steps.validate.outputs.run_id }}"
-      - name: Seal canonical dataset on the runner
-        id: seal
+          AUTOPSYX_RESTART_REASON: ${{ inputs.restart_reason || 'trigger did not supply a restart reason' }}
+        run: python -m autopsyx --log acquire --live --request "$REQUEST_PATH" --out "datasets/phase3c/runs/$RUN_ID"
+      - name: Preserve effective and frozen request inputs
         if: steps.acquire.outcome == 'success'
         working-directory: intel
-        run: python -m autopsyx seal "datasets/phase3c/runs/${{ steps.validate.outputs.run_id }}"
-      - name: Verify provenance on the runner
-        id: verify
+        run: |
+          cp datasets/phase3c/REQUEST.json "datasets/phase3c/runs/$RUN_ID/frozen_request.json"
+          cp "$REQUEST_PATH" "datasets/phase3c/runs/$RUN_ID/request.json"
+          sha256sum "datasets/phase3c/runs/$RUN_ID/frozen_request.json" "datasets/phase3c/runs/$RUN_ID/request.json" > "datasets/phase3c/runs/$RUN_ID/request_hashes.sha256"
+      - name: Snapshot Phase 3C raw manifest before canonical normalization
+        id: manifest_snapshot
+        if: steps.acquire.outcome == 'success'
+        working-directory: intel
+        run: python -m autopsyx.research.phase3c_manifest_integrity snapshot "datasets/phase3c/runs/$RUN_ID"
+      - name: Seal canonical dataset on the runner
+        id: seal
+        if: steps.manifest_snapshot.outcome == 'success'
+        working-directory: intel
+        run: python -m autopsyx seal "datasets/phase3c/runs/$RUN_ID"
+      - name: Seal Phase 3C raw-manifest integrity
+        id: manifest_seal
         if: steps.seal.outcome == 'success'
         working-directory: intel
-        run: python -m autopsyx verify-provenance "datasets/phase3c/runs/${{ steps.validate.outputs.run_id }}" > "datasets/phase3c/runs/${{ steps.validate.outputs.run_id }}/runner_verify.json"
+        run: python -m autopsyx.research.phase3c_manifest_integrity seal "datasets/phase3c/runs/$RUN_ID"
+      - name: Verify provenance on the runner
+        id: verify
+        if: steps.manifest_seal.outcome == 'success'
+        working-directory: intel
+        run: python -m autopsyx verify-provenance "datasets/phase3c/runs/$RUN_ID" > "datasets/phase3c/runs/$RUN_ID/runner_verify.json"
+      - name: Verify Phase 3C raw-manifest integrity
+        id: verify_manifest
+        if: always() && steps.manifest_seal.outcome == 'success'
+        working-directory: intel
+        run: python -m autopsyx.research.phase3c_manifest_integrity verify "datasets/phase3c/runs/$RUN_ID" > "datasets/phase3c/runs/$RUN_ID/manifest_integrity_verify.json"
+      - name: Record failed or interrupted acquisition
+        if: failure() || cancelled()
+        working-directory: intel
+        run: |
+          # GITHUB_ENV values are reliably available to the shell in later steps;
+          # do not gate on the expression env context or override the inherited value.
+          if [[ -z "${RUN_ID:-}" ]]; then
+            echo "No run ID was reserved; nothing to mark failed."
+            exit 0
+          fi
+          python - <<'PY'
+          import json, os, time
+          from pathlib import Path
+          p = Path("datasets/phase3c/runs") / os.environ["RUN_ID"] / "run.json"
+          if p.exists():
+              meta = json.loads(p.read_text(encoding="utf-8"))
+              # Any workflow failure invalidates the overall evidence pipeline,
+              # even if acquisition itself had reached COMPLETE before sealing/verification failed.
+              meta["status"] = "FAILED_OR_INTERRUPTED"
+              meta.setdefault("ended_ms", int(time.time() * 1000))
+              meta["workflow_failure_recorded"] = True
+              p.write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
       - name: Record acquisition lifecycle status
         if: always() && steps.validate.outcome == 'success'
         working-directory: intel
         env:
-          RUN_ID: ${{ steps.validate.outputs.run_id }}
+          RUN_ID: ${{ env.RUN_ID }}
           WORKFLOW_RUN_ID: ${{ github.run_id }}
           VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
           ACQUIRE_OUTCOME: ${{ steps.acquire.outcome }}
           SEAL_OUTCOME: ${{ steps.seal.outcome }}
           VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+          MANIFEST_VERIFY_OUTCOME: ${{ steps.verify_manifest.outcome }}
         run: |
           set -euo pipefail
-          RUN_DIR="datasets/phase3c/runs/$RUN_ID"
-          mkdir -p "$RUN_DIR"
           python - <<'PY'
           import json
           import os
           from pathlib import Path
-
           outcomes = {
               "validation": os.environ["VALIDATE_OUTCOME"],
               "acquisition": os.environ["ACQUIRE_OUTCOME"],
               "seal": os.environ["SEAL_OUTCOME"],
               "provenance_verification": os.environ["VERIFY_OUTCOME"],
+              "manifest_integrity_verification": os.environ["MANIFEST_VERIFY_OUTCOME"],
           }
           complete = all(value == "success" for value in outcomes.values())
           status = {
@@ -152,35 +222,24 @@ jobs:
               "overall_status": "COMPLETE_VERIFIED" if complete else "FAILED_OR_INCOMPLETE",
               "step_outcomes": outcomes,
               "readiness_approved": False,
-              "note": "Lifecycle success does not by itself establish the frozen 85-token statistical readiness requirement."
+              "note": "Lifecycle success does not establish the frozen 85-token statistical readiness requirement."
           }
           path = Path("datasets/phase3c/runs") / os.environ["RUN_ID"] / "lifecycle_status.json"
+          path.parent.mkdir(parents=True, exist_ok=True)
           path.write_text(json.dumps(status, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           print(json.dumps(status, indent=2))
           PY
-      - name: Commit raw archive and diagnostics
-        if: always() && steps.validate.outcome == 'success'
-        env:
-          RUN_ID: ${{ steps.validate.outputs.run_id }}
+      - name: Commit raw archive and verification evidence
+        if: always()
         run: |
-          set -euo pipefail
-          RUN_DIR="intel/datasets/phase3c/runs/$RUN_ID"
-          if [ ! -d "$RUN_DIR" ]; then
-            echo "No archive directory was created; nothing to commit."
+          if [[ -z "${RUN_ID:-}" ]]; then
+            echo "No run ID was reserved; nothing to commit."
             exit 0
           fi
           git config user.name "autopsyx-acquisition"
           git config user.email "actions@users.noreply.github.com"
-          git add "$RUN_DIR"
-          if git diff --cached --quiet; then
-            echo "No new archive diagnostics to commit."
-            exit 0
-          fi
+          git add "intel/datasets/phase3c/runs/$RUN_ID"
+          git diff --cached --quiet && exit 0
           git commit -m "Phase 3C raw archive: $RUN_ID (acquired by workflow run ${{ github.run_id }})"
-          for i in 1 2 3 4; do
-            if git pull --rebase origin "${{ github.ref_name }}" && git push origin "HEAD:${{ github.ref_name }}"; then
-              exit 0
-            fi
-            sleep $((2**i))
-          done
+          for i in 1 2 3 4; do git pull --rebase origin "${{ github.ref_name }}" && git push origin "HEAD:${{ github.ref_name }}" && exit 0; sleep $((2**i)); done
           exit 1

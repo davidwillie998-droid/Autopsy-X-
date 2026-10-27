@@ -86,10 +86,34 @@ def _iso(ms):
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat() if isinstance(ms, int) else None
 
 
+def _record_diff(left: list, right: list) -> dict | None:
+    """Return the first semantic Phase 2 record difference, without dumping payloads."""
+    limit = min(len(left), len(right))
+    for i in range(limit):
+        a, b = asdict(left[i]), asdict(right[i])
+        if _encode(a) != _encode(b):
+            keys = sorted(set(a) | set(b))
+            changed = [k for k in keys if _encode({k: a.get(k)}) != _encode({k: b.get(k)})]
+            return {"index": i, "left_type": type(left[i]).__name__, "right_type": type(right[i]).__name__,
+                    "left_raw_id": getattr(left[i], "raw_id", None),
+                    "right_raw_id": getattr(right[i], "raw_id", None), "changed_fields": changed}
+    if len(left) != len(right):
+        return {"index": limit, "left_count": len(left), "right_count": len(right), "kind": "record_count"}
+    return None
+
+
 def seal(run_dir: str) -> dict:
     d = Path(run_dir)
     raw = RawStore(d)
     b = build(run_dir)
+    check = build(run_dir)
+    if (b["phase2_records_sha256"], b["phase3a_observations_sha256"]) != (
+            check["phase2_records_sha256"], check["phase3a_observations_sha256"]):
+        diff = _record_diff(b["records"], check["records"])
+        raise ValueError("refusing to seal a non-reproducible archive; "
+                         f"phase2 {b['phase2_records_sha256']} != {check['phase2_records_sha256']}; "
+                         f"phase3a {b['phase3a_observations_sha256']} != {check['phase3a_observations_sha256']}; "
+                         f"first Phase 2 difference: {diff}")
     (d / "canonical").mkdir(exist_ok=True)
     tmp = d / "canonical" / "phase2_records.jsonl"
     EventStore.dump_jsonl(tmp, b["records"])
@@ -164,6 +188,8 @@ def verify(run_dir: str) -> dict:
            "rebuild_2": {"phase2_records": r2["phase2_records_sha256"], "phase3a_observations": r2["phase3a_observations_sha256"]},
            "committed_canonical": {"phase2_records": c2, "phase3a_observations": c3}}
     out["reproducible"] = out["rebuild_1"] == out["rebuild_2"]
+    if not out["reproducible"]:
+        out["first_phase2_difference"] = _record_diff(r1["records"], r2["records"])
     if prov:
         rh = prov["runner_dataset_hash"]
         out["source"] = "run.json provenance (sealed on runner)"
