@@ -128,7 +128,8 @@ require("POST_FILL_PROTECTION_MISSING" in open_market_block
         and "POST_FILL_PROTECTION_INVALID" in open_market_block,
         "post-fill missing or invalid protection enters fail-closed recovery")
 require("bool flattened=ClosePosition(symbol,closeErr)" in open_market_block
-        and "emergency_close=NOT_CONFIRMED" in open_market_block,
+        and "emergency_close=%s%s" in open_market_block
+        and 'flattened ? "confirmed" : "NOT_CONFIRMED"' in open_market_block,
         "unprotected fills trigger emergency close and report unconfirmed flattening")
 require("if(!ProtectionMatches(symbol,slPrice,tpPrice))" in execution
         and "broker-installed SL/TP do not match request" in execution,
