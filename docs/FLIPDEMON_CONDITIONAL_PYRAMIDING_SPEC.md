@@ -111,6 +111,18 @@ Add explicit inputs for:
 
 Validate every input at initialization. Reject impossible or contradictory settings. Do not provide an unlimited exposure option. Preserve existing risk limits unless a separately reviewed change explicitly alters them.
 
+## Implementation milestone status (2026-10-27)
+
+The following isolated primitives have been added on the equity-responsive pyramiding feature branch:
+
+- `MQL5/Include/AutopsyX/EquityResponsiveSizer.mqh`: computes a candidate volume from current equity, a per-trade stop-risk budget, remaining aggregate risk budget supplied by the caller, broker volume-step rules, a configurable adverse-slippage buffer, commission estimate, and projected margin. It rejects unverified existing exposure and rejects a broker minimum volume if it would exceed the budget.
+- `MQL5/Include/AutopsyX/CampaignAggregateRisk.mqh`: attempts to reconstruct stop-risk across all account positions and pending orders, including manual/foreign positions. Missing/invalid stops or failed broker calculations fail closed. A profitable trailing stop is not misclassified as a loss; a stop already crossed by the market is treated as ambiguous.
+- `MQL5/Include/AutopsyX/FlipDemonCampaignManager.mqh`: initial/add pending state transitions, unique and newer signal checks, positive campaign P&L after estimated costs, gate verification, minimum add spacing, and the 10-total-entry ceiling. Add eligibility is rechecked inside the state transition to prevent a caller from bypassing the gates.
+
+**These files are not yet wired into the main EA execution path and are not execution authorization.** Campaign persistence/reconstruction, robust order/deal reconciliation, a complete aggregate-risk policy, and actual integration remain outstanding. The current execution engine refuses to open a symbol that already has a position, the EA currently refuses to initialize on hedging accounts, and the existing standalone portfolio risk gate is not sufficient for pyramiding. Do not enable pyramiding or change the execution default until those architecture and verification gaps are resolved.
+
+The helper modules are source changes only at this milestone. No MetaEditor compile, MT5 Strategy Tester, netting/hedging test, or demo forward-test result is claimed.
+
 ## Required verification before considering activation
 
 1. Static regression tests: ANALYSIS_ONLY default; no accidental LIVE authorization; no martingale/averaging-down; all adds require campaign risk gate; risk-calculation failure blocks.
