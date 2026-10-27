@@ -44,6 +44,21 @@ Persist or reconstruct enough state after terminal restart to avoid duplicate ad
 
 The existing signal and execution pipeline must approve the candidate. Reuse the existing direction, stop calculation, lot sizing, broker-volume validation, spread/slippage, session, H4/Daily regime, drawdown, loss limits, Kelly/AFE and emergency gates. A campaign record is created only after broker execution and actual filled volume/price are confirmed.
 
+## Equity-responsive position sizing
+
+Equity-responsive sizing is part of the approved conditional-pyramiding design. It must not become a fixed lot-escalation ladder.
+
+- Recalculate the candidate order's permissible volume for every initial entry and every add using current account equity, the configured risk fraction, the valid stop-loss distance, broker tick/contract metadata, and estimated trading costs where available.
+- As account equity increases, the monetary risk budget may increase proportionally under the configured risk policy. This permits larger lots only when the new stop distance, volume step, campaign aggregate stop-risk, account aggregate stop-risk, margin ceiling, and all other gates independently allow them.
+- If equity falls or drawdown guards change state, the permitted risk budget must fall or new exposure must be blocked according to the existing Risk Engine and Adaptive Flip Engine policy. Never increase size to recover a loss.
+- Do not use campaign entry number, winning streak, floating profit alone, or a predetermined multiplier ladder as a reason to increase volume. Every add must have a fresh qualifying continuation setup and its own valid stop-based risk calculation.
+- Distinguish account balance, current equity, floating P&L, and peak equity. A temporary unrealized gain must not silently reset drawdown state or grant an unrestricted permanent risk increase.
+- Compute the proposed order's risk together with all existing EA-owned exposure and pending orders. Existing positions consume the shared risk budget; never grant each pyramid entry a separate full account risk allowance.
+- If the risk estimate, stop, quote, account equity, contract metadata, existing exposure, or projected margin cannot be verified, reject the new exposure. Do not silently widen stops or round volume upward beyond the approved risk budget.
+- Round candidate volume down to the broker's valid volume step and reject the order if the resulting volume is below the broker minimum or otherwise invalid. A broker minimum must never force risk above the approved budget.
+
+This rule authorizes a sizing design, not a promise of profits or a change to the EA's execution mode. `AX_EXEC_ANALYSIS_ONLY` remains the default, and pyramiding remains disabled until the implementation and validation gates pass.
+
 ## Add-to-winner requirements
 
 An add is permitted only when all conditions pass:
