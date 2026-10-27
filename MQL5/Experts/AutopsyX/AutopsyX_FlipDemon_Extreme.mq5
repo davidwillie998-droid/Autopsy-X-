@@ -39,10 +39,15 @@
 #include <AutopsyX/VWAPEngine.mqh>
 #include <AutopsyX/EmergencyControls.mqh>
 #include <AutopsyX/Dashboard.mqh>
+#include <AutopsyX/SymbolUniverse.mqh>
 
 //====================================================================
 // INPUTS
 //====================================================================
+input group "=== SYMBOL UNIVERSE PREFLIGHT ===";
+input string InpUniverseSymbols = ""; // Optional comma-separated symbols; exact names preferred, unique broker suffix/prefix aliases only
+input int    InpUniverseMaxQuoteAgeSeconds = 60; // Reject stale universe quotes during startup preflight
+
 input group "=== MODE ===";
 input ENUM_AX_MODE   InpMode                    = AX_MODE_AGGRESSIVE; // Aggression mode
 input double         InpExtremeRiskPercent      = 2.0;                // EXTREME mode risk % per trade (hard-capped at 2.0)
@@ -199,6 +204,7 @@ input int             InpMaxConsecutiveExecFailures = 3;     // Consecutive exec
 //====================================================================
 // GLOBAL ENGINE OBJECTS
 //====================================================================
+CAxSymbolUniverse    g_symbolUniverse; // Discovery/preflight registry only; trade engines remain chart-symbol-bound in this phase
 CMarketData          g_md;
 CMomentumEngine       g_mom;
 CMicrostructureEngine g_micro;
@@ -1029,6 +1035,20 @@ int OnInit(void)
             "Use a netting account, or a broker/account type that supports it.");
       return(INIT_FAILED);
      }
+
+   //--- PHASE 1: broker-aware symbol universe discovery/preflight. This deliberately does NOT
+   //--- route orders to non-chart symbols yet: the existing engines own chart-symbol state, and
+   //--- enabling multi-symbol execution before per-symbol state isolation would be unsafe. ---
+   int universeCount=g_symbolUniverse.Build(InpUniverseSymbols,_Symbol,
+                                             InpUniverseMaxQuoteAgeSeconds,true);
+   if(universeCount<1)
+     {
+      Print("AUTOPSY X: symbol universe preflight failed; no valid symbols available.");
+      return(INIT_FAILED);
+     }
+   PrintFormat("AUTOPSY X: symbol universe preflight registered %d symbol(s). "
+               "Execution remains chart-symbol-only until per-symbol engine isolation is complete.",
+               universeCount);
 
    // demo execution is typically near-instant with near-zero slippage - it will not surface the
    // live-only problems this EA specifically defends against (spread spikes, slow fills, real
