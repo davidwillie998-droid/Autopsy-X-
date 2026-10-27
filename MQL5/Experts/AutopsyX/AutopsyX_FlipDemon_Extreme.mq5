@@ -40,6 +40,7 @@
 #include <AutopsyX/EmergencyControls.mqh>
 #include <AutopsyX/Dashboard.mqh>
 #include <AutopsyX/SymbolUniverse.mqh>
+#include <AutopsyX/SymbolContext.mqh>
 
 //====================================================================
 // INPUTS
@@ -204,7 +205,8 @@ input int             InpMaxConsecutiveExecFailures = 3;     // Consecutive exec
 //====================================================================
 // GLOBAL ENGINE OBJECTS
 //====================================================================
-CAxSymbolUniverse    g_symbolUniverse; // Discovery/preflight registry only; trade engines remain chart-symbol-bound in this phase
+CAxSymbolUniverse    g_symbolUniverse;
+CAxSymbolContext     g_symbolContexts; // per-symbol quote, bar, signal-freshness and cooldown state // Discovery/preflight registry only; trade engines remain chart-symbol-bound in this phase
 CMarketData          g_md;
 CMomentumEngine       g_mom;
 CMicrostructureEngine g_micro;
@@ -1046,6 +1048,15 @@ int OnInit(void)
       Print("AUTOPSY X: symbol universe preflight failed; no valid symbols available.");
       return(INIT_FAILED);
      }
+   if(!g_symbolContexts.LoadUniverse(g_symbolUniverse,InpUniverseMaxQuoteAgeSeconds))
+     {
+      Print("AUTOPSY X: failed to initialize per-symbol context registry.");
+      return(INIT_FAILED);
+     }
+   g_symbolContexts.RefreshQuotes();
+   PrintFormat("AUTOPSY X: symbol contexts initialized for %d symbol(s).",
+               g_symbolContexts.Count());
+
    PrintFormat("AUTOPSY X: symbol universe preflight registered %d symbol(s). "
                "Execution remains chart-symbol-only until per-symbol engine isolation is complete.",
                universeCount);
@@ -1142,10 +1153,9 @@ int OnInit(void)
    AxReconcileExistingPosition();
 
    if(InpShowDashboard)
-     {
       g_dash.Init(_Symbol);
+   if(InpShowDashboard || g_symbolUniverse.Count()>1)
       EventSetTimer(1);
-     }
 
    g_engineState = AX_ENGINE_ACTIVE;
    PrintFormat("AUTOPSY X FLIPDEMON EXTREME initialized on %s | mode=%d | risk=%.2f%%",
@@ -1155,11 +1165,10 @@ int OnInit(void)
 
 void OnDeinit(const int reason)
   {
-   if(InpShowDashboard)
-     {
+   if(InpShowDashboard || g_symbolUniverse.Count()>1)
       EventKillTimer();
+   if(InpShowDashboard)
       g_dash.RemoveAll();
-     }
    g_autopsy.Deinit();
    g_regime.Deinit();
    g_regimeHtf.Deinit();
@@ -1171,6 +1180,7 @@ void OnDeinit(const int reason)
 //====================================================================
 void OnTick(void)
   {
+   g_symbolContexts.RefreshQuotes(); // refresh independent quote snapshots; strategy remains chart-symbol-only
    if(!g_md.OnTickUpdate()) return;
    g_risk.OnTickHousekeeping();
    g_afe.OnTickHousekeeping();
@@ -1478,6 +1488,8 @@ void OnTick(void)
 //====================================================================
 void OnTimer(void)
   {
+   if(g_symbolUniverse.Count()>1)
+      g_symbolContexts.RefreshQuotes();
    if(!InpShowDashboard) return;
 
    // DOM refresh is heavier than a tick read and doesn't need tick-rate freshness to stay useful -
