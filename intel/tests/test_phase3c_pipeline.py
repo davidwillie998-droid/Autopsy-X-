@@ -264,6 +264,18 @@ def test_h10_replication_audit_collapses_deterministically():
     out = p3c.h10_replication_audit(rows, ["a"])
     assert out["n_tokens_collapsed"] == 1  # one token -> one collapsed row, deterministically the earliest step
 
+def test_h10_replication_audit_uses_timestamp_not_archive_name():
+    # Archive "a_later" sorts before "z_earlier", but its observation is later.
+    rows = [
+        {"archive": "a_later", "token": "t1", "as_of": 200, "step_index": 1, "x": 2.0, "y_classified": 2.0, "y_direction": 2.0},
+        {"archive": "z_earlier", "token": "t1", "as_of": 100, "step_index": 9, "x": 1.0, "y_classified": 1.0, "y_direction": 1.0},
+        {"archive": "a_later", "token": "t2", "as_of": 200, "step_index": 1, "x": 1.0, "y_classified": 1.0, "y_direction": 1.0},
+        {"archive": "z_earlier", "token": "t2", "as_of": 100, "step_index": 9, "x": 2.0, "y_classified": 2.0, "y_direction": 2.0},
+    ]
+    out = p3c.h10_replication_audit(rows, ["a_later", "z_earlier"])
+    for target in ("y_classified", "y_direction"):
+        assert out["per_target"][target]["spearman_one_row_per_token"] == 1.0
+
 
 # ------------------------------------------------------- contamination dedup ----
 def test_deduplicate_rows_keeps_earliest_acquired_archive(tmp_path, monkeypatch):
