@@ -42,7 +42,7 @@ private:
    bool              ProtectionMatches(const string symbol,const double requestedSl,
                                         const double requestedTp) const
      {
-      if(requestedSl<=0.0 || !PositionSelect(symbol)) return(false);
+      if(requestedSl<=0.0 || requestedTp<0.0 || !PositionSelect(symbol)) return(false);
       if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic) return(false);
       double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
       double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
@@ -160,7 +160,7 @@ public:
             bool stopGeometryOk=(slPrice>0.0 &&
                                  ((dir==AX_DIR_BUY && slPrice<fillPriceOut) ||
                                   (dir==AX_DIR_SELL && slPrice>fillPriceOut)));
-            bool targetGeometryOk=(tpPrice<=0.0 ||
+            bool targetGeometryOk=(tpPrice==0.0 ||
                                    (dir==AX_DIR_BUY && tpPrice>fillPriceOut) ||
                                    (dir==AX_DIR_SELL && tpPrice<fillPriceOut));
             if(!stopGeometryOk || !targetGeometryOk)
