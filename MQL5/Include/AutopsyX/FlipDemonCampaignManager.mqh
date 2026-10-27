@@ -29,6 +29,7 @@ private:
    int                    m_maxEntries;
    datetime               m_startedAt;
    datetime               m_lastAddAt;
+   datetime               m_lastSignalTime;
    string                 m_lastSignalId;
    double                 m_realizedPnl;
    double                 m_openVolume;
@@ -61,6 +62,7 @@ public:
       m_entryCount=0;
       m_startedAt=0;
       m_lastAddAt=0;
+      m_lastSignalTime=0;
       m_lastSignalId="";
       m_realizedPnl=0.0;
       m_openVolume=0.0;
@@ -69,17 +71,18 @@ public:
 
    bool BeginInitialEntry(const string campaignId,const string symbol,
                           const ENUM_AX_DIR direction,const string signalId,
-                          string &reason)
+                          const datetime signalTime,string &reason)
      {
       reason="";
       if(m_state!=AX_CAMPAIGN_FLAT)
         { reason="Campaign is not flat"; return(false); }
-      if(campaignId=="" || symbol=="" || signalId=="" || !ValidDirection(direction))
+      if(campaignId=="" || symbol=="" || signalId=="" || signalTime<=0 || signalTime>TimeCurrent() || !ValidDirection(direction))
         { reason="Initial campaign identity, symbol, direction, or signal is invalid"; return(false); }
       m_campaignId=campaignId;
       m_symbol=symbol;
       m_direction=direction;
       m_lastSignalId=signalId;
+      m_lastSignalTime=signalTime;
       m_entryCount=0;
       m_startedAt=TimeCurrent();
       m_lastAddAt=0;
@@ -118,7 +121,7 @@ public:
         { reason="Campaign is not active and reconciled"; return(false); }
       if(symbol!=m_symbol || direction!=m_direction || !ValidDirection(direction))
         { reason="Add does not match the active campaign symbol and direction"; return(false); }
-      if(freshSignalId=="" || freshSignalId==m_lastSignalId || signalTime<=0 || signalTime>now)
+      if(freshSignalId=="" || freshSignalId==m_lastSignalId || signalTime<=0 || signalTime>now || signalTime<=m_lastSignalTime)
         { reason="Signal is missing, duplicated, or not yet valid"; return(false); }
       if(m_entryCount>=m_maxEntries)
         { reason="Campaign entry cap reached (initial entry included)"; return(false); }
@@ -149,6 +152,7 @@ public:
                  aggregateRiskVerified,projectedRiskAndMarginPass,reason))
          return(false);
       m_lastSignalId=freshSignalId;
+      m_lastSignalTime=signalTime;
       m_lastAddAt=now;
       m_state=AX_CAMPAIGN_ADD_PENDING;
       return(true);
