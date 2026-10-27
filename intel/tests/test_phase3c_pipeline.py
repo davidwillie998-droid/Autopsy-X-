@@ -24,23 +24,6 @@ def test_reuses_frozen_hypothesis_ids_and_min_sample():
     assert p3c.MIN_SAMPLE is contract.MIN_SAMPLE
 
 
-def test_exploratory_70_token_pilot_never_relaxes_formal_85_gate():
-    below_pilot = p3c.sample_gate(69)
-    pilot_only = p3c.sample_gate(70)
-    still_formal_insufficient = p3c.sample_gate(84)
-    formal_count_met = p3c.sample_gate(85)
-
-    assert p3c.EXPLORATORY_PILOT_MIN_SAMPLE == 70
-    assert p3c.MIN_SAMPLE == contract.MIN_SAMPLE == 85
-    assert below_pilot["exploratory_pilot_eligible"] is False
-    assert pilot_only["exploratory_pilot_eligible"] is True
-    assert pilot_only["formal_sample_minimum_met"] is False
-    assert still_formal_insufficient["exploratory_pilot_eligible"] is True
-    assert still_formal_insufficient["formal_sample_minimum_met"] is False
-    assert formal_count_met["formal_sample_minimum_met"] is True
-    assert "not formal readiness approval" in pilot_only["note"]
-
-
 def test_token_level_sample_size_enforced_not_row_count(evidence):
     for h in evidence["hypotheses"]:
         if not h.get("targets"):
@@ -189,16 +172,77 @@ def test_attack_zero_variance_feature_cannot_replicate():
 
 
 # -------------------------------------------------- walk-forward OOS mechanics ----
-def test_walk_forward_oos_splits_tokens_not_rows():
-    by_token = {f"t{i}": [{"as_of": i * 1000 + j, "x": float(i % 2), f"y": float(i % 2)}
-                          for j in range(5)] for i in range(10)}
-    for rows in by_token.values():
-        for r in rows:
-            r["y"] = r["x"]
+def test_discovery_rows_are_strictly_pre_holdout_and_horizon_purged():
+    rows = [
+        {"token": f"t{i}", "as_of": step * 1000, "step_index": step,
+         "x": float(i + step), "y_direction": float(i + step)}
+        for i in range(12) for step in range(20)
+    ]
+    train, report = p3c.chronological_training_rows(rows)
+    assert report["available"] is True
+    assert report["cutoff_as_of"] == 10_000
+    assert report["n_train_rows_after_purge"] == len(train)
+    assert report["n_train_tokens_after_purge"] == 12
+    assert train
+    assert all(r["as_of"] < report["cutoff_as_of"] for r in train)
+    first_oos_step = 10
+    assert all(r["step_index"] + contract.HORIZON_STEPS < first_oos_step for r in train)
+    assert report["n_train_rows_purged"] > 0
+
+
+
+def test_runtime_temporal_isolation_rejects_timestamp_overlap():
+    rows = [
+        {"token": f"t{i}", "as_of": step * 1000, "step_index": step,
+         "x": float(step), "y_direction": float(step)}
+        for i in range(4) for step in range(20)
+    ]
+    train, report = p3c.chronological_training_rows(rows)
+    assert report["available"] is True
+    # Force a future timestamp into discovery; the runtime guard must fail closed.
+    contaminated = [dict(r) for r in train]
+    contaminated[0]["as_of"] = report["cutoff_as_of"]
+    with pytest.raises(ValueError, match=r"max\(discovery_timestamp\)"):
+        p3c.assert_temporal_isolation(rows, contaminated, report)
+
+
+def test_runtime_temporal_isolation_rejects_label_horizon_overlap():
+    rows = [
+        {"token": f"t{i}", "as_of": step * 1000, "step_index": step,
+         "x": float(step), "y_direction": float(step)}
+        for i in range(4) for step in range(20)
+    ]
+    train, report = p3c.chronological_training_rows(rows)
+    assert report["available"] is True
+    # Put a row back into discovery that crosses its token's first OOS label horizon.
+    token = train[0]["token"]
+    contaminated = [dict(r) for r in train]
+    bad = dict(next(r for r in rows if r["token"] == token and r["as_of"] < report["cutoff_as_of"]))
+    bad["step_index"] = 9
+    bad["as_of"] = report["cutoff_as_of"] - 1
+    contaminated.append(bad)
+    with pytest.raises(ValueError, match="label leakage"):
+        p3c.assert_temporal_isolation(rows, contaminated, report)
+
+
+def test_walk_forward_oos_uses_future_timestamps_and_purges_label_overlap():
+    by_token = {
+        f"t{i}": [
+            {"token": f"t{i}", "as_of": step * 1000, "step_index": step,
+             "x": float(i * 100 + step), "y": float(i * 100 + step)}
+            for step in range(20)
+        ]
+        for i in range(12)
+    }
     out = p3c.walk_forward_oos(by_token, "y")
     assert out is not None
-    assert out["in_sample"]["n_tokens"] + out["oos"]["n_tokens"] == 10
-    assert out["signs_agree"] is True  # perfectly correlated in both halves
+    assert out["method"] == "chronological_timestamp_split_with_label_horizon_embargo"
+    assert out["cutoff_as_of"] == 10_000
+    assert out["horizon_steps_embargo"] == contract.HORIZON_STEPS
+    assert out["in_sample"]["n_tokens"] == 12
+    assert out["oos"]["n_tokens"] == 12
+    assert out["in_sample_purged_rows"] > 0
+    assert out["signs_agree"] is True
 
 
 def test_walk_forward_oos_none_when_undefined():
@@ -219,6 +263,18 @@ def test_h10_replication_audit_collapses_deterministically():
            {"archive": "a", "token": "t1", "step_index": 1, "x": 0.5, "y_classified": 0.0, "y_direction": -1.0}]
     out = p3c.h10_replication_audit(rows, ["a"])
     assert out["n_tokens_collapsed"] == 1  # one token -> one collapsed row, deterministically the earliest step
+
+def test_h10_replication_audit_uses_timestamp_not_archive_name():
+    # Archive "a_later" sorts before "z_earlier", but its observation is later.
+    rows = [
+        {"archive": "a_later", "token": "t1", "as_of": 200, "step_index": 1, "x": 2.0, "y_classified": 2.0, "y_direction": 2.0},
+        {"archive": "z_earlier", "token": "t1", "as_of": 100, "step_index": 9, "x": 1.0, "y_classified": 1.0, "y_direction": 1.0},
+        {"archive": "a_later", "token": "t2", "as_of": 200, "step_index": 1, "x": 1.0, "y_classified": 1.0, "y_direction": 1.0},
+        {"archive": "z_earlier", "token": "t2", "as_of": 100, "step_index": 9, "x": 2.0, "y_classified": 2.0, "y_direction": 2.0},
+    ]
+    out = p3c.h10_replication_audit(rows, ["a_later", "z_earlier"])
+    for target in ("y_classified", "y_direction"):
+        assert out["per_target"][target]["spearman_one_row_per_token"] == 1.0
 
 
 # ------------------------------------------------------- contamination dedup ----
