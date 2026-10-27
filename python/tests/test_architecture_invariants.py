@@ -348,3 +348,28 @@ def test_partial_close_rechecks_position_ownership_after_server_fill():
         "bool              Flip", 1
     )[0]
     assert "Position ownership changed during partial close" in partial_block
+
+
+def test_market_fill_requires_broker_installed_protection_before_success():
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    open_block = execution.split("bool              OpenMarket", 1)[1].split(
+        "bool              ClosePosition", 1
+    )[0]
+    assert "bool stopGeometryOk=" in open_block
+    assert "ProtectionMatches(symbol,slPrice,tpPrice)" in open_block
+    assert "POST_FILL_PROTECTION_MISSING" in open_block
+    assert "bool flattened=ClosePosition(symbol,closeErr)" in open_block
+    assert open_block.index("ConfirmPosition(") < open_block.index("ProtectionMatches(")
+    assert open_block.index("ProtectionMatches(") < open_block.index("return(true);")
+
+
+def test_protection_repair_is_verified_and_missing_protection_triggers_emergency_close():
+    execution = (INCLUDE_DIR / "ExecutionEngine.mqh").read_text(errors="replace")
+    assert "bool              ProtectionMatches(" in execution
+    modify_block = execution.split("bool              ModifyStops", 1)[1].split(
+        "bool              OpenPendingStop", 1
+    )[0]
+    assert "if(!ProtectionMatches(symbol,slPrice,tpPrice))" in modify_block
+    assert "broker-installed SL/TP do not match request" in modify_block
+    assert "POST_FILL_PROTECTION_INVALID" in execution
+    assert "emergency_close=NOT_CONFIRMED" in execution
