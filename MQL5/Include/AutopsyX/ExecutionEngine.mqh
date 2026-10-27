@@ -38,6 +38,24 @@ private:
       return(ORDER_FILLING_RETURN);
      }
 
+   // Confirm the broker-installed protection, not merely the parameters sent with the request.
+   bool              ProtectionMatches(const string symbol,const double requestedSl,
+                                        const double requestedTp) const
+     {
+      if(requestedSl<=0.0 || requestedTp<0.0 || !PositionSelect(symbol)) return(false);
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic) return(false);
+      double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+      double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+      double tolerance=MathMax((point>0.0 ? point*0.5 : 0.0),
+                               (tickSize>0.0 ? tickSize*0.5 : 0.0000001));
+      double actualSl=PositionGetDouble(POSITION_SL);
+      double actualTp=PositionGetDouble(POSITION_TP);
+      if(actualSl<=0.0 || MathAbs(actualSl-requestedSl)>tolerance) return(false);
+      if(requestedTp>0.0)
+         return(actualTp>0.0 && MathAbs(actualTp-requestedTp)<=tolerance);
+      return(actualTp<=tolerance);
+     }
+
 public:
                      CExecutionEngine(void) { m_magic=0; m_maxRetries=2; m_retryDelayMs=200; }
 
@@ -132,13 +150,50 @@ public:
          if(ok && serverConfirmedFill)
            {
             latencyMsOut = (int)(GetTickCount()-startTick);
-            if(ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut,actualLotsOut))
+            if(!ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut,actualLotsOut))
               {
-               errorReason="";
-               return(true);
+               errorReason="Trade server reported a fill but owned position state did not confirm";
+               return(false);
               }
-            errorReason="Trade server reported a fill but owned position state did not confirm";
-            return(false);
+
+            // The requested stop must protect the actual fill, not just the pre-send quote.
+            bool stopGeometryOk=(slPrice>0.0 &&
+                                 ((dir==AX_DIR_BUY && slPrice<fillPriceOut) ||
+                                  (dir==AX_DIR_SELL && slPrice>fillPriceOut)));
+            bool targetGeometryOk=(tpPrice==0.0 ||
+                                   (dir==AX_DIR_BUY && tpPrice>fillPriceOut) ||
+                                   (dir==AX_DIR_SELL && tpPrice<fillPriceOut));
+            if(!stopGeometryOk || !targetGeometryOk)
+              {
+               string closeErr;
+               bool flattened=ClosePosition(symbol,closeErr);
+               errorReason=StringFormat("POST_FILL_PROTECTION_INVALID: stop/target geometry does not protect actual fill; emergency_close=%s%s",
+                                        flattened ? "confirmed" : "NOT_CONFIRMED",
+                                        flattened ? "" : StringFormat(" (%s)",closeErr));
+               return(false);
+              }
+
+            // A DONE/DONE_PARTIAL response is not proof that SL/TP were installed. Verify the
+            // live broker position; attempt one explicit protection repair, then flatten if still
+            // unprotected. Never report an entry as successful with missing or mismatched SL/TP.
+            if(!ProtectionMatches(symbol,slPrice,tpPrice))
+              {
+               string protectionErr;
+               ModifyStops(symbol,slPrice,tpPrice,protectionErr);
+               if(!ProtectionMatches(symbol,slPrice,tpPrice))
+                 {
+                  string closeErr;
+                  bool flattened=ClosePosition(symbol,closeErr);
+                  errorReason=StringFormat("POST_FILL_PROTECTION_MISSING: broker SL/TP did not match request after repair; repair=%s; emergency_close=%s%s",
+                                           protectionErr,
+                                           flattened ? "confirmed" : "NOT_CONFIRMED",
+                                           flattened ? "" : StringFormat(" (%s)",closeErr));
+                  return(false);
+                 }
+              }
+
+            errorReason="";
+            return(true);
            }
          if(ok && !serverConfirmedFill)
            {
@@ -331,21 +386,19 @@ public:
       uint retcode = m_trade.ResultRetcode();
       if(ok && retcode==TRADE_RETCODE_NO_CHANGES)
         {
-         // Some servers return NO_CHANGES when the requested protection is already installed.
-         // Confirm actual SL/TP before treating that response as success.
-         if(PositionSelect(symbol))
-           {
-            double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
-            double tolerance=(point>0.0) ? point*0.5 : 0.0000001;
-            double actualSl=PositionGetDouble(POSITION_SL);
-            double actualTp=PositionGetDouble(POSITION_TP);
-            if(MathAbs(actualSl-slPrice)<=tolerance && MathAbs(actualTp-tpPrice)<=tolerance)
-              { errorReason=""; return(true); }
-           }
+         if(ProtectionMatches(symbol,slPrice,tpPrice))
+           { errorReason=""; return(true); }
         }
       if(!ok || retcode!=TRADE_RETCODE_DONE)
         {
          errorReason = StringFormat("Modify failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         return(false);
+        }
+
+      // DONE confirms request processing, not that the final SL/TP values remain installed.
+      if(!ProtectionMatches(symbol,slPrice,tpPrice))
+        {
+         errorReason="Stop modification acknowledged but broker-installed SL/TP do not match request";
          return(false);
         }
       errorReason="";
