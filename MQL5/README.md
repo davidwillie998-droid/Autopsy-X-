@@ -1,4 +1,4 @@
-# AUTOPSY X FLIPDEMON EXTREME
+# FlipDemon Extreme HFT
 
 Ultra-aggressive MT5 HFT flipping & scalping Expert Advisor.
 
@@ -35,7 +35,7 @@ live or demo account.
 3. In MT5, open a chart for the symbol you want to trade (XAUUSD, EURUSD,
    GBPUSD, USDJPY, GBPJPY, NAS100, US30, BTCUSD, or any other broker
    symbol — see "Broker adaptation" below).
-4. Drag `AutopsyX FlipDemon Extreme` onto the chart.
+4. Drag `FlipDemon Extreme HFT` onto the chart.
 5. Pick a risk mode (`InpMode`) and review the input groups.
 6. Enable AutoTrading (Ctrl+E) and confirm "Allow Algo Trading" is checked
    in the EA's Common tab.
