@@ -524,7 +524,13 @@ void AxExecutePartialClose(const double volumeToClose)
       return;
      }
 
-   if(!PositionSelect(_Symbol)) return;
+   if(!PositionSelect(_Symbol))
+     {
+      g_partialClosePending=true;
+      g_pendingPartialCloseVolume=volumeToClose;
+      Print("FLIPDEMON: partial-close position snapshot unavailable; accounting deferred.");
+      return;
+     }
    double actualClosed=g_posState.lots-PositionGetDouble(POSITION_VOLUME);
    if(actualClosed<=0.0)
      {
