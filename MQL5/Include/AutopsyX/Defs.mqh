@@ -370,6 +370,7 @@ struct SAxTradeRecord
                                           // produced it - empty for records predating this field
                                           // or for untracked/restart-recovered positions
    ulong               ticket;
+   ulong               positionIdentifier; // stable broker POSITION_IDENTIFIER for restart-safe deal reconciliation
    ulong               dealIdIn;         // 0 if not yet known/recorded from a real deal ticket
    ulong               dealIdOut;
    datetime            entryTime;
