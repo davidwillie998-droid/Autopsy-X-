@@ -42,6 +42,7 @@
 #include <AutopsyX/SymbolUniverse.mqh>
 #include <AutopsyX/SymbolContext.mqh>
 #include <AutopsyX/SymbolAnalyzer.mqh>
+#include <AutopsyX/CandidatePermission.mqh>
 
 //====================================================================
 // INPUTS
@@ -212,6 +213,7 @@ input int             InpMaxConsecutiveExecFailures = 3;     // Consecutive exec
 CAxSymbolUniverse    g_symbolUniverse;
 CAxSymbolContext     g_symbolContexts; // per-symbol quote, bar, signal-freshness and cooldown state // Discovery/preflight registry only; trade engines remain chart-symbol-bound in this phase
 CAxSymbolAnalyzer    g_symbolAnalyzers[AX_MAX_UNIVERSE_SYMBOLS];
+CAxCandidatePermission g_candidatePermission;
 string               g_bestScanCandidate = "";
 CMarketData          g_md;
 CMomentumEngine       g_mom;
@@ -1063,6 +1065,8 @@ int OnInit(void)
    PrintFormat("AUTOPSY X: symbol contexts initialized for %d symbol(s).",
                g_symbolContexts.Count());
 
+   g_candidatePermission.Configure(InpMaxCandidateScoreAgeSeconds,InpMinScoreToAct);
+
    // Each universe symbol gets its own market-data, momentum, microstructure,
    // liquidity, signal-regime, HTF-regime and scoring objects. These analyzers
    // rank candidates only; the existing execution/risk lifecycle remains chart-bound.
@@ -1533,17 +1537,21 @@ void OnTimer(void)
          if(!ready) continue;
          g_symbolAnalyzers[i].Update();
          if(!g_symbolAnalyzers[i].ScoreValid()) continue;
-         if(!g_symbolAnalyzers[i].ScoreIsFresh(InpMaxCandidateScoreAgeSeconds))
-           {
-            if(InpVerboseLogging)
-               PrintFormat("AUTOPSY X SCANNER: %s excluded because its analysis score is stale (%d seconds).",
-                           candidate,g_symbolAnalyzers[i].ScoreAgeSeconds());
-            continue;
-           }
 
          SAxScore candidateScore=g_symbolAnalyzers[i].LastScore();
-         if(candidateScore.action==AX_DIR_NONE) continue;
-         double strength=MathMax(candidateScore.buyScore,candidateScore.sellScore);
+         datetime signalBarTime=iTime(candidate,InpRegimeTimeframe,0);
+         SAxCandidateVerdict candidateVerdict=
+            g_candidatePermission.Evaluate(candidate,candidateScore,
+                                           g_symbolContexts.AnalysisReady(candidate),
+                                           signalBarTime);
+         if(!candidateVerdict.accepted)
+           {
+            if(InpVerboseLogging)
+               PrintFormat("AUTOPSY X SCANNER: %s rejected by candidate gate (%s).",
+                           candidate,candidateVerdict.reason);
+            continue;
+           }
+         double strength=candidateVerdict.strength;
          if(strength>bestCandidateScore)
            {
             bestCandidateScore=strength;
