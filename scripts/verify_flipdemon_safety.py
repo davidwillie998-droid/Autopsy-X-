@@ -160,7 +160,7 @@ require("LastAccountedDealTicket(const ulong positionIdentifier)" in autopsy
         and "TradeAutopsy_v3.csv" in autopsy
         and "PositionIdentifier" in autopsy,
         "trade journal restores DealIdOut boundary per stable position identifier")
-require("rec.dealIdOut=lastDealTicket;" in ea and "rLastTicket>journalBoundary" in ea and "g_autopsy.LastAccountedDealTicket(g_positionIdentifier)" in ea
+require("rec.dealIdOut=lastDealTicket;" in ea and "rec.positionIdentifier = g_positionIdentifier;" in ea and "rLastTicket>journalBoundary" in ea and "g_autopsy.LastAccountedDealTicket(g_positionIdentifier)" in ea
         and "NEW ENTRIES BLOCKED pending accounting reconciliation" in ea,
         "restart compares broker exit history with journal boundary and blocks entries on an accounting gap")
 
