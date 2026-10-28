@@ -156,10 +156,11 @@ require("g_positionIdentifier          = (ulong)PositionGetInteger(POSITION_IDEN
         and "g_positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);" in ea,
         "position identifier is captured on restart reconciliation and fresh position initialization")
 autopsy = AUTOPSY.read_text(encoding="utf-8")
-require("ParseDealIdOut" in autopsy and "LoadLastAccountedDealTicket" in autopsy
-        and "LastAccountedDealTicket(void)" in autopsy,
-        "trade journal restores its durable DealIdOut boundary on restart")
-require("rec.dealIdOut=lastDealTicket;" in ea and "rLastTicket>journalBoundary" in ea
+require("LastAccountedDealTicket(const ulong positionIdentifier)" in autopsy
+        and "TradeAutopsy_v3.csv" in autopsy
+        and "PositionIdentifier" in autopsy,
+        "trade journal restores DealIdOut boundary per stable position identifier")
+require("rec.dealIdOut=lastDealTicket;" in ea and "rLastTicket>journalBoundary" in ea and "g_autopsy.LastAccountedDealTicket(g_positionIdentifier)" in ea
         and "NEW ENTRIES BLOCKED pending accounting reconciliation" in ea,
         "restart compares broker exit history with journal boundary and blocks entries on an accounting gap")
 
