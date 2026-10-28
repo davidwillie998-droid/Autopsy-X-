@@ -136,9 +136,9 @@ public:
    SAxScore                LastScore(void) const { return(m_lastScore); }
    ENUM_AX_REGIME          Regime(void) const { return(m_regime.Regime()); }
    ENUM_AX_REGIME          HtfRegime(void) const { return(m_regimeHtf.Regime()); }
-   double                  SignalAtr(void) const { return(m_regime.CurrentAtr(); }
-   double                  SignalSlope(void) const { return(m_regime.Slope(); }
-   double                  HtfSlope(void) const { return(m_regimeHtf.Slope(); }
+   double                  SignalAtr(void) const { return(m_regime.CurrentAtr()); }
+   double                  SignalSlope(void) const { return(m_regime.Slope()); }
+   double                  HtfSlope(void) const { return(m_regimeHtf.Slope()); }
    double                  SpreadPoints(void) const { return(m_md.CurrentSpreadPts()); }
    double                  Point(void) const { return(m_md.Point()); }
   };
