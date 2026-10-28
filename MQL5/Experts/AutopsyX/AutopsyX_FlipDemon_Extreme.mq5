@@ -44,6 +44,7 @@
 #include <AutopsyX/SymbolAnalyzer.mqh>
 #include <AutopsyX/CandidatePermission.mqh>
 #include <AutopsyX/DuplicateGuard.mqh>
+#include <AutopsyX/AccountStopRisk.mqh>
 
 //====================================================================
 // INPUTS
@@ -127,6 +128,7 @@ input double         InpWeeklyLossLimitPercent  = 15.0;    // Weekly loss limit 
 input int            InpMaxPositionsPerSymbol   = 1;       // Max simultaneously open positions on this symbol specifically
 input double         InpMaxDirectionalExposureLots = 1.0;  // Max exposure lots in one direction (BUY or SELL) at once
 input double         InpMaxMarginUsagePercent   = 50.0;     // Max ACCOUNT_MARGIN / ACCOUNT_EQUITY, as a percent
+input double         InpMaxAccountStopRiskPercent = 4.0; // Maximum combined open-position + pending-order stop risk as % of equity; unknown risk blocks entries
 input int            InpMaxExecutionFailures    = 5;        // Max consecutive order-send failures before blocking new entries
 
 input group "=== EXECUTION MODE & EMERGENCY CONTROLS ===";
@@ -739,6 +741,20 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    AxCountRealPositions(realPositionsForSymbol,realDirectionalExposure,dir);
    int accountOpenPositions; double accountExposureLots;
    AxCountAccountExposure(accountOpenPositions,accountExposureLots);
+   double accountOpenStopRiskMoney=0.0; int accountRiskItems=0;
+   if(!AxCalculateAccountStopRisk(accountOpenStopRiskMoney,accountRiskItems,gateReason))
+     {
+      if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked by account stop-risk audit (%s)",gateReason);
+      return(false);
+     }
+   double accountEquityForRisk=AccountInfoDouble(ACCOUNT_EQUITY);
+   if(accountEquityForRisk<=0.0 || (accountOpenStopRiskMoney/accountEquityForRisk*100.0)>=InpMaxAccountStopRiskPercent)
+     {
+      if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (existing account stop risk %.2f%% reaches %.2f%% cap; items=%d)",
+                                        accountEquityForRisk>0.0?accountOpenStopRiskMoney/accountEquityForRisk*100.0:100.0,
+                                        InpMaxAccountStopRiskPercent,accountRiskItems);
+      return(false);
+     }
    if(!g_risk.PreTradeAllowed(accountOpenPositions,accountExposureLots,g_md.CurrentSpreadPts(),gateReason,
                                realPositionsForSymbol,realDirectionalExposure))
      {
@@ -832,6 +848,26 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       double projectedRiskPct = projectedLoss/AccountInfoDouble(ACCOUNT_EQUITY)*100.0;
       if(projectedRiskPct > g_risk.RiskPercent()+0.0001)
          lots = 0.0;
+     }
+
+   // Include the new order in the account-wide stop-risk budget. OrderCalcProfit values the
+   // loss in account currency for this symbol, avoiding an assumed pip/tick-value conversion.
+   if(lots>0.0)
+     {
+      double newOrderStopPnl=0.0;
+      ENUM_ORDER_TYPE newOrderType=(dir==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
+      if(!OrderCalcProfit(newOrderType,_Symbol,lots,intendedPrice,slPrice,newOrderStopPnl))
+        {
+         if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (cannot value proposed stop risk, error %d)",GetLastError());
+         return(false);
+        }
+      double projectedAccountRiskPct=(accountOpenStopRiskMoney+MathMax(0.0,-newOrderStopPnl))/AccountInfoDouble(ACCOUNT_EQUITY)*100.0;
+      if(projectedAccountRiskPct>InpMaxAccountStopRiskPercent+0.0001)
+        {
+         if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (projected account stop risk %.2f%% exceeds %.2f%% cap)",
+                                           projectedAccountRiskPct,InpMaxAccountStopRiskPercent);
+         return(false);
+        }
      }
 
    // Adaptive Flip Engine: capital-protection gate + position-size scaler, applied unconditionally
