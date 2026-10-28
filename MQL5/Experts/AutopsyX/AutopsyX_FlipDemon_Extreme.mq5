@@ -51,6 +51,7 @@ input string InpUniverseSymbols = ""; // Optional comma-separated symbols; exact
 input int    InpUniverseMaxQuoteAgeSeconds = 60; // Reject stale universe quotes during startup preflight
 input int    InpUniverseMinSignalBars = 120; // Minimum synchronized bars before a symbol can become a scan candidate
 input int    InpUniverseMinHtfBars = 120; // Minimum higher-timeframe bars before a symbol can become a scan candidate
+input int    InpMaxCandidateScoreAgeSeconds = 10; // Maximum age of a score accepted by the candidate scanner
 
 input group "=== MODE ===";
 input ENUM_AX_MODE   InpMode                    = AX_MODE_AGGRESSIVE; // Aggression mode
@@ -1532,6 +1533,13 @@ void OnTimer(void)
          if(!ready) continue;
          g_symbolAnalyzers[i].Update();
          if(!g_symbolAnalyzers[i].ScoreValid()) continue;
+         if(!g_symbolAnalyzers[i].ScoreIsFresh(InpMaxCandidateScoreAgeSeconds))
+           {
+            if(InpVerboseLogging)
+               PrintFormat("AUTOPSY X SCANNER: %s excluded because its analysis score is stale (%d seconds).",
+                           candidate,g_symbolAnalyzers[i].ScoreAgeSeconds());
+            continue;
+           }
 
          SAxScore candidateScore=g_symbolAnalyzers[i].LastScore();
          if(candidateScore.action==AX_DIR_NONE) continue;
