@@ -48,6 +48,8 @@
 input group "=== SYMBOL UNIVERSE PREFLIGHT ===";
 input string InpUniverseSymbols = ""; // Optional comma-separated symbols; exact names preferred, unique broker suffix/prefix aliases only
 input int    InpUniverseMaxQuoteAgeSeconds = 60; // Reject stale universe quotes during startup preflight
+input int    InpUniverseMinSignalBars = 120; // Minimum synchronized bars before a symbol can become a scan candidate
+input int    InpUniverseMinHtfBars = 120; // Minimum higher-timeframe bars before a symbol can become a scan candidate
 
 input group "=== MODE ===";
 input ENUM_AX_MODE   InpMode                    = AX_MODE_AGGRESSIVE; // Aggression mode
@@ -1489,7 +1491,20 @@ void OnTick(void)
 void OnTimer(void)
   {
    if(g_symbolUniverse.Count()>1)
+     {
       g_symbolContexts.RefreshQuotes();
+      // Phase 3 prefilter: candidates must have fresh quotes, acceptable spread,
+      // synchronized signal/HTF series and sufficient history. This is analysis-only;
+      // no non-chart symbol can submit an order from this readiness pass.
+      for(int i=0;i<g_symbolContexts.Count();i++)
+        {
+         string candidate=g_symbolContexts.SymbolAt(i);
+         string readinessReason="";
+         g_symbolContexts.EvaluateReadiness(candidate,InpRegimeTimeframe,InpHtfTimeframe,
+                                             InpUniverseMinSignalBars,InpUniverseMinHtfBars,
+                                             InpMaxSpreadPoints,readinessReason);
+        }
+     }
    if(!InpShowDashboard) return;
 
    // DOM refresh is heavier than a tick read and doesn't need tick-rate freshness to stay useful -
