@@ -1658,9 +1658,25 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
          bool isExit=(dealEntry==DEAL_ENTRY_OUT || dealEntry==DEAL_ENTRY_OUT_BY);
          if(isExit && !g_exec.HasOpenPosition(_Symbol))
            {
-            PrintFormat("FLIPDEMON TRANSACTION: final exit deal=%I64u; reconciling closed campaign.",
-                        trans.deal);
-            AxRecordExternalClose();
+            double closePrice=0,grossProfit=0,commission=0,swap=0;
+            datetime closeTime=0;
+            ulong lastDealTicket=0;
+            // Do not finalize on a transient history-cache miss: that would record a
+            // zero-PnL fallback as a real result. Let OnTick retry the established
+            // external-close path when complete close-deal history is available.
+            if(AxFetchCloseFinancials(g_posState.ticket,g_posState.lastAccountedDealTicket,
+                                      closePrice,grossProfit,commission,swap,closeTime,lastDealTicket))
+              {
+               double distToSl=MathAbs(closePrice-g_posState.initialSlPrice);
+               double distToTp=MathAbs(closePrice-g_posState.initialTpPrice);
+               ENUM_AX_EXIT_REASON exitReason=(distToTp<distToSl)?AX_EXIT_TP:AX_EXIT_SL;
+               PrintFormat("FLIPDEMON TRANSACTION: final exit deal=%I64u; financial history confirmed.",
+                           trans.deal);
+               AxFinalizeTrade(closePrice,grossProfit,commission,swap,closeTime,exitReason);
+              }
+            else
+               PrintFormat("FLIPDEMON TRANSACTION: final exit deal=%I64u; history not ready, deferring reconciliation.",
+                           trans.deal);
            }
         }
      }
