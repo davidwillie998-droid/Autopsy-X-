@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
-//|                                AutopsyX_FlipDemon_Extreme.mq5     |
-//|                        AUTOPSY X FLIPDEMON EXTREME                |
+//|                                  FlipDemon_Extreme_HFT.mq5        |
+//|                         FLIPDEMON EXTREME HFT                     |
 //|        Ultra-aggressive MT5 HFT flipping & scalping engine        |
 //|                                                                    |
 //|  SCAN -> SCORE -> ATTACK -> MANAGE -> FLIP -> EXIT -> REASSESS     |
@@ -9,7 +9,7 @@
 //|  This EA does not promise profitability - see README.md for the   |
 //|  required multi-phase validation workflow before risking capital. |
 //+------------------------------------------------------------------+
-#property copyright "AUTOPSY X"
+#property copyright "FlipDemon Extreme HFT"
 #property link      ""
 #property version   "1.00"
 #property strict
@@ -38,6 +38,7 @@
 #include <AutopsyX/AdaptiveFlipEngine.mqh>
 #include <AutopsyX/VWAPEngine.mqh>
 #include <AutopsyX/EmergencyControls.mqh>
+#include <AutopsyX/TradeReconciliation.mqh>
 #include <AutopsyX/Dashboard.mqh>
 
 //====================================================================
@@ -228,6 +229,7 @@ CTradeAutopsy         g_autopsy;
 CStatistics           g_stats;
 CAccuracyEngine       g_accuracy;
 CDashboard            g_dash;
+CTradeReconciler       g_tradeReconciler;
 
 SAxPositionState      g_posState;
 bool                  g_haveOpenPosition = false;
@@ -1567,6 +1569,40 @@ void OnTimer(void)
 //====================================================================
 // CHART EVENTS: KILL ENGINE button
 //====================================================================
+// Broker-confirmed transaction observer. This deliberately logs only this EA's
+// symbol+magic so unrelated manual trades and other EAs do not pollute its journal.
+// It is an audit hook, not a substitute for campaign-level reconciliation/state recovery.
+void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &request,
+                        const MqlTradeResult &result)
+  {
+   string symbol=trans.symbol;
+   ulong magic=0;
+   bool relevant=false;
+
+   if(trans.type==TRADE_TRANSACTION_REQUEST)
+     {
+      symbol=request.symbol;
+      magic=request.magic;
+      relevant=(symbol==_Symbol && magic==InpMagicNumber);
+     }
+   else if(trans.type==TRADE_TRANSACTION_DEAL_ADD && trans.deal>0 && HistoryDealSelect(trans.deal))
+     {
+      symbol=HistoryDealGetString(trans.deal,DEAL_SYMBOL);
+      magic=(ulong)HistoryDealGetInteger(trans.deal,DEAL_MAGIC);
+      relevant=(symbol==_Symbol && magic==InpMagicNumber);
+     }
+   else if(trans.order>0 && HistoryOrderSelect(trans.order))
+     {
+      symbol=HistoryOrderGetString(trans.order,ORDER_SYMBOL);
+      magic=(ulong)HistoryOrderGetInteger(trans.order,ORDER_MAGIC);
+      relevant=(symbol==_Symbol && magic==InpMagicNumber);
+     }
+
+   if(!relevant) return;
+   PrintFormat("FLIPDEMON EXTREME HFT | %s",
+               g_tradeReconciler.Classify(trans,request,result));
+  }
+
 void OnChartEvent(const int id,const long &lparam,const double &dparam,const string &sparam)
   {
    if(id!=CHARTEVENT_OBJECT_CLICK) return;
