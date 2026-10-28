@@ -148,16 +148,32 @@ public:
       return(true);
      }
 
-   //--- normalize a lot size to the broker's volume step/min/max ---
+   //--- normalize downward only. Never promote an undersized risk calculation to broker minimum.
+   //--- Missing or inconsistent broker volume metadata fails closed with 0.0.
    double            NormalizeVolume(const double rawLots) const
      {
-      double step = (m_volStep>0)? m_volStep : 0.01;
-      double vol  = MathFloor(rawLots/step)*step;
-      vol = AxClampD(vol,m_volMin,m_volMax);
+      if(!MathIsValidNumber(rawLots) || rawLots<=0.0) return(0.0);
+      if(!MathIsValidNumber(m_volMin) || !MathIsValidNumber(m_volMax) ||
+         !MathIsValidNumber(m_volStep) || m_volMin<=0.0 ||
+         m_volMax<m_volMin || m_volStep<=0.0)
+         return(0.0);
+
+      // If even the raw risk-sized volume is below the broker minimum, reject it.
+      // Do not clamp upward: doing so would silently exceed the intended risk budget.
+      if(rawLots+1e-12<m_volMin) return(0.0);
+
+      double capped = MathMin(rawLots,m_volMax);
+      double steps  = MathFloor((capped/m_volStep)+1e-10);
+      double vol    = steps*m_volStep;
+
       int stepDigits = 0;
-      double s = step;
+      double s = m_volStep;
       while(MathAbs(s-MathRound(s))>1e-8 && stepDigits<8) { s*=10; stepDigits++; }
-      return(NormalizeDouble(vol,stepDigits));
+      vol=NormalizeDouble(vol,stepDigits);
+
+      // Reject invalid step alignment or a rounded result below minimum rather than rounding up.
+      if(vol+1e-12<m_volMin || vol>m_volMax+1e-12) return(0.0);
+      return(vol);
      }
 
    double            NormalizePrice(const double price) const
