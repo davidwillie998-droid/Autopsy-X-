@@ -83,6 +83,12 @@ public:
          return(false);
         }
       m_scorer.Configure(minScore,minGap);
+      // Prime indicators and structural levels immediately; otherwise the analyzer
+      // would wait for the next bar transition before its first usable score.
+      m_regime.Update();
+      m_regimeHtf.Update();
+      m_liquidity.RefreshLevels();
+      m_liquidity.RefreshHigherTimeframeLevels(m_symbol);
       m_lastSignalBar=iTime(m_symbol,m_signalTf,0);
       m_lastHtfBar=iTime(m_symbol,m_htf,0);
       m_initialized=true;
