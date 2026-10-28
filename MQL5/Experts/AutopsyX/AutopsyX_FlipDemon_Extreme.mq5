@@ -449,7 +449,6 @@ bool AxCloseAndRecord(const ENUM_AX_EXIT_REASON reason)
       // Broker close succeeded, but history may lag. Preserve campaign state and defer
       // finalization; returning false prevents immediate flip-entry on incomplete evidence.
       Print("FLIPDEMON: close confirmed but deal history is not ready; finalization deferred.");
-      g_recoveryReady=false;
       return(false);
      }
    AxFinalizeTrade(closePrice,grossProfit,commission,swap,closeTime,reason);
@@ -464,7 +463,6 @@ void AxRecordExternalClose(void)
      {
       // Never fabricate a zero-PnL outcome when the broker history cache lags.
       // Keep campaign state active so OnTick can retry this reconciliation.
-      g_recoveryReady=false;
       if(InpVerboseLogging) Print("FLIPDEMON: external close detected but deal history is not ready; finalization deferred.");
       return;
      }
