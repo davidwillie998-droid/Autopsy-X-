@@ -29,12 +29,11 @@ private:
                 "NetProfit","RMultiple","Classification","FlipSeq","IsPartial",
                 "AfeCapitalState","AfeRiskOfRuinPct","AfeExpectedValueR","AfeWinProbability","AfeRiskMultiplier",
                 "ImpactCostPct","VWAPState","VPMACDState","OrderFlowState","StructureState","LiquidityState",
-                "NewsState","Session","Provenance");
+                "NewsState","Session","Provenance","PositionIdentifier");
      }
 
  
-   // Extract the fourth CSV field while respecting quoted commas.
-   ulong             ParseDealIdOut(const string line) const
+   string            ParseCsvField(const string line,const int wantedField) const
      {
       int field=0;
       bool quoted=false;
@@ -46,36 +45,38 @@ private:
          if(ch==34)
            {
             if(quoted && i+1<length && StringGetCharacter(line,i+1)==34)
-              { i++; if(field==3) value+=ShortToString(34); continue; }
+              { i++; if(field==wantedField) value+=ShortToString(34); continue; }
             quoted=!quoted;
             continue;
            }
          if(ch==44 && !quoted) { field++; continue; }
-         if(field==3) value+=ShortToString(ch);
+         if(field==wantedField) value+=ShortToString(ch);
         }
-      if(field!=3) return(0);
-      long parsed=StringToInteger(value);
-      return(parsed>0 ? (ulong)parsed : 0);
+      return(value);
      }
 
-   void              LoadLastAccountedDealTicket(void)
+   ulong             LastAccountedDealTicket(const ulong positionIdentifier) const
      {
-      m_lastAccountedDealTicket=0;
+      if(positionIdentifier==0) return(0);
+      ulong lastDeal=0;
       int handle=FileOpen(m_fileName,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE);
-      if(handle==INVALID_HANDLE) return;
+      if(handle==INVALID_HANDLE) return(0);
       bool firstLine=true;
       while(!FileIsEnding(handle))
         {
          string line=FileReadString(handle);
          if(firstLine) { firstLine=false; continue; }
-         ulong deal=ParseDealIdOut(line);
-         if(deal>m_lastAccountedDealTicket) m_lastAccountedDealTicket=deal;
+         ulong rowPosition=(ulong)StringToInteger(ParseCsvField(line,43));
+         if(rowPosition!=positionIdentifier) continue;
+         ulong deal=(ulong)StringToInteger(ParseCsvField(line,3));
+         if(deal>lastDeal) lastDeal=deal;
         }
       FileClose(handle);
+      return(lastDeal);
      }
 
 public:
-                     CTradeAutopsy(void) { m_fileHandle=INVALID_HANDLE; m_count=0; m_lastAccountedDealTicket=0; }
+                     CTradeAutopsy(void) { m_fileHandle=INVALID_HANDLE; m_count=0; }
 
    bool              Init(const string eaName,const string symbol)
      {
@@ -86,12 +87,11 @@ public:
       //--- (spreadsheet import, Monte Carlo/Kelly's own CSV consumers). A distinct filename means      ---
       //--- the new schema always starts its own clean file rather than corrupting an old one          ---
       //--- (code-review finding). ---
-      m_fileName = StringFormat("%s_%s_TradeAutopsy_v2.csv",eaName,symbol);
+      m_fileName = StringFormat("%s_%s_TradeAutopsy_v3.csv",eaName,symbol);
       m_fileHandle = FileOpen(m_fileName,FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ,',');
       if(m_fileHandle==INVALID_HANDLE) return(false);
       FileSeek(m_fileHandle,0,SEEK_END);
       WriteHeaderIfNew();
-      LoadLastAccountedDealTicket();
       ArrayResize(m_records,0);
       m_count=0;
       return(true);
@@ -146,7 +146,7 @@ public:
      {
       rec.tradeClass = Classify(rec);
       rec.provenance = AxDetectProvenance();
-      if(rec.dealIdOut>0 && rec.dealIdOut<=m_lastAccountedDealTicket)
+      if(rec.dealIdOut>0 && rec.positionIdentifier>0 && rec.dealIdOut<=LastAccountedDealTicket(rec.positionIdentifier))
          return(rec.tradeClass);
 
       if(m_count<AX_AUTOPSY_MAX_MEMORY)
@@ -182,16 +182,13 @@ public:
                    DoubleToString(rec.afeRiskMultiplier,2),DoubleToString(rec.impactCostPct,3),
                    rec.vwapStateAtEntry,rec.vpMacdStateAtEntry,rec.orderFlowStateAtEntry,
                    rec.structureStateAtEntry,rec.liquidityStateAtEntry,rec.newsStateAtEntry,
-                   rec.sessionAtEntry,AxProvenanceToString(rec.provenance));
+                   rec.sessionAtEntry,AxProvenanceToString(rec.provenance),rec.positionIdentifier);
          FileFlush(m_fileHandle);
-         if(writeResult>0 && rec.dealIdOut>m_lastAccountedDealTicket)
-            m_lastAccountedDealTicket=rec.dealIdOut;
         }
 
       return(rec.tradeClass);
      }
 
-   ulong             LastAccountedDealTicket(void) const { return(m_lastAccountedDealTicket); }
    int               Count(void) const { return(m_count); }
    bool              GetRecord(const int i,SAxTradeRecord &out) const
      {
