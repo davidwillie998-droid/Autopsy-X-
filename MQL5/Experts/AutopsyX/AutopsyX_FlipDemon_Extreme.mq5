@@ -416,8 +416,9 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
       g_recoveryReady = false;
       Print("FLIPDEMON RECOVERY ERROR: close completed but registry removal was not persisted; new entries remain blocked.");
      }
-   else if(g_recoveryInitialized)
-      g_recoveryReady = true;
+   // Do not re-enable entries from an exit callback. Recovery may have been blocked because
+   // startup reconciliation found an untracked/mismatched live position, not merely a failed write.
+   // A fresh successful reconciliation is required to clear that safety latch.
    if(rec.flipSeq>0) g_accuracy.RegisterFlipOutcome(rec.netProfit>0);
    g_risk.RegisterTradeClosed(rec.netProfit);
    if(reason==AX_EXIT_SL || reason==AX_EXIT_MOMENTUM_COLLAPSE || reason==AX_EXIT_MICROSTRUCTURE_REVERSAL)
