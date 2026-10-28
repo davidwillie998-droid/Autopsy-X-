@@ -39,6 +39,7 @@
 #include <AutopsyX/VWAPEngine.mqh>
 #include <AutopsyX/EmergencyControls.mqh>
 #include <AutopsyX/TradeReconciliation.mqh>
+#include <AutopsyX/RestartRecovery.mqh>
 #include <AutopsyX/Dashboard.mqh>
 
 //====================================================================
@@ -230,6 +231,9 @@ CStatistics           g_stats;
 CAccuracyEngine       g_accuracy;
 CDashboard            g_dash;
 CTradeReconciler       g_tradeReconciler;
+CRestartRecovery       g_restartRecovery;
+bool                   g_recoveryInitialized = false;
+bool                   g_recoveryReady = false; // false means new entries are blocked; existing positions remain managed
 
 SAxPositionState      g_posState;
 bool                  g_haveOpenPosition = false;
@@ -402,6 +406,18 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
    SAxTradeRecord rec = AxBuildTradeRecord(closePrice,grossProfit,commission,swap,closeTime,reason,g_posState.lots,false);
 
    g_autopsy.RecordTrade(rec);
+   // Persist the exit-side registry update before clearing in-memory campaign state. A failed
+   // removal does not undo the broker close, but it blocks future entries until recovery is sound.
+   bool recoveryRemovalOk = true;
+   if(g_recoveryInitialized)
+      recoveryRemovalOk = g_restartRecovery.RemoveOpenSetup(g_posState.ticket);
+   if(!recoveryRemovalOk || (g_recoveryInitialized && !g_restartRecovery.IsPersisting()))
+     {
+      g_recoveryReady = false;
+      Print("FLIPDEMON RECOVERY ERROR: close completed but registry removal was not persisted; new entries remain blocked.");
+     }
+   else if(g_recoveryInitialized)
+      g_recoveryReady = true;
    if(rec.flipSeq>0) g_accuracy.RegisterFlipOutcome(rec.netProfit>0);
    g_risk.RegisterTradeClosed(rec.netProfit);
    if(reason==AX_EXIT_SL || reason==AX_EXIT_MOMENTUM_COLLAPSE || reason==AX_EXIT_MICROSTRUCTURE_REVERSAL)
@@ -691,6 +707,14 @@ void AxCountAccountExposure(int &positionsOut,double &grossLotsOut)
 
 bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSeq,const string tag)
   {
+   // Restart recovery is a hard entry prerequisite. Never add exposure when the persisted
+   // ticket-to-setup registry is unreadable, stale, or failed to save. Existing positions
+   // continue through the normal management loop.
+   if(!g_recoveryReady)
+     {
+      if(InpVerboseLogging) Print("FLIPDEMON RECOVERY: new entry blocked; registry is not verified and persisted.");
+      return(false);
+     }
    string gateReason;
    //--- emergency controls checked FIRST, ahead of every other gate - an operator-triggered stop or
    //--- a disabled direction is a deliberate override and should never be shadowed by a message that
@@ -908,6 +932,16 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    // fill is a real position and must be managed at its actual exposure.
    lots = actualLots;
    AxInitPositionState(newTicket,dir,lots,fillPrice,slPrice,tpPrice,score,entryReason,flipSeq,intendedPrice);
+   // The broker has already confirmed this fill. Persist its real ticket and a unique setup ID
+   // immediately; if persistence fails, keep managing the open position but block every new entry.
+   string recoverySetupId = AxGenerateSetupId(_Symbol,dir);
+   bool recoverySaved = g_recoveryInitialized &&
+                        g_restartRecovery.RecordOpenSetup(newTicket,recoverySetupId,_Symbol,dir,TimeCurrent());
+   if(!recoverySaved || !g_restartRecovery.IsPersisting())
+     {
+      g_recoveryReady = false;
+      PrintFormat("FLIPDEMON RECOVERY ERROR: live position ticket %I64u is open but its setup registry could not be verified; managing existing position and blocking new entries.",newTicket);
+     }
    // AFE's readings at the moment of this entry, carried through to the closed-trade autopsy record
    g_posState.afeCapitalState   = g_afe.State();
    g_posState.afeRiskOfRuinPct  = g_afe.RiskOfRuinPct();
@@ -1119,6 +1153,27 @@ int OnInit(void)
 
    if(!g_autopsy.Init("AutopsyX_FlipDemon_Extreme",_Symbol))
       Print("AUTOPSY X: warning - could not open trade autopsy CSV log");
+
+   // Load and reconcile restart state before allowing any new entry. A corrupt/unreadable
+   // registry does not stop management of a broker position already open, but it does keep
+   // new entries disabled. An untracked live position is managed defensively, never assigned
+   // a fabricated historical setup thesis.
+   int recoveryMatched=0, recoveryUntracked=0, recoveryStale=0;
+   g_recoveryInitialized = g_restartRecovery.Init("FlipDemon_Extreme_HFT",_Symbol,InpMagicNumber);
+   if(g_recoveryInitialized)
+     {
+      g_restartRecovery.Reconcile(_Symbol,InpMagicNumber,recoveryMatched,recoveryUntracked,recoveryStale);
+      g_recoveryReady = g_restartRecovery.IsPersisting() && recoveryUntracked==0;
+      PrintFormat("FLIPDEMON RECOVERY: matched=%d untracked=%d stale_removed=%d persistence=%s entries=%s",
+                  recoveryMatched,recoveryUntracked,recoveryStale,
+                  g_restartRecovery.IsPersisting()?"OK":"FAILED",
+                  g_recoveryReady?"ENABLED":"BLOCKED");
+     }
+   else
+     {
+      g_recoveryReady = false;
+      Print("FLIPDEMON RECOVERY ERROR: registry initialization failed. Existing positions will still be managed; new entries are blocked.");
+     }
 
    g_risk.OnTickHousekeeping();
    AxReconcileExistingPosition();
