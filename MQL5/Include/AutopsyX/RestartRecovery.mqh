@@ -89,10 +89,14 @@ private:
                         m_records[i].symbol,
                         (int)m_records[i].dir,
                         TimeToString(m_records[i].entryTime,TIME_DATE|TIME_SECONDS));
-         uint written=FileWriteString(handle,line+"\\r\\n");
-         if(written==0)
+         string payload=line+"\\r\\n";
+         uint expected=(uint)StringLen(payload);
+         uint written=FileWriteString(handle,payload);
+         if(written!=expected)
            {
             writeOk=false;
+            PrintFormat("FLIPDEMON RECOVERY ERROR: short registry write at record %d (expected=%u written=%u).",
+                        i,expected,written);
             break;
            }
         }
