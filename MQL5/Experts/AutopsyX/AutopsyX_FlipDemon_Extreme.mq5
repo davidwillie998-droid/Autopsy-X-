@@ -43,6 +43,7 @@
 #include <AutopsyX/SymbolContext.mqh>
 #include <AutopsyX/SymbolAnalyzer.mqh>
 #include <AutopsyX/CandidatePermission.mqh>
+#include <AutopsyX/DuplicateGuard.mqh>
 
 //====================================================================
 // INPUTS
@@ -214,6 +215,7 @@ CAxSymbolUniverse    g_symbolUniverse;
 CAxSymbolContext     g_symbolContexts; // per-symbol quote, bar, signal-freshness and cooldown state // Discovery/preflight registry only; trade engines remain chart-symbol-bound in this phase
 CAxSymbolAnalyzer    g_symbolAnalyzers[AX_MAX_UNIVERSE_SYMBOLS];
 CAxCandidatePermission g_candidatePermission;
+CDuplicateGuard         g_duplicateGuard;
 string               g_bestScanCandidate = "";
 CMarketData          g_md;
 CMomentumEngine       g_mom;
@@ -706,6 +708,20 @@ void AxCountAccountExposure(int &positionsOut,double &grossLotsOut)
 bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSeq,const string tag)
   {
    string gateReason;
+   datetime setupBar=iTime(_Symbol,InpRegimeTimeframe,0);
+   if(setupBar<=0)
+     {
+      if(InpVerboseLogging) Print("AUTOPSY X: entry blocked (signal-bar timestamp unavailable)");
+      return(false);
+     }
+   // One entry attempt per symbol/timeframe/direction/signal bar. This permits a new
+   // continuation add on a later bar while preventing tick-by-tick duplicate submissions.
+   string setupId=StringFormat("%s|%d|%I64d|%d",_Symbol,(int)InpRegimeTimeframe,(long)setupBar,(int)dir);
+   if(g_duplicateGuard.IsDuplicateSetupId(setupId))
+     {
+      if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (duplicate setup %s)",setupId);
+      return(false);
+     }
    //--- emergency controls checked FIRST, ahead of every other gate - an operator-triggered stop or
    //--- a disabled direction is a deliberate override and should never be shadowed by a message that
    //--- makes it look like an ordinary risk/session gate declined the trade (spec section 38). ---
@@ -917,6 +933,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
      }
    g_consecutiveExecFailures = 0;
    g_risk.RegisterExecutionSuccess();
+   g_duplicateGuard.RegisterSetupId(setupId);
 
    // Use the confirmed filled volume, not the requested volume. A legitimate partial
    // fill is a real position and must be managed at its actual exposure.
