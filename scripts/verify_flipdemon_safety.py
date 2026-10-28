@@ -87,6 +87,9 @@ require('string tempName=m_fileName+".tmp";' in recovery
 require("previous registry retained" in recovery
         and "could not replace registry" in recovery,
         "failed staged writes/replacement report failure without claiming persistence")
+require("written!=expected" in recovery
+        and "short registry write" in recovery,
+        "short writes are detected before the staged registry can replace the active file")
 require("SAxOpenSetupRecord snapshot[AX_RECOVERY_MAX_ENTRIES];" in recovery
         and "original registry restored in memory" in recovery
         and "staleRemovedOut=0;" in recovery,
