@@ -495,8 +495,9 @@ void AxRecordPartialClose(const double volumeClosed,const double closePrice,cons
   {
    SAxTradeRecord rec = AxBuildTradeRecord(closePrice,grossProfit,commission,swap,closeTime,AX_EXIT_TP,volumeClosed,true);
    rec.dealIdOut=lastDealTicket;
+   rec.positionIdentifier=g_positionIdentifier;
    g_autopsy.RecordTrade(rec);
-   if(lastDealTicket>0 && g_autopsy.LastAccountedDealTicket()<lastDealTicket)
+   if(lastDealTicket>0 && g_autopsy.LastAccountedDealTicket(g_positionIdentifier)<lastDealTicket)
      {
       g_recoveryReady=false;
       Print("FLIPDEMON JOURNAL ERROR: partial exit record was not confirmed in the durable journal; new entries blocked.");
@@ -593,6 +594,9 @@ void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double l
                           const string entryReason,const int flipSeq,const double intendedPrice)
   {
    g_posState.ticket             = ticket;
+   g_positionIdentifier=0;
+   if(PositionSelect(_Symbol) && (ulong)PositionGetInteger(POSITION_TICKET)==ticket)
+      g_positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
 
    g_positionIdentifier          = 0;
 
@@ -1123,7 +1127,7 @@ void AxReconcileExistingPosition(void)
    // counting already-journaled deals, but fail closed and report the unresolved history explicitly.
    g_posState.lastAccountedDealTicket = rLastTicket;
    g_posState.partialTaken = priorDealFound;
-   ulong journalBoundary=g_autopsy.LastAccountedDealTicket();
+   ulong journalBoundary=g_autopsy.LastAccountedDealTicket(g_positionIdentifier);
    if(priorDealFound && rLastTicket>journalBoundary)
      {
       g_recoveryReady = false;
