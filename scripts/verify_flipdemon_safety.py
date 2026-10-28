@@ -48,6 +48,18 @@ require("projectedRiskPct > g_risk.RiskPercent()+0.0001" in ea,
         "broker minimum volume cannot silently exceed configured trade-risk budget")
 require("m_riskPercent               = AxClampD(riskPercent,0.05,2.0)" in risk,
         "risk engine hard-clamps risk per trade to 2 percent")
+
+market_data_path = ROOT / "MQL5/Include/AutopsyX/MarketData.mqh"
+require(market_data_path.is_file(), "market data volume normalization source exists")
+market_data = market_data_path.read_text(encoding="utf-8")
+normalize_start = market_data.index("double            NormalizeVolume(")
+normalize_end = market_data.index("double            NormalizePrice(", normalize_start)
+normalize_volume = market_data[normalize_start:normalize_end]
+require("if(rawLots+1e-12<m_volMin) return(0.0);" in normalize_volume,
+        "risk-sized volume below broker minimum is rejected, never rounded up")
+require("m_volMax<m_volMin || m_volStep<=0.0" in normalize_volume
+        and "if(vol+1e-12<m_volMin || vol>m_volMax+1e-12) return(0.0);" in normalize_volume,
+        "invalid broker volume metadata and out-of-range normalized lots fail closed")
 require("DailyLossLimitBreached()" in risk and "WeeklyLossLimitBreached()" in risk,
         "daily and weekly loss locks are checked in the risk engine")
 require("ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut,actualLotsOut)" in execution,
