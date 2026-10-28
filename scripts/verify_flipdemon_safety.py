@@ -91,4 +91,23 @@ require("bool               RemoveOpenSetup(" in recovery
         and "could not persist removal" in recovery,
         "failed record removal is reported to the caller")
 
+require("#include <AutopsyX/RestartRecovery.mqh>" in ea
+        and "CRestartRecovery       g_restartRecovery;" in ea,
+        "restart-recovery component is included and instantiated by the EA")
+require("g_restartRecovery.Init(" in ea
+        and "g_restartRecovery.Reconcile(" in ea
+        and "g_restartRecovery.IsPersisting()" in ea,
+        "EA initializes the recovery registry and reconciles it against broker positions")
+require("if(!g_recoveryReady)" in ea
+        and "new entry blocked" in ea,
+        "unverified recovery state hard-blocks new entries")
+require("g_restartRecovery.RecordOpenSetup(" in ea
+        and "g_recoveryReady = false;" in ea,
+        "confirmed fills are persisted and persistence failure blocks subsequent entries")
+require("g_restartRecovery.RemoveOpenSetup(g_posState.ticket)" in ea
+        and "registry removal was not persisted" in ea,
+        "closed positions clear recovery records and fail closed when removal cannot be persisted")
+require("Existing positions will still be managed; new entries are blocked." in ea,
+        "recovery failure preserves existing-position management while blocking new entries")
+
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
