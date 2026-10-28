@@ -347,6 +347,7 @@ SAxTradeRecord AxBuildTradeRecord(const double closePrice,const double grossProf
   {
    SAxTradeRecord rec;
    rec.ticket        = g_posState.ticket;
+   rec.positionIdentifier = g_positionIdentifier;
    rec.entryTime     = g_posState.entryTime;
    rec.exitTime      = (closeTime>0)? closeTime : TimeCurrent();
    rec.direction     = g_posState.dir;
@@ -400,12 +401,8 @@ SAxTradeRecord AxBuildTradeRecord(const double closePrice,const double grossProf
 
    //--- KNOWN GAP, documented rather than silently left broken: vwapStateAtEntry, vpMacdStateAtEntry,
    //--- orderFlowStateAtEntry, structureStateAtEntry, liquidityStateAtEntry, newsStateAtEntry,
-   //--- sessionAtEntry, setupId, dealIdIn and dealIdOut all default to ""/0 here. Populating them for
-   //--- real requires SAxPositionState to snapshot each engine's read AT ENTRY TIME (the same pattern
-   //--- already used for entryBuyScore/entrySellScore/entryRegime/etc.) plus real deal ticket capture
-   //--- from OnTradeTransaction (Phase 6) - that is integration work spanning the entry-time state-
-   //--- setting code and the not-yet-wired Phase 2/3/6 engines, deliberately deferred the same way
-   //--- every other phase's main-EA wiring has been deferred in this rewrite, not an oversight.
+   //--- sessionAtEntry, setupId and dealIdIn remain unpopulated until their entry/event capture is wired.
+   //--- dealIdOut and positionIdentifier are populated by the exit accounting path for restart recovery.
    return(rec);
   }
 
