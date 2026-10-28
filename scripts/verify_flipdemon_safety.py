@@ -132,4 +132,20 @@ require("g_restartRecovery.RemoveOpenSetup(g_posState.ticket)" in ea
 require("Existing positions will still be managed; new entries are blocked." in ea,
         "recovery failure preserves existing-position management while blocking new entries")
 
+partial_start = ea.index("void AxExecutePartialClose(")
+partial_end = ea.index("void AxInitPositionState(", partial_start)
+partial = ea[partial_start:partial_end]
+require(partial_start >= 0 and partial_end > partial_start,
+        "partial-close execution and retry functions are present")
+require("partial close confirmed but deal history is not ready; accounting deferred." in partial
+        and "AxRecordPartialClose(volumeToClose,pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket)" not in partial,
+        "partial-close history misses defer accounting instead of recording fabricated zero-PnL results")
+require("if(g_partialClosePending)" in partial
+        and "refusing another scale-out" in partial,
+        "a pending partial close blocks duplicate scale-out requests")
+require("g_posState.lots-PositionGetDouble(POSITION_VOLUME)" in partial,
+        "partial-close accounting reconciles against actual broker remaining volume")
+require("AxRetryPendingPartialClose();" in ea,
+        "pending partial-close accounting is retried from the tick lifecycle")
+
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
