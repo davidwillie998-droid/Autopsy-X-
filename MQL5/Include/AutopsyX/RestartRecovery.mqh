@@ -187,23 +187,63 @@ public:
 
    bool               IsPersisting(void) const { return(m_persistOk); }
 
-   void               RecordOpenSetup(const ulong ticket,const string setupId,const string symbol,
+   // Returns true only when the registry update is durable. Callers must block new
+   // entries if this returns false; in-memory state is rolled back on a failed write.
+   bool               RecordOpenSetup(const ulong ticket,const string setupId,const string symbol,
                                        const ENUM_AX_DIR dir,const datetime entryTime)
      {
-      for(int i=0;i<m_count;i++)
-         if(m_records[i].ticket==ticket) return; // already tracked, do not duplicate
+      if(ticket==0 || StringLen(setupId)==0 || StringLen(symbol)==0 || entryTime<=0 ||
+         (dir!=AX_DIR_BUY && dir!=AX_DIR_SELL))
+        {
+         Print("FLIPDEMON RECOVERY ERROR: invalid open-setup record rejected.");
+         return(false);
+        }
 
-      if(m_count>=AX_RECOVERY_MAX_ENTRIES) return; // registry full - caller should log this via IsPersisting()/RegistryCount()
+      for(int i=0;i<m_count;i++)
+         if(m_records[i].ticket==ticket) return(true); // already tracked, idempotent success
+
+      if(m_count>=AX_RECOVERY_MAX_ENTRIES)
+        {
+         PrintFormat("FLIPDEMON RECOVERY ERROR: registry capacity %d reached; refusing new record.",
+                     AX_RECOVERY_MAX_ENTRIES);
+         m_persistOk=false;
+         return(false);
+        }
+
+      int previousCount=m_count;
       m_records[m_count].ticket=ticket; m_records[m_count].setupId=setupId;
       m_records[m_count].symbol=symbol; m_records[m_count].dir=dir; m_records[m_count].entryTime=entryTime;
       m_count++;
-      RewriteFile();
+
+      if(RewriteFile()) return(true);
+
+      // Disk persistence failed. Restore the in-memory count so RAM does not claim a
+      // record was saved when it was not. The caller receives false and must fail closed.
+      m_count=previousCount;
+      PrintFormat("FLIPDEMON RECOVERY ERROR: could not persist open setup ticket %I64u.",ticket);
+      return(false);
      }
 
-   void               RemoveOpenSetup(const ulong ticket)
+   bool               RemoveOpenSetup(const ulong ticket)
      {
-      if(!RemoveFromMemory(ticket)) return;
-      RewriteFile();
+      int found=-1;
+      for(int i=0;i<m_count;i++)
+         if(m_records[i].ticket==ticket) { found=i; break; }
+      if(found<0) return(true); // already absent is an idempotent success
+
+      SAxOpenSetupRecord removed=m_records[found];
+      for(int i=found;i<m_count-1;i++) m_records[i]=m_records[i+1];
+      m_count--;
+
+      if(RewriteFile()) return(true);
+
+      // Preserve the in-memory record if the disk update failed. This may leave a stale
+      // record on disk, but it is safer than pretending removal was persisted.
+      for(int i=m_count;i>found;i--) m_records[i]=m_records[i-1];
+      m_records[found]=removed;
+      m_count++;
+      PrintFormat("FLIPDEMON RECOVERY ERROR: could not persist removal of ticket %I64u.",ticket);
+      return(false);
      }
 
    bool               FindByTicket(const ulong ticket,SAxOpenSetupRecord &out) const
