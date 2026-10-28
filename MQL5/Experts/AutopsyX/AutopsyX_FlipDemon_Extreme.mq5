@@ -1111,8 +1111,17 @@ void AxReconcileExistingPosition(void)
    // open, so a full close would have left PositionSelect() false above) - never re-arm it
    double rClosePrice=0,rGross=0,rComm=0,rSwap=0; datetime rTime=0; ulong rLastTicket=0;
    bool priorDealFound = AxFetchCloseFinancials(g_posState.ticket,0,rClosePrice,rGross,rComm,rSwap,rTime,rLastTicket);
+   // A history high-water mark is NOT proof that earlier exit deals were durably journaled.
+   // This build has no persistent deal-by-deal accounting ledger, so silently baselining those
+   // deals can hide partial-close PnL after a restart. Keep the known boundary to avoid double
+   // counting already-journaled deals, but fail closed and report the unresolved history explicitly.
    g_posState.lastAccountedDealTicket = rLastTicket;
    g_posState.partialTaken = priorDealFound;
+   if(priorDealFound)
+     {
+      g_recoveryReady = false;
+      PrintFormat("FLIPDEMON RECOVERY ERROR: position %I64u has historical exit deals but this build cannot prove their journal state. Existing position will remain managed; NEW ENTRIES BLOCKED until accounting is reconciled.",g_posState.ticket);
+     }
 
    g_haveOpenPosition  = true;
   }
