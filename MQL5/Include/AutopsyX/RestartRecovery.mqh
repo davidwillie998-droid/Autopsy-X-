@@ -95,31 +95,86 @@ public:
       m_fileName = StringFormat("%s_%s_%s_OpenSetups.csv",eaName,symbol,IntegerToString((long)magic));
       m_count=0;
 
-      //--- load whatever the registry already contains BEFORE this session rewrites anything - this ---
-      //--- is the state from before the restart, which is the entire point of this class ---
+      // Fail closed on an existing registry that cannot be read. The previous implementation
+      // treated every FileOpen failure as "no registry" and immediately rewrote an empty file,
+      // which could destroy the only saved SetupID mapping after a transient access/format error.
       int readHandle = FileOpen(m_fileName,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ);
-      if(readHandle!=INVALID_HANDLE)
+      if(readHandle==INVALID_HANDLE)
         {
-         while(!FileIsEnding(readHandle) && m_count<AX_RECOVERY_MAX_ENTRIES)
+         if(FileIsExist(m_fileName))
            {
-            string line = FileReadString(readHandle);
-            if(StringLen(line)==0) continue;
-
-            string fields[];
-            int n = StringSplit(line,'|',fields);
-            if(n!=AX_RECOVERY_FIELD_COUNT) continue; // malformed row - skip it, does not affect any other row
-
-            long ticketLong = StringToInteger(fields[0]);
-            if(ticketLong<=0) continue;
-
-            m_records[m_count].ticket    = (ulong)ticketLong;
-            m_records[m_count].setupId   = fields[1];
-            m_records[m_count].symbol    = fields[2];
-            m_records[m_count].dir       = (ENUM_AX_DIR)StringToInteger(fields[3]);
-            m_records[m_count].entryTime = StringToTime(fields[4]);
-            m_count++;
+            PrintFormat("FLIPDEMON RECOVERY ERROR: registry exists but cannot be read (%s, error=%d); refusing to overwrite it.",
+                        m_fileName,GetLastError());
+            m_persistOk=false;
+            return(false);
            }
-         FileClose(readHandle);
+
+         // A genuinely new registry is safe to create. Do not confuse this with an unreadable file.
+         m_count=0;
+         return(RewriteFile());
+        }
+
+      bool registryValid=true;
+      while(!FileIsEnding(readHandle))
+        {
+         string line = FileReadString(readHandle);
+         if(StringLen(line)==0) continue;
+
+         if(m_count>=AX_RECOVERY_MAX_ENTRIES)
+           {
+            PrintFormat("FLIPDEMON RECOVERY ERROR: registry exceeds capacity (%d); refusing to truncate or overwrite it.",
+                        AX_RECOVERY_MAX_ENTRIES);
+            registryValid=false;
+            break;
+           }
+
+         string fields[];
+         int n = StringSplit(line,'|',fields);
+         if(n!=AX_RECOVERY_FIELD_COUNT)
+           {
+            PrintFormat("FLIPDEMON RECOVERY ERROR: malformed registry row; refusing to rewrite %s.",m_fileName);
+            registryValid=false;
+            break;
+           }
+
+         long ticketLong = StringToInteger(fields[0]);
+         long dirLong = StringToInteger(fields[3]);
+         datetime entryTime = StringToTime(fields[4]);
+         if(ticketLong<=0 || StringLen(fields[1])==0 || StringLen(fields[2])==0 ||
+            (dirLong!=(long)AX_DIR_BUY && dirLong!=(long)AX_DIR_SELL) || entryTime<=0)
+           {
+            PrintFormat("FLIPDEMON RECOVERY ERROR: invalid registry record; refusing to rewrite %s.",m_fileName);
+            registryValid=false;
+            break;
+           }
+
+         // Duplicate tickets make the recovered state ambiguous; never silently pick one.
+         for(int i=0;i<m_count;i++)
+           {
+            if(m_records[i].ticket==(ulong)ticketLong)
+              {
+               PrintFormat("FLIPDEMON RECOVERY ERROR: duplicate ticket %I64d; refusing to rewrite %s.",
+                           ticketLong,m_fileName);
+               registryValid=false;
+               break;
+              }
+           }
+         if(!registryValid) break;
+
+         m_records[m_count].ticket    = (ulong)ticketLong;
+         m_records[m_count].setupId   = fields[1];
+         m_records[m_count].symbol    = fields[2];
+         m_records[m_count].dir       = (ENUM_AX_DIR)dirLong;
+         m_records[m_count].entryTime = entryTime;
+         m_count++;
+        }
+      FileClose(readHandle);
+
+      if(!registryValid)
+        {
+         m_count=0;
+         m_persistOk=false;
+         return(false);
         }
 
       return(RewriteFile());
