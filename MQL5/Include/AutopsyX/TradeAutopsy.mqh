@@ -32,8 +32,50 @@ private:
                 "NewsState","Session","Provenance");
      }
 
+ 
+   // Extract the fourth CSV field while respecting quoted commas.
+   ulong             ParseDealIdOut(const string line) const
+     {
+      int field=0;
+      bool quoted=false;
+      string value="";
+      int length=StringLen(line);
+      for(int i=0;i<length;i++)
+        {
+         ushort ch=StringGetCharacter(line,i);
+         if(ch==34)
+           {
+            if(quoted && i+1<length && StringGetCharacter(line,i+1)==34)
+              { i++; if(field==3) value+=ShortToString(34); continue; }
+            quoted=!quoted;
+            continue;
+           }
+         if(ch==44 && !quoted) { field++; continue; }
+         if(field==3) value+=ShortToString(ch);
+        }
+      if(field!=3) return(0);
+      long parsed=StringToInteger(value);
+      return(parsed>0 ? (ulong)parsed : 0);
+     }
+
+   void              LoadLastAccountedDealTicket(void)
+     {
+      m_lastAccountedDealTicket=0;
+      int handle=FileOpen(m_fileName,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE);
+      if(handle==INVALID_HANDLE) return;
+      bool firstLine=true;
+      while(!FileIsEnding(handle))
+        {
+         string line=FileReadString(handle);
+         if(firstLine) { firstLine=false; continue; }
+         ulong deal=ParseDealIdOut(line);
+         if(deal>m_lastAccountedDealTicket) m_lastAccountedDealTicket=deal;
+        }
+      FileClose(handle);
+     }
+
 public:
-                     CTradeAutopsy(void) { m_fileHandle=INVALID_HANDLE; m_count=0; }
+                     CTradeAutopsy(void) { m_fileHandle=INVALID_HANDLE; m_count=0; m_lastAccountedDealTicket=0; }
 
    bool              Init(const string eaName,const string symbol)
      {
@@ -49,6 +91,7 @@ public:
       if(m_fileHandle==INVALID_HANDLE) return(false);
       FileSeek(m_fileHandle,0,SEEK_END);
       WriteHeaderIfNew();
+      LoadLastAccountedDealTicket();
       ArrayResize(m_records,0);
       m_count=0;
       return(true);
@@ -103,6 +146,8 @@ public:
      {
       rec.tradeClass = Classify(rec);
       rec.provenance = AxDetectProvenance();
+      if(rec.dealIdOut>0 && rec.dealIdOut<=m_lastAccountedDealTicket)
+         return(rec.tradeClass);
 
       if(m_count<AX_AUTOPSY_MAX_MEMORY)
         {
@@ -119,7 +164,7 @@ public:
 
       if(m_fileHandle!=INVALID_HANDLE)
         {
-         FileWrite(m_fileHandle,
+         uint writeResult=FileWrite(m_fileHandle,
                    rec.setupId,rec.ticket,rec.dealIdIn,rec.dealIdOut,
                    TimeToString(rec.entryTime,TIME_DATE|TIME_SECONDS),
                    TimeToString(rec.exitTime,TIME_DATE|TIME_SECONDS),AxDirToString(rec.direction),
@@ -139,11 +184,14 @@ public:
                    rec.structureStateAtEntry,rec.liquidityStateAtEntry,rec.newsStateAtEntry,
                    rec.sessionAtEntry,AxProvenanceToString(rec.provenance));
          FileFlush(m_fileHandle);
+         if(writeResult>0 && rec.dealIdOut>m_lastAccountedDealTicket)
+            m_lastAccountedDealTicket=rec.dealIdOut;
         }
 
       return(rec.tradeClass);
      }
 
+   ulong             LastAccountedDealTicket(void) const { return(m_lastAccountedDealTicket); }
    int               Count(void) const { return(m_count); }
    bool              GetRecord(const int i,SAxTradeRecord &out) const
      {
