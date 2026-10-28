@@ -446,8 +446,11 @@ bool AxCloseAndRecord(const ENUM_AX_EXIT_REASON reason)
    double closePrice=0,grossProfit=0,commission=0,swap=0; datetime closeTime=0; ulong lastTicket=0;
    if(!AxFetchCloseFinancials(ticket,g_posState.lastAccountedDealTicket,closePrice,grossProfit,commission,swap,closeTime,lastTicket))
      {
-      closePrice = (g_posState.dir==AX_DIR_BUY)? g_md.CurrentBid() : g_md.CurrentAsk();
-      closeTime  = TimeCurrent();
+      // Broker close succeeded, but history may lag. Preserve campaign state and defer
+      // finalization; returning false prevents immediate flip-entry on incomplete evidence.
+      Print("FLIPDEMON: close confirmed but deal history is not ready; finalization deferred.");
+      g_recoveryReady=false;
+      return(false);
      }
    AxFinalizeTrade(closePrice,grossProfit,commission,swap,closeTime,reason);
    return(true);
@@ -457,17 +460,17 @@ void AxRecordExternalClose(void)
   {
    double closePrice=0,grossProfit=0,commission=0,swap=0; datetime closeTime=0; ulong lastTicket=0;
    ENUM_AX_EXIT_REASON reason = AX_EXIT_SL;
-   if(AxFetchCloseFinancials(g_posState.ticket,g_posState.lastAccountedDealTicket,closePrice,grossProfit,commission,swap,closeTime,lastTicket))
+   if(!AxFetchCloseFinancials(g_posState.ticket,g_posState.lastAccountedDealTicket,closePrice,grossProfit,commission,swap,closeTime,lastTicket))
      {
-      double distToSl = MathAbs(closePrice-g_posState.initialSlPrice);
-      double distToTp = MathAbs(closePrice-g_posState.initialTpPrice);
-      reason = (distToTp<distToSl) ? AX_EXIT_TP : AX_EXIT_SL;
+      // Never fabricate a zero-PnL outcome when the broker history cache lags.
+      // Keep campaign state active so OnTick can retry this reconciliation.
+      g_recoveryReady=false;
+      if(InpVerboseLogging) Print("FLIPDEMON: external close detected but deal history is not ready; finalization deferred.");
+      return;
      }
-   else
-     {
-      closeTime  = TimeCurrent();
-      closePrice = (g_posState.dir==AX_DIR_BUY)? g_md.CurrentBid() : g_md.CurrentAsk();
-     }
+   double distToSl = MathAbs(closePrice-g_posState.initialSlPrice);
+   double distToTp = MathAbs(closePrice-g_posState.initialTpPrice);
+   reason = (distToTp<distToSl) ? AX_EXIT_TP : AX_EXIT_SL;
    AxFinalizeTrade(closePrice,grossProfit,commission,swap,closeTime,reason);
   }
 
