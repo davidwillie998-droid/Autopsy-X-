@@ -14,6 +14,7 @@ RISK = ROOT / "MQL5/Include/AutopsyX/RiskEngine.mqh"
 EXEC = ROOT / "MQL5/Include/AutopsyX/ExecutionEngine.mqh"
 RECOVERY = ROOT / "MQL5/Include/AutopsyX/RestartRecovery.mqh"
 README = ROOT / "MQL5/README.md"
+AUTOPSY = ROOT / "MQL5/Include/AutopsyX/TradeAutopsy.mqh"
 
 def require(condition: bool, message: str) -> None:
     if not condition:
@@ -154,9 +155,12 @@ require("HistorySelectByPosition((long)positionId)" in ea
 require("g_positionIdentifier          = (ulong)PositionGetInteger(POSITION_IDENTIFIER);" in ea
         and "g_positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);" in ea,
         "position identifier is captured on restart reconciliation and fresh position initialization")
-require("historical exit deals but this build cannot prove their journal state" in ea
-        and "g_recoveryReady = false;" in ea
-        and "NEW ENTRIES BLOCKED until accounting is reconciled" in ea,
-        "restart with unresolved historical exit deals fails closed instead of silently trusting a history high-water mark")
+autopsy = AUTOPSY.read_text(encoding="utf-8")
+require("ParseDealIdOut" in autopsy and "LoadLastAccountedDealTicket" in autopsy
+        and "LastAccountedDealTicket(void)" in autopsy,
+        "trade journal restores its durable DealIdOut boundary on restart")
+require("rec.dealIdOut=lastDealTicket;" in ea and "rLastTicket>journalBoundary" in ea
+        and "NEW ENTRIES BLOCKED pending accounting reconciliation" in ea,
+        "restart compares broker exit history with journal boundary and blocks entries on an accounting gap")
 
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
