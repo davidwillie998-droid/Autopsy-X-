@@ -139,6 +139,18 @@ public:
    string                  Symbol(void) const { return(m_symbol); }
    bool                    Initialized(void) const { return(m_initialized); }
    bool                    ScoreValid(void) const { return(m_scoreValid); }
+   bool                    ScoreIsFresh(const int maxAgeSeconds) const
+     {
+      if(!m_scoreValid || maxAgeSeconds<1 || m_lastScore.time<=0) return(false);
+      int age=(int)(TimeCurrent()-m_lastScore.time);
+      return(age>=0 && age<=maxAgeSeconds);
+     }
+   int                     ScoreAgeSeconds(void) const
+     {
+      if(!m_scoreValid || m_lastScore.time<=0) return(2147483647);
+      int age=(int)(TimeCurrent()-m_lastScore.time);
+      return(age<0 ? 2147483647 : age);
+     }
    SAxScore                LastScore(void) const { return(m_lastScore); }
    ENUM_AX_REGIME          Regime(void) const { return(m_regime.Regime()); }
    ENUM_AX_REGIME          HtfRegime(void) const { return(m_regimeHtf.Regime()); }
