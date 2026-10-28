@@ -80,6 +80,17 @@ require("if(FileIsExist(m_fileName))" in recovery
 require("malformed registry row; refusing to rewrite" in recovery
         and "invalid registry record; refusing to rewrite" in recovery,
         "restart recovery fails closed on malformed or invalid records")
+
+require('string tempName=m_fileName+".tmp";' in recovery
+        and "FileMove(tempName,0,m_fileName,FILE_REWRITE)" in recovery,
+        "registry is written to a staged file before replacing the active registry")
+require("previous registry retained" in recovery
+        and "could not replace registry" in recovery,
+        "failed staged writes/replacement report failure without claiming persistence")
+require("SAxOpenSetupRecord snapshot[AX_RECOVERY_MAX_ENTRIES];" in recovery
+        and "original registry restored in memory" in recovery
+        and "staleRemovedOut=0;" in recovery,
+        "failed stale-record cleanup restores the prior in-memory registry snapshot")
 require("registry exceeds capacity" in recovery
         and "duplicate ticket" in recovery,
         "restart recovery rejects overflow and duplicate position tickets")
