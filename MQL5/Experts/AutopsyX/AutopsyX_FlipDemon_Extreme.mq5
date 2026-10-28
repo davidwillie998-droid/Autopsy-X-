@@ -237,6 +237,7 @@ bool                   g_recoveryReady = false; // false means new entries are b
 
 SAxPositionState      g_posState;
 bool                  g_haveOpenPosition = false;
+ulong                 g_positionIdentifier = 0; // POSITION_IDENTIFIER retained for history lookup
 bool                  g_partialClosePending = false;
 double                g_pendingPartialCloseVolume = 0.0;
 ENUM_AX_ENGINE_STATE  g_engineState = AX_ENGINE_ACTIVE;
@@ -299,7 +300,13 @@ bool AxFetchCloseFinancials(const ulong posTicket,const ulong sinceTicketExclusi
                              ulong &lastDealTicketOut)
   {
    closePrice=0; grossProfit=0; commission=0; swap=0; closeTime=0; lastDealTicketOut=sinceTicketExclusive;
-   if(!HistorySelectByPosition((long)posTicket)) return(false);
+   // HistorySelectByPosition requires POSITION_IDENTIFIER, not POSITION_TICKET.
+   // Preserve the identifier captured while live because the position may be gone at close time.
+   ulong positionId=(g_posState.ticket==posTicket)?g_positionIdentifier:0;
+   if(positionId==0 && PositionSelect(_Symbol) &&
+      (ulong)PositionGetInteger(POSITION_TICKET)==posTicket)
+      positionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+   if(positionId==0 || !HistorySelectByPosition((long)positionId)) return(false);
    int total = HistoryDealsTotal();
    bool found=false;
    for(int i=0;i<total;i++)
@@ -429,6 +436,12 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
    g_haveOpenPosition = false;
    g_posState.active  = false;
    g_posState.ticket  = 0;
+
+   g_positionIdentifier = 0;
+
+   g_partialClosePending = false;
+
+   g_pendingPartialCloseVolume = 0.0;
    g_posState.dir     = AX_DIR_NONE;
    g_posState.entryReason = "";
   }
@@ -574,6 +587,14 @@ void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double l
                           const string entryReason,const int flipSeq,const double intendedPrice)
   {
    g_posState.ticket             = ticket;
+
+   g_positionIdentifier          = 0;
+
+   if(PositionSelect(_Symbol) && (ulong)PositionGetInteger(POSITION_TICKET)==ticket &&
+
+      (ulong)PositionGetInteger(POSITION_MAGIC)==InpMagicNumber)
+
+      g_positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
    g_posState.entryTime          = TimeCurrent();
    g_posState.entryPrice         = fillPrice;
    g_posState.dir                = dir;
@@ -1047,6 +1068,8 @@ void AxReconcileExistingPosition(void)
 
    long type = PositionGetInteger(POSITION_TYPE);
    g_posState.ticket            = (ulong)PositionGetInteger(POSITION_TICKET);
+
+   g_positionIdentifier          = (ulong)PositionGetInteger(POSITION_IDENTIFIER);
    g_posState.entryTime          = (datetime)PositionGetInteger(POSITION_TIME);
    g_posState.entryPrice          = PositionGetDouble(POSITION_PRICE_OPEN);
    g_posState.dir                  = (type==POSITION_TYPE_BUY)? AX_DIR_BUY : AX_DIR_SELL;
