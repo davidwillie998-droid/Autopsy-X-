@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EA = ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5"
 RISK = ROOT / "MQL5/Include/AutopsyX/RiskEngine.mqh"
 EXEC = ROOT / "MQL5/Include/AutopsyX/ExecutionEngine.mqh"
+RECOVERY = ROOT / "MQL5/Include/AutopsyX/RestartRecovery.mqh"
 README = ROOT / "MQL5/README.md"
 
 def require(condition: bool, message: str) -> None:
@@ -19,12 +20,13 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
     print(f"PASS: {message}")
 
-for path in (EA, RISK, EXEC, README):
+for path in (EA, RISK, EXEC, RECOVERY, README):
     require(path.is_file(), f"required source exists: {path.relative_to(ROOT)}")
 
 ea = EA.read_text(encoding="utf-8")
 risk = RISK.read_text(encoding="utf-8")
 execution = EXEC.read_text(encoding="utf-8")
+recovery = RECOVERY.read_text(encoding="utf-8")
 readme = README.read_text(encoding="utf-8")
 
 require("#property strict" in ea, "MQL5 strict mode is enabled")
@@ -71,5 +73,15 @@ require("g_posState.modifyFailCount>=InpMaxModifyFailures" in ea
         "repeated stop-management failures trigger a defensive exit")
 require("not a martingale" in readme.lower() and "never averages down" in readme.lower(),
         "documentation explicitly prohibits martingale and averaging down")
+
+require("if(FileIsExist(m_fileName))" in recovery
+        and "registry exists but cannot be read" in recovery,
+        "restart recovery refuses to overwrite an existing unreadable registry")
+require("malformed registry row; refusing to rewrite" in recovery
+        and "invalid registry record; refusing to rewrite" in recovery,
+        "restart recovery fails closed on malformed or invalid records")
+require("registry exceeds capacity" in recovery
+        and "duplicate ticket" in recovery,
+        "restart recovery rejects overflow and duplicate position tickets")
 
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
