@@ -148,4 +148,11 @@ require("g_posState.lots-PositionGetDouble(POSITION_VOLUME)" in partial,
 require("AxRetryPendingPartialClose();" in ea,
         "pending partial-close accounting is retried from the tick lifecycle")
 
+require("HistorySelectByPosition((long)positionId)" in ea
+        and "HistorySelectByPosition((long)posTicket)" not in ea,
+        "exit history selection uses POSITION_IDENTIFIER rather than assuming position ticket identity")
+require("g_positionIdentifier          = (ulong)PositionGetInteger(POSITION_IDENTIFIER);" in ea
+        and "g_positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);" in ea,
+        "position identifier is captured on restart reconciliation and fresh position initialization")
+
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
