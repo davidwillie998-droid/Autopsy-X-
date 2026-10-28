@@ -83,5 +83,12 @@ require("malformed registry row; refusing to rewrite" in recovery
 require("registry exceeds capacity" in recovery
         and "duplicate ticket" in recovery,
         "restart recovery rejects overflow and duplicate position tickets")
+require("bool               RecordOpenSetup(" in recovery
+        and "if(RewriteFile()) return(true);" in recovery
+        and "m_count=previousCount;" in recovery,
+        "failed open-record persistence is reported and in-memory state is rolled back")
+require("bool               RemoveOpenSetup(" in recovery
+        and "could not persist removal" in recovery,
+        "failed record removal is reported to the caller")
 
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
