@@ -91,6 +91,14 @@ require("SAxOpenSetupRecord snapshot[AX_RECOVERY_MAX_ENTRIES];" in recovery
         and "original registry restored in memory" in recovery
         and "staleRemovedOut=0;" in recovery,
         "failed stale-record cleanup restores the prior in-memory registry snapshot")
+
+require("metadata does not match broker state" in recovery
+        and "liveMagic==magic" in recovery
+        and "m_records[i].dir==liveDir" in recovery,
+        "recovery validates saved ticket identity against live symbol, magic and direction")
+require("A fresh successful reconciliation is required to clear that safety latch." in ea
+        and "else if(g_recoveryInitialized)" not in ea,
+        "trade-exit callbacks cannot accidentally clear a startup recovery block")
 require("registry exceeds capacity" in recovery
         and "duplicate ticket" in recovery,
         "restart recovery rejects overflow and duplicate position tickets")
