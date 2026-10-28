@@ -315,8 +315,23 @@ public:
          if((ulong)PositionGetInteger(POSITION_MAGIC)!=magic) continue;
 
          SAxOpenSetupRecord rec;
-         if(FindByTicket(ticket,rec)) matchedOut++;
-         else                          untrackedOut++; // real position, no history - never fabricate its thesis
+         if(FindByTicket(ticket,rec))
+           {
+            // A ticket match alone is not sufficient: validate the persisted identity against
+            // the broker's actual symbol, magic and direction before trusting its setup mapping.
+            long liveType=PositionGetInteger(POSITION_TYPE);
+            ENUM_AX_DIR liveDir=(liveType==POSITION_TYPE_BUY)?AX_DIR_BUY:AX_DIR_SELL;
+            if(rec.symbol==symbol && rec.dir==liveDir)
+               matchedOut++;
+            else
+              {
+               untrackedOut++;
+               PrintFormat("FLIPDEMON RECOVERY ERROR: ticket %I64u metadata does not match broker state; new entries must remain blocked.",
+                           ticket);
+              }
+           }
+         else
+            untrackedOut++; // real position, no history - never fabricate its thesis
         }
 
       //--- pass 2: every registry entry with no matching real position - the position closed while ---
@@ -328,7 +343,18 @@ public:
       bool anyRemoved=false;
       for(int i=m_count-1;i>=0;i--)
         {
-         if(!PositionSelectByTicket(m_records[i].ticket))
+         bool recordStillValid=false;
+         if(PositionSelectByTicket(m_records[i].ticket))
+           {
+            string liveSymbol=PositionGetString(POSITION_SYMBOL);
+            ulong liveMagic=(ulong)PositionGetInteger(POSITION_MAGIC);
+            long liveType=PositionGetInteger(POSITION_TYPE);
+            ENUM_AX_DIR liveDir=(liveType==POSITION_TYPE_BUY)?AX_DIR_BUY:AX_DIR_SELL;
+            recordStillValid=(liveSymbol==symbol && liveMagic==magic &&
+                              m_records[i].symbol==symbol && m_records[i].dir==liveDir);
+           }
+
+         if(!recordStillValid)
            {
             if(RemoveFromMemory(m_records[i].ticket))
               {
