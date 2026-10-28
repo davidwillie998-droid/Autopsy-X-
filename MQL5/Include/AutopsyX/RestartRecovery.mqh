@@ -98,7 +98,6 @@ private:
         }
 
       FileFlush(handle);
-      if(FileIsEnding(handle)) { /* FileIsEnding is not a write-integrity signal. */ }
       FileClose(handle);
       if(!writeOk)
         {
