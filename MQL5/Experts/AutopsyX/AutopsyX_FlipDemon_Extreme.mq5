@@ -41,6 +41,7 @@
 #include <AutopsyX/Dashboard.mqh>
 #include <AutopsyX/SymbolUniverse.mqh>
 #include <AutopsyX/SymbolContext.mqh>
+#include <AutopsyX/SymbolAnalyzer.mqh>
 
 //====================================================================
 // INPUTS
@@ -209,6 +210,8 @@ input int             InpMaxConsecutiveExecFailures = 3;     // Consecutive exec
 //====================================================================
 CAxSymbolUniverse    g_symbolUniverse;
 CAxSymbolContext     g_symbolContexts; // per-symbol quote, bar, signal-freshness and cooldown state // Discovery/preflight registry only; trade engines remain chart-symbol-bound in this phase
+CAxSymbolAnalyzer    g_symbolAnalyzers[AX_MAX_UNIVERSE_SYMBOLS];
+string               g_bestScanCandidate = "";
 CMarketData          g_md;
 CMomentumEngine       g_mom;
 CMicrostructureEngine g_micro;
@@ -1059,8 +1062,28 @@ int OnInit(void)
    PrintFormat("AUTOPSY X: symbol contexts initialized for %d symbol(s).",
                g_symbolContexts.Count());
 
+   // Each universe symbol gets its own market-data, momentum, microstructure,
+   // liquidity, signal-regime, HTF-regime and scoring objects. These analyzers
+   // rank candidates only; the existing execution/risk lifecycle remains chart-bound.
+   int analyzerCount=0;
+   for(int i=0;i<g_symbolContexts.Count();i++)
+     {
+      string candidate=g_symbolContexts.SymbolAt(i);
+      if(g_symbolAnalyzers[i].Init(candidate,InpRegimeTimeframe,InpHtfTimeframe,
+                                   InpMinScoreToAct,InpMinGapToAct))
+         analyzerCount++;
+      else
+         PrintFormat("AUTOPSY X: analyzer unavailable for %s; symbol excluded from ranking.",candidate);
+     }
+   if(analyzerCount<1)
+     {
+      Print("AUTOPSY X: no per-symbol analyzers initialized; refusing to start.");
+      return(INIT_FAILED);
+     }
+   PrintFormat("AUTOPSY X: %d/%d independent symbol analyzers initialized.",analyzerCount,universeCount);
+
    PrintFormat("AUTOPSY X: symbol universe preflight registered %d symbol(s). "
-               "Execution remains chart-symbol-only until per-symbol engine isolation is complete.",
+               "Multi-symbol analysis is enabled; order execution remains chart-symbol-only.",
                universeCount);
 
    // demo execution is typically near-instant with near-zero slippage - it will not surface the
@@ -1172,6 +1195,7 @@ void OnDeinit(const int reason)
    if(InpShowDashboard)
       g_dash.RemoveAll();
    g_autopsy.Deinit();
+   for(int i=0;i<g_symbolContexts.Count();i++) g_symbolAnalyzers[i].Deinit();
    g_regime.Deinit();
    g_regimeHtf.Deinit();
    g_heatmap.Deinit();
@@ -1496,13 +1520,38 @@ void OnTimer(void)
       // Phase 3 prefilter: candidates must have fresh quotes, acceptable spread,
       // synchronized signal/HTF series and sufficient history. This is analysis-only;
       // no non-chart symbol can submit an order from this readiness pass.
+      double bestCandidateScore=-1.0;
+      string bestCandidate="";
       for(int i=0;i<g_symbolContexts.Count();i++)
         {
          string candidate=g_symbolContexts.SymbolAt(i);
          string readinessReason="";
-         g_symbolContexts.EvaluateReadiness(candidate,InpRegimeTimeframe,InpHtfTimeframe,
-                                             InpUniverseMinSignalBars,InpUniverseMinHtfBars,
-                                             InpMaxSpreadPoints,readinessReason);
+         bool ready=g_symbolContexts.EvaluateReadiness(candidate,InpRegimeTimeframe,InpHtfTimeframe,
+                                                        InpUniverseMinSignalBars,InpUniverseMinHtfBars,
+                                                        InpMaxSpreadPoints,readinessReason);
+         if(!ready) continue;
+         g_symbolAnalyzers[i].Update();
+         if(!g_symbolAnalyzers[i].ScoreValid()) continue;
+
+         SAxScore candidateScore=g_symbolAnalyzers[i].LastScore();
+         if(candidateScore.action==AX_DIR_NONE) continue;
+         double strength=MathMax(candidateScore.buyScore,candidateScore.sellScore);
+         if(strength>bestCandidateScore)
+           {
+            bestCandidateScore=strength;
+            bestCandidate=candidate;
+           }
+        }
+      // Candidate ranking is advisory only. Never route an order from this timer loop.
+      if(bestCandidate!=g_bestScanCandidate)
+        {
+         g_bestScanCandidate=bestCandidate;
+         if(bestCandidate!="")
+            PrintFormat("AUTOPSY X SCANNER: strongest qualifying analysis candidate=%s score=%.1f. "
+                        "No order submitted; execution remains chart-symbol-only.",
+                        bestCandidate,bestCandidateScore);
+         else
+            Print("AUTOPSY X SCANNER: no symbol currently passes readiness and directional-score gates.");
         }
      }
    if(!InpShowDashboard) return;
