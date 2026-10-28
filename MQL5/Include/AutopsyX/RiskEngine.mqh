@@ -171,7 +171,11 @@ public:
       if(valuePerLot<=0) return(0.0);
 
       double lots = riskAmount/valuePerLot;
-      lots = md.NormalizeVolume(lots);
+      // Capital-agnostic sizing: risk scales with current equity, but never round a
+      // below-minimum budget UP to the broker minimum. If min volume is unaffordable,
+      // return zero and let the entry gate reject the trade.
+      lots = md.NormalizeVolumeDown(lots);
+      if(lots<=0.0) return(0.0);
       lots = MathMin(lots,m_maxExposureLots);
       //--- re-normalized AFTER the exposure clamp, not just before it - m_maxExposureLots is a       ---
       //--- user-configured input (Configure()) with no guarantee of being volume-step-aligned for a   ---
@@ -179,7 +183,7 @@ public:
       //--- broker would be returned as-is instead of floored to a broker-valid size (Section A risk-   ---
       //--- invariant audit finding: every return value must be broker-valid regardless of what config  ---
       //--- does, never contingent on the config itself being well-behaved). ---
-      lots = md.NormalizeVolume(lots);
+      lots = md.NormalizeVolumeDown(lots);
       return(lots);
      }
 

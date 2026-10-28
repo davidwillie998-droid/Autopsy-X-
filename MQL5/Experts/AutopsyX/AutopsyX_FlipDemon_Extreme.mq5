@@ -39,10 +39,23 @@
 #include <AutopsyX/VWAPEngine.mqh>
 #include <AutopsyX/EmergencyControls.mqh>
 #include <AutopsyX/Dashboard.mqh>
+#include <AutopsyX/SymbolUniverse.mqh>
+#include <AutopsyX/SymbolContext.mqh>
+#include <AutopsyX/SymbolAnalyzer.mqh>
+#include <AutopsyX/CandidatePermission.mqh>
+#include <AutopsyX/DuplicateGuard.mqh>
+#include <AutopsyX/AccountStopRisk.mqh>
 
 //====================================================================
 // INPUTS
 //====================================================================
+input group "=== SYMBOL UNIVERSE PREFLIGHT ===";
+input string InpUniverseSymbols = ""; // Optional comma-separated symbols; exact names preferred, unique broker suffix/prefix aliases only
+input int    InpUniverseMaxQuoteAgeSeconds = 60; // Reject stale universe quotes during startup preflight
+input int    InpUniverseMinSignalBars = 120; // Minimum synchronized bars before a symbol can become a scan candidate
+input int    InpUniverseMinHtfBars = 120; // Minimum higher-timeframe bars before a symbol can become a scan candidate
+input int    InpMaxCandidateScoreAgeSeconds = 10; // Maximum age of a score accepted by the candidate scanner
+
 input group "=== MODE ===";
 input ENUM_AX_MODE   InpMode                    = AX_MODE_AGGRESSIVE; // Aggression mode
 input double         InpExtremeRiskPercent      = 2.0;                // EXTREME mode risk % per trade (hard-capped at 2.0)
@@ -115,6 +128,7 @@ input double         InpWeeklyLossLimitPercent  = 15.0;    // Weekly loss limit 
 input int            InpMaxPositionsPerSymbol   = 1;       // Max simultaneously open positions on this symbol specifically
 input double         InpMaxDirectionalExposureLots = 1.0;  // Max exposure lots in one direction (BUY or SELL) at once
 input double         InpMaxMarginUsagePercent   = 50.0;     // Max ACCOUNT_MARGIN / ACCOUNT_EQUITY, as a percent
+input double         InpMaxAccountStopRiskPercent = 4.0; // Maximum combined open-position + pending-order stop risk as % of equity; unknown risk blocks entries
 input int            InpMaxExecutionFailures    = 5;        // Max consecutive order-send failures before blocking new entries
 
 input group "=== EXECUTION MODE & EMERGENCY CONTROLS ===";
@@ -199,6 +213,12 @@ input int             InpMaxConsecutiveExecFailures = 3;     // Consecutive exec
 //====================================================================
 // GLOBAL ENGINE OBJECTS
 //====================================================================
+CAxSymbolUniverse    g_symbolUniverse;
+CAxSymbolContext     g_symbolContexts; // per-symbol quote, bar, signal-freshness and cooldown state // Discovery/preflight registry only; trade engines remain chart-symbol-bound in this phase
+CAxSymbolAnalyzer    g_symbolAnalyzers[AX_MAX_UNIVERSE_SYMBOLS];
+CAxCandidatePermission g_candidatePermission;
+CDuplicateGuard         g_duplicateGuard;
+string               g_bestScanCandidate = "";
 CMarketData          g_md;
 CMomentumEngine       g_mom;
 CMicrostructureEngine g_micro;
@@ -690,6 +710,20 @@ void AxCountAccountExposure(int &positionsOut,double &grossLotsOut)
 bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSeq,const string tag)
   {
    string gateReason;
+   datetime setupBar=iTime(_Symbol,InpRegimeTimeframe,0);
+   if(setupBar<=0)
+     {
+      if(InpVerboseLogging) Print("AUTOPSY X: entry blocked (signal-bar timestamp unavailable)");
+      return(false);
+     }
+   // One entry attempt per symbol/timeframe/direction/signal bar. This permits a new
+   // continuation add on a later bar while preventing tick-by-tick duplicate submissions.
+   string setupId=StringFormat("%s|%d|%I64d|%d",_Symbol,(int)InpRegimeTimeframe,(long)setupBar,(int)dir);
+   if(g_duplicateGuard.IsDuplicateSetupId(setupId))
+     {
+      if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (duplicate setup %s)",setupId);
+      return(false);
+     }
    //--- emergency controls checked FIRST, ahead of every other gate - an operator-triggered stop or
    //--- a disabled direction is a deliberate override and should never be shadowed by a message that
    //--- makes it look like an ordinary risk/session gate declined the trade (spec section 38). ---
@@ -707,6 +741,20 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    AxCountRealPositions(realPositionsForSymbol,realDirectionalExposure,dir);
    int accountOpenPositions; double accountExposureLots;
    AxCountAccountExposure(accountOpenPositions,accountExposureLots);
+   double accountOpenStopRiskMoney=0.0; int accountRiskItems=0;
+   if(!AxCalculateAccountStopRisk(accountOpenStopRiskMoney,accountRiskItems,gateReason))
+     {
+      if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked by account stop-risk audit (%s)",gateReason);
+      return(false);
+     }
+   double accountEquityForRisk=AccountInfoDouble(ACCOUNT_EQUITY);
+   if(accountEquityForRisk<=0.0 || (accountOpenStopRiskMoney/accountEquityForRisk*100.0)>=InpMaxAccountStopRiskPercent)
+     {
+      if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (existing account stop risk %.2f%% reaches %.2f%% cap; items=%d)",
+                                        accountEquityForRisk>0.0?accountOpenStopRiskMoney/accountEquityForRisk*100.0:100.0,
+                                        InpMaxAccountStopRiskPercent,accountRiskItems);
+      return(false);
+     }
    if(!g_risk.PreTradeAllowed(accountOpenPositions,accountExposureLots,g_md.CurrentSpreadPts(),gateReason,
                                realPositionsForSymbol,realDirectionalExposure))
      {
@@ -802,6 +850,26 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
          lots = 0.0;
      }
 
+   // Include the new order in the account-wide stop-risk budget. OrderCalcProfit values the
+   // loss in account currency for this symbol, avoiding an assumed pip/tick-value conversion.
+   if(lots>0.0)
+     {
+      double newOrderStopPnl=0.0;
+      ENUM_ORDER_TYPE newOrderType=(dir==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
+      if(!OrderCalcProfit(newOrderType,_Symbol,lots,intendedPrice,slPrice,newOrderStopPnl))
+        {
+         if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (cannot value proposed stop risk, error %d)",GetLastError());
+         return(false);
+        }
+      double projectedAccountRiskPct=(accountOpenStopRiskMoney+MathMax(0.0,-newOrderStopPnl))/AccountInfoDouble(ACCOUNT_EQUITY)*100.0;
+      if(projectedAccountRiskPct>InpMaxAccountStopRiskPercent+0.0001)
+        {
+         if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (projected account stop risk %.2f%% exceeds %.2f%% cap)",
+                                           projectedAccountRiskPct,InpMaxAccountStopRiskPercent);
+         return(false);
+        }
+     }
+
    // Adaptive Flip Engine: capital-protection gate + position-size scaler, applied unconditionally
    // like every other gate above - a flip re-entry gets no exemption from risk-of-ruin/drawdown
    // protection just because it's defensive in nature. Runs here (AFTER stops/base lot size are
@@ -855,7 +923,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       // already at the broker minimum (the small-account case this fix targets) times any scaling
       // multiplier below 1.0 will always land under volMin, so it must be zeroed here, not normalized.
       double volMin = g_md.VolumeMin();
-      lots = (scaledLots < volMin) ? 0.0 : g_md.NormalizeVolume(scaledLots);
+      lots = (scaledLots < volMin) ? 0.0 : g_md.NormalizeVolumeDown(scaledLots);
      }
 
    // order-book impact-cost sizing (Patnaik & Thomas 2004): cap size to what the book can actually
@@ -871,7 +939,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
          if(maxAffordableLots<lots)
            {
             double volMin = g_md.VolumeMin();
-            lots = (maxAffordableLots < volMin) ? 0.0 : g_md.NormalizeVolume(maxAffordableLots);
+            lots = (maxAffordableLots < volMin) ? 0.0 : g_md.NormalizeVolumeDown(maxAffordableLots);
            }
         }
      }
@@ -901,6 +969,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
      }
    g_consecutiveExecFailures = 0;
    g_risk.RegisterExecutionSuccess();
+   g_duplicateGuard.RegisterSetupId(setupId);
 
    // Use the confirmed filled volume, not the requested volume. A legitimate partial
    // fill is a real position and must be managed at its actual exposure.
@@ -1030,6 +1099,51 @@ int OnInit(void)
       return(INIT_FAILED);
      }
 
+   //--- PHASE 1: broker-aware symbol universe discovery/preflight. This deliberately does NOT
+   //--- route orders to non-chart symbols yet: the existing engines own chart-symbol state, and
+   //--- enabling multi-symbol execution before per-symbol state isolation would be unsafe. ---
+   int universeCount=g_symbolUniverse.Build(InpUniverseSymbols,_Symbol,
+                                             InpUniverseMaxQuoteAgeSeconds,true);
+   if(universeCount<1)
+     {
+      Print("AUTOPSY X: symbol universe preflight failed; no valid symbols available.");
+      return(INIT_FAILED);
+     }
+   if(!g_symbolContexts.LoadUniverse(g_symbolUniverse,InpUniverseMaxQuoteAgeSeconds))
+     {
+      Print("AUTOPSY X: failed to initialize per-symbol context registry.");
+      return(INIT_FAILED);
+     }
+   g_symbolContexts.RefreshQuotes();
+   PrintFormat("AUTOPSY X: symbol contexts initialized for %d symbol(s).",
+               g_symbolContexts.Count());
+
+   g_candidatePermission.Configure(InpMaxCandidateScoreAgeSeconds,InpMinScoreToAct);
+
+   // Each universe symbol gets its own market-data, momentum, microstructure,
+   // liquidity, signal-regime, HTF-regime and scoring objects. These analyzers
+   // rank candidates only; the existing execution/risk lifecycle remains chart-bound.
+   int analyzerCount=0;
+   for(int i=0;i<g_symbolContexts.Count();i++)
+     {
+      string candidate=g_symbolContexts.SymbolAt(i);
+      if(g_symbolAnalyzers[i].Init(candidate,InpRegimeTimeframe,InpHtfTimeframe,
+                                   InpMinScoreToAct,InpMinGapToAct))
+         analyzerCount++;
+      else
+         PrintFormat("AUTOPSY X: analyzer unavailable for %s; symbol excluded from ranking.",candidate);
+     }
+   if(analyzerCount<1)
+     {
+      Print("AUTOPSY X: no per-symbol analyzers initialized; refusing to start.");
+      return(INIT_FAILED);
+     }
+   PrintFormat("AUTOPSY X: %d/%d independent symbol analyzers initialized.",analyzerCount,universeCount);
+
+   PrintFormat("AUTOPSY X: symbol universe preflight registered %d symbol(s). "
+               "Multi-symbol analysis is enabled; order execution remains chart-symbol-only.",
+               universeCount);
+
    // demo execution is typically near-instant with near-zero slippage - it will not surface the
    // live-only problems this EA specifically defends against (spread spikes, slow fills, real
    // slippage). Detected once here purely to label the dashboard/log honestly; behavior itself
@@ -1122,10 +1236,9 @@ int OnInit(void)
    AxReconcileExistingPosition();
 
    if(InpShowDashboard)
-     {
       g_dash.Init(_Symbol);
+   if(InpShowDashboard || g_symbolUniverse.Count()>1)
       EventSetTimer(1);
-     }
 
    g_engineState = AX_ENGINE_ACTIVE;
    PrintFormat("AUTOPSY X FLIPDEMON EXTREME initialized on %s | mode=%d | risk=%.2f%%",
@@ -1135,12 +1248,12 @@ int OnInit(void)
 
 void OnDeinit(const int reason)
   {
-   if(InpShowDashboard)
-     {
+   if(InpShowDashboard || g_symbolUniverse.Count()>1)
       EventKillTimer();
+   if(InpShowDashboard)
       g_dash.RemoveAll();
-     }
    g_autopsy.Deinit();
+   for(int i=0;i<g_symbolContexts.Count();i++) g_symbolAnalyzers[i].Deinit();
    g_regime.Deinit();
    g_regimeHtf.Deinit();
    g_heatmap.Deinit();
@@ -1151,6 +1264,7 @@ void OnDeinit(const int reason)
 //====================================================================
 void OnTick(void)
   {
+   g_symbolContexts.RefreshQuotes(); // refresh independent quote snapshots; strategy remains chart-symbol-only
    if(!g_md.OnTickUpdate()) return;
    g_risk.OnTickHousekeeping();
    g_afe.OnTickHousekeeping();
@@ -1458,6 +1572,57 @@ void OnTick(void)
 //====================================================================
 void OnTimer(void)
   {
+   if(g_symbolUniverse.Count()>1)
+     {
+      g_symbolContexts.RefreshQuotes();
+      // Phase 3 prefilter: candidates must have fresh quotes, acceptable spread,
+      // synchronized signal/HTF series and sufficient history. This is analysis-only;
+      // no non-chart symbol can submit an order from this readiness pass.
+      double bestCandidateScore=-1.0;
+      string bestCandidate="";
+      for(int i=0;i<g_symbolContexts.Count();i++)
+        {
+         string candidate=g_symbolContexts.SymbolAt(i);
+         string readinessReason="";
+         bool ready=g_symbolContexts.EvaluateReadiness(candidate,InpRegimeTimeframe,InpHtfTimeframe,
+                                                        InpUniverseMinSignalBars,InpUniverseMinHtfBars,
+                                                        InpMaxSpreadPoints,readinessReason);
+         if(!ready) continue;
+         g_symbolAnalyzers[i].Update();
+         if(!g_symbolAnalyzers[i].ScoreValid()) continue;
+
+         SAxScore candidateScore=g_symbolAnalyzers[i].LastScore();
+         datetime signalBarTime=iTime(candidate,InpRegimeTimeframe,0);
+         SAxCandidateVerdict candidateVerdict=
+            g_candidatePermission.Evaluate(candidate,candidateScore,
+                                           g_symbolContexts.AnalysisReady(candidate),
+                                           signalBarTime);
+         if(!candidateVerdict.accepted)
+           {
+            if(InpVerboseLogging)
+               PrintFormat("AUTOPSY X SCANNER: %s rejected by candidate gate (%s).",
+                           candidate,candidateVerdict.reason);
+            continue;
+           }
+         double strength=candidateVerdict.strength;
+         if(strength>bestCandidateScore)
+           {
+            bestCandidateScore=strength;
+            bestCandidate=candidate;
+           }
+        }
+      // Candidate ranking is advisory only. Never route an order from this timer loop.
+      if(bestCandidate!=g_bestScanCandidate)
+        {
+         g_bestScanCandidate=bestCandidate;
+         if(bestCandidate!="")
+            PrintFormat("AUTOPSY X SCANNER: strongest qualifying analysis candidate=%s score=%.1f. "
+                        "No order submitted; execution remains chart-symbol-only.",
+                        bestCandidate,bestCandidateScore);
+         else
+            Print("AUTOPSY X SCANNER: no symbol currently passes readiness and directional-score gates.");
+        }
+     }
    if(!InpShowDashboard) return;
 
    // DOM refresh is heavier than a tick read and doesn't need tick-rate freshness to stay useful -

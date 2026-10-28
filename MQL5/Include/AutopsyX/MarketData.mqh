@@ -148,7 +148,7 @@ public:
       return(true);
      }
 
-   //--- normalize a lot size to the broker's volume step/min/max ---
+   //--- legacy normalization: clamps to broker min/max; do not use for risk-budgeted sizing.
    double            NormalizeVolume(const double rawLots) const
      {
       double step = (m_volStep>0)? m_volStep : 0.01;
@@ -158,6 +158,23 @@ public:
       double s = step;
       while(MathAbs(s-MathRound(s))>1e-8 && stepDigits<8) { s*=10; stepDigits++; }
       return(NormalizeDouble(vol,stepDigits));
+     }
+
+   //--- risk-safe normalization: round DOWN to broker step and return zero if minimum volume
+   //--- would exceed the caller's calculated budget. Never force a tiny account up to min lot.
+   double            NormalizeVolumeDown(const double rawLots) const
+     {
+      if(rawLots<=0.0 || m_volMin<=0.0 || m_volMax<=0.0) return(0.0);
+      double step = (m_volStep>0.0)?m_volStep:0.01;
+      double vol = MathFloor((rawLots+1e-12)/step)*step;
+      if(vol+1e-10<m_volMin) return(0.0);
+      vol=MathMin(vol,m_volMax);
+      int stepDigits=0;
+      double s=step;
+      while(MathAbs(s-MathRound(s))>1e-8 && stepDigits<8) { s*=10.0; stepDigits++; }
+      vol=NormalizeDouble(vol,stepDigits);
+      if(vol+1e-10<m_volMin) return(0.0);
+      return(vol);
      }
 
    double            NormalizePrice(const double price) const

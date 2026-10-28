@@ -1,0 +1,247 @@
+//+------------------------------------------------------------------+
+//|                                                  SymbolContext.mqh |
+//| Independent quote/lifecycle state per registered symbol           |
+//| Does not yet own strategy engines or authorize execution.          |
+//+------------------------------------------------------------------+
+#property strict
+#ifndef AX_SYMBOLCONTEXT_MQH
+#define AX_SYMBOLCONTEXT_MQH
+#include <AutopsyX/SymbolUniverse.mqh>
+
+class CAxSymbolContext
+  {
+private:
+   string   m_symbols[AX_MAX_UNIVERSE_SYMBOLS];
+   MqlTick  m_ticks[AX_MAX_UNIVERSE_SYMBOLS];
+   datetime m_lastProcessedBar[AX_MAX_UNIVERSE_SYMBOLS];
+   datetime m_signalTime[AX_MAX_UNIVERSE_SYMBOLS];
+   datetime m_cooldownUntil[AX_MAX_UNIVERSE_SYMBOLS];
+   bool     m_quoteValid[AX_MAX_UNIVERSE_SYMBOLS];
+   bool     m_analysisReady[AX_MAX_UNIVERSE_SYMBOLS];
+   string   m_readinessReason[AX_MAX_UNIVERSE_SYMBOLS];
+   int      m_count;
+   int      m_maxQuoteAgeSeconds;
+
+   int Find(const string symbol) const
+     {
+      for(int i=0;i<m_count;i++)
+         if(m_symbols[i]==symbol) return(i);
+      return(-1);
+     }
+
+public:
+                     CAxSymbolContext(void)
+     {
+      m_count=0;
+      m_maxQuoteAgeSeconds=60;
+      for(int i=0;i<AX_MAX_UNIVERSE_SYMBOLS;i++)
+        {
+         m_symbols[i]="";
+         ZeroMemory(m_ticks[i]);
+         m_lastProcessedBar[i]=0;
+         m_signalTime[i]=0;
+         m_cooldownUntil[i]=0;
+         m_quoteValid[i]=false;
+         m_analysisReady[i]=false;
+         m_readinessReason[i]="not evaluated";
+        }
+     }
+
+   void              Configure(const int maxQuoteAgeSeconds)
+     {
+      m_maxQuoteAgeSeconds=(int)MathMax(1,maxQuoteAgeSeconds);
+     }
+
+   bool              LoadUniverse(CAxSymbolUniverse &universe,const int maxQuoteAgeSeconds)
+     {
+      m_count=0;
+      Configure(maxQuoteAgeSeconds);
+      for(int i=0;i<universe.Count() && i<AX_MAX_UNIVERSE_SYMBOLS;i++)
+        {
+         string symbol=universe.At(i);
+         if(symbol=="") continue;
+         if(Find(symbol)>=0) continue;
+         m_symbols[m_count]=symbol;
+         m_count++;
+        }
+      return(m_count>0);
+     }
+
+   int               Count(void) const { return(m_count); }
+
+   string            SymbolAt(const int index) const
+     {
+      if(index<0 || index>=m_count) return("");
+      return(m_symbols[index]);
+     }
+
+   // Refresh every registered symbol independently. Invalid/stale quotes are
+   // marked invalid and must not be used to rank or execute a candidate.
+   void              RefreshQuotes(void)
+     {
+      for(int i=0;i<m_count;i++)
+        {
+         MqlTick tick;
+         bool ok=SymbolInfoTick(m_symbols[i],tick);
+         if(!ok || tick.bid<=0.0 || tick.ask<=0.0 || tick.ask<tick.bid || tick.time<=0)
+           {
+            m_quoteValid[i]=false;
+            continue;
+           }
+         int age=(int)(TimeCurrent()-tick.time);
+         if(age<0 || age>m_maxQuoteAgeSeconds)
+           {
+            m_quoteValid[i]=false;
+            continue;
+           }
+         m_ticks[i]=tick;
+         m_quoteValid[i]=true;
+        }
+     }
+
+   bool              QuoteIsValid(const string symbol) const
+     {
+      int i=Find(symbol);
+      if(i<0 || !m_quoteValid[i]) return(false);
+      int age=(int)(TimeCurrent()-m_ticks[i].time);
+      return(age>=0 && age<=m_maxQuoteAgeSeconds);
+     }
+
+   bool              GetTick(const string symbol,MqlTick &tick) const
+     {
+      int i=Find(symbol);
+      if(i<0 || !QuoteIsValid(symbol)) return(false);
+      tick=m_ticks[i];
+      return(true);
+     }
+
+   double            Mid(const string symbol) const
+     {
+      int i=Find(symbol);
+      if(i<0 || !QuoteIsValid(symbol)) return(0.0);
+      return((m_ticks[i].bid+m_ticks[i].ask)*0.5);
+     }
+
+   double            SpreadPrice(const string symbol) const
+     {
+      int i=Find(symbol);
+      if(i<0 || !QuoteIsValid(symbol)) return(0.0);
+      return(m_ticks[i].ask-m_ticks[i].bid);
+     }
+
+   datetime          QuoteTime(const string symbol) const
+     {
+      int i=Find(symbol);
+      if(i<0 || !QuoteIsValid(symbol)) return(0);
+      return(m_ticks[i].time);
+     }
+
+   // Readiness is a data-quality gate only: it does not generate a signal or authorize an order.
+   // Both timeframes must have synchronized history before this symbol can enter candidate ranking.
+   bool              EvaluateReadiness(const string symbol,
+                                        const ENUM_TIMEFRAMES signalTf,
+                                        const ENUM_TIMEFRAMES htf,
+                                        const int minSignalBars,
+                                        const int minHtfBars,
+                                        const double maxSpreadPoints,
+                                        string &reason)
+     {
+      int i=Find(symbol);
+      if(i<0) { reason="symbol not registered"; return(false); }
+      m_analysisReady[i]=false;
+      reason="";
+
+      if(!QuoteIsValid(symbol))
+         reason="quote missing or stale";
+      else
+        {
+         double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+         if(point<=0.0)
+            reason="invalid point size";
+         else
+           {
+            double spread=(m_ticks[i].ask-m_ticks[i].bid)/point;
+            if(spread<=0.0 || spread>maxSpreadPoints)
+               reason=StringFormat("spread %.1f points exceeds limit %.1f",spread,maxSpreadPoints);
+            else if(Bars(symbol,signalTf)<minSignalBars)
+               reason=StringFormat("signal history short: %d/%d bars",Bars(symbol,signalTf),minSignalBars);
+            else if(Bars(symbol,htf)<minHtfBars)
+               reason=StringFormat("HTF history short: %d/%d bars",Bars(symbol,htf),minHtfBars);
+            else if(!SeriesInfoInteger(symbol,signalTf,SERIES_SYNCHRONIZED) ||
+                    !SeriesInfoInteger(symbol,htf,SERIES_SYNCHRONIZED))
+               reason="timeframe history not synchronized";
+            else
+              {
+               long tradeMode=SymbolInfoInteger(symbol,SYMBOL_TRADE_MODE);
+               if(tradeMode==SYMBOL_TRADE_MODE_DISABLED || tradeMode==SYMBOL_TRADE_MODE_CLOSEONLY)
+                  reason="broker trade mode blocks new positions";
+              }
+           }
+        }
+
+      m_analysisReady[i]=(reason=="");
+      m_readinessReason[i]=m_analysisReady[i] ? "ready" : reason;
+      return(m_analysisReady[i]);
+     }
+
+   bool              AnalysisReady(const string symbol) const
+     {
+      int i=Find(symbol);
+      return(i>=0 && m_analysisReady[i] && QuoteIsValid(symbol));
+     }
+
+   string            ReadinessReason(const string symbol) const
+     {
+      int i=Find(symbol);
+      if(i<0) return("symbol not registered");
+      return(m_readinessReason[i]);
+     }
+
+   bool              IsNewBar(const string symbol,const ENUM_TIMEFRAMES timeframe)
+     {
+      int i=Find(symbol);
+      if(i<0) return(false);
+      datetime bar=iTime(m_symbols[i],timeframe,0);
+      if(bar<=0 || bar==m_lastProcessedBar[i]) return(false);
+      m_lastProcessedBar[i]=bar;
+      return(true);
+     }
+
+   void              MarkSignal(const string symbol,const datetime signalTime)
+     {
+      int i=Find(symbol);
+      if(i<0) return;
+      m_signalTime[i]=signalTime;
+     }
+
+   datetime          SignalTime(const string symbol) const
+     {
+      int i=Find(symbol);
+      if(i<0) return(0);
+      return(m_signalTime[i]);
+     }
+
+   bool              SignalIsFresh(const string symbol,const int maxAgeSeconds) const
+     {
+      datetime stamp=SignalTime(symbol);
+      if(stamp<=0 || maxAgeSeconds<1) return(false);
+      int age=(int)(TimeCurrent()-stamp);
+      return(age>=0 && age<=maxAgeSeconds);
+     }
+
+   void              SetCooldown(const string symbol,const datetime untilTime)
+     {
+      int i=Find(symbol);
+      if(i<0) return;
+      m_cooldownUntil[i]=untilTime;
+     }
+
+   bool              IsCoolingDown(const string symbol) const
+     {
+      int i=Find(symbol);
+      if(i<0) return(true);
+      return(TimeCurrent()<m_cooldownUntil[i]);
+     }
+  };
+
+#endif // AX_SYMBOLCONTEXT_MQH
