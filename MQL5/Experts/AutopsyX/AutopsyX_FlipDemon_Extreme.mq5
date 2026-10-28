@@ -1646,6 +1646,23 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
       symbol=HistoryDealGetString(trans.deal,DEAL_SYMBOL);
       magic=(ulong)HistoryDealGetInteger(trans.deal,DEAL_MAGIC);
       relevant=(symbol==_Symbol && magic==InpMagicNumber);
+
+      // A DEAL_ADD is a broker-confirmed fill, but MT5 may deliver several deal/order
+      // transactions for one request and their order is not guaranteed. Only finalize
+      // when the deal is an exit, our tracked campaign is active, and the symbol no
+      // longer has a live position. Partial closes leave a live position and are left
+      // to the existing volume/history accounting path; entry deals never finalize.
+      if(relevant && g_haveOpenPosition && g_posState.active)
+        {
+         long dealEntry=HistoryDealGetInteger(trans.deal,DEAL_ENTRY);
+         bool isExit=(dealEntry==DEAL_ENTRY_OUT || dealEntry==DEAL_ENTRY_OUT_BY);
+         if(isExit && !g_exec.HasOpenPosition(_Symbol))
+           {
+            PrintFormat("FLIPDEMON TRANSACTION: final exit deal=%I64u; reconciling closed campaign.",
+                        trans.deal);
+            AxRecordExternalClose();
+           }
+        }
      }
    else if(trans.order>0 && HistoryOrderSelect(trans.order))
      {
