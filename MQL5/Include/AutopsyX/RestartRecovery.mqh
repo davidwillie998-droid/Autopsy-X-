@@ -65,12 +65,22 @@ private:
                                     // can know the registry is not actually being saved right now,
                                     // rather than silently believing it is (code-review finding)
 
-   //--- rewrites the whole file from m_records in one pass. Returns false (and leaves m_persistOk   ---
-   //--- false) if the file could not be opened for writing - the caller can check IsPersisting(). ---
+   //--- Write a complete temporary registry first, flush it, then replace the active file.
+   //--- This prevents ordinary write/open failures from truncating the last known-good registry.
+   //--- The MQL5 file API does not promise power-loss atomicity; callers still fail closed on errors.
    bool               RewriteFile(void)
      {
-      int handle = FileOpen(m_fileName,FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_SHARE_READ);
-      if(handle==INVALID_HANDLE) { m_persistOk=false; return(false); }
+      string tempName=m_fileName+".tmp";
+      int handle=FileOpen(tempName,FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_SHARE_READ);
+      if(handle==INVALID_HANDLE)
+        {
+         m_persistOk=false;
+         PrintFormat("FLIPDEMON RECOVERY ERROR: cannot open temporary registry %s (error=%d).",
+                     tempName,GetLastError());
+         return(false);
+        }
+
+      bool writeOk=true;
       for(int i=0;i<m_count;i++)
         {
          string line = StringFormat("%s|%s|%s|%d|%s",
@@ -79,10 +89,35 @@ private:
                         m_records[i].symbol,
                         (int)m_records[i].dir,
                         TimeToString(m_records[i].entryTime,TIME_DATE|TIME_SECONDS));
-         FileWriteString(handle,line+"\r\n");
+         uint written=FileWriteString(handle,line+"\\r\\n");
+         if(written==0)
+           {
+            writeOk=false;
+            break;
+           }
         }
+
       FileFlush(handle);
+      if(FileIsEnding(handle)) { /* FileIsEnding is not a write-integrity signal. */ }
       FileClose(handle);
+      if(!writeOk)
+        {
+         m_persistOk=false;
+         PrintFormat("FLIPDEMON RECOVERY ERROR: temporary registry write failed (%s); previous registry retained.",
+                     tempName);
+         return(false);
+        }
+
+      ResetLastError();
+      if(!FileMove(tempName,0,m_fileName,FILE_REWRITE))
+        {
+         int moveError=GetLastError();
+         m_persistOk=false;
+         PrintFormat("FLIPDEMON RECOVERY ERROR: could not replace registry %s from %s (error=%d); entries remain blocked.",
+                     m_fileName,tempName,moveError);
+         return(false);
+        }
+
       m_persistOk=true;
       return(true);
      }
@@ -287,17 +322,33 @@ public:
 
       //--- pass 2: every registry entry with no matching real position - the position closed while ---
       //--- this EA was offline. Removed from memory only here; ONE rewrite happens after the loop. ---
+      SAxOpenSetupRecord snapshot[AX_RECOVERY_MAX_ENTRIES];
+      int previousCount=m_count;
+      for(int i=0;i<previousCount;i++) snapshot[i]=m_records[i];
+
       bool anyRemoved=false;
       for(int i=m_count-1;i>=0;i--)
         {
          if(!PositionSelectByTicket(m_records[i].ticket))
            {
-            staleRemovedOut++;
-            RemoveFromMemory(m_records[i].ticket);
-            anyRemoved=true;
+            if(RemoveFromMemory(m_records[i].ticket))
+              {
+               staleRemovedOut++;
+               anyRemoved=true;
+              }
            }
         }
-      if(anyRemoved) RewriteFile();
+
+      if(anyRemoved && !RewriteFile())
+        {
+         // The broker reconciliation succeeded, but the updated registry did not persist.
+         // Restore the in-memory snapshot and keep entries disabled until persistence recovers.
+         m_count=previousCount;
+         for(int i=0;i<previousCount;i++) m_records[i]=snapshot[i];
+         m_persistOk=false;
+         staleRemovedOut=0;
+         Print("FLIPDEMON RECOVERY ERROR: stale-record cleanup was not persisted; original registry restored in memory.");
+        }
      }
 
 private:
