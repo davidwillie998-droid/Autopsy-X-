@@ -237,6 +237,8 @@ bool                   g_recoveryReady = false; // false means new entries are b
 
 SAxPositionState      g_posState;
 bool                  g_haveOpenPosition = false;
+bool                  g_partialClosePending = false;
+double                g_pendingPartialCloseVolume = 0.0;
 ENUM_AX_ENGINE_STATE  g_engineState = AX_ENGINE_ACTIVE;
 datetime              g_lastBarTime = 0;
 datetime              g_lastHtfBarTime = 0;
@@ -497,30 +499,68 @@ void AxRecordPartialClose(const double volumeClosed,const double closePrice,cons
 
 void AxExecutePartialClose(const double volumeToClose)
   {
+   if(g_partialClosePending)
+     {
+      if(InpVerboseLogging) Print("FLIPDEMON: partial close reconciliation pending; refusing another scale-out.");
+      return;
+     }
    string partErr;
    if(!g_exec.ClosePartial(_Symbol,volumeToClose,partErr))
      {
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: partial close failed (%s)",partErr);
       return;
      }
-   // the closing deal can occasionally be a beat behind ClosePartial()'s return in MT5's history
-   // cache - retry briefly rather than leaving lastAccountedDealTicket stale, which would let the
-   // eventual final close re-include (double count) this same partial's profit
-   double pClosePrice=0,pGross=0,pComm=0,pSwap=0; datetime pTime=0; ulong pLastTicket=g_posState.lastAccountedDealTicket;
-   bool gotDeal=false;
-   for(int attempt=0; attempt<2 && !gotDeal; attempt++)
+
+   // Do not fabricate a partial-close result if the broker history cache lags.
+   double pClosePrice=0,pGross=0,pComm=0,pSwap=0;
+   datetime pTime=0;
+   ulong pLastTicket=g_posState.lastAccountedDealTicket;
+   if(!AxFetchCloseFinancials(g_posState.ticket,g_posState.lastAccountedDealTicket,
+                              pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket))
      {
-      if(attempt>0) Sleep(40); // brief - this already runs on top of ClosePartial()'s own retry
-                                // delays, and OnTick must not stall long during a volatile move
-      gotDeal = AxFetchCloseFinancials(g_posState.ticket,g_posState.lastAccountedDealTicket,pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket);
+      g_partialClosePending=true;
+      g_pendingPartialCloseVolume=volumeToClose;
+      Print("FLIPDEMON: partial close confirmed but deal history is not ready; accounting deferred.");
+      return;
      }
-   if(!gotDeal)
+
+   if(!PositionSelect(_Symbol)) return;
+   double actualClosed=g_posState.lots-PositionGetDouble(POSITION_VOLUME);
+   if(actualClosed<=0.0)
      {
-      pClosePrice = (g_posState.dir==AX_DIR_BUY)? g_md.CurrentBid() : g_md.CurrentAsk();
-      pTime = TimeCurrent();
-      if(InpVerboseLogging) Print("AUTOPSY X: partial-close financials unavailable after retries - logged with zeroed P&L, deal boundary held");
+      g_partialClosePending=true;
+      g_pendingPartialCloseVolume=volumeToClose;
+      Print("FLIPDEMON: partial close deal found but broker volume has not reconciled; accounting deferred.");
+      return;
      }
-   AxRecordPartialClose(volumeToClose,pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket);
+   AxRecordPartialClose(actualClosed,pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket);
+  }
+
+// Retry accounting only. Never submit a second close order while reconciliation is pending.
+void AxRetryPendingPartialClose(void)
+  {
+   if(!g_partialClosePending || !g_posState.active) return;
+   if(!g_exec.HasOpenPosition(_Symbol))
+     {
+      // The final-close history query will consume all unaccounted exit deals.
+      g_partialClosePending=false;
+      g_pendingPartialCloseVolume=0.0;
+      return;
+     }
+
+   double pClosePrice=0,pGross=0,pComm=0,pSwap=0;
+   datetime pTime=0;
+   ulong pLastTicket=g_posState.lastAccountedDealTicket;
+   if(!AxFetchCloseFinancials(g_posState.ticket,g_posState.lastAccountedDealTicket,
+                              pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket))
+      return;
+   if(!PositionSelect(_Symbol)) return;
+   double actualClosed=g_posState.lots-PositionGetDouble(POSITION_VOLUME);
+   if(actualClosed<=0.0) return;
+
+   AxRecordPartialClose(actualClosed,pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket);
+   g_partialClosePending=false;
+   g_pendingPartialCloseVolume=0.0;
   }
 
 void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double lots,const double fillPrice,
@@ -1220,6 +1260,9 @@ void OnTick(void)
    if(today!=g_lastStatsDay) { g_lastStatsDay=today; g_poorFillsToday=0; }
 
    //--- position may have closed externally (SL/TP hit, manual intervention) ---
+    // Resolve delayed scale-out accounting before processing the next signal.
+    AxRetryPendingPartialClose();
+
    if(g_haveOpenPosition && !g_exec.HasOpenPosition(_Symbol))
       AxRecordExternalClose();
 
