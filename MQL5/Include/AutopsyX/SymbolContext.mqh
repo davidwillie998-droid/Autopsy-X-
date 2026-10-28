@@ -17,6 +17,8 @@ private:
    datetime m_signalTime[AX_MAX_UNIVERSE_SYMBOLS];
    datetime m_cooldownUntil[AX_MAX_UNIVERSE_SYMBOLS];
    bool     m_quoteValid[AX_MAX_UNIVERSE_SYMBOLS];
+   bool     m_analysisReady[AX_MAX_UNIVERSE_SYMBOLS];
+   string   m_readinessReason[AX_MAX_UNIVERSE_SYMBOLS];
    int      m_count;
    int      m_maxQuoteAgeSeconds;
 
@@ -40,6 +42,8 @@ public:
          m_signalTime[i]=0;
          m_cooldownUntil[i]=0;
          m_quoteValid[i]=false;
+         m_analysisReady[i]=false;
+         m_readinessReason[i]="not evaluated";
         }
      }
 
@@ -130,6 +134,67 @@ public:
       int i=Find(symbol);
       if(i<0 || !QuoteIsValid(symbol)) return(0);
       return(m_ticks[i].time);
+     }
+
+   // Readiness is a data-quality gate only: it does not generate a signal or authorize an order.
+   // Both timeframes must have synchronized history before this symbol can enter candidate ranking.
+   bool              EvaluateReadiness(const string symbol,
+                                        const ENUM_TIMEFRAMES signalTf,
+                                        const ENUM_TIMEFRAMES htf,
+                                        const int minSignalBars,
+                                        const int minHtfBars,
+                                        const double maxSpreadPoints,
+                                        string &reason)
+     {
+      int i=Find(symbol);
+      if(i<0) { reason="symbol not registered"; return(false); }
+      m_analysisReady[i]=false;
+      reason="";
+
+      if(!QuoteIsValid(symbol))
+         reason="quote missing or stale";
+      else
+        {
+         double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+         if(point<=0.0)
+            reason="invalid point size";
+         else
+           {
+            double spread=(m_ticks[i].ask-m_ticks[i].bid)/point;
+            if(spread<=0.0 || spread>maxSpreadPoints)
+               reason=StringFormat("spread %.1f points exceeds limit %.1f",spread,maxSpreadPoints);
+            else if(Bars(symbol,signalTf)<minSignalBars)
+               reason=StringFormat("signal history short: %d/%d bars",Bars(symbol,signalTf),minSignalBars);
+            else if(Bars(symbol,htf)<minHtfBars)
+               reason=StringFormat("HTF history short: %d/%d bars",Bars(symbol,htf),minHtfBars);
+            else if(!SeriesInfoInteger(symbol,signalTf,SERIES_SYNCHRONIZED) ||
+                    !SeriesInfoInteger(symbol,htf,SERIES_SYNCHRONIZED))
+               reason="timeframe history not synchronized";
+            else
+              {
+               long tradeMode=SymbolInfoInteger(symbol,SYMBOL_TRADE_MODE);
+               if(tradeMode==SYMBOL_TRADE_MODE_DISABLED || tradeMode==SYMBOL_TRADE_MODE_CLOSEONLY)
+                  reason="broker trade mode blocks new positions";
+              }
+           }
+        }
+
+      m_analysisReady[i]=(reason=="");
+      m_readinessReason[i]=m_analysisReady[i] ? "ready" : reason;
+      return(m_analysisReady[i]);
+     }
+
+   bool              AnalysisReady(const string symbol) const
+     {
+      int i=Find(symbol);
+      return(i>=0 && m_analysisReady[i] && QuoteIsValid(symbol));
+     }
+
+   string            ReadinessReason(const string symbol) const
+     {
+      int i=Find(symbol);
+      if(i<0) return("symbol not registered");
+      return(m_readinessReason[i]);
      }
 
    bool              IsNewBar(const string symbol,const ENUM_TIMEFRAMES timeframe)
