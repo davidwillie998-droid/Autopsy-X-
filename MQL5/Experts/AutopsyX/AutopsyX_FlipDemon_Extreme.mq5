@@ -410,7 +410,7 @@ SAxTradeRecord AxBuildTradeRecord(const double closePrice,const double grossProf
   }
 
 void AxFinalizeTrade(const double closePrice,const double grossProfit,const double commission,
-                      const double swap,const datetime closeTime,const ENUM_AX_EXIT_REASON reason)
+                      const double swap,const datetime closeTime,const ENUM_AX_EXIT_REASON reason,const ulong lastDealTicket)
   {
    SAxTradeRecord rec = AxBuildTradeRecord(closePrice,grossProfit,commission,swap,closeTime,reason,g_posState.lots,false);
 
@@ -466,7 +466,7 @@ bool AxCloseAndRecord(const ENUM_AX_EXIT_REASON reason)
       Print("FLIPDEMON: close confirmed but deal history is not ready; finalization deferred.");
       return(false);
      }
-   AxFinalizeTrade(closePrice,grossProfit,commission,swap,closeTime,reason);
+   AxFinalizeTrade(closePrice,grossProfit,commission,swap,closeTime,reason,lastTicket);
    return(true);
   }
 
@@ -494,7 +494,13 @@ void AxRecordPartialClose(const double volumeClosed,const double closePrice,cons
                            const ulong lastDealTicket)
   {
    SAxTradeRecord rec = AxBuildTradeRecord(closePrice,grossProfit,commission,swap,closeTime,AX_EXIT_TP,volumeClosed,true);
+   rec.dealIdOut=lastDealTicket;
    g_autopsy.RecordTrade(rec);
+   if(lastDealTicket>0 && g_autopsy.LastAccountedDealTicket()<lastDealTicket)
+     {
+      g_recoveryReady=false;
+      Print("FLIPDEMON JOURNAL ERROR: partial exit record was not confirmed in the durable journal; new entries blocked.");
+     }
    // deliberately NOT calling g_risk.RegisterTradeClosed / g_chop.RegisterStopOut here - a partial
    // is a banked partial win, not the thesis's final outcome; consecutive-loss and chop tracking
    // are driven by the remainder's eventual close, which reflects how the full trade actually ended
@@ -1117,11 +1123,14 @@ void AxReconcileExistingPosition(void)
    // counting already-journaled deals, but fail closed and report the unresolved history explicitly.
    g_posState.lastAccountedDealTicket = rLastTicket;
    g_posState.partialTaken = priorDealFound;
-   if(priorDealFound)
+   ulong journalBoundary=g_autopsy.LastAccountedDealTicket();
+   if(priorDealFound && rLastTicket>journalBoundary)
      {
       g_recoveryReady = false;
-      PrintFormat("FLIPDEMON RECOVERY ERROR: position %I64u has historical exit deals but this build cannot prove their journal state. Existing position will remain managed; NEW ENTRIES BLOCKED until accounting is reconciled.",g_posState.ticket);
+      PrintFormat("FLIPDEMON RECOVERY ERROR: position %I64u has exit history through deal %I64u but the durable journal only confirms through deal %I64u. Existing position will remain managed; NEW ENTRIES BLOCKED pending accounting reconciliation.",g_posState.ticket,rLastTicket,journalBoundary);
      }
+   else if(priorDealFound)
+      PrintFormat("FLIPDEMON RECOVERY: historical exit deals through %I64u are covered by journal boundary %I64u.",rLastTicket,journalBoundary);
 
    g_haveOpenPosition  = true;
   }
@@ -1754,7 +1763,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
                ENUM_AX_EXIT_REASON exitReason=(distToTp<distToSl)?AX_EXIT_TP:AX_EXIT_SL;
                PrintFormat("FLIPDEMON TRANSACTION: final exit deal=%I64u; financial history confirmed.",
                            trans.deal);
-               AxFinalizeTrade(closePrice,grossProfit,commission,swap,closeTime,exitReason);
+               AxFinalizeTrade(closePrice,grossProfit,commission,swap,closeTime,exitReason,lastDealTicket);
               }
             else
                PrintFormat("FLIPDEMON TRANSACTION: final exit deal=%I64u; history not ready, deferring reconciliation.",
