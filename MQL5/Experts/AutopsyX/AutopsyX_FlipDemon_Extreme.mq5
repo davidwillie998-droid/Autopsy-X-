@@ -923,7 +923,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       // already at the broker minimum (the small-account case this fix targets) times any scaling
       // multiplier below 1.0 will always land under volMin, so it must be zeroed here, not normalized.
       double volMin = g_md.VolumeMin();
-      lots = (scaledLots < volMin) ? 0.0 : g_md.NormalizeVolume(scaledLots);
+      lots = (scaledLots < volMin) ? 0.0 : g_md.NormalizeVolumeDown(scaledLots);
      }
 
    // order-book impact-cost sizing (Patnaik & Thomas 2004): cap size to what the book can actually
@@ -939,7 +939,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
          if(maxAffordableLots<lots)
            {
             double volMin = g_md.VolumeMin();
-            lots = (maxAffordableLots < volMin) ? 0.0 : g_md.NormalizeVolume(maxAffordableLots);
+            lots = (maxAffordableLots < volMin) ? 0.0 : g_md.NormalizeVolumeDown(maxAffordableLots);
            }
         }
      }
