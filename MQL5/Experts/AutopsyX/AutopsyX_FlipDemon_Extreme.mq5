@@ -991,6 +991,37 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       return(false);
      }
 
+   // Final broker-side margin preflight must use the actual post-risk, post-AFE,
+   // post-impact lot size and a fresh executable-side quote. Account leverage alone
+   // is not proof that this order is affordable; OrderCalcMargin is broker-specific.
+   MqlTick marginTick;
+   if(!SymbolInfoTick(_Symbol,marginTick) ||
+      marginTick.bid<=0.0 || marginTick.ask<=0.0 || marginTick.ask<marginTick.bid)
+     {
+      PrintFormat("FLIPDEMON MARGIN ERROR: no valid fresh quote for '%s'; entry blocked.",_Symbol);
+      return(false);
+     }
+   ENUM_ORDER_TYPE marginOrderType=(dir==AX_DIR_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+   double marginPrice=(dir==AX_DIR_BUY) ? marginTick.ask : marginTick.bid;
+   double requiredMargin=0.0;
+   if(!OrderCalcMargin(marginOrderType,_Symbol,lots,marginPrice,requiredMargin) ||
+      !MathIsValidNumber(requiredMargin) || requiredMargin<=0.0)
+     {
+      PrintFormat("FLIPDEMON MARGIN ERROR: OrderCalcMargin failed or returned invalid margin for %s lots=%.8f price=%.10g; entry blocked. error=%d",
+                  _Symbol,lots,marginPrice,GetLastError());
+      return(false);
+     }
+   double freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   if(!MathIsValidNumber(freeMargin) || freeMargin<=0.0 || requiredMargin>freeMargin)
+     {
+      PrintFormat("FLIPDEMON MARGIN BLOCK: symbol=%s lots=%.8f estimated_required=%.2f free_margin=%.2f currency=%s",
+                  _Symbol,lots,requiredMargin,freeMargin,AccountInfoString(ACCOUNT_CURRENCY));
+      return(false);
+     }
+   if(InpVerboseLogging)
+      PrintFormat("FLIPDEMON MARGIN OK: symbol=%s lots=%.8f estimated_required=%.2f free_margin=%.2f currency=%s",
+                  _Symbol,lots,requiredMargin,freeMargin,AccountInfoString(ACCOUNT_CURRENCY));
+
    // live spread can widen well past anything a demo feed shows - scale the allowed deviation to
    // it (floored at the configured minimum) so normal spread widening doesn't spuriously reject
    // an otherwise-fine fill, while still capping how far price can move against us
