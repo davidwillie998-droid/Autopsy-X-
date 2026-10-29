@@ -58,7 +58,7 @@ Save the complete Strategy Tester HTML report and journal/log, not just a screen
 
 ## Multi-broker portability requirement
 
-Target test environments include Exness, Weltrade, Deriv and Tickmill. Broker support must be driven by runtime symbol/account metadata, not hard-coded broker names or one broker's XAUUSD assumptions.
+Universal broker-support requirement: FlipDemon Extreme HFT is intended to work across all brokers that expose compatible instruments and supported MT5 execution/account capabilities—not only Exness, Weltrade, Deriv and Tickmill. Those four are initial validation environments, not an exhaustive broker whitelist. Do not hard-code a four-broker allowlist. Discover capabilities from the connected terminal and symbol/account metadata at runtime; use explicit broker-specific adapters or exceptions only when a verified incompatibility requires them. A broker or instrument that lacks a required capability must be rejected safely with a precise reason, not silently treated as supported.
 
 - At initialization, log broker/company, server, terminal build, account currency, margin mode (netting/hedging), leverage, symbol name and all relevant symbol properties.
 - Read symbol properties at runtime: digits, point, tick size, tick value/profit/loss where available, contract size, volume min/max/step/limit, stops/freeze levels, execution and filling modes, trade mode, margin settings, swap mode/values, and current trading sessions.
@@ -71,6 +71,6 @@ Target test environments include Exness, Weltrade, Deriv and Tickmill. Broker su
 
 ### Required broker test matrix
 
-Test each supported broker independently, using the exact server and symbol names exposed in that MT5 terminal. Start with XAUUSD/major FX where offered; test Deriv synthetic indices as a separate instrument family. Capture the full Strategy Tester report, Journal, symbol specification, .set file and commit SHA for every run. A successful test on one broker does not certify the others.
+Test each broker independently, using the exact server and symbol names exposed in that MT5 terminal. The initial matrix must include Exness, Weltrade, Deriv and Tickmill, then expand to additional compatible brokers rather than treating those four as the full support universe. Test XAUUSD and major FX where offered; test Deriv synthetic indices as a separate instrument family. Capture the full Strategy Tester report, Journal, symbol specification, .set file and commit SHA for every run. A successful test on one broker does not certify another broker, server, account mode or instrument.
 ## Current status
 Protocol written; not executed. No 99% modelling-quality result, MT5 compilation, Strategy Tester result, or profitability result is claimed. The existing EA still needs the campaign ledger and aggregate-risk enforcement before additional-entry/pyramiding limits can safely be relaxed.
