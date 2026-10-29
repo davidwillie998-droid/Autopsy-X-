@@ -164,4 +164,16 @@ require("rec.dealIdOut=lastDealTicket;" in ea and "rec.positionIdentifier = g_po
         and "NEW ENTRIES BLOCKED pending accounting reconciliation" in ea,
         "restart compares broker exit history with journal boundary and blocks entries on an accounting gap")
 
+require("struct SAxRiskSizingDecision" in risk
+        and "rejectionReason" in risk and "projectedRiskPercent" in risk,
+        "risk engine exposes an auditable sizing decision and explicit rejection reason")
+require("OrderCalcProfit(orderType,_Symbol,1.0,entryPrice,stopPrice,oneLotProfit)" in risk
+        and "OrderCalcProfit(orderType,_Symbol,lots,entryPrice,stopPrice,sizedProfit)" in risk,
+        "one-lot and normalized-volume stop risk use broker-aware profit calculations")
+require("CalculateLotSize(g_md,intendedPrice,slPrice,dir,sizingDecision)" in ea
+        and "sizingDecision.rejectionReason" in ea,
+        "EA logs the risk engine sizing decision at the entry evaluation point")
+require("m_riskPercent               = AxClampD(riskPercent,0.05,2.0)" in risk,
+        "decision-record integration retains the absolute per-entry risk clamp")
+
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
