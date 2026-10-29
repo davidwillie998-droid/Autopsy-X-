@@ -199,3 +199,14 @@ require("m_riskPercent               = AxClampD(riskPercent,0.05,2.0)" in risk,
         "decision-record integration retains the absolute per-entry risk clamp")
 
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
+
+
+# Stable restart identity guardrails: broker position identifiers survive ticket changes.
+require("AX_RECOVERY_FIELD_COUNT 6" in recovery,
+        "restart registry schema includes stable position identity")
+require("positionIdentifier" in recovery and "FindByPositionIdentifier" in recovery,
+        "recovery matching is keyed by stable POSITION_IDENTIFIER rather than ticket alone")
+require("POSITION_IDENTIFIER" in recovery and "OpenSetups_v2.csv" in recovery,
+        "versioned registry avoids misreading the previous ticket-only schema")
+require("RecordOpenSetup(newTicket,g_positionIdentifier,recoverySetupId" in ea,
+        "confirmed fills persist the broker position identifier with the setup mapping")
