@@ -102,3 +102,62 @@ Effective entry risk percent = min(base risk percent × growth multiplier × dra
 - Existing position can continue to be managed when recovery is uncertain, but new entries/additions remain blocked.
 - Leverage changes must not increase the risk-sized lots when equity, entry, stop and contract economics are unchanged.
 - ANALYSIS_ONLY remains the default and no order-send function is reached in that mode.
+
+
+## Phase 2 — implementation gate: campaign ledger before progressive sizing
+
+**Current status: NOT IMPLEMENTED.** Do not enable equity growth multipliers or raise position/exposure defaults until this gate is satisfied.
+
+### Why the ledger comes first
+
+The EA currently computes a risk-percent lot size from equity and stop distance, while the Adaptive Flip Engine only scales risk downward. Its defaults also restrict simultaneous positions and total exposure. A multiplier added before campaign accounting could cause each new order to pass its own local check while the combined campaign exceeds its risk budget. The existing position limits must remain unchanged until the aggregate-risk implementation is verified.
+
+### Required campaign record
+
+Each accepted entry/add must have a durable record with at least:
+
+- campaign ID and unique continuation-signal ID;
+- symbol, magic number, direction, broker position identifier and entry deal/order tickets;
+- entry price, entry volume, current remaining volume and protective stop;
+- worst-case monetary stop risk in account currency at the recorded volume;
+- realized equity baseline and sizing high-water mark used for that sizing decision;
+- sizing base risk %, growth multiplier, drawdown multiplier, final permitted risk %, requested lots, normalized lots and rejection/cap reason;
+- timestamp, broker account margin mode (netting/hedging), and reconciliation status.
+
+Do not treat a broker position as an independent campaign leg on a netting account. Preserve entry-deal attribution and reconcile reductions, partial closes, stop changes and external/manual changes from broker history. If reliable attribution cannot be rebuilt after restart, block new additions and continue managing existing exposure.
+
+### Sizing decision pipeline (single authority)
+
+1. Validate equity, contract metadata, entry, stop, direction and current recovery state.
+2. Compute one-lot monetary loss to the proposed stop using broker-aware profit calculation; fail closed if unavailable.
+3. Derive the base equity risk budget; apply only the approved bounded growth tier when its realized-equity and fresh-signal conditions are met.
+4. Apply drawdown state and the existing AFE multiplier, then enforce the configured per-entry ceiling and absolute 2% hard cap.
+5. Normalize volume downward to the broker step; reject below-minimum volumes instead of rounding upward.
+6. Recompute actual risk at the normalized lot size and reject if it exceeds the risk budget.
+7. Calculate remaining risk for every existing campaign leg and account-wide EA position; include proposed risk. Reject if campaign/account cap, gross-lot, directional-lot, margin, loss-lockout or execution gate fails.
+8. Persist the decision and unique signal ID before allowing a subsequent add to reuse neither the same signal nor an unverified state. Never mark an order as accepted before broker confirmation.
+9. In ANALYSIS_ONLY, publish the full hypothetical decision and rejection reason but never submit an order.
+
+### Integration acceptance gates
+
+- [ ] Existing `CRiskEngine` remains the only final authority for permitted risk and the absolute cap cannot be bypassed by any multiplier.
+- [ ] Equity growth tiers use a durable, validated baseline; floating PnL alone cannot unlock a higher tier.
+- [ ] Growth tier is applied only to a fresh continuation signal and is suppressed after a loss since the relevant high-water mark, when state is stale, or when recovery is uncertain.
+- [ ] AFE/drawdown multipliers can only reduce final risk; zero multiplier means zero lots.
+- [ ] Stop-risk is recalculated for all campaign legs after stop changes, partial closes, and restarts.
+- [ ] Netting and hedging account behavior has separate deterministic tests.
+- [ ] Same continuation-signal ID cannot create duplicate additions after retries/restarts.
+- [ ] Existing open-position management is not disabled merely because new-entry recovery is blocked.
+- [ ] Position-count and exposure defaults remain conservative until campaign-level aggregate-risk tests and Strategy Tester cases pass.
+- [ ] `AX_EXEC_ANALYSIS_ONLY` remains the default and is verified to reach no order-submission path.
+
+### Required MT5/MetaEditor validation (not yet run)
+
+1. Compile in MetaEditor with zero errors and review all warnings.
+2. Deterministic sizing tests: minimum lot exceeds risk; step rounding; variable tick values; large stop; invalid stop; equity below threshold; growth tier boundary; drawdown state transitions; maximum cap; insufficient margin.
+3. Campaign tests: fresh/reused signal IDs, 1st/10th/11th entry, partial close, stop moved to break-even, stop widened/removed, reversal, external close, and restart between broker fill and journal write.
+4. Repeat on netting and hedging demo accounts and at least two materially different symbol contract specifications.
+5. Strategy Tester with realistic spread/commission/slippage and out-of-sample/walk-forward periods. Compare fixed fractional sizing against adaptive sizing using net expectancy, maximum drawdown, risk of ruin, margin use, and return after costs.
+6. Demo soak test before any separate decision to enable live execution.
+
+A passing Python reference test suite is necessary but not sufficient. Until MetaEditor compilation and MT5 validation are documented, this policy remains analysis-only and is not represented as production-ready.
