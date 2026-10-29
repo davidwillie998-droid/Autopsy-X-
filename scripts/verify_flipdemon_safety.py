@@ -47,6 +47,12 @@ require("critical symbol metadata is invalid" in ea and "trade-disabled by the b
         "invalid or disabled broker symbols fail closed instead of guessing specifications")
 require("broker-name allowlist" in ea and "broker names" in ea,
         "broker compatibility is metadata-driven rather than restricted to named providers")
+require("OrderCalcMargin(marginOrderType,_Symbol,lots,marginPrice,requiredMargin)" in ea,
+        "final order size receives broker-aware OrderCalcMargin preflight")
+require("requiredMargin>freeMargin" in ea and "entry blocked" in ea,
+        "entry is blocked when estimated required margin exceeds available free margin")
+require("FLIPDEMON MARGIN OK" in ea and "FLIPDEMON MARGIN BLOCK" in ea,
+        "margin preflight outcome is auditable in the terminal Journal")
 require(bool(re.search(r"InpExecutionMode\s*=\s*AX_EXEC_ANALYSIS_ONLY", ea)),
         "execution defaults to ANALYSIS_ONLY")
 require("ACCOUNT_MARGIN_MODE_RETAIL_HEDGING" in ea and "return(INIT_FAILED)" in ea,
