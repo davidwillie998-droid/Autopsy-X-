@@ -16,6 +16,7 @@ on:
     paths:
       - 'MQL5/**'
       - 'scripts/verify_flipdemon_safety.py'
+      - 'tests/test_flipdemon_adaptive_sizing_spec.py'
       - '.github/workflows/flipdemon-static-safety.yml'
 
 permissions:
