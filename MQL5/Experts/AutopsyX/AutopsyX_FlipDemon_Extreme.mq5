@@ -1051,7 +1051,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    // immediately; if persistence fails, keep managing the open position but block every new entry.
    string recoverySetupId = AxGenerateSetupId(_Symbol,dir);
    bool recoverySaved = g_recoveryInitialized &&
-                        g_restartRecovery.RecordOpenSetup(newTicket,recoverySetupId,_Symbol,dir,TimeCurrent());
+                        g_restartRecovery.RecordOpenSetup(newTicket,g_positionIdentifier,recoverySetupId,_Symbol,dir,TimeCurrent());
    if(!recoverySaved || !g_restartRecovery.IsPersisting())
      {
       g_recoveryReady = false;
