@@ -44,11 +44,12 @@
 #include "Defs.mqh"
 
 #define AX_RECOVERY_MAX_ENTRIES 64
-#define AX_RECOVERY_FIELD_COUNT 5
+#define AX_RECOVERY_FIELD_COUNT 6
 
 struct SAxOpenSetupRecord
   {
    ulong       ticket;
+   ulong       positionIdentifier; // stable across broker ticket changes
    string      setupId;
    string      symbol;
    ENUM_AX_DIR dir;
@@ -83,8 +84,9 @@ private:
       bool writeOk=true;
       for(int i=0;i<m_count;i++)
         {
-         string line = StringFormat("%s|%s|%s|%d|%s",
+         string line = StringFormat("%s|%s|%s|%s|%d|%s",
                         IntegerToString((long)m_records[i].ticket),
+                        IntegerToString((long)m_records[i].positionIdentifier),
                         m_records[i].setupId,
                         m_records[i].symbol,
                         (int)m_records[i].dir,
@@ -130,7 +132,7 @@ public:
 
    bool               Init(const string eaName,const string symbol,const ulong magic)
      {
-      m_fileName = StringFormat("%s_%s_%s_OpenSetups.csv",eaName,symbol,IntegerToString((long)magic));
+      m_fileName = StringFormat("%s_%s_%s_OpenSetups_v2.csv",eaName,symbol,IntegerToString((long)magic));
       m_count=0;
 
       // Fail closed on an existing registry that cannot be read. The previous implementation
@@ -176,9 +178,10 @@ public:
            }
 
          long ticketLong = StringToInteger(fields[0]);
-         long dirLong = StringToInteger(fields[3]);
-         datetime entryTime = StringToTime(fields[4]);
-         if(ticketLong<=0 || StringLen(fields[1])==0 || StringLen(fields[2])==0 ||
+         long positionIdLong = StringToInteger(fields[1]);
+         long dirLong = StringToInteger(fields[4]);
+         datetime entryTime = StringToTime(fields[5]);
+         if(ticketLong<=0 || positionIdLong<=0 || StringLen(fields[2])==0 || StringLen(fields[3])==0 ||
             (dirLong!=(long)AX_DIR_BUY && dirLong!=(long)AX_DIR_SELL) || entryTime<=0)
            {
             PrintFormat("FLIPDEMON RECOVERY ERROR: invalid registry record; refusing to rewrite %s.",m_fileName);
@@ -189,7 +192,7 @@ public:
          // Duplicate tickets make the recovered state ambiguous; never silently pick one.
          for(int i=0;i<m_count;i++)
            {
-            if(m_records[i].ticket==(ulong)ticketLong)
+            if(m_records[i].ticket==(ulong)ticketLong || m_records[i].positionIdentifier==(ulong)positionIdLong)
               {
                PrintFormat("FLIPDEMON RECOVERY ERROR: duplicate ticket %I64d; refusing to rewrite %s.",
                            ticketLong,m_fileName);
@@ -200,8 +203,9 @@ public:
          if(!registryValid) break;
 
          m_records[m_count].ticket    = (ulong)ticketLong;
-         m_records[m_count].setupId   = fields[1];
-         m_records[m_count].symbol    = fields[2];
+         m_records[m_count].positionIdentifier = (ulong)positionIdLong;
+         m_records[m_count].setupId   = fields[2];
+         m_records[m_count].symbol    = fields[3];
          m_records[m_count].dir       = (ENUM_AX_DIR)dirLong;
          m_records[m_count].entryTime = entryTime;
          m_count++;
@@ -227,10 +231,10 @@ public:
 
    // Returns true only when the registry update is durable. Callers must block new
    // entries if this returns false; in-memory state is rolled back on a failed write.
-   bool               RecordOpenSetup(const ulong ticket,const string setupId,const string symbol,
+   bool               RecordOpenSetup(const ulong ticket,const ulong positionIdentifier,const string setupId,const string symbol,
                                        const ENUM_AX_DIR dir,const datetime entryTime)
      {
-      if(ticket==0 || StringLen(setupId)==0 || StringLen(symbol)==0 || entryTime<=0 ||
+      if(ticket==0 || positionIdentifier==0 || StringLen(setupId)==0 || StringLen(symbol)==0 || entryTime<=0 ||
          (dir!=AX_DIR_BUY && dir!=AX_DIR_SELL))
         {
          Print("FLIPDEMON RECOVERY ERROR: invalid open-setup record rejected.");
@@ -238,7 +242,13 @@ public:
         }
 
       for(int i=0;i<m_count;i++)
-         if(m_records[i].ticket==ticket) return(true); // already tracked, idempotent success
+         if(m_records[i].positionIdentifier==positionIdentifier)
+           {
+            if(m_records[i].symbol==symbol && m_records[i].dir==dir) return(true); // stable-identity idempotence
+            Print("FLIPDEMON RECOVERY ERROR: position identifier collision with conflicting metadata.");
+            m_persistOk=false;
+            return(false);
+           }
 
       if(m_count>=AX_RECOVERY_MAX_ENTRIES)
         {
@@ -249,7 +259,7 @@ public:
         }
 
       int previousCount=m_count;
-      m_records[m_count].ticket=ticket; m_records[m_count].setupId=setupId;
+      m_records[m_count].ticket=ticket; m_records[m_count].positionIdentifier=positionIdentifier; m_records[m_count].setupId=setupId;
       m_records[m_count].symbol=symbol; m_records[m_count].dir=dir; m_records[m_count].entryTime=entryTime;
       m_count++;
 
@@ -284,10 +294,10 @@ public:
       return(false);
      }
 
-   bool               FindByTicket(const ulong ticket,SAxOpenSetupRecord &out) const
+   bool               FindByPositionIdentifier(const ulong positionIdentifier,SAxOpenSetupRecord &out) const
      {
       for(int i=0;i<m_count;i++)
-         if(m_records[i].ticket==ticket) { out=m_records[i]; return(true); }
+         if(m_records[i].positionIdentifier==positionIdentifier) { out=m_records[i]; return(true); }
       return(false);
      }
 
@@ -319,7 +329,8 @@ public:
          if((ulong)PositionGetInteger(POSITION_MAGIC)!=magic) continue;
 
          SAxOpenSetupRecord rec;
-         if(FindByTicket(ticket,rec))
+         ulong livePositionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+         if(FindByPositionIdentifier(livePositionId,rec))
            {
             // A ticket match alone is not sufficient: validate the persisted identity against
             // the broker's actual symbol, magic and direction before trusting its setup mapping.
@@ -348,13 +359,24 @@ public:
       for(int i=m_count-1;i>=0;i--)
         {
          bool recordStillValid=false;
-         if(PositionSelectByTicket(m_records[i].ticket))
+         bool selectedById=false;
+         for(int p=0;p<PositionsTotal();p++)
+           {
+            ulong liveTicket=PositionGetTicket(p);
+            if(liveTicket>0 && (ulong)PositionGetInteger(POSITION_IDENTIFIER)==m_records[i].positionIdentifier)
+              {
+               selectedById=true;
+               break;
+              }
+           }
+         if(selectedById)
            {
             string liveSymbol=PositionGetString(POSITION_SYMBOL);
             ulong liveMagic=(ulong)PositionGetInteger(POSITION_MAGIC);
             long liveType=PositionGetInteger(POSITION_TYPE);
             ENUM_AX_DIR liveDir=(liveType==POSITION_TYPE_BUY)?AX_DIR_BUY:AX_DIR_SELL;
             recordStillValid=(liveSymbol==symbol && liveMagic==magic &&
+                              (ulong)PositionGetInteger(POSITION_IDENTIFIER)==m_records[i].positionIdentifier &&
                               m_records[i].symbol==symbol && m_records[i].dir==liveDir);
            }
 
