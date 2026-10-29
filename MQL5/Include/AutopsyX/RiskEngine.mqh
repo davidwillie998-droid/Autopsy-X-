@@ -154,32 +154,50 @@ public:
 
    //--- position sizing: risk-percent based, never martingale, never scaled by loss streak. ---
    //--- uses the mode-clamped percent fixed once in Configure() - a single source of truth. ---
-   double            CalculateLotSize(const CMarketData &md,const double stopDistancePts) const
+   double            CalculateLotSize(const CMarketData &md,const double entryPrice,
+                                      const double stopPrice,const ENUM_AX_DIR direction) const
      {
-      if(stopDistancePts<=0) return(0.0);
+      // Fail closed unless the proposed stop is valid and on the loss side of entry.
+      if(!MathIsValidNumber(entryPrice) || !MathIsValidNumber(stopPrice) ||
+         entryPrice<=0.0 || stopPrice<=0.0 || direction==AX_DIR_NONE)
+         return(0.0);
+      if((direction==AX_DIR_BUY && stopPrice>=entryPrice) ||
+         (direction==AX_DIR_SELL && stopPrice<=entryPrice))
+         return(0.0);
 
       double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      if(!MathIsValidNumber(equity) || equity<=0.0 ||
+         !MathIsValidNumber(m_riskPercent) || m_riskPercent<=0.0)
+         return(0.0);
       double riskAmount = equity*(m_riskPercent/100.0);
+      if(!MathIsValidNumber(riskAmount) || riskAmount<=0.0) return(0.0);
 
-      double point     = md.Point();
-      double tickSize  = md.TickSize();
-      double tickValue = md.TickValue();
-      if(point<=0 || tickSize<=0 || tickValue<=0) return(0.0);
+      // Use the broker/account-currency profit calculator rather than assuming tick value
+      // is symmetric or constant across price moves and contract types.
+      double oneLotProfit = 0.0;
+      ENUM_ORDER_TYPE orderType = (direction==AX_DIR_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+      if(!OrderCalcProfit(orderType,_Symbol,1.0,entryPrice,stopPrice,oneLotProfit))
+         return(0.0);
+      if(!MathIsValidNumber(oneLotProfit) || oneLotProfit>=0.0)
+         return(0.0);
+      double oneLotStopLoss = MathAbs(oneLotProfit);
+      if(!MathIsValidNumber(oneLotStopLoss) || oneLotStopLoss<=0.0)
+         return(0.0);
 
-      double stopDistancePrice = stopDistancePts*point;
-      double valuePerLot = (stopDistancePrice/tickSize)*tickValue;
-      if(valuePerLot<=0) return(0.0);
-
-      double lots = riskAmount/valuePerLot;
-      lots = md.NormalizeVolume(lots);
+      double lots = riskAmount/oneLotStopLoss;
+      lots = md.NormalizeVolume(lots); // rejects below-minimum size; never rounds upward
       lots = MathMin(lots,m_maxExposureLots);
-      //--- re-normalized AFTER the exposure clamp, not just before it - m_maxExposureLots is a       ---
-      //--- user-configured input (Configure()) with no guarantee of being volume-step-aligned for a   ---
-      //--- given broker; without this second pass, an exposure cap like 0.375 lots on a 0.01-step      ---
-      //--- broker would be returned as-is instead of floored to a broker-valid size (Section A risk-   ---
-      //--- invariant audit finding: every return value must be broker-valid regardless of what config  ---
-      //--- does, never contingent on the config itself being well-behaved). ---
+      // Exposure cap can be an arbitrary decimal, so normalize downward again after capping.
       lots = md.NormalizeVolume(lots);
+      if(lots<=0.0) return(0.0);
+
+      // Verify the normalized size still fits the monetary risk budget using the same broker API.
+      double sizedProfit = 0.0;
+      if(!OrderCalcProfit(orderType,_Symbol,lots,entryPrice,stopPrice,sizedProfit))
+         return(0.0);
+      if(!MathIsValidNumber(sizedProfit) || sizedProfit>=0.0 ||
+         MathAbs(sizedProfit)>riskAmount+0.01)
+         return(0.0);
       return(lots);
      }
 
