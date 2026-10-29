@@ -104,6 +104,12 @@ Effective entry risk percent = min(base risk percent × growth multiplier × dra
 - ANALYSIS_ONLY remains the default and no order-send function is reached in that mode.
 
 
+## Implementation update — auditable base-sizing decision
+
+**Implemented in source; validation still pending.** The risk engine now returns an `SAxRiskSizingDecision` record containing equity, configured base risk percent, monetary risk budget, broker-calculated one-lot stop loss, raw volume, normalized base volume, projected monetary/percentage risk, and an explicit rejection reason. The entry path passes the actual intended entry, stop, and direction into the risk engine and can print this record when verbose logging is enabled. The static safety audit now checks these source-level invariants.
+
+This record describes the **base sizing decision only**. It is not a campaign ledger, not a broker fill confirmation, and not yet a complete record of later AFE scaling, remaining exposure caps, margin checks, or final order disposition. Do not treat it as proof that aggregate campaign risk is enforced. No progressive equity multiplier or additional-entry allowance has been enabled. CI, MetaEditor compilation, and MT5 Strategy Tester results for these latest changes are not yet confirmed.
+
 ## Phase 2 — implementation gate: campaign ledger before progressive sizing
 
 **Current status: NOT IMPLEMENTED.** Do not enable equity growth multipliers or raise position/exposure defaults until this gate is satisfied.
