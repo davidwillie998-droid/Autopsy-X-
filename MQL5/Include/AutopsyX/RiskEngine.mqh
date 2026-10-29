@@ -11,6 +11,21 @@
 
 #define AX_RISK_TRADE_BUFFER 256
 
+// Auditable base-sizing decision. This is not an order/fill confirmation and does not
+// replace the campaign ledger; it records the risk engine's proposed size and rejection.
+struct SAxRiskSizingDecision
+  {
+   double equity;
+   double baseRiskPercent;
+   double riskBudgetMoney;
+   double oneLotStopLossMoney;
+   double rawLots;
+   double normalizedLots;
+   double projectedRiskMoney;
+   double projectedRiskPercent;
+   string rejectionReason;
+  };
+
 class CRiskEngine
   {
 private:
@@ -155,49 +170,70 @@ public:
    //--- position sizing: risk-percent based, never martingale, never scaled by loss streak. ---
    //--- uses the mode-clamped percent fixed once in Configure() - a single source of truth. ---
    double            CalculateLotSize(const CMarketData &md,const double entryPrice,
-                                      const double stopPrice,const ENUM_AX_DIR direction) const
+                                      const double stopPrice,const ENUM_AX_DIR direction,
+                                      SAxRiskSizingDecision &decision) const
      {
-      // Fail closed unless the proposed stop is valid and on the loss side of entry.
+      decision.equity=AccountInfoDouble(ACCOUNT_EQUITY);
+      decision.baseRiskPercent=m_riskPercent;
+      decision.riskBudgetMoney=0.0;
+      decision.oneLotStopLossMoney=0.0;
+      decision.rawLots=0.0;
+      decision.normalizedLots=0.0;
+      decision.projectedRiskMoney=0.0;
+      decision.projectedRiskPercent=0.0;
+      decision.rejectionReason="UNSET";
+
       if(!MathIsValidNumber(entryPrice) || !MathIsValidNumber(stopPrice) ||
          entryPrice<=0.0 || stopPrice<=0.0 || direction==AX_DIR_NONE)
-         return(0.0);
+        { decision.rejectionReason="INVALID_ENTRY_STOP_OR_DIRECTION"; return(0.0); }
       if((direction==AX_DIR_BUY && stopPrice>=entryPrice) ||
          (direction==AX_DIR_SELL && stopPrice<=entryPrice))
-         return(0.0);
+        { decision.rejectionReason="STOP_NOT_ON_LOSS_SIDE"; return(0.0); }
 
-      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+      double equity=decision.equity;
       if(!MathIsValidNumber(equity) || equity<=0.0 ||
          !MathIsValidNumber(m_riskPercent) || m_riskPercent<=0.0)
-         return(0.0);
-      double riskAmount = equity*(m_riskPercent/100.0);
-      if(!MathIsValidNumber(riskAmount) || riskAmount<=0.0) return(0.0);
+        { decision.rejectionReason="INVALID_EQUITY_OR_RISK_PERCENT"; return(0.0); }
+      double riskAmount=equity*(m_riskPercent/100.0);
+      decision.riskBudgetMoney=riskAmount;
+      if(!MathIsValidNumber(riskAmount) || riskAmount<=0.0)
+        { decision.rejectionReason="INVALID_RISK_BUDGET"; return(0.0); }
 
-      // Use the broker/account-currency profit calculator rather than assuming tick value
-      // is symmetric or constant across price moves and contract types.
-      double oneLotProfit = 0.0;
-      ENUM_ORDER_TYPE orderType = (direction==AX_DIR_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+      double oneLotProfit=0.0;
+      ENUM_ORDER_TYPE orderType=(direction==AX_DIR_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
       if(!OrderCalcProfit(orderType,_Symbol,1.0,entryPrice,stopPrice,oneLotProfit))
-         return(0.0);
+        { decision.rejectionReason="ORDER_CALC_PROFIT_FAILED"; return(0.0); }
       if(!MathIsValidNumber(oneLotProfit) || oneLotProfit>=0.0)
-         return(0.0);
-      double oneLotStopLoss = MathAbs(oneLotProfit);
+        { decision.rejectionReason="INVALID_ONE_LOT_STOP_LOSS"; return(0.0); }
+      double oneLotStopLoss=MathAbs(oneLotProfit);
+      decision.oneLotStopLossMoney=oneLotStopLoss;
       if(!MathIsValidNumber(oneLotStopLoss) || oneLotStopLoss<=0.0)
-         return(0.0);
+        { decision.rejectionReason="NON_POSITIVE_ONE_LOT_STOP_LOSS"; return(0.0); }
 
-      double lots = riskAmount/oneLotStopLoss;
-      lots = md.NormalizeVolume(lots); // rejects below-minimum size; never rounds upward
-      lots = MathMin(lots,m_maxExposureLots);
-      // Exposure cap can be an arbitrary decimal, so normalize downward again after capping.
-      lots = md.NormalizeVolume(lots);
-      if(lots<=0.0) return(0.0);
+      double rawLots=riskAmount/oneLotStopLoss;
+      decision.rawLots=rawLots;
+      if(!MathIsValidNumber(rawLots) || rawLots<=0.0)
+        { decision.rejectionReason="INVALID_RAW_VOLUME"; return(0.0); }
+      double lots=md.NormalizeVolume(rawLots);
+      if(lots<=0.0)
+        { decision.rejectionReason="MIN_LOT_EXCEEDS_RISK_OR_VOLUME_INVALID"; return(0.0); }
+      lots=md.NormalizeVolume(MathMin(lots,m_maxExposureLots));
+      if(lots<=0.0)
+        { decision.rejectionReason="EXPOSURE_CAP_BELOW_BROKER_MINIMUM"; return(0.0); }
 
-      // Verify the normalized size still fits the monetary risk budget using the same broker API.
-      double sizedProfit = 0.0;
+      double sizedProfit=0.0;
       if(!OrderCalcProfit(orderType,_Symbol,lots,entryPrice,stopPrice,sizedProfit))
-         return(0.0);
-      if(!MathIsValidNumber(sizedProfit) || sizedProfit>=0.0 ||
-         MathAbs(sizedProfit)>riskAmount+0.01)
-         return(0.0);
+        { decision.rejectionReason="FINAL_ORDER_CALC_PROFIT_FAILED"; return(0.0); }
+      if(!MathIsValidNumber(sizedProfit) || sizedProfit>=0.0)
+        { decision.rejectionReason="INVALID_NORMALIZED_STOP_LOSS"; return(0.0); }
+      double projectedRisk=MathAbs(sizedProfit);
+      decision.projectedRiskMoney=projectedRisk;
+      decision.projectedRiskPercent=(equity>0.0) ? projectedRisk/equity*100.0 : 0.0;
+      if(projectedRisk>riskAmount+0.01)
+        { decision.rejectionReason="NORMALIZED_VOLUME_EXCEEDS_RISK_BUDGET"; return(0.0); }
+
+      decision.normalizedLots=lots;
+      decision.rejectionReason="BASE_SIZE_APPROVED";
       return(lots);
      }
 
