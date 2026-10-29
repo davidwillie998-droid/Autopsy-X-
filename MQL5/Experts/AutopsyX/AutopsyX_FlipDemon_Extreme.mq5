@@ -871,7 +871,9 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    // risk stays pinned to the configured risk percent regardless of how far away the stop sits
    double actualSlDistPts = (point>0) ? MathAbs(intendedPrice-slPrice)/point : InpEmergencySlPoints;
 
-   double lots = g_risk.CalculateLotSize(g_md,intendedPrice,slPrice,dir);
+   SAxRiskSizingDecision sizingDecision;
+   double lots = g_risk.CalculateLotSize(g_md,intendedPrice,slPrice,dir,sizingDecision);
+   if(InpVerboseLogging) PrintFormat("FLIPDEMON SIZING | equity=%.2f budget=%.2f raw=%.5f lots=%.5f risk=%.2f%% reason=%s",sizingDecision.equity,sizingDecision.riskBudgetMoney,sizingDecision.rawLots,sizingDecision.normalizedLots,sizingDecision.projectedRiskPercent,sizingDecision.rejectionReason);
 
    // Enforce the remaining account-wide gross-lot budget, not just the per-order ceiling.
    // NormalizeVolume may clamp upward to the broker minimum, so reject a remainder too small
