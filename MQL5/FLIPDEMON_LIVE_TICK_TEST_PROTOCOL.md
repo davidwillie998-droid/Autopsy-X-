@@ -56,5 +56,21 @@ Save the complete Strategy Tester HTML report and journal/log, not just a screen
 - Results remain robust after commission, swap, variable spread and conservative slippage, and on out-of-sample periods.
 - Live mode remains an explicit operator choice; it is not the default and is not activated merely because a backtest reports high modelling quality.
 
+## Multi-broker portability requirement
+
+Target test environments include Exness, Weltrade, Deriv and Tickmill. Broker support must be driven by runtime symbol/account metadata, not hard-coded broker names or one broker's XAUUSD assumptions.
+
+- At initialization, log broker/company, server, terminal build, account currency, margin mode (netting/hedging), leverage, symbol name and all relevant symbol properties.
+- Read symbol properties at runtime: digits, point, tick size, tick value/profit/loss where available, contract size, volume min/max/step/limit, stops/freeze levels, execution and filling modes, trade mode, margin settings, swap mode/values, and current trading sessions.
+- Use OrderCalcProfit and OrderCalcMargin with the intended symbol, direction, volume, entry and stop; fail closed when calculations fail or minimum volume would exceed the risk budget.
+- Do not infer instrument identity from a symbol substring alone. Use explicit per-symbol capability/configuration where the strategy requires market-specific assumptions.
+- Deriv synthetic indices are provider-generated derived markets, not ordinary exchange-traded FX/gold. Their tick behavior, contract economics, sessions, spreads and history availability must be tested per index; do not reuse FX/gold thresholds without validation.
+- Spread limits must be expressed and compared in a clearly defined unit (broker points or price units) and logged with bid, ask, point and tick size. A single raw points threshold may not be portable across symbols.
+- Historical data availability differs by broker, server, account type and symbol. Verify that Strategy Tester is replaying the selected broker's real ticks and variable bid/ask history; do not claim one broker's ticks reproduce another broker's execution.
+- Keep broker-specific exceptions explicit, documented, and covered by tests. If an account mode or execution capability is unsupported, initialization or new entries must be blocked with a clear reason.
+
+### Required broker test matrix
+
+Test each supported broker independently, using the exact server and symbol names exposed in that MT5 terminal. Start with XAUUSD/major FX where offered; test Deriv synthetic indices as a separate instrument family. Capture the full Strategy Tester report, Journal, symbol specification, .set file and commit SHA for every run. A successful test on one broker does not certify the others.
 ## Current status
 Protocol written; not executed. No 99% modelling-quality result, MT5 compilation, Strategy Tester result, or profitability result is claimed. The existing EA still needs the campaign ledger and aggregate-risk enforcement before additional-entry/pyramiding limits can safely be relaxed.
