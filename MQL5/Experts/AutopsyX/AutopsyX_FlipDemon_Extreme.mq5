@@ -1145,10 +1145,93 @@ void AxReconcileExistingPosition(void)
   }
 
 //====================================================================
+// BROKER / SYMBOL CAPABILITY DIAGNOSTICS
+// Runtime metadata is authoritative; broker names are never used as an allowlist.
+// Unsupported or invalid symbol properties must be visible before trading is considered.
+//====================================================================
+bool AxLogBrokerCompatibility(void)
+  {
+   string company=AccountInfoString(ACCOUNT_COMPANY);
+   string server=AccountInfoString(ACCOUNT_SERVER);
+   string currency=AccountInfoString(ACCOUNT_CURRENCY);
+   long leverage=AccountInfoInteger(ACCOUNT_LEVERAGE);
+   long marginMode=AccountInfoInteger(ACCOUNT_MARGIN_MODE);
+   long accountTradeMode=AccountInfoInteger(ACCOUNT_TRADE_MODE);
+
+   if(!SymbolSelect(_Symbol,true))
+     {
+      PrintFormat("FLIPDEMON BROKER ERROR: unable to select symbol '%s' in Market Watch; entries must remain blocked.",_Symbol);
+      return(false);
+     }
+
+   long digits=SymbolInfoInteger(_Symbol,SYMBOL_DIGITS);
+   long tradeMode=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_MODE);
+   long executionMode=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_EXEMODE);
+   long fillingMode=SymbolInfoInteger(_Symbol,SYMBOL_FILLING_MODE);
+   long orderMode=SymbolInfoInteger(_Symbol,SYMBOL_ORDER_MODE);
+   long stopsLevel=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
+   long freezeLevel=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_FREEZE_LEVEL);
+   long swapMode=SymbolInfoInteger(_Symbol,SYMBOL_SWAP_MODE);
+   double point=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
+   double tickSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+   double tickValue=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
+   double tickValueProfit=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE_PROFIT);
+   double tickValueLoss=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE_LOSS);
+   double contractSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_CONTRACT_SIZE);
+   double volumeMin=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
+   double volumeMax=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
+   double volumeStep=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
+   double volumeLimit=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_LIMIT);
+   double swapLong=SymbolInfoDouble(_Symbol,SYMBOL_SWAP_LONG);
+   double swapShort=SymbolInfoDouble(_Symbol,SYMBOL_SWAP_SHORT);
+   double bid=0.0,ask=0.0,spreadPoints=0.0;
+   MqlTick quote;
+   if(SymbolInfoTick(_Symbol,quote))
+     {
+      bid=quote.bid;
+      ask=quote.ask;
+      if(point>0.0 && ask>=bid && bid>0.0) spreadPoints=(ask-bid)/point;
+     }
+
+   PrintFormat("FLIPDEMON BROKER: company='%s' server='%s' terminal_build=%d account_currency='%s' leverage=1:%I64d margin_mode=%I64d account_trade_mode=%I64d",
+               company,server,(int)TerminalInfoInteger(TERMINAL_BUILD),currency,leverage,marginMode,accountTradeMode);
+   PrintFormat("FLIPDEMON SYMBOL: name='%s' digits=%I64d point=%.10g tick_size=%.10g tick_value=%.10g tick_value_profit=%.10g tick_value_loss=%.10g contract_size=%.10g",
+               _Symbol,digits,point,tickSize,tickValue,tickValueProfit,tickValueLoss,contractSize);
+   PrintFormat("FLIPDEMON SYMBOL RULES: trade_mode=%I64d execution_mode=%I64d filling_flags=%I64d order_flags=%I64d stops_level_points=%I64d freeze_level_points=%I64d volume_min=%.8g volume_max=%.8g volume_step=%.8g volume_limit=%.8g swap_mode=%I64d swap_long=%.8g swap_short=%.8g",
+               tradeMode,executionMode,fillingMode,orderMode,stopsLevel,freezeLevel,volumeMin,volumeMax,volumeStep,volumeLimit,swapMode,swapLong,swapShort);
+   PrintFormat("FLIPDEMON QUOTE: symbol='%s' bid=%.10g ask=%.10g spread_points=%.2f",
+               _Symbol,bid,ask,spreadPoints);
+
+   if(!MathIsValidNumber(point) || point<=0.0 ||
+      !MathIsValidNumber(tickSize) || tickSize<=0.0 ||
+      !MathIsValidNumber(volumeMin) || volumeMin<=0.0 ||
+      !MathIsValidNumber(volumeStep) || volumeStep<=0.0 ||
+      !MathIsValidNumber(volumeMax) || volumeMax<volumeMin ||
+      !MathIsValidNumber(contractSize) || contractSize<=0.0)
+     {
+      PrintFormat("FLIPDEMON BROKER ERROR: critical symbol metadata is invalid for '%s'; refusing initialization rather than guessing broker specifications.",_Symbol);
+      return(false);
+     }
+
+   if(tradeMode==SYMBOL_TRADE_MODE_DISABLED)
+     {
+      PrintFormat("FLIPDEMON BROKER ERROR: symbol '%s' is trade-disabled by the broker. This symbol cannot be traded until broker metadata changes.",_Symbol);
+      return(false);
+     }
+
+   return(true);
+  }
+
+//====================================================================
 // LIFECYCLE
 //====================================================================
 int OnInit(void)
   {
+   // Inspect the connected broker and actual symbol before configuring strategy/risk modules.
+   // This is metadata-driven portability, not a hard-coded broker-name allowlist.
+   if(!AxLogBrokerCompatibility())
+      return(INIT_FAILED);
+
    // this EA assumes one net position per symbol throughout (PositionSelect-based state
    // tracking, single-ticket close/flip/partial logic). That assumption only holds on a
    // netting account. US NFA-regulated accounts are netting/FIFO by law (no hedging); on a
