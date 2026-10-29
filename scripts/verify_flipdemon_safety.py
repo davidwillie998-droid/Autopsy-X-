@@ -31,6 +31,22 @@ recovery = RECOVERY.read_text(encoding="utf-8")
 readme = README.read_text(encoding="utf-8")
 
 require("#property strict" in ea, "MQL5 strict mode is enabled")
+require("bool AxLogBrokerCompatibility(void)" in ea and "if(!AxLogBrokerCompatibility())" in ea,
+        "EA inspects connected broker/symbol capabilities before module initialization")
+require("ACCOUNT_COMPANY" in ea and "ACCOUNT_SERVER" in ea and "ACCOUNT_CURRENCY" in ea
+        and "ACCOUNT_LEVERAGE" in ea and "TERMINAL_BUILD" in ea,
+        "broker identity, account currency, leverage and terminal build are logged at runtime")
+require("SYMBOL_TRADE_TICK_SIZE" in ea and "SYMBOL_TRADE_TICK_VALUE_PROFIT" in ea
+        and "SYMBOL_TRADE_TICK_VALUE_LOSS" in ea and "SYMBOL_TRADE_CONTRACT_SIZE" in ea,
+        "symbol tick economics and contract size are logged from live broker metadata")
+require("SYMBOL_VOLUME_MIN" in ea and "SYMBOL_VOLUME_MAX" in ea and "SYMBOL_VOLUME_STEP" in ea
+        and "SYMBOL_TRADE_STOPS_LEVEL" in ea and "SYMBOL_TRADE_FREEZE_LEVEL" in ea
+        and "SYMBOL_TRADE_EXEMODE" in ea and "SYMBOL_FILLING_MODE" in ea,
+        "broker volume, stop/freeze, execution and filling constraints are logged")
+require("critical symbol metadata is invalid" in ea and "trade-disabled by the broker" in ea,
+        "invalid or disabled broker symbols fail closed instead of guessing specifications")
+require("broker-name allowlist" in ea and "broker names" in ea,
+        "broker compatibility is metadata-driven rather than restricted to named providers")
 require(bool(re.search(r"InpExecutionMode\s*=\s*AX_EXEC_ANALYSIS_ONLY", ea)),
         "execution defaults to ANALYSIS_ONLY")
 require("ACCOUNT_MARGIN_MODE_RETAIL_HEDGING" in ea and "return(INIT_FAILED)" in ea,
