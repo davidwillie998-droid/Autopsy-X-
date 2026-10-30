@@ -104,6 +104,9 @@ def build_rankings(bars: pd.DataFrame, benchmark_map: dict[str, str]) -> pd.Data
     x = _validate_ohlc(bars)
     if not benchmark_map:
         raise ValueError("Benchmark map is empty.")
+    missing_families = set(x["market_family"].unique()) - set(benchmark_map)
+    if missing_families:
+        raise ValueError(f"Benchmark mapping missing market families: {sorted(missing_families)}")
 
     if ("h1_alignment" in x.columns) != ("h4_alignment" in x.columns):
         raise ValueError("Provide both h1_alignment and h4_alignment, or neither.")
