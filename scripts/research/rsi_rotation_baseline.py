@@ -105,8 +105,11 @@ def build_rankings(bars: pd.DataFrame, benchmark_map: dict[str, str]) -> pd.Data
     if not benchmark_map:
         raise ValueError("Benchmark map is empty.")
 
+    if ("h1_alignment" in x.columns) != ("h4_alignment" in x.columns):
+        raise ValueError("Provide both h1_alignment and h4_alignment, or neither.")
+
     feature_frames = []
-    for symbol, group in x.groupby("symbol", sort=False):
+    for (family, symbol), group in x.groupby(["market_family", "symbol"], sort=False):
         group = group.sort_values("timestamp").copy()
         group["rsi_14"] = wilder_rsi(group["close"], 14)
         for horizon in HORIZONS:
@@ -205,6 +208,11 @@ def build_rankings(bars: pd.DataFrame, benchmark_map: dict[str, str]) -> pd.Data
         x["composite_score"] = np.nan
         x["score_status"] = "BASELINE_ONLY_HTF_MISSING"
 
+    # A cross-sectional rank is not meaningful with fewer than three eligible
+    # instruments. Fail closed rather than awarding a singleton a perfect rank.
+    eligible_count = x.groupby(group_keys)["composite_score"].transform("count")
+    x.loc[eligible_count < 3, "composite_score"] = np.nan
+    x.loc[eligible_count < 3, "score_status"] = "NO_RANK"
     x["composite_rank"] = x.groupby(group_keys)["composite_score"].rank(
         method="average", ascending=False
     )
