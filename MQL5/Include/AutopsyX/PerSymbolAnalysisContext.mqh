@@ -14,6 +14,8 @@
 #include "Liquidity.mqh"
 #include "Regime.mqh"
 #include "SignalScore.mqh"
+#include "OrderFlow.mqh"
+#include "Footprint.mqh"
 
 class CPerSymbolAnalysisContext
   {
@@ -28,6 +30,9 @@ private:
    CRegimeEngine          m_regime;
    CRegimeEngine          m_higherRegime;
    CSignalScorer          m_scorer;
+   COrderFlowEngine       m_orderFlow;
+   CFootprintEngine       m_footprint;
+   ENUM_TIMEFRAMES        m_footprintTimeframe;
    datetime               m_lastSignalBar;
    datetime               m_lastHigherBar;
    bool                   m_initialized;
@@ -39,6 +44,7 @@ public:
       m_symbol="";
       m_signalTimeframe=PERIOD_M1;
       m_higherTimeframe=PERIOD_H4;
+      m_footprintTimeframe=PERIOD_M1;
       m_lastSignalBar=0;
       m_lastHigherBar=0;
       m_initialized=false;
@@ -47,13 +53,13 @@ public:
 
    bool Init(const string symbol,const ENUM_TIMEFRAMES signalTimeframe,
              const ENUM_TIMEFRAMES higherTimeframe,
-             const double minScore,const double minGap)
+             const double minScore,const double minGap,\n             const ENUM_TIMEFRAMES footprintTimeframe,\n             const double footprintBinPoints,const double footprintImbalanceRatio,\n             const int footprintStackedLevels)
      {
       Deinit();
       if(symbol=="") return(false);
       m_symbol=symbol;
       m_signalTimeframe=signalTimeframe;
-      m_higherTimeframe=higherTimeframe;
+      m_higherTimeframe=higherTimeframe;\n      m_footprintTimeframe=footprintTimeframe;
 
       if(!m_market.Init(m_symbol))
         {
@@ -78,7 +84,7 @@ public:
          return(false);
         }
 
-      m_scorer.Configure(minScore,minGap);
+      m_scorer.Configure(minScore,minGap);\n      m_orderFlow.Clear();\n      m_footprint.Clear();\n      m_footprint.Configure(footprintBinPoints,footprintImbalanceRatio,\n                            footprintStackedLevels,m_market.Point());
       m_lastSignalBar=iTime(m_symbol,m_signalTimeframe,0);
       m_lastHigherBar=iTime(m_symbol,m_higherTimeframe,0);
       m_initialized=true;
@@ -163,7 +169,7 @@ public:
    double Atr(void) const { return(m_regime.CurrentAtr()); }
    ENUM_AX_REGIME Regime(void) const { return(m_regime.Regime()); }
    double HigherTimeframeSlope(void) const { return(m_higherRegime.Slope()); }
-   double HigherTimeframeR2(void) const { return(m_higherRegime.R2()); }
+   double HigherTimeframeR2(void) const { return(m_higherRegime.R2()); }\n   double OrderFlowDelta(void) const { return(m_orderFlow.WindowDelta()); }\n   double OrderFlowImbalance(void) const { return(m_orderFlow.ImbalanceRatio()); }\n   double OrderFlowCvd(void) const { return(m_orderFlow.SessionCvd()); }\n   bool BullishAbsorption(void) const { return(m_orderFlow.BullishAbsorption()); }\n   bool BearishAbsorption(void) const { return(m_orderFlow.BearishAbsorption()); }\n   int FootprintStackedDirection(void) const { return(m_footprint.LastBarStackedDir()); }\n   double FootprintDeltaRatio(void) const { return(m_footprint.LastBarDeltaRatio()); }\n   bool FootprintHasHistory(void) const { return(m_footprint.HaveHistory()); }\n   double OrderFlowBullishScore(void) const { return(m_orderFlow.BullishScoreComponent()); }\n   double OrderFlowBearishScore(void) const { return(m_orderFlow.BearishScoreComponent()); }\n   double FootprintBullishScore(void) const { return(m_footprint.BullishScoreComponent()); }\n   double FootprintBearishScore(void) const { return(m_footprint.BearishScoreComponent()); }
    double LiquidityTarget(const ENUM_AX_DIR direction,const double referencePrice) const
      {
       return(m_liquidity.DrawOnLiquidityTarget(direction,referencePrice));
