@@ -1,0 +1,16 @@
+feature_a,feature_b,n,pearson_corr,spearman_corr,classification
+xau_log_return,return_autocorr,800,0.04593158968617518,0.03999596874370116,LOW REDUNDANCY
+xau_log_return,directional_persist,800,0.03814652731975376,0.09752677419626435,LOW REDUNDANCY
+xau_log_return,reversal_frequency,800,-0.023714090374481744,-0.04929768029989478,LOW REDUNDANCY
+xau_log_return,transmission_assoc_signed,800,0.02799713923816816,0.04134111928299888,LOW REDUNDANCY
+xau_log_return,transmission_confidence,800,-0.041987208184342206,0.015768118387684982,LOW REDUNDANCY
+return_autocorr,directional_persist,800,-0.3121139602706656,-0.3042209803310278,MODERATE REDUNDANCY
+return_autocorr,reversal_frequency,800,-0.27250292101371293,-0.23213865296412073,LOW REDUNDANCY
+return_autocorr,transmission_assoc_signed,800,0.3644071370185056,0.30357771652768206,MODERATE REDUNDANCY
+return_autocorr,transmission_confidence,800,0.08330418261780514,0.10044381319345812,LOW REDUNDANCY
+directional_persist,reversal_frequency,800,-0.17969043801790474,-0.2685307107976685,LOW REDUNDANCY
+directional_persist,transmission_assoc_signed,800,-0.09812572530946133,-0.039379187095706626,LOW REDUNDANCY
+directional_persist,transmission_confidence,800,-0.2677065218084154,-0.14466371082485882,LOW REDUNDANCY
+reversal_frequency,transmission_assoc_signed,800,-0.14617871924120895,-0.22678257671882673,LOW REDUNDANCY
+reversal_frequency,transmission_confidence,800,0.11511926056898973,0.06036991139716258,LOW REDUNDANCY
+transmission_assoc_signed,transmission_confidence,800,-0.05769797896156285,0.1973970506203916,LOW REDUNDANCY
