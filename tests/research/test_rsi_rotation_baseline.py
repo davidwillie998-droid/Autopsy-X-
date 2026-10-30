@@ -32,6 +32,15 @@ def sample_bars(periods=90):
 
 
 class TestRSIRotationBaseline(unittest.TestCase):
+    def test_wilder_rsi_uses_initial_period_and_handles_flat_up_down_series(self):
+        flat = MODULE.wilder_rsi(pd.Series([10.0] * 30))
+        rising = MODULE.wilder_rsi(pd.Series([float(i + 1) for i in range(30)]))
+        falling = MODULE.wilder_rsi(pd.Series([float(30 - i) for i in range(30)]))
+        self.assertTrue(flat.iloc[:14].isna().all())
+        self.assertEqual(flat.iloc[14], 50.0)
+        self.assertEqual(rising.iloc[14], 100.0)
+        self.assertEqual(falling.iloc[14], 0.0)
+
     def test_produces_rank_only_with_three_instruments_and_htf(self):
         result = MODULE.build_rankings(sample_bars(), {"FX": "BENCH"})
         latest = result[result.timestamp == result.timestamp.max()]
