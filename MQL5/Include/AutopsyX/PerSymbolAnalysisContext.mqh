@@ -169,7 +169,18 @@ public:
    double Atr(void) const { return(m_regime.CurrentAtr()); }
    ENUM_AX_REGIME Regime(void) const { return(m_regime.Regime()); }
    double HigherTimeframeSlope(void) const { return(m_higherRegime.Slope()); }
-   double HigherTimeframeR2(void) const { return(m_higherRegime.R2()); }\n   double OrderFlowDelta(void) const { return(m_orderFlow.WindowDelta()); }\n   double OrderFlowImbalance(void) const { return(m_orderFlow.ImbalanceRatio()); }\n   double OrderFlowCvd(void) const { return(m_orderFlow.SessionCvd()); }\n   bool BullishAbsorption(void) const { return(m_orderFlow.BullishAbsorption()); }\n   bool BearishAbsorption(void) const { return(m_orderFlow.BearishAbsorption()); }\n   int FootprintStackedDirection(void) const { return(m_footprint.LastBarStackedDir()); }\n   double FootprintDeltaRatio(void) const { return(m_footprint.LastBarDeltaRatio()); }\n   bool FootprintHasHistory(void) const { return(m_footprint.HaveHistory()); }\n   double OrderFlowBullishScore(void) const { return(m_orderFlow.BullishScoreComponent()); }\n   double OrderFlowBearishScore(void) const { return(m_orderFlow.BearishScoreComponent()); }\n   double FootprintBullishScore(void) const { return(m_footprint.BullishScoreComponent()); }\n   double FootprintBearishScore(void) const { return(m_footprint.BearishScoreComponent()); }
+   double HigherTimeframeR2(void) const { return(m_higherRegime.R2()); }
+   double OrderFlowDelta(void) const { return(m_orderFlow.WindowDelta()); }
+   double OrderFlowImbalance(void) const { return(m_orderFlow.ImbalanceRatio()); }
+   double OrderFlowCvd(void) const { return(m_orderFlow.SessionCvd()); }
+   bool BullishAbsorption(void) const { return(m_orderFlow.BullishAbsorption()); }
+   bool BearishAbsorption(void) const { return(m_orderFlow.BearishAbsorption()); }
+   int FootprintStackedDirection(void) const { return(m_footprint.LastBarStackedDir()); }
+   double FootprintDeltaRatio(void) const { return(m_footprint.LastBarDeltaRatio()); }\n   bool FootprintHasHistory(void) const { return(m_footprint.HaveHistory()); }
+   double OrderFlowBullishScore(void) const { return(m_orderFlow.BullishScoreComponent()); }
+   double OrderFlowBearishScore(void) const { return(m_orderFlow.BearishScoreComponent()); }
+   double FootprintBullishScore(void) const { return(m_footprint.BullishScoreComponent()); }
+   double FootprintBearishScore(void) const { return(m_footprint.BearishScoreComponent()); }
    double LiquidityTarget(const ENUM_AX_DIR direction,const double referencePrice) const
      {
       return(m_liquidity.DrawOnLiquidityTarget(direction,referencePrice));
