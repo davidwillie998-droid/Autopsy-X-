@@ -24,6 +24,7 @@
 #include <AutopsyX/FlipEngine.mqh>
 #include <AutopsyX/AntiChop.mqh>
 #include <AutopsyX/RiskEngine.mqh>
+#include <AutopsyX/AccountCampaignCoordinator.mqh>
 #include <AutopsyX/EntryEngine.mqh>
 #include <AutopsyX/ExecutionEngine.mqh>
 #include <AutopsyX/ExitEngine.mqh>
@@ -107,6 +108,8 @@ input double         InpDailyLossLimitPercent   = 8.0;    // Daily loss limit (%
 input int            InpMaxConsecutiveLosses    = 5;      // Max consecutive losses before pausing
 input int            InpMaxOpenPositions        = 1;      // Max simultaneously open positions
 input double         InpMaxExposureLots         = 1.0;    // Max total exposure, lots
+input double         InpMaxCampaignRiskPercent  = 2.0;    // Campaign remaining stop-risk ceiling, % equity
+input double         InpMaxAccountOpenRiskPercent= 4.0;    // All-account remaining stop-risk ceiling, % equity
 input int            InpMaxFlipsPerDay          = 20;      // Max direction flips per day
 input int            InpMaxTradesPerRollingPeriod = 10;    // Max trades within rolling window
 input int            InpRollingPeriodSeconds    = 300;     // Rolling window length, seconds
@@ -211,6 +214,7 @@ CSignalScorer         g_scorer;
 CFlipEngine           g_flip;
 CAntiChopEngine       g_chop;
 CRiskEngine           g_risk;
+CAccountCampaignCoordinator g_campaignRisk;
 CEmergencyControls    g_emergency;
 ENUM_AX_VWAP_EXIT_MODE g_effectiveVwapExitMode = AX_VWAP_EXIT_OFF; // set at OnInit, may be forced
                                                                      // down from InpVWAPExitMode - see
@@ -991,6 +995,26 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       return(false);
      }
 
+   // Recalculate live stop-risk after all sizing scalers. Every account position is
+   // included; a missing/invalid stop or failed broker profit calculation blocks new risk.
+   double proposedStopPnl=0.0;
+   ENUM_ORDER_TYPE campaignOrderType=(dir==AX_DIR_BUY) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+   if(!OrderCalcProfit(campaignOrderType,_Symbol,lots,intendedPrice,slPrice,proposedStopPnl) ||
+      !MathIsValidNumber(proposedStopPnl) || proposedStopPnl>=0.0)
+     {
+      Print("FLIPDEMON CAMPAIGN RISK BLOCK: proposed stop risk could not be verified.");
+      return(false);
+     }
+   string campaignRiskReason;
+   if(!g_campaignRisk.CanAdmitEntry(_Symbol,InpMagicNumber,MathAbs(proposedStopPnl),
+                                    MathMin(2.0,InpMaxCampaignRiskPercent),
+                                    MathMax(0.01,InpMaxAccountOpenRiskPercent),campaignRiskReason))
+     {
+      PrintFormat("FLIPDEMON CAMPAIGN RISK BLOCK: %s",campaignRiskReason);
+      return(false);
+     }
+   if(InpVerboseLogging) PrintFormat("FLIPDEMON CAMPAIGN RISK: %s",campaignRiskReason);
+
    // Final broker-side margin preflight must use the actual post-risk, post-AFE,
    // post-impact lot size and a fresh executable-side quote. Account leverage alone
    // is not proof that this order is affordable; OrderCalcMargin is broker-specific.
@@ -1317,6 +1341,7 @@ int OnInit(void)
    g_scorer.Configure(InpMinScoreToAct,InpMinGapToAct);
    g_flip.Configure(InpFlipRequiredConfirmations,InpFlipMinConfidence);
    g_chop.Configure(InpAntiChopBaseCooldownSec,InpAntiChopMaxCooldownSec);
+   g_campaignRisk.Configure(2.0); // absolute per-entry ceiling; inputs/progression cannot raise it
    g_risk.Configure(AxRiskPercentForMode(),InpDailyLossLimitPercent,InpMaxConsecutiveLosses,
                      InpMaxOpenPositions,InpMaxExposureLots,InpMaxFlipsPerDay,
                      InpMaxTradesPerRollingPeriod,InpRollingPeriodSeconds,
