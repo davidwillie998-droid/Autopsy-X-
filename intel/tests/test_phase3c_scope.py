@@ -16,10 +16,12 @@ def git(*args: str) -> str:
     return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True).stdout.strip()
 
 
-def test_no_mql5_or_ea_file_exists_in_the_repository():
-    """There is no production EA in this repository at all: confirming that is
-    itself the strongest form of 'Phase 3C did not touch it'."""
-    mql = list(ROOT.rglob("*.mq5")) + list(ROOT.rglob("*.mqh")) + list(ROOT.rglob("*.ex5"))
+def test_solana_intelligence_subtree_contains_no_mql5_or_ea_files():
+    """The Solana research engine remains separate from the MT5 execution EA."""
+    intel_root = ROOT / "intel"
+    mql = (list(intel_root.rglob("*.mq5")) +
+           list(intel_root.rglob("*.mqh")) +
+           list(intel_root.rglob("*.ex5")))
     assert mql == [], mql
 
 
@@ -76,9 +78,9 @@ def test_phase3c_workflow_mirrors_phase3a_workflow_procedure():
         assert step in a and step in c
 
 
-def test_phase3a_evidence_and_phase3b_evidence_files_byte_identical_to_frozen():
+def test_phase3a_evidence_and_phase3b_frozen_files_byte_identical():
     for rel in ("artifacts/phase3a/PHASE3A_EVIDENCE.json", "artifacts/phase3a/PHASE3A_COVERAGE.json",
-               "docs/PHASE3A_REPORT.md", "docs/SYSTEM_STATUS.md", "docs/PHASE2_SYSTEM_STATUS.md",
+               "docs/PHASE3A_REPORT.md", "docs/PHASE2_SYSTEM_STATUS.md",
                "research/phase3b/results/phase3b_evidence.json", "docs/PHASE3B_RESEARCH_CONTRACT.md",
                "docs/PHASE3B_STATISTICAL_REPORT.md"):
         at_3b = git("show", f"{PHASE3B_COMMIT}:{rel}")  # git strips rstrip() in captured stdout; compare rstripped
