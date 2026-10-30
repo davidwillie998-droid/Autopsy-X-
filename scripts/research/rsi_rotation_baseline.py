@@ -46,18 +46,36 @@ def file_sha256(path: Path) -> str:
 
 
 def wilder_rsi(close: pd.Series, period: int = 14) -> pd.Series:
-    """Wilder RSI with explicit flat-series handling."""
-    delta = close.diff()
-    gains = delta.clip(lower=0.0)
-    losses = -delta.clip(upper=0.0)
-    avg_gain = gains.ewm(alpha=1.0 / period, adjust=False, min_periods=period).mean()
-    avg_loss = losses.ewm(alpha=1.0 / period, adjust=False, min_periods=period).mean()
-    rs = avg_gain / avg_loss.replace(0.0, np.nan)
-    result = 100.0 - (100.0 / (1.0 + rs))
-    result = result.mask((avg_loss == 0.0) & (avg_gain > 0.0), 100.0)
-    result = result.mask((avg_gain == 0.0) & (avg_loss > 0.0), 0.0)
-    result = result.mask((avg_gain == 0.0) & (avg_loss == 0.0), 50.0)
-    return result
+    """Wilder RSI with the canonical initial SMA seed and recursive smoothing."""
+    if period < 1:
+        raise ValueError("RSI period must be positive.")
+    values = pd.to_numeric(close, errors="coerce").to_numpy(dtype=float)
+    result = np.full(values.shape, np.nan, dtype=float)
+    if len(values) <= period:
+        return pd.Series(result, index=close.index, name=close.name)
+
+    delta = np.diff(values)
+    gains = np.maximum(delta, 0.0)
+    losses = np.maximum(-delta, 0.0)
+    avg_gain = float(np.mean(gains[:period]))
+    avg_loss = float(np.mean(losses[:period]))
+
+    def to_rsi(gain: float, loss: float) -> float:
+        if gain == 0.0 and loss == 0.0:
+            return 50.0
+        if loss == 0.0:
+            return 100.0
+        if gain == 0.0:
+            return 0.0
+        relative_strength = gain / loss
+        return 100.0 - (100.0 / (1.0 + relative_strength))
+
+    result[period] = to_rsi(avg_gain, avg_loss)
+    for index in range(period + 1, len(values)):
+        avg_gain = ((period - 1) * avg_gain + gains[index - 1]) / period
+        avg_loss = ((period - 1) * avg_loss + losses[index - 1]) / period
+        result[index] = to_rsi(avg_gain, avg_loss)
+    return pd.Series(result, index=close.index, name=close.name)
 
 
 def _validate_ohlc(frame: pd.DataFrame) -> pd.DataFrame:
@@ -172,8 +190,11 @@ def build_rankings(bars: pd.DataFrame, benchmark_map: dict[str, str]) -> pd.Data
 
     # Bullish rotation score: RSI above 50 is constructive; a rising RSI adds
     # confirmation. This is deliberately a simple baseline, not an optimized rule.
+    bullish_regime = ((x["rsi_14"] - 50.0) / 15.0).clip(0.0, 1.0)
+    overbought_penalty = ((85.0 - x["rsi_14"]) / 10.0).clip(0.0, 1.0)
     x["rsi_regime_raw"] = (
-        ((x["rsi_14"] - 50.0) / 20.0).clip(0.0, 1.0)
+        bullish_regime
+        * overbought_penalty
         * (0.75 + 0.25 * (x["rsi_change_3"] > 0.0).astype(float))
     )
     x["rsi_regime"] = x.groupby(group_keys)["rsi_regime_raw"].transform(
