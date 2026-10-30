@@ -107,6 +107,8 @@ public:
       m_market.Reset();
       m_momentum.Clear();
       m_microstructure.Clear();
+      m_orderFlow.Clear();
+      m_footprint.Clear();
       m_symbol="";
       m_lastSignalBar=0;
       m_lastHigherBar=0;
@@ -124,6 +126,11 @@ public:
       m_hasValidTick=true;
       m_momentum.Update(m_market);
       m_microstructure.Update(m_market,m_momentum);
+      m_orderFlow.Update(m_market);
+      datetime footprintBar=iTime(m_symbol,m_footprintTimeframe,0);
+      if(footprintBar>0)
+         m_footprint.OnTick(footprintBar,m_market.CurrentMid(),
+                            m_orderFlow.LastTickBuyVol(),m_orderFlow.LastTickSellVol());
       m_liquidity.UpdateTick(m_market.CurrentBid(),m_market.CurrentAsk(),
                              m_momentum.DisplacementPts(),m_market.Point());
 
