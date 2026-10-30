@@ -13,6 +13,7 @@ EA = ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5"
 RISK = ROOT / "MQL5/Include/AutopsyX/RiskEngine.mqh"
 EXEC = ROOT / "MQL5/Include/AutopsyX/ExecutionEngine.mqh"
 RECOVERY = ROOT / "MQL5/Include/AutopsyX/RestartRecovery.mqh"
+CAMPAIGN = ROOT / "MQL5/Include/AutopsyX/AccountCampaignCoordinator.mqh"
 README = ROOT / "MQL5/README.md"
 AUTOPSY = ROOT / "MQL5/Include/AutopsyX/TradeAutopsy.mqh"
 
@@ -21,7 +22,7 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
     print(f"PASS: {message}")
 
-for path in (EA, RISK, EXEC, RECOVERY, README):
+for path in (EA, RISK, EXEC, RECOVERY, CAMPAIGN, README):
     require(path.is_file(), f"required source exists: {path.relative_to(ROOT)}")
 
 ea = EA.read_text(encoding="utf-8")
@@ -73,6 +74,23 @@ require("projectedRiskPct > g_risk.RiskPercent()+0.0001" in ea,
         "broker minimum volume cannot silently exceed configured trade-risk budget")
 require("m_riskPercent               = AxClampD(riskPercent,0.05,2.0)" in risk,
         "risk engine hard-clamps risk per trade to 2 percent")
+
+campaign = CAMPAIGN.read_text(encoding="utf-8")
+require("#include <AutopsyX/AccountCampaignCoordinator.mqh>" in ea
+        and "CAccountCampaignCoordinator g_campaignRisk;" in ea,
+        "account/campaign coordinator is included and instantiated")
+require("g_campaignRisk.CanAdmitEntry(" in ea
+        and "MathMin(2.0,InpMaxCampaignRiskPercent)" in ea,
+        "final post-scaling order size passes campaign admission and the non-bypassable 2 percent entry ceiling")
+require("InpMaxAccountOpenRiskPercent" in ea
+        and "ACCOUNT_OPEN_RISK_CAP_EXCEEDED" in campaign,
+        "proposed entry is checked against aggregate account-wide open stop-risk")
+require("PositionsTotal()" in campaign and "PositionGetTicket(i)" in campaign
+        and "OrderCalcProfit(orderType,symbol,volume,entry,stop,pnlAtStop)" in campaign,
+        "account risk is calculated from broker positions and broker-aware stop-loss economics")
+require("UNPROTECTED_OR_INVALID_POSITION" in campaign
+        and "ACCOUNT_RISK_UNVERIFIED:" in campaign,
+        "unknown or unprotected existing exposure blocks new entries")
 
 market_data_path = ROOT / "MQL5/Include/AutopsyX/MarketData.mqh"
 require(market_data_path.is_file(), "market data volume normalization source exists")

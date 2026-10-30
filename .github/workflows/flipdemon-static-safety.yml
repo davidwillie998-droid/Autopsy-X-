@@ -7,16 +7,19 @@ on:
   push:
     branches:
       - 'claude/autopsy-flipdemon-extreme-l4ei3d'
+      - 'feat/flipdemon-account-campaign-coordination'
     paths:
       - 'MQL5/**'
       - 'scripts/verify_flipdemon_safety.py'
       - 'tests/test_flipdemon_adaptive_sizing_spec.py'
+      - 'tests/test_flipdemon_campaign_coordination.py'
       - '.github/workflows/flipdemon-static-safety.yml'
   pull_request:
     paths:
       - 'MQL5/**'
       - 'scripts/verify_flipdemon_safety.py'
       - 'tests/test_flipdemon_adaptive_sizing_spec.py'
+      - 'tests/test_flipdemon_campaign_coordination.py'
       - '.github/workflows/flipdemon-static-safety.yml'
 
 permissions:
@@ -35,5 +38,7 @@ jobs:
           python-version: '3.12'
       - name: Run adaptive sizing reference tests
         run: python -m unittest discover -s tests -p 'test_flipdemon_adaptive_sizing_spec.py' -v
+      - name: Run campaign coordination reference tests
+        run: python -m unittest discover -s tests -p 'test_flipdemon_campaign_coordination.py' -v
       - name: Verify critical safety invariants
         run: python scripts/verify_flipdemon_safety.py
