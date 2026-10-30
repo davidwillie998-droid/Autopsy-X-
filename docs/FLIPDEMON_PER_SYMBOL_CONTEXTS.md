@@ -15,9 +15,12 @@ Each context owns its own:
 - Signal-timeframe `CRegimeEngine`.
 - Higher-timeframe `CRegimeEngine`.
 - `CSignalScorer`.
+- `COrderFlowEngine` and `CFootprintEngine`, including independent CVD, rolling delta, absorption, per-bar price bins and stacked-imbalance history.
 - Signal and higher-timeframe bar clocks.
 
 The context initializes market data and indicator handles against its explicit symbol. Tick, bar, price, point, spread, ATR, regime and liquidity reads are symbol-keyed. It exposes a base score and symbol-specific context readings.
+
+Order flow is classified from the context's own tick buffer. As the engine documentation states, this is tick-direction inference on quote-based FX/CFD feeds, not verified exchange aggressor-side trade data. Footprint consumes the same classified tick volumes and snapshots against the configured symbol-specific footprint bar clock.
 
 ## Deliberate qualification boundary
 
@@ -27,7 +30,7 @@ The base context therefore does **not** submit candidates to `COpportunityScanne
 
 ## Remaining work before routing a winning symbol
 
-1. Move the remaining symbol-sensitive engines into this context: order flow, footprint, volume profile, heatmap, VWAP, sniper and adaptive signal state.
+1. Move the remaining symbol-sensitive engines into this context: volume profile, heatmap, VWAP, sniper and adaptive signal state.
 2. Move per-symbol entry qualification and stop construction into a symbol-aware pipeline.
 3. Refactor the position manager, exit logic, trade journal, restart recovery and deal reconciliation to key state by symbol and broker position identifier/ticket.
 4. Build a bounded Market Watch context registry. Initialize, refresh, invalidate and release contexts safely as symbols are added or removed.
