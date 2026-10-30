@@ -91,7 +91,7 @@ public:
       m_regime.Deinit();
       m_higherRegime.Deinit();
       m_market.Reset();
-      m_momentum=CMomentumEngine();
+      m_momentum.Clear();
       m_microstructure.Clear();
       m_symbol="";
       m_lastSignalBar=0;
