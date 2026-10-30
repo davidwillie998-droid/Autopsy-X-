@@ -101,7 +101,7 @@ public:
      }
 
    // Call from the EA's central timer/tick scheduler. Every read is explicitly
-   // keyed to this context's symbol, never _Symbol or another context's globals.
+   // keyed to this context's symbol, never the chart symbol or another context's globals.
    bool Update(void)
      {
       if(!m_initialized) return(false);
