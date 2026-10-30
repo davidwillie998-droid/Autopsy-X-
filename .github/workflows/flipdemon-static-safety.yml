@@ -11,6 +11,7 @@ on:
       - 'MQL5/**'
       - 'scripts/verify_flipdemon_safety.py'
       - 'tests/test_flipdemon_adaptive_sizing_spec.py'
+      - 'tests/test_flipdemon_campaign_coordination.py'
       - '.github/workflows/flipdemon-static-safety.yml'
   pull_request:
     paths:
