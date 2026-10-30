@@ -53,13 +53,17 @@ public:
 
    bool Init(const string symbol,const ENUM_TIMEFRAMES signalTimeframe,
              const ENUM_TIMEFRAMES higherTimeframe,
-             const double minScore,const double minGap,\n             const ENUM_TIMEFRAMES footprintTimeframe,\n             const double footprintBinPoints,const double footprintImbalanceRatio,\n             const int footprintStackedLevels)
+             const double minScore,const double minGap,
+             const ENUM_TIMEFRAMES footprintTimeframe,
+             const double footprintBinPoints,const double footprintImbalanceRatio,
+             const int footprintStackedLevels)
      {
       Deinit();
       if(symbol=="") return(false);
       m_symbol=symbol;
       m_signalTimeframe=signalTimeframe;
-      m_higherTimeframe=higherTimeframe;\n      m_footprintTimeframe=footprintTimeframe;
+      m_higherTimeframe=higherTimeframe;
+      m_footprintTimeframe=footprintTimeframe;
 
       if(!m_market.Init(m_symbol))
         {
@@ -84,7 +88,11 @@ public:
          return(false);
         }
 
-      m_scorer.Configure(minScore,minGap);\n      m_orderFlow.Clear();\n      m_footprint.Clear();\n      m_footprint.Configure(footprintBinPoints,footprintImbalanceRatio,\n                            footprintStackedLevels,m_market.Point());
+      m_scorer.Configure(minScore,minGap);
+      m_orderFlow.Clear();
+      m_footprint.Clear();
+      m_footprint.Configure(footprintBinPoints,footprintImbalanceRatio,
+                            footprintStackedLevels,m_market.Point());
       m_lastSignalBar=iTime(m_symbol,m_signalTimeframe,0);
       m_lastHigherBar=iTime(m_symbol,m_higherTimeframe,0);
       m_initialized=true;
@@ -176,7 +184,8 @@ public:
    bool BullishAbsorption(void) const { return(m_orderFlow.BullishAbsorption()); }
    bool BearishAbsorption(void) const { return(m_orderFlow.BearishAbsorption()); }
    int FootprintStackedDirection(void) const { return(m_footprint.LastBarStackedDir()); }
-   double FootprintDeltaRatio(void) const { return(m_footprint.LastBarDeltaRatio()); }\n   bool FootprintHasHistory(void) const { return(m_footprint.HaveHistory()); }
+   double FootprintDeltaRatio(void) const { return(m_footprint.LastBarDeltaRatio()); }
+   bool FootprintHasHistory(void) const { return(m_footprint.HaveHistory()); }
    double OrderFlowBullishScore(void) const { return(m_orderFlow.BullishScoreComponent()); }
    double OrderFlowBearishScore(void) const { return(m_orderFlow.BearishScoreComponent()); }
    double FootprintBullishScore(void) const { return(m_footprint.BullishScoreComponent()); }
