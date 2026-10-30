@@ -35,5 +35,5 @@ jobs:
           python-version: '3.12'
       - name: Run adaptive sizing reference tests
         run: python -m unittest discover -s tests -p 'test_flipdemon_adaptive_sizing_spec.py' -v
-      - name: Verify critical safety invariants
+      - name: Run campaign coordination reference tests\n        run: python -m unittest discover -s tests -p 'test_flipdemon_campaign_coordination.py' -v\n      - name: Verify critical safety invariants
         run: python scripts/verify_flipdemon_safety.py
