@@ -54,7 +54,10 @@ class PerSymbolContextReferenceTests(unittest.TestCase):
         self.assertIn("m_market.Init(m_symbol)", source)
         self.assertIn("iTime(m_symbol,m_signalTimeframe,0)", source)
         self.assertIn("iTime(m_symbol,m_higherTimeframe,0)", source)
-        self.assertIn("m_liquidity.RefreshHigherTimeframeLevels(m_symbol)", source)\n        self.assertIn("iTime(m_symbol,m_footprintTimeframe,0)", source)\n        self.assertIn("m_orderFlow.Update(m_market)", source)\n        self.assertIn("m_footprint.OnTick(footprintBar,m_market.CurrentMid()", source)
+        self.assertIn("m_liquidity.RefreshHigherTimeframeLevels(m_symbol)", source)
+        self.assertIn("iTime(m_symbol,m_footprintTimeframe,0)", source)
+        self.assertIn("m_orderFlow.Update(m_market)", source)
+        self.assertIn("m_footprint.OnTick(footprintBar,m_market.CurrentMid()", source)
         self.assertNotIn("_Symbol", source)
 
     def test_base_score_is_not_mislabeled_as_fully_qualified_candidate(self):
@@ -69,7 +72,9 @@ class PerSymbolContextReferenceTests(unittest.TestCase):
         self.assertIn("m_regime.Deinit()", source)
         self.assertIn("m_higherRegime.Deinit()", source)
         self.assertIn("m_market.Reset()", source)
-        self.assertIn("m_momentum.Clear()", source)\n        self.assertIn("m_orderFlow.Clear()", source)\n        self.assertIn("m_footprint.Clear()", source)
+        self.assertIn("m_momentum.Clear()", source)
+        self.assertIn("m_orderFlow.Clear()", source)
+        self.assertIn("m_footprint.Clear()", source)
 
 
 if __name__ == "__main__":
