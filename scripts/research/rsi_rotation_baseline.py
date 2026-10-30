@@ -226,17 +226,17 @@ def build_rankings(bars: pd.DataFrame, benchmark_map: dict[str, str]) -> pd.Data
         x["score_status"] = np.where(
             x[required].notna().all(axis=1), "SCORED", "NO_RANK"
         )
+        # A cross-sectional rank is not meaningful with fewer than three eligible
+        # instruments. Fail closed rather than awarding a singleton a perfect rank.
+        eligible_count = x.groupby(group_keys)["composite_score"].transform("count")
+        x.loc[eligible_count < 3, "composite_score"] = np.nan
+        x.loc[eligible_count < 3, "score_status"] = "NO_RANK"
     else:
         # Never fabricate HTF context from M15 data.
         x["trend_alignment"] = np.nan
         x["composite_score"] = np.nan
         x["score_status"] = "BASELINE_ONLY_HTF_MISSING"
 
-    # A cross-sectional rank is not meaningful with fewer than three eligible
-    # instruments. Fail closed rather than awarding a singleton a perfect rank.
-    eligible_count = x.groupby(group_keys)["composite_score"].transform("count")
-    x.loc[eligible_count < 3, "composite_score"] = np.nan
-    x.loc[eligible_count < 3, "score_status"] = "NO_RANK"
     x["composite_rank"] = x.groupby(group_keys)["composite_score"].rank(
         method="average", ascending=False
     )
