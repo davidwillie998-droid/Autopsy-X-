@@ -1,0 +1,371 @@
+//+------------------------------------------------------------------+
+//|                                      PerSymbolAnalysisContext.mqh |
+//| Independent base market/signal state for one MT5 symbol.          |
+//| This context does not authorize execution or share state.          |
+//+------------------------------------------------------------------+
+#property strict
+#ifndef AX_PERSYMBOLANALYSISCONTEXT_MQH
+#define AX_PERSYMBOLANALYSISCONTEXT_MQH
+
+#include "Defs.mqh"
+#include "MarketData.mqh"
+#include "Momentum.mqh"
+#include "Microstructure.mqh"
+#include "Liquidity.mqh"
+#include "Regime.mqh"
+#include "SignalScore.mqh"
+#include "OrderFlow.mqh"
+#include "Footprint.mqh"
+#include "VolumeProfile.mqh"
+#include "VWAPEngine.mqh"
+#include "Heatmap.mqh"
+#include "SniperEngine.mqh"
+#include "AdaptiveFlipEngine.mqh"
+
+class CPerSymbolAnalysisContext
+  {
+private:
+   string                 m_symbol;
+   ENUM_TIMEFRAMES        m_signalTimeframe;
+   ENUM_TIMEFRAMES        m_higherTimeframe;
+   CMarketData            m_market;
+   CMomentumEngine        m_momentum;
+   CMicrostructureEngine  m_microstructure;
+   CLiquidityEngine       m_liquidity;
+   CRegimeEngine          m_regime;
+   CRegimeEngine          m_higherRegime;
+   CSignalScorer          m_scorer;
+   COrderFlowEngine       m_orderFlow;
+   CFootprintEngine       m_footprint;
+   ENUM_TIMEFRAMES        m_footprintTimeframe;
+   CVolumeProfileEngine   m_volumeProfile;
+   CVWAPEngine            m_vwap;
+   CHeatmapEngine         m_heatmap;
+   CSniperEngine          m_sniper;
+   CAdaptiveFlipEngine    m_adaptiveFlip;
+   bool                   m_useHeatmap;
+   double                 m_heatmapRangePoints;
+   bool                   m_useSniper;
+   double                 m_vwapValue;
+   string                 m_vwapTrend;
+   datetime               m_lastSignalBar;
+   datetime               m_lastHigherBar;
+   bool                   m_initialized;
+   bool                   m_hasValidTick;
+   bool                   m_adaptiveFlipReady;
+
+public:
+                           CPerSymbolAnalysisContext(void)
+     {
+      m_symbol="";
+      m_signalTimeframe=PERIOD_M1;
+      m_higherTimeframe=PERIOD_H4;
+      m_footprintTimeframe=PERIOD_M1;
+      m_vwapValue=-1.0;
+      m_useHeatmap=false;
+      m_heatmapRangePoints=0.0;
+      m_useSniper=false;
+      m_vwapTrend="NEUTRAL";
+      m_lastSignalBar=0;
+      m_lastHigherBar=0;
+      m_initialized=false;
+      m_hasValidTick=false;
+      m_adaptiveFlipReady=false;
+     }
+
+   bool Init(const string symbol,const ENUM_TIMEFRAMES signalTimeframe,
+             const ENUM_TIMEFRAMES higherTimeframe,
+             const double minScore,const double minGap,
+             const ENUM_TIMEFRAMES footprintTimeframe,
+             const double footprintBinPoints,const double footprintImbalanceRatio,
+             const int footprintStackedLevels,
+             const bool useHeatmap,const double heatmapRangePoints,
+             const bool useSniper,const double sniperPullbackPoints,
+             const double sniperResumePoints,const int sniperMaxWaitSeconds,
+             const double sniperMaxChasePoints)
+     {
+      Deinit();
+      if(symbol=="") return(false);
+      m_symbol=symbol;
+      m_signalTimeframe=signalTimeframe;
+      m_higherTimeframe=higherTimeframe;
+      m_footprintTimeframe=footprintTimeframe;
+      m_useHeatmap=useHeatmap;
+      m_heatmapRangePoints=MathMax(0.0,heatmapRangePoints);
+      m_useSniper=useSniper;
+
+      if(!m_market.Init(m_symbol))
+        {
+         PrintFormat("AX CONTEXT INIT FAILED: market data unavailable for %s",m_symbol);
+         Deinit();
+         return(false);
+        }
+      // DOM is optional. Missing broker depth must never block analysis.
+      if(m_useHeatmap && !m_heatmap.Init(m_symbol))
+         PrintFormat("AX CONTEXT: heatmap unavailable for %s; continuing without DOM",m_symbol);
+      m_sniper.Configure(sniperPullbackPoints*m_market.Point(),
+                         sniperResumePoints*m_market.Point(),sniperMaxWaitSeconds,
+                         sniperMaxChasePoints*m_market.Point());
+
+      if(!m_regime.Init(m_symbol,m_signalTimeframe))
+        {
+         PrintFormat("AX CONTEXT INIT FAILED: signal regime handle unavailable for %s",m_symbol);
+         Deinit();
+         return(false);
+        }
+      if(!m_higherRegime.Init(m_symbol,m_higherTimeframe))
+        {
+         PrintFormat("AX CONTEXT INIT FAILED: higher-timeframe regime handle unavailable for %s",m_symbol);
+         Deinit();
+         return(false);
+        }
+      if(!m_liquidity.Init(m_symbol,m_signalTimeframe))
+        {
+         Deinit();
+         return(false);
+        }
+
+      m_scorer.Configure(minScore,minGap);
+      m_orderFlow.Clear();
+      m_footprint.Clear();
+      m_footprint.Configure(footprintBinPoints,footprintImbalanceRatio,
+                            footprintStackedLevels,m_market.Point());
+      if(!m_volumeProfile.Init(m_symbol,120,10.0,m_market.Point(),m_signalTimeframe))
+        {
+         Deinit();
+         return(false);
+        }
+      m_vwap.Configure(AX_VWAP_ROLLING,240,22,0,8,13,0.1);
+      m_volumeProfile.Refresh();
+      m_vwapValue=m_vwap.GetVWAP(m_symbol,m_signalTimeframe);
+      double initialClose=iClose(m_symbol,m_signalTimeframe,1);
+      m_vwapTrend=m_vwap.ClassifyVWAPTrend(initialClose,m_vwapValue,m_regime.CurrentAtr());
+      m_lastSignalBar=iTime(m_symbol,m_signalTimeframe,0);
+      m_lastHigherBar=iTime(m_symbol,m_higherTimeframe,0);
+      m_initialized=true;
+      m_hasValidTick=false;
+      return(true);
+     }
+
+   void Deinit(void)
+     {
+      m_heatmap.Deinit();
+      m_sniper.Reset();
+      m_regime.Deinit();
+      m_higherRegime.Deinit();
+      m_market.Reset();
+      m_momentum.Clear();
+      m_microstructure.Clear();
+      m_orderFlow.Clear();
+      m_footprint.Clear();
+      m_vwapValue=-1.0;
+      m_vwapTrend="NEUTRAL";
+      m_symbol="";
+      m_lastSignalBar=0;
+      m_lastHigherBar=0;
+      m_initialized=false;
+      m_hasValidTick=false;
+      m_adaptiveFlipReady=false;
+      m_useHeatmap=false;
+      m_heatmapRangePoints=0.0;
+      m_useSniper=false;
+     }
+
+   // Call from the EA's central timer/tick scheduler. Every read is explicitly
+   // keyed to this context's symbol, never the chart symbol or another context's globals.
+   bool Update(void)
+     {
+      if(!m_initialized) return(false);
+      if(!m_market.OnTickUpdate()) return(false);
+
+      m_hasValidTick=true;
+      if(m_adaptiveFlipReady) m_adaptiveFlip.OnTickHousekeeping();
+      m_momentum.Update(m_market);
+      m_microstructure.Update(m_market,m_momentum);
+      m_orderFlow.Update(m_market);
+      datetime footprintBar=iTime(m_symbol,m_footprintTimeframe,0);
+      if(footprintBar>0)
+         m_footprint.OnTick(footprintBar,m_market.CurrentMid(),
+                            m_orderFlow.LastTickBuyVol(),m_orderFlow.LastTickSellVol());
+      m_liquidity.UpdateTick(m_market.CurrentBid(),m_market.CurrentAsk(),
+                             m_momentum.DisplacementPts(),m_market.Point());
+
+      datetime signalBar=iTime(m_symbol,m_signalTimeframe,0);
+      if(signalBar>0 && signalBar!=m_lastSignalBar)
+        {
+         m_lastSignalBar=signalBar;
+         m_regime.Update();
+         m_liquidity.RefreshLevels();
+         m_volumeProfile.Refresh();
+         m_vwapValue=m_vwap.GetVWAP(m_symbol,m_signalTimeframe);
+         double closedSignalPrice=iClose(m_symbol,m_signalTimeframe,1);
+         m_vwapTrend=m_vwap.ClassifyVWAPTrend(closedSignalPrice,m_vwapValue,m_regime.CurrentAtr());
+        }
+
+      datetime higherBar=iTime(m_symbol,m_higherTimeframe,0);
+      if(higherBar>0 && higherBar!=m_lastHigherBar)
+        {
+         m_lastHigherBar=higherBar;
+         m_higherRegime.Update();
+         m_liquidity.RefreshHigherTimeframeLevels(m_symbol);
+        }
+      return(true);
+     }
+
+   // Refresh from the central timer, independently of dashboard visibility.
+   void RefreshHeatmap(void)
+     {
+      if(!m_initialized || !m_useHeatmap || !m_hasValidTick) return;
+      m_heatmap.Update(m_market.CurrentBid(),m_market.CurrentAsk(),
+                       m_heatmapRangePoints,m_market.Point());
+     }
+
+   // Adaptive Flip configuration is supplied by the EA's existing input contract.
+   // InitAdaptiveFlip uses one account+magic peak-equity key shared across contexts;
+   // EvaluateAdaptiveFlip receives this symbol's own closed-trade statistics snapshot.
+   void ConfigureAdaptiveFlip(const bool enabled,
+                              const double cautionDdPct,const double defensiveDdPct,const double lockedDdPct,
+                              const double cautionMultiplier,const double defensiveMultiplier,
+                              const double maxRiskOfRuinPct,const double ruinThresholdPct,
+                              const double minExpectedValueR,const double minAccountHealth,
+                              const int minTradesForStats,const double assumedRewardRiskRatio,
+                              const double configuredRiskPercent,
+                              const double commissionPerLot=0.0,const double slippageToleranceBufferPts=0.0,
+                              const double impactCoefficientK=1.0,const double impactRelevanceThresholdLots=50.0,
+                              const double vwapAlignmentBonus=1.0)
+     {
+      m_adaptiveFlip.Configure(enabled,cautionDdPct,defensiveDdPct,lockedDdPct,
+                               cautionMultiplier,defensiveMultiplier,maxRiskOfRuinPct,ruinThresholdPct,
+                               minExpectedValueR,minAccountHealth,minTradesForStats,assumedRewardRiskRatio,
+                               configuredRiskPercent,commissionPerLot,slippageToleranceBufferPts,
+                               impactCoefficientK,impactRelevanceThresholdLots,vwapAlignmentBonus);
+     }
+
+   void InitAdaptiveFlip(const ulong magic)
+     {
+      if(!m_initialized) return;
+      m_adaptiveFlip.InitAccountScoped(magic);
+      m_adaptiveFlip.OnTickHousekeeping();
+      m_adaptiveFlipReady=true;
+     }
+
+   bool EvaluateAdaptiveFlip(const SAxScore &score,const SAxStatsSnapshot &symbolStats,
+                             const int consecutivePoorFills,const ENUM_AX_DIR direction,
+                             const double lots,const int projectedHoldSeconds,
+                             const double sessionVolumeLots,const bool vwapExitActive,
+                             double &riskMultiplierOut,string &reasonOut)
+     {
+      if(!m_initialized || !m_hasValidTick || !m_adaptiveFlipReady)
+        {
+         riskMultiplierOut=0.0;
+         reasonOut="Per-symbol Adaptive Flip context is not initialized";
+         return(false);
+        }
+      double point=m_market.Point();
+      double volatilityPts=(point>0.0) ? m_regime.CurrentAtr()/point : 0.0;
+      return(m_adaptiveFlip.Evaluate(score,symbolStats,consecutivePoorFills,
+                                     m_symbol,direction,lots,point,m_market.TickSize(),m_market.TickValue(),
+                                     volatilityPts,projectedHoldSeconds,sessionVolumeLots,
+                                     vwapExitActive,VWAPAligned(direction),
+                                     riskMultiplierOut,reasonOut));
+     }
+
+   ENUM_AX_CAPITAL_STATE AdaptiveFlipState(void) const { return(m_adaptiveFlip.State()); }
+   double AdaptiveFlipDrawdownPct(void) const { return(m_adaptiveFlip.DrawdownFromPeakPct()); }
+   double AdaptiveFlipRiskOfRuinPct(void) const { return(m_adaptiveFlip.RiskOfRuinPct()); }
+   double AdaptiveFlipExpectedValueR(void) const { return(m_adaptiveFlip.ExpectedValueR()); }
+   double AdaptiveFlipRiskMultiplier(void) const { return(m_adaptiveFlip.LastRiskMultiplier()); }
+
+   bool ArmSniper(const ENUM_AX_DIR direction,const double referencePrice)
+     {
+      if(!m_initialized || !m_useSniper ||
+         (direction!=AX_DIR_BUY && direction!=AX_DIR_SELL) || referencePrice<=0.0)
+         return(false);
+      m_sniper.Arm(direction,referencePrice);
+      return(true);
+     }
+
+   bool UpdateSniper(bool &expiredOut)
+     {
+      expiredOut=false;
+      if(!m_initialized || !m_useSniper || !m_hasValidTick || !m_sniper.IsArmed())
+         return(false);
+      return(m_sniper.OnTick(m_market.CurrentMid(),expiredOut));
+     }
+
+   bool SniperArmed(void) const { return(m_useSniper && m_sniper.IsArmed()); }
+   bool SniperPullbackSeen(void) const { return(m_sniper.PullbackSeen()); }
+   int SniperSecondsWaiting(void) const { return(m_sniper.SecondsWaiting()); }
+   bool HeatmapAvailable(void) const { return(m_useHeatmap && m_heatmap.IsAvailable()); }
+   double HeatmapBuyPressure(void) const { return(m_heatmap.BuyWallPressure()); }
+   double HeatmapSellPressure(void) const { return(m_heatmap.SellWallPressure()); }
+   double HeatmapBullishScore(void) const { return(m_heatmap.BullishScoreComponent()); }
+   double HeatmapBearishScore(void) const { return(m_heatmap.BearishScoreComponent()); }
+   // This is the independent base score only. Order-flow, footprint, VWAP,
+   // volume-profile, sniper, spread/session and final entry qualification
+   // must be applied by the owning per-symbol pipeline before a candidate
+   // can be submitted to COpportunityScanner.
+   bool EvaluateBaseScore(SAxScore &scoreOut)
+     {
+      if(!m_initialized || !m_hasValidTick || m_market.Count()<5)
+         return(false);
+      if(!m_regime.TradingAllowed())
+        {
+         scoreOut.buyScore=0.0;
+         scoreOut.sellScore=0.0;
+         scoreOut.confidence=0.0;
+         scoreOut.action=AX_DIR_NONE;
+         scoreOut.time=TimeCurrent();
+         scoreOut.regime=AX_REGIME_UNSAFE;
+         return(true);
+        }
+      scoreOut=m_scorer.Evaluate(m_market,m_momentum,m_microstructure,m_liquidity,m_regime);
+      return(true);
+     }
+
+   string Symbol(void) const { return(m_symbol); }
+   bool Initialized(void) const { return(m_initialized); }
+   bool HasValidTick(void) const { return(m_hasValidTick); }
+   double Bid(void) const { return(m_market.CurrentBid()); }
+   double Ask(void) const { return(m_market.CurrentAsk()); }
+   double Point(void) const { return(m_market.Point()); }
+   double SpreadPoints(void) const { return(m_market.CurrentSpreadPts()); }
+   double Atr(void) const { return(m_regime.CurrentAtr()); }
+   ENUM_AX_REGIME Regime(void) const { return(m_regime.Regime()); }
+   double HigherTimeframeSlope(void) const { return(m_higherRegime.Slope()); }
+   double HigherTimeframeR2(void) const { return(m_higherRegime.R2()); }
+   double OrderFlowDelta(void) const { return(m_orderFlow.WindowDelta()); }
+   double OrderFlowImbalance(void) const { return(m_orderFlow.ImbalanceRatio()); }
+   double OrderFlowCvd(void) const { return(m_orderFlow.SessionCvd()); }
+   bool BullishAbsorption(void) const { return(m_orderFlow.BullishAbsorption()); }
+   bool BearishAbsorption(void) const { return(m_orderFlow.BearishAbsorption()); }
+   int FootprintStackedDirection(void) const { return(m_footprint.LastBarStackedDir()); }
+   double FootprintDeltaRatio(void) const { return(m_footprint.LastBarDeltaRatio()); }
+   bool FootprintHasHistory(void) const { return(m_footprint.HaveHistory()); }
+   bool VolumeProfileValid(void) const { return(m_volumeProfile.IsValid()); }
+   double VolumeProfilePOC(void) const { return(m_volumeProfile.Poc()); }
+   double VolumeProfileVAH(void) const { return(m_volumeProfile.Vah()); }
+   double VolumeProfileVAL(void) const { return(m_volumeProfile.Val()); }
+   int VolumeProfilePosition(const double price) const { return(m_volumeProfile.Position(price)); }
+   double VolumeProfileBullishScore(const double price) const { return(m_volumeProfile.BullishScoreComponent(price)); }
+   double VolumeProfileBearishScore(const double price) const { return(m_volumeProfile.BearishScoreComponent(price)); }
+   double VWAPValue(void) const { return(m_vwapValue); }
+   string VWAPTrend(void) const { return(m_vwapTrend); }
+   bool VWAPAligned(const ENUM_AX_DIR direction) const
+     {
+      if(m_vwapValue<=0.0) return(false);
+      if(direction==AX_DIR_BUY) return(m_vwapTrend=="BULLISH");
+      if(direction==AX_DIR_SELL) return(m_vwapTrend=="BEARISH");
+      return(false);
+     }
+   double OrderFlowBullishScore(void) const { return(m_orderFlow.BullishScoreComponent()); }
+   double OrderFlowBearishScore(void) const { return(m_orderFlow.BearishScoreComponent()); }
+   double FootprintBullishScore(void) const { return(m_footprint.BullishScoreComponent()); }
+   double FootprintBearishScore(void) const { return(m_footprint.BearishScoreComponent()); }
+   double LiquidityTarget(const ENUM_AX_DIR direction,const double referencePrice) const
+     {
+      return(m_liquidity.DrawOnLiquidityTarget(direction,referencePrice));
+     }
+  };
+
+#endif // AX_PERSYMBOLANALYSISCONTEXT_MQH

@@ -9,16 +9,20 @@ on:
       - 'claude/autopsy-flipdemon-extreme-l4ei3d'
       - 'feat/flipdemon-account-campaign-coordination'
       - 'feat/flipdemon-strongest-opportunity-scanner'
+      - 'feat/flipdemon-per-symbol-contexts'
     paths:
       - 'MQL5/**'
       - 'scripts/verify_flipdemon_safety.py'
       - 'tests/test_flipdemon_adaptive_sizing_spec.py'
       - 'tests/test_flipdemon_campaign_coordination.py'
       - 'tests/test_flipdemon_opportunity_scanner.py'
+      - 'tests/test_flipdemon_per_symbol_context.py'
       - '.github/workflows/flipdemon-static-safety.yml'
   pull_request:
     paths:
       - 'MQL5/**'
+      - 'tests/test_flipdemon_opportunity_scanner.py'
+      - 'tests/test_flipdemon_per_symbol_context.py'
       - 'scripts/verify_flipdemon_safety.py'
       - 'tests/test_flipdemon_adaptive_sizing_spec.py'
       - 'tests/test_flipdemon_campaign_coordination.py'
@@ -44,5 +48,7 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_flipdemon_campaign_coordination.py' -v
       - name: Run opportunity scanner reference tests
         run: python -m unittest discover -s tests -p 'test_flipdemon_opportunity_scanner.py' -v
+      - name: Run per-symbol context isolation tests
+        run: python -m unittest discover -s tests -p 'test_flipdemon_per_symbol_context.py' -v
       - name: Verify critical safety invariants
         run: python scripts/verify_flipdemon_safety.py

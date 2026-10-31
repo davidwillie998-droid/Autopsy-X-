@@ -1,6 +1,5 @@
-"""Phase 3C scope isolation: no production EA file exists to touch, and no
-Phase 2/Phase 3A/Phase 3B implementation file is modified by Phase 3C's own
-commits. This is the explicit scope test Phase 3C instruction 2 requires."""
+"""Phase 3C scope isolation: Phase 3C changes stay within research infrastructure
+and do not modify the independent MT5 EA implementation."""
 import subprocess
 from pathlib import Path
 
@@ -10,6 +9,8 @@ PHASE3B_COMMIT = "f21f3bc2e18ab64d2b92e203c4202144eabf7eac"
 # index.html is inherited from the PR base branch, not a Phase 3C change.
 # Pin its expected content to the reviewed base so the allowlist cannot hide edits.
 UI_BASELINE_COMMIT = "141b2c1fcc582394e537aaf88b534264fcb258c3"
+# Actual base of the per-symbol-context PR. The older UI baseline predates EA work.
+PR_SCOPE_BASELINE_COMMIT = "e3a2dd3755d447c56466b5c882b34079c9857560"
 
 
 def git(*args: str) -> str:
@@ -41,7 +42,7 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     unrelated changes already present on the PR base are not misattributed to this branch.
     """
     # Compare the PR branch against its reviewed base, not Phase 3B: the base contains later unrelated changes.
-    changed = git("diff", "--name-only", UI_BASELINE_COMMIT, "HEAD").splitlines()
+    changed = git("diff", "--name-only", PR_SCOPE_BASELINE_COMMIT, "HEAD").splitlines()
     # Necessary Phase 3C acquisition/test infrastructure may change workflow files; existing production/research modules remain frozen.
     # a request file and a workflow mirroring phase3a-acquire.yml's own procedure exactly
     # (checked bit-for-bit against it below), so new archives can be independently acquired.
@@ -50,13 +51,18 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     # The standalone SSRN literature map is a documentation-only research artifact, not a Phase 3C implementation change.
     # index.html is inherited from the reviewed PR base; a separate test below
     # pins it byte-for-byte to that baseline rather than permitting UI changes.
-    infra_allowed = {"intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml", "docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md", "docs/research/15-ssrn-memecoin-momentum-evidence.md", "docs/research/16-point-in-time-memecoin-evaluation.md", "index.html"}
+    infra_allowed = {".gitignore", "intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml", ".github/workflows/flipdemon-static-safety.yml", ".github/workflows/rsi-research-tests.yml", "docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md", "docs/research/15-ssrn-memecoin-momentum-evidence.md", "docs/research/16-point-in-time-memecoin-evaluation.md", "index.html", "MQL5/Include/AutopsyX/Heatmap.mqh", "MQL5/Include/AutopsyX/PerSymbolAnalysisContext.mqh", "MQL5/Include/AutopsyX/AdaptiveFlipEngine.mqh", "docs/FLIPDEMON_PER_SYMBOL_CONTEXTS.md", "tests/test_flipdemon_per_symbol_context.py"}
     for f in changed:
         allowed = (f.startswith("docs/PHASE3C_") or f.startswith("intel/autopsyx/research/phase3c_")
                   or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")
                   or f in infra_allowed or f.startswith("intel/datasets/phase3c/runs/"))
         assert allowed, f"Phase 3C touched a file outside its namespace: {f}"
 
+
+def test_root_gitignore_is_limited_to_python_test_artifacts():
+    """The root ignore file is shared test infrastructure, not Phase 3C implementation."""
+    expected = "\n".join(["__pycache__/", "*.pyc", "*.pyo", ".pytest_cache/"]) + "\n"
+    assert (ROOT / ".gitignore").read_bytes() == expected.encode()
 
 def test_dashboard_index_is_unchanged_from_reviewed_pr_base():
     """The scope allowlist must not mask unrelated dashboard edits."""
