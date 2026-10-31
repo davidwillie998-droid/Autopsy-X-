@@ -46,6 +46,8 @@ class PerSymbolContextReferenceTests(unittest.TestCase):
             "CSignalScorer          m_scorer;",
             "COrderFlowEngine       m_orderFlow;",
             "CFootprintEngine       m_footprint;",
+            "CVolumeProfileEngine   m_volumeProfile;",
+            "CVWAPEngine            m_vwap;",
         ):
             self.assertIn(member, source)
 
@@ -58,7 +60,20 @@ class PerSymbolContextReferenceTests(unittest.TestCase):
         self.assertIn("iTime(m_symbol,m_footprintTimeframe,0)", source)
         self.assertIn("m_orderFlow.Update(m_market)", source)
         self.assertIn("m_footprint.OnTick(footprintBar,m_market.CurrentMid()", source)
+        self.assertIn("m_volumeProfile.Init(m_symbol,120,10.0,m_market.Point(),m_signalTimeframe)", source)
+        self.assertIn("m_vwap.GetVWAP(m_symbol,m_signalTimeframe)", source)
+        self.assertIn("iClose(m_symbol,m_signalTimeframe,1)", source)
+        self.assertIn("m_volumeProfile.Refresh()", source)
+        self.assertIn("m_vwap.ClassifyVWAPTrend", source)
         self.assertNotIn("_Symbol", source)
+
+    def test_volume_profile_and_vwap_are_exposed_as_context_local_reads(self):
+        source = CONTEXT.read_text(encoding="utf-8")
+        for accessor in (
+            "VolumeProfilePOC", "VolumeProfileVAH", "VolumeProfileVAL",
+            "VolumeProfileValid", "VWAPValue", "VWAPTrend", "VWAPAligned",
+        ):
+            self.assertIn(accessor, source)
 
     def test_base_score_is_not_mislabeled_as_fully_qualified_candidate(self):
         source = CONTEXT.read_text(encoding="utf-8")
@@ -75,6 +90,8 @@ class PerSymbolContextReferenceTests(unittest.TestCase):
         self.assertIn("m_momentum.Clear()", source)
         self.assertIn("m_orderFlow.Clear()", source)
         self.assertIn("m_footprint.Clear()", source)
+        self.assertIn("m_vwapValue=-1.0", source)
+        self.assertIn("m_vwapTrend=\"NEUTRAL\"", source)
 
 
 if __name__ == "__main__":
