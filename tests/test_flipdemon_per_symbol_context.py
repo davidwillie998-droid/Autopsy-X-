@@ -48,6 +48,8 @@ class PerSymbolContextReferenceTests(unittest.TestCase):
             "CFootprintEngine       m_footprint;",
             "CVolumeProfileEngine   m_volumeProfile;",
             "CVWAPEngine            m_vwap;",
+            "CHeatmapEngine         m_heatmap;",
+            "CSniperEngine          m_sniper;",
         ):
             self.assertIn(member, source)
 
@@ -75,6 +77,28 @@ class PerSymbolContextReferenceTests(unittest.TestCase):
         ):
             self.assertIn(accessor, source)
 
+    def test_heatmap_and_sniper_are_context_owned_and_symbol_scaled(self):
+        source = CONTEXT.read_text(encoding="utf-8")
+        self.assertIn("m_heatmap.Init(m_symbol)", source)
+        self.assertIn("m_heatmap.Update(m_market.CurrentBid(),m_market.CurrentAsk()", source)
+        self.assertIn("m_heatmapRangePoints,m_market.Point()", source)
+        self.assertIn("sniperPullbackPoints*m_market.Point()", source)
+        self.assertIn("sniperResumePoints*m_market.Point()", source)
+        self.assertIn("sniperMaxChasePoints*m_market.Point()", source)
+        self.assertIn("m_sniper.Arm(direction,referencePrice)", source)
+        self.assertIn("m_sniper.OnTick(m_market.CurrentMid(),expiredOut)", source)
+        self.assertIn("void RefreshHeatmap(void)", source)
+        self.assertIn("bool UpdateSniper(bool &expiredOut)", source)
+        self.assertNotIn("_Symbol", source)
+
+    def test_optional_heatmap_and_context_reset_are_safe(self):
+        source = CONTEXT.read_text(encoding="utf-8")
+        heatmap = (ROOT / "MQL5/Include/AutopsyX/Heatmap.mqh").read_text(encoding="utf-8")
+        self.assertIn("continuing without DOM", source)
+        self.assertIn("m_heatmap.Deinit()", source)
+        self.assertIn("m_sniper.Reset()", source)
+        self.assertIn("m_available=false", heatmap)
+        self.assertIn("m_prevCount=0", heatmap)
     def test_base_score_is_not_mislabeled_as_fully_qualified_candidate(self):
         source = CONTEXT.read_text(encoding="utf-8")
         self.assertIn("EvaluateBaseScore", source)
