@@ -1,6 +1,5 @@
-"""Phase 3C scope isolation: no production EA file exists to touch, and no
-Phase 2/Phase 3A/Phase 3B implementation file is modified by Phase 3C's own
-commits. This is the explicit scope test Phase 3C instruction 2 requires."""
+"""Phase 3C scope isolation: Phase 3C changes stay within research infrastructure
+and do not modify the independent MT5 EA implementation."""
 import subprocess
 from pathlib import Path
 
@@ -10,6 +9,8 @@ PHASE3B_COMMIT = "f21f3bc2e18ab64d2b92e203c4202144eabf7eac"
 # index.html is inherited from the PR base branch, not a Phase 3C change.
 # Pin its expected content to the reviewed base so the allowlist cannot hide edits.
 UI_BASELINE_COMMIT = "141b2c1fcc582394e537aaf88b534264fcb258c3"
+# Actual base of the per-symbol-context PR. The older UI baseline predates EA work.
+PR_SCOPE_BASELINE_COMMIT = "e3a2dd3755d447c56466b5c882b34079c9857560"
 
 
 def git(*args: str) -> str:
@@ -41,7 +42,7 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     unrelated changes already present on the PR base are not misattributed to this branch.
     """
     # Compare the PR branch against its reviewed base, not Phase 3B: the base contains later unrelated changes.
-    changed = git("diff", "--name-only", UI_BASELINE_COMMIT, "HEAD").splitlines()
+    changed = git("diff", "--name-only", PR_SCOPE_BASELINE_COMMIT, "HEAD").splitlines()
     # Necessary Phase 3C acquisition/test infrastructure may change workflow files; existing production/research modules remain frozen.
     # a request file and a workflow mirroring phase3a-acquire.yml's own procedure exactly
     # (checked bit-for-bit against it below), so new archives can be independently acquired.
@@ -60,7 +61,7 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
 
 def test_root_gitignore_is_limited_to_python_test_artifacts():
     """The root ignore file is shared test infrastructure, not Phase 3C implementation."""
-    expected = "__pycache__/\\n*.pyc\\n*.pyo\\n.pytest_cache/\\n"
+    expected = "\\n".join(["__pycache__/", "*.pyc", "*.pyo", ".pytest_cache/"]) + "\\n"
     assert (ROOT / ".gitignore").read_bytes() == expected.encode()
 
 def test_dashboard_index_is_unchanged_from_reviewed_pr_base():
