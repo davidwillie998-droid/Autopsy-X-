@@ -20,6 +20,7 @@
 #include "VWAPEngine.mqh"
 #include "Heatmap.mqh"
 #include "SniperEngine.mqh"
+#include "AdaptiveFlipEngine.mqh"
 
 class CPerSymbolAnalysisContext
   {
@@ -41,6 +42,7 @@ private:
    CVWAPEngine            m_vwap;
    CHeatmapEngine         m_heatmap;
    CSniperEngine          m_sniper;
+   CAdaptiveFlipEngine    m_adaptiveFlip;
    bool                   m_useHeatmap;
    double                 m_heatmapRangePoints;
    bool                   m_useSniper;
@@ -174,6 +176,7 @@ public:
       if(!m_market.OnTickUpdate()) return(false);
 
       m_hasValidTick=true;
+      m_adaptiveFlip.OnTickHousekeeping();
       m_momentum.Update(m_market);
       m_microstructure.Update(m_market,m_momentum);
       m_orderFlow.Update(m_market);
@@ -213,6 +216,61 @@ public:
       m_heatmap.Update(m_market.CurrentBid(),m_market.CurrentAsk(),
                        m_heatmapRangePoints,m_market.Point());
      }
+
+   // Adaptive Flip configuration is supplied by the EA's existing input contract.
+   // InitAdaptiveFlip uses one account+magic peak-equity key shared across contexts;
+   // EvaluateAdaptiveFlip receives this symbol's own closed-trade statistics snapshot.
+   void ConfigureAdaptiveFlip(const bool enabled,
+                              const double cautionDdPct,const double defensiveDdPct,const double lockedDdPct,
+                              const double cautionMultiplier,const double defensiveMultiplier,
+                              const double maxRiskOfRuinPct,const double ruinThresholdPct,
+                              const double minExpectedValueR,const double minAccountHealth,
+                              const int minTradesForStats,const double assumedRewardRiskRatio,
+                              const double configuredRiskPercent,
+                              const double commissionPerLot=0.0,const double slippageToleranceBufferPts=0.0,
+                              const double impactCoefficientK=1.0,const double impactRelevanceThresholdLots=50.0,
+                              const double vwapAlignmentBonus=1.0)
+     {
+      m_adaptiveFlip.Configure(enabled,cautionDdPct,defensiveDdPct,lockedDdPct,
+                               cautionMultiplier,defensiveMultiplier,maxRiskOfRuinPct,ruinThresholdPct,
+                               minExpectedValueR,minAccountHealth,minTradesForStats,assumedRewardRiskRatio,
+                               configuredRiskPercent,commissionPerLot,slippageToleranceBufferPts,
+                               impactCoefficientK,impactRelevanceThresholdLots,vwapAlignmentBonus);
+     }
+
+   void InitAdaptiveFlip(const ulong magic)
+     {
+      if(!m_initialized) return;
+      m_adaptiveFlip.InitAccountScoped(magic);
+      m_adaptiveFlip.OnTickHousekeeping();
+     }
+
+   bool EvaluateAdaptiveFlip(const SAxScore &score,const SAxStatsSnapshot &symbolStats,
+                             const int consecutivePoorFills,const ENUM_AX_DIR direction,
+                             const double lots,const int projectedHoldSeconds,
+                             const double sessionVolumeLots,const bool vwapExitActive,
+                             double &riskMultiplierOut,string &reasonOut)
+     {
+      if(!m_initialized || !m_hasValidTick)
+        {
+         riskMultiplierOut=0.0;
+         reasonOut="Per-symbol Adaptive Flip context is not ready";
+         return(false);
+        }
+      double point=m_market.Point();
+      double volatilityPts=(point>0.0) ? m_regime.CurrentAtr()/point : 0.0;
+      return(m_adaptiveFlip.Evaluate(score,symbolStats,consecutivePoorFills,
+                                     m_symbol,direction,lots,point,m_market.TickSize(),m_market.TickValue(),
+                                     volatilityPts,projectedHoldSeconds,sessionVolumeLots,
+                                     vwapExitActive,VWAPAligned(direction),
+                                     riskMultiplierOut,reasonOut));
+     }
+
+   ENUM_AX_CAPITAL_STATE AdaptiveFlipState(void) const { return(m_adaptiveFlip.State()); }
+   double AdaptiveFlipDrawdownPct(void) const { return(m_adaptiveFlip.DrawdownFromPeakPct()); }
+   double AdaptiveFlipRiskOfRuinPct(void) const { return(m_adaptiveFlip.RiskOfRuinPct()); }
+   double AdaptiveFlipExpectedValueR(void) const { return(m_adaptiveFlip.ExpectedValueR()); }
+   double AdaptiveFlipRiskMultiplier(void) const { return(m_adaptiveFlip.LastRiskMultiplier()); }
 
    bool ArmSniper(const ENUM_AX_DIR direction,const double referencePrice)
      {
