@@ -52,6 +52,7 @@ private:
    datetime               m_lastHigherBar;
    bool                   m_initialized;
    bool                   m_hasValidTick;
+   bool                   m_adaptiveFlipReady;
 
 public:
                            CPerSymbolAnalysisContext(void)
@@ -69,6 +70,7 @@ public:
       m_lastHigherBar=0;
       m_initialized=false;
       m_hasValidTick=false;
+      m_adaptiveFlipReady=false;
      }
 
    bool Init(const string symbol,const ENUM_TIMEFRAMES signalTimeframe,
@@ -163,6 +165,7 @@ public:
       m_lastHigherBar=0;
       m_initialized=false;
       m_hasValidTick=false;
+      m_adaptiveFlipReady=false;
       m_useHeatmap=false;
       m_heatmapRangePoints=0.0;
       m_useSniper=false;
@@ -176,7 +179,7 @@ public:
       if(!m_market.OnTickUpdate()) return(false);
 
       m_hasValidTick=true;
-      m_adaptiveFlip.OnTickHousekeeping();
+      if(m_adaptiveFlipReady) m_adaptiveFlip.OnTickHousekeeping();
       m_momentum.Update(m_market);
       m_microstructure.Update(m_market,m_momentum);
       m_orderFlow.Update(m_market);
@@ -243,6 +246,7 @@ public:
       if(!m_initialized) return;
       m_adaptiveFlip.InitAccountScoped(magic);
       m_adaptiveFlip.OnTickHousekeeping();
+      m_adaptiveFlipReady=true;
      }
 
    bool EvaluateAdaptiveFlip(const SAxScore &score,const SAxStatsSnapshot &symbolStats,
@@ -251,10 +255,10 @@ public:
                              const double sessionVolumeLots,const bool vwapExitActive,
                              double &riskMultiplierOut,string &reasonOut)
      {
-      if(!m_initialized || !m_hasValidTick)
+      if(!m_initialized || !m_hasValidTick || !m_adaptiveFlipReady)
         {
          riskMultiplierOut=0.0;
-         reasonOut="Per-symbol Adaptive Flip context is not ready";
+         reasonOut="Per-symbol Adaptive Flip context is not initialized";
          return(false);
         }
       double point=m_market.Point();
