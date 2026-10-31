@@ -154,6 +154,20 @@ public:
       m_peakEquity = MathMax(currentEquity,storedPeak);
      }
 
+   // Account peak equity is shared by every symbol context for this EA magic.
+   // Include the account login so switching accounts in one terminal cannot reuse
+   // another account's persisted peak. Per-symbol performance inputs remain local.
+   void              InitAccountScoped(const ulong magic)
+     {
+      long login = AccountInfoInteger(ACCOUNT_LOGIN);
+      m_persistKey = StringFormat("AXFDX_AFE_PeakEquity_ACCOUNT_%I64d_%I64u",login,magic);
+      double currentEquity = AccountInfoDouble(ACCOUNT_EQUITY);
+      double storedPeak = GlobalVariableCheck(m_persistKey) ? GlobalVariableGet(m_persistKey) : 0.0;
+      m_peakEquity = MathMax(currentEquity,storedPeak);
+      m_state=AX_CAPITAL_NORMAL;
+      m_ddFromPeakPct=0.0;
+     }
+
    //--- call every tick (cheap: one AccountInfoDouble read + comparisons) - tracks the running  ---
    //--- peak equity and derives the capital state ladder from drawdown off that peak, exactly   ---
    //--- the same "continuous, never resets mid-session" cadence CRiskEngine uses for kill-switch ---
