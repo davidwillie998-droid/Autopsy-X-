@@ -91,6 +91,22 @@ class PerSymbolContextReferenceTests(unittest.TestCase):
         self.assertIn("bool UpdateSniper(bool &expiredOut)", source)
         self.assertNotIn("_Symbol", source)
 
+    def test_adaptive_flip_is_context_owned_and_account_peak_is_shared(self):
+        source = CONTEXT.read_text(encoding="utf-8")
+        engine = (ROOT / "MQL5/Include/AutopsyX/AdaptiveFlipEngine.mqh").read_text(encoding="utf-8")
+        self.assertIn('#include "AdaptiveFlipEngine.mqh"', source)
+        self.assertIn("CAdaptiveFlipEngine    m_adaptiveFlip;", source)
+        self.assertIn("void ConfigureAdaptiveFlip(", source)
+        self.assertIn("void InitAdaptiveFlip(const ulong magic)", source)
+        self.assertIn("bool EvaluateAdaptiveFlip(", source)
+        self.assertIn("m_adaptiveFlip.OnTickHousekeeping()", source)
+        self.assertIn("symbolStats", source)
+        self.assertIn("m_symbol,direction,lots,point,m_market.TickSize(),m_market.TickValue()", source)
+        self.assertIn("InitAccountScoped(const ulong magic)", engine)
+        self.assertIn("AXFDX_AFE_PeakEquity_ACCOUNT_%I64d_%I64u", engine)
+        self.assertIn("AccountInfoInteger(ACCOUNT_LOGIN)", engine)
+        self.assertNotIn("m_adaptiveFlip.Init(m_symbol", source)
+
     def test_optional_heatmap_and_context_reset_are_safe(self):
         source = CONTEXT.read_text(encoding="utf-8")
         heatmap = (ROOT / "MQL5/Include/AutopsyX/Heatmap.mqh").read_text(encoding="utf-8")
