@@ -16,6 +16,8 @@
 #include "SignalScore.mqh"
 #include "OrderFlow.mqh"
 #include "Footprint.mqh"
+#include "VolumeProfile.mqh"
+#include "VWAPEngine.mqh"
 
 class CPerSymbolAnalysisContext
   {
@@ -33,6 +35,10 @@ private:
    COrderFlowEngine       m_orderFlow;
    CFootprintEngine       m_footprint;
    ENUM_TIMEFRAMES        m_footprintTimeframe;
+   CVolumeProfileEngine   m_volumeProfile;
+   CVWAPEngine            m_vwap;
+   double                 m_vwapValue;
+   string                 m_vwapTrend;
    datetime               m_lastSignalBar;
    datetime               m_lastHigherBar;
    bool                   m_initialized;
@@ -45,6 +51,8 @@ public:
       m_signalTimeframe=PERIOD_M1;
       m_higherTimeframe=PERIOD_H4;
       m_footprintTimeframe=PERIOD_M1;
+      m_vwapValue=-1.0;
+      m_vwapTrend="NEUTRAL";
       m_lastSignalBar=0;
       m_lastHigherBar=0;
       m_initialized=false;
@@ -93,6 +101,20 @@ public:
       m_footprint.Clear();
       m_footprint.Configure(footprintBinPoints,footprintImbalanceRatio,
                             footprintStackedLevels,m_market.Point());
+      if(!m_volumeProfile.Init(m_symbol,120,10.0,m_market.Point(),m_signalTimeframe))
+        {
+         m_footprint.Clear();
+         m_liquidity.Deinit();
+         m_higherRegime.Deinit();
+         m_regime.Deinit();
+         m_market.Reset();
+         return(false);
+        }
+      m_vwap.Configure(AX_VWAP_ROLLING,240,22,0,8,13,0.1);
+      m_volumeProfile.Refresh();
+      m_vwapValue=m_vwap.GetVWAP(m_symbol,m_signalTimeframe);
+      double initialClose=iClose(m_symbol,m_signalTimeframe,1);
+      m_vwapTrend=m_vwap.ClassifyVWAPTrend(initialClose,m_vwapValue,m_regime.CurrentAtr());
       m_lastSignalBar=iTime(m_symbol,m_signalTimeframe,0);
       m_lastHigherBar=iTime(m_symbol,m_higherTimeframe,0);
       m_initialized=true;
@@ -109,6 +131,8 @@ public:
       m_microstructure.Clear();
       m_orderFlow.Clear();
       m_footprint.Clear();
+      m_vwapValue=-1.0;
+      m_vwapTrend="NEUTRAL";
       m_symbol="";
       m_lastSignalBar=0;
       m_lastHigherBar=0;
@@ -140,6 +164,10 @@ public:
          m_lastSignalBar=signalBar;
          m_regime.Update();
          m_liquidity.RefreshLevels();
+         m_volumeProfile.Refresh();
+         m_vwapValue=m_vwap.GetVWAP(m_symbol,m_signalTimeframe);
+         double closedSignalPrice=iClose(m_symbol,m_signalTimeframe,1);
+         m_vwapTrend=m_vwap.ClassifyVWAPTrend(closedSignalPrice,m_vwapValue,m_regime.CurrentAtr());
         }
 
       datetime higherBar=iTime(m_symbol,m_higherTimeframe,0);
@@ -193,6 +221,22 @@ public:
    int FootprintStackedDirection(void) const { return(m_footprint.LastBarStackedDir()); }
    double FootprintDeltaRatio(void) const { return(m_footprint.LastBarDeltaRatio()); }
    bool FootprintHasHistory(void) const { return(m_footprint.HaveHistory()); }
+   bool VolumeProfileValid(void) const { return(m_volumeProfile.IsValid()); }
+   double VolumeProfilePOC(void) const { return(m_volumeProfile.Poc()); }
+   double VolumeProfileVAH(void) const { return(m_volumeProfile.Vah()); }
+   double VolumeProfileVAL(void) const { return(m_volumeProfile.Val()); }
+   int VolumeProfilePosition(const double price) const { return(m_volumeProfile.Position(price)); }
+   double VolumeProfileBullishScore(const double price) const { return(m_volumeProfile.BullishScoreComponent(price)); }
+   double VolumeProfileBearishScore(const double price) const { return(m_volumeProfile.BearishScoreComponent(price)); }
+   double VWAPValue(void) const { return(m_vwapValue); }
+   string VWAPTrend(void) const { return(m_vwapTrend); }
+   bool VWAPAligned(const ENUM_AX_DIR direction) const
+     {
+      if(m_vwapValue<=0.0) return(false);
+      if(direction==AX_DIR_BUY) return(m_vwapTrend=="BULLISH");
+      if(direction==AX_DIR_SELL) return(m_vwapTrend=="BEARISH");
+      return(false);
+     }
    double OrderFlowBullishScore(void) const { return(m_orderFlow.BullishScoreComponent()); }
    double OrderFlowBearishScore(void) const { return(m_orderFlow.BearishScoreComponent()); }
    double FootprintBullishScore(void) const { return(m_footprint.BullishScoreComponent()); }
