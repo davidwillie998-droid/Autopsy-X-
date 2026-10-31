@@ -63,17 +63,18 @@ runs is dormant for that reason specifically, not merely unreferenced.
 | VWAPEngine.mqh | CVWAPEngine | g_vwap |
 | TradeAutopsy.mqh | CTradeAutopsy | g_autopsy |
 | Statistics.mqh | CStatistics, CAccuracyEngine | g_stats, g_accuracy |
+| KellyRuin.mqh | CKellyRuinEngine | g_kelly (entry risk cap only) |
 | Dashboard.mqh | CDashboard | g_dash |
 
 `Defs.mqh` is a shared type/enum header with no class of its own —
 included everywhere, correctly not an "engine."
 
-This set is fully closed: none of these 24 files' own internal
+This set is fully closed: none of these 25 files' own internal
 `#include`s reach outside this set (verified per-file, not assumed).
 
 ---
 
-## Dormant — 28 files, zero reachability from the live EA
+## Dormant — 27 files, zero reachability from the live EA
 
 Grouped by which phase of this build produced them. "Dormant" here means
 precisely: not `#include`d by `AutopsyX_FlipDemon_Extreme.mq5`, and not
@@ -94,7 +95,6 @@ into the EA that would actually run.
 | RestartRecovery.mqh | (restart recovery) | Re-hydrating position state after an EA/terminal restart |
 | TradeReconciliation.mqh | CTradeReconciler | `OnTradeTransaction`-driven reconciliation — **moot regardless of wiring, since no `OnTradeTransaction` handler exists in this file at all** |
 | MonteCarlo.mqh | (Monte Carlo simulator) | Report-only Monte Carlo projection over closed-trade history |
-| KellyRuin.mqh | CKellyRuinEngine | Report-only Kelly-fraction diagnostic — explicitly documented in its own file header as "NEVER let this class's output authorize or size a live trade," so its dormancy is by design, not an oversight |
 
 ### Institutional engine build, Phases 2-10 (this session's later, larger build)
 
@@ -132,7 +132,7 @@ into the EA that would actually run.
 **Correction against an earlier draft of this document:** an earlier version of this
 paragraph claimed "every dormant file's own header already says so" (i.e. explicitly
 flags its own not-wired status in a code comment). That was checked and found false -
-only 5 of the 28 (`KellyRuin.mqh`, `CrisisEngine.mqh`, `TradePermissionMatrix.mqh`,
+only 4 of the 27 (`CrisisEngine.mqh`, `TradePermissionMatrix.mqh`,
 `DynamicPositionSizing.mqh`, `InstitutionalDashboard.mqh`) carry that specific
 self-disclaimer in their own header text. The other 23 are dormant for the structural
 reason established above (absent from the `#include` graph, confirmed by grep), not

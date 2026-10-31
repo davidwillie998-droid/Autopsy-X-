@@ -35,7 +35,7 @@ EXPECTED_LIVE_INCLUDES = {
     "SignalScore", "FlipEngine", "AntiChop", "RiskEngine", "EntryEngine",
     "ExecutionEngine", "ExitEngine", "SniperEngine", "OrderFlow", "VolumeProfile",
     "Footprint", "Pulse", "Heatmap", "TradeAutopsy", "Statistics",
-    "AdaptiveFlipEngine", "VWAPEngine", "EmergencyControls", "Dashboard",
+    "AdaptiveFlipEngine", "VWAPEngine", "KellyRuin", "EmergencyControls", "Dashboard",
 }
 
 EXECUTION_AUTHORITY_PATTERN = re.compile(
@@ -80,6 +80,31 @@ def test_live_ea_include_set_is_exactly_the_documented_layer_1():
         f"removed: {EXPECTED_LIVE_INCLUDES - included}. If this is a deliberate wiring "
         f"change, update EXPECTED_LIVE_INCLUDES here AND docs/EA_DESCRIPTION.md together."
     )
+
+
+@pytest.mark.skipif(not EA_FILE.exists(), reason="live EA file not found")
+def test_vwap_exit_is_armed_by_default_and_unsupported_structure_mode_fails_closed():
+    text = EA_FILE.read_text(errors="replace")
+    assert re.search(r"InpUseVWAPExit\s*=\s*true", text)
+    assert "InpVWAPExitMode==AX_VWAP_EXIT_CONFIRMED_CROSS_PLUS_STRUCTURE" in text
+    assert "return(INIT_PARAMETERS_INCORRECT)" in text
+    assert "g_effectiveVwapExitMode = InpVWAPExitMode;" in text
+
+
+@pytest.mark.skipif(not EA_FILE.exists(), reason="live EA file not found")
+def test_kelly_gate_uses_conservative_estimate_and_only_scales_down():
+    text = EA_FILE.read_text(errors="replace")
+    kelly = (INCLUDE_DIR / "KellyRuin.mqh").read_text(errors="replace")
+    assert '#include <AutopsyX/KellyRuin.mqh>' in text
+    assert re.search(r"InpUseKellyGate\s*=\s*true", text)
+    assert "EvaluateConservative" in text
+    assert "allowedRiskPct=MathMin(configuredRiskPct,kellyReport.halfKellyFraction*100.0)" in text
+    assert "double effectiveRiskCapPct=g_risk.RiskPercent();" in text
+    assert "effectiveRiskCapPct=MathMin(configuredRiskPct,allowedRiskPct);" in text
+    assert "double riskBudget=equity*effectiveRiskCapPct/100.0;" in text
+    assert "double finalRiskBudget=equity*effectiveRiskCapPct/100.0;" in text
+    assert "95% Wilson lower bound" in kelly
+    assert "if(allowedRiskPct<configuredRiskPct)" in text
 
 
 @pytest.mark.skipif(not EA_FILE.exists(), reason="live EA file not found")
