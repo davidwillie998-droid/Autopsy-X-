@@ -18,6 +18,8 @@
 #include "Footprint.mqh"
 #include "VolumeProfile.mqh"
 #include "VWAPEngine.mqh"
+#include "Heatmap.mqh"
+#include "SniperEngine.mqh"
 
 class CPerSymbolAnalysisContext
   {
@@ -37,6 +39,11 @@ private:
    ENUM_TIMEFRAMES        m_footprintTimeframe;
    CVolumeProfileEngine   m_volumeProfile;
    CVWAPEngine            m_vwap;
+   CHeatmapEngine         m_heatmap;
+   CSniperEngine          m_sniper;
+   bool                   m_useHeatmap;
+   double                 m_heatmapRangePoints;
+   bool                   m_useSniper;
    double                 m_vwapValue;
    string                 m_vwapTrend;
    datetime               m_lastSignalBar;
@@ -52,6 +59,9 @@ public:
       m_higherTimeframe=PERIOD_H4;
       m_footprintTimeframe=PERIOD_M1;
       m_vwapValue=-1.0;
+      m_useHeatmap=false;
+      m_heatmapRangePoints=0.0;
+      m_useSniper=false;
       m_vwapTrend="NEUTRAL";
       m_lastSignalBar=0;
       m_lastHigherBar=0;
@@ -64,7 +74,11 @@ public:
              const double minScore,const double minGap,
              const ENUM_TIMEFRAMES footprintTimeframe,
              const double footprintBinPoints,const double footprintImbalanceRatio,
-             const int footprintStackedLevels)
+             const int footprintStackedLevels,
+             const bool useHeatmap,const double heatmapRangePoints,
+             const bool useSniper,const double sniperPullbackPoints,
+             const double sniperResumePoints,const int sniperMaxWaitSeconds,
+             const double sniperMaxChasePoints)
      {
       Deinit();
       if(symbol=="") return(false);
@@ -72,12 +86,22 @@ public:
       m_signalTimeframe=signalTimeframe;
       m_higherTimeframe=higherTimeframe;
       m_footprintTimeframe=footprintTimeframe;
+      m_useHeatmap=useHeatmap;
+      m_heatmapRangePoints=MathMax(0.0,heatmapRangePoints);
+      m_useSniper=useSniper;
 
       if(!m_market.Init(m_symbol))
         {
          PrintFormat("AX CONTEXT INIT FAILED: market data unavailable for %s",m_symbol);
          return(false);
         }
+      // DOM is optional. Missing broker depth must never block analysis.
+      if(m_useHeatmap && !m_heatmap.Init(m_symbol))
+         PrintFormat("AX CONTEXT: heatmap unavailable for %s; continuing without DOM",m_symbol);
+      m_sniper.Configure(sniperPullbackPoints*m_market.Point(),
+                         sniperResumePoints*m_market.Point(),sniperMaxWaitSeconds,
+                         sniperMaxChasePoints*m_market.Point());
+
       if(!m_regime.Init(m_symbol,m_signalTimeframe))
         {
          PrintFormat("AX CONTEXT INIT FAILED: signal regime handle unavailable for %s",m_symbol);
@@ -124,6 +148,8 @@ public:
 
    void Deinit(void)
      {
+      m_heatmap.Deinit();
+      m_sniper.Reset();
       m_regime.Deinit();
       m_higherRegime.Deinit();
       m_market.Reset();
@@ -138,6 +164,9 @@ public:
       m_lastHigherBar=0;
       m_initialized=false;
       m_hasValidTick=false;
+      m_useHeatmap=false;
+      m_heatmapRangePoints=0.0;
+      m_useSniper=false;
      }
 
    // Call from the EA's central timer/tick scheduler. Every read is explicitly
@@ -180,6 +209,39 @@ public:
       return(true);
      }
 
+   // Refresh from the central timer, independently of dashboard visibility.
+   void RefreshHeatmap(void)
+     {
+      if(!m_initialized || !m_useHeatmap || !m_hasValidTick) return;
+      m_heatmap.Update(m_market.CurrentBid(),m_market.CurrentAsk(),
+                       m_heatmapRangePoints,m_market.Point());
+     }
+
+   bool ArmSniper(const ENUM_AX_DIR direction,const double referencePrice)
+     {
+      if(!m_initialized || !m_useSniper ||
+         (direction!=AX_DIR_BUY && direction!=AX_DIR_SELL) || referencePrice<=0.0)
+         return(false);
+      m_sniper.Arm(direction,referencePrice);
+      return(true);
+     }
+
+   bool UpdateSniper(bool &expiredOut)
+     {
+      expiredOut=false;
+      if(!m_initialized || !m_useSniper || !m_hasValidTick || !m_sniper.IsArmed())
+         return(false);
+      return(m_sniper.OnTick(m_market.CurrentMid(),expiredOut));
+     }
+
+   bool SniperArmed(void) const { return(m_useSniper && m_sniper.IsArmed()); }
+   bool SniperPullbackSeen(void) const { return(m_sniper.PullbackSeen()); }
+   int SniperSecondsWaiting(void) const { return(m_sniper.SecondsWaiting()); }
+   bool HeatmapAvailable(void) const { return(m_useHeatmap && m_heatmap.IsAvailable()); }
+   double HeatmapBuyPressure(void) const { return(m_heatmap.BuyWallPressure()); }
+   double HeatmapSellPressure(void) const { return(m_heatmap.SellWallPressure()); }
+   double HeatmapBullishScore(void) const { return(m_heatmap.BullishScoreComponent()); }
+   double HeatmapBearishScore(void) const { return(m_heatmap.BearishScoreComponent()); }
    // This is the independent base score only. Order-flow, footprint, VWAP,
    // volume-profile, sniper, spread/session and final entry qualification
    // must be applied by the owning per-symbol pipeline before a candidate
