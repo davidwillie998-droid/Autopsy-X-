@@ -93,6 +93,7 @@ public:
       if(!m_market.Init(m_symbol))
         {
          PrintFormat("AX CONTEXT INIT FAILED: market data unavailable for %s",m_symbol);
+         Deinit();
          return(false);
         }
       // DOM is optional. Missing broker depth must never block analysis.
