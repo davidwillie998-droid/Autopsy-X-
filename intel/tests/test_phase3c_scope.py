@@ -51,7 +51,7 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
     # The standalone SSRN literature map is a documentation-only research artifact, not a Phase 3C implementation change.
     # index.html is inherited from the reviewed PR base; a separate test below
     # pins it byte-for-byte to that baseline rather than permitting UI changes.
-    infra_allowed = {".gitignore", "intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml", ".github/workflows/flipdemon-static-safety.yml", ".github/workflows/rsi-research-tests.yml", "docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md", "docs/research/15-ssrn-memecoin-momentum-evidence.md", "docs/research/16-point-in-time-memecoin-evaluation.md", "index.html"}
+    infra_allowed = {".gitignore", "intel/datasets/phase3c/REQUEST.json", ".github/workflows/phase3c-acquire.yml", ".github/workflows/intel-tests.yml", ".github/workflows/flipdemon-ui.yml", ".github/workflows/flipdemon-static-safety.yml", ".github/workflows/rsi-research-tests.yml", "docs/FLIPDEMON_INTELLIGENCE_DASHBOARD.md", "docs/research/15-ssrn-memecoin-momentum-evidence.md", "docs/research/16-point-in-time-memecoin-evaluation.md", "index.html", "MQL5/Include/AutopsyX/Heatmap.mqh", "MQL5/Include/AutopsyX/PerSymbolAnalysisContext.mqh", "docs/FLIPDEMON_PER_SYMBOL_CONTEXTS.md", "tests/test_flipdemon_per_symbol_context.py"}
     for f in changed:
         allowed = (f.startswith("docs/PHASE3C_") or f.startswith("intel/autopsyx/research/phase3c_")
                   or f.startswith("intel/tests/test_phase3c_") or f.startswith("research/phase3c/")
