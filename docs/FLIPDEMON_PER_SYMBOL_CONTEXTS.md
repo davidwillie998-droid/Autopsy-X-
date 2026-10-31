@@ -18,6 +18,8 @@ Each context owns its own:
 - `COrderFlowEngine` and `CFootprintEngine`, including independent CVD, rolling delta, absorption, per-bar price bins and stacked-imbalance history.
 - `CVolumeProfileEngine`, with context-local POC, VAH, VAL, value-area position and advisory bullish/bearish components.
 - `CVWAPEngine`, with a rolling 240-bar VWAP read, closed-bar classification, 0.1 ATR deadband and explicit neutral/unavailable handling.
+- `CHeatmapEngine`, with an independent Market Depth subscription, prior-book snapshot and wall-pressure state. Missing broker DOM is non-fatal and remains unavailable rather than fabricating a reading.
+- `CSniperEngine`, with independent arm, pullback, resumption, timeout and anti-chase state. Its price thresholds are converted from points using this context's own `CMarketData.Point()`.
 - Signal and higher-timeframe bar clocks.
 
 The context initializes market data and indicator handles against its explicit symbol. Tick, bar, price, point, spread, ATR, regime and liquidity reads are symbol-keyed. It exposes a base score and symbol-specific context readings.
@@ -32,13 +34,12 @@ The base context therefore does **not** submit candidates to `COpportunityScanne
 
 ## Remaining work before routing a winning symbol
 
-1. Move the remaining symbol-sensitive engines into this context: heatmap, sniper and adaptive signal state.
-2. Move per-symbol entry qualification and stop construction into a symbol-aware pipeline.
-3. Refactor the position manager, exit logic, trade journal, restart recovery and deal reconciliation to key state by symbol and broker position identifier/ticket.
-4. Build a bounded Market Watch context registry. Initialize, refresh, invalidate and release contexts safely as symbols are added or removed.
-5. Feed only fully qualified and fresh candidates into the strongest-opportunity scanner.
-6. Pass the selected symbol through every downstream sizing, broker preflight, execution and management call. Re-run account-wide and campaign-risk admission immediately before each order.
-7. Add MT5 Strategy Tester cases for multiple simultaneous symbols, stale quotes, history gaps, symbol removal, restart recovery and cross-symbol open-risk changes.
+1. Migrate adaptive-flip state and complete per-symbol entry qualification and stop construction.
+2. Build a bounded Market Watch context registry. Initialize, refresh, invalidate and release contexts safely as symbols are added or removed.
+3. Feed only fully qualified and fresh candidates into the strongest-opportunity scanner.
+4. Refactor the position manager, exit logic, trade journal, restart recovery and deal reconciliation to key state by symbol and broker position identifier/ticket.
+5. Pass the selected symbol through every downstream sizing, broker preflight, execution and management call. Re-run account-wide and campaign-risk admission immediately before each order.
+6. Add MT5 Strategy Tester cases for multiple simultaneous symbols, stale quotes, history gaps, symbol removal, restart recovery and cross-symbol open-risk changes.
 
 ## Safety boundary
 
