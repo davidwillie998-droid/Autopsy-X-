@@ -55,6 +55,11 @@ public:
      {
       if(m_subscribed) MarketBookRelease(m_symbol);
       m_subscribed=false;
+      m_available=false;
+      m_prevCount=0;
+      m_buyWallPressure=50.0;
+      m_sellWallPressure=50.0;
+      m_symbol="";
      }
 
    bool              IsAvailable(void) const { return(m_available); }
