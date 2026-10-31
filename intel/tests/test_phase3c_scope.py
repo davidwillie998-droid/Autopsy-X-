@@ -61,7 +61,7 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
 
 def test_root_gitignore_is_limited_to_python_test_artifacts():
     """The root ignore file is shared test infrastructure, not Phase 3C implementation."""
-    expected = "\\n".join(["__pycache__/", "*.pyc", "*.pyo", ".pytest_cache/"]) + "\\n"
+    expected = "\n".join(["__pycache__/", "*.pyc", "*.pyo", ".pytest_cache/"]) + "\n"
     assert (ROOT / ".gitignore").read_bytes() == expected.encode()
 
 def test_dashboard_index_is_unchanged_from_reviewed_pr_base():
