@@ -105,18 +105,18 @@ public:
       if(!m_regime.Init(m_symbol,m_signalTimeframe))
         {
          PrintFormat("AX CONTEXT INIT FAILED: signal regime handle unavailable for %s",m_symbol);
+         Deinit();
          return(false);
         }
       if(!m_higherRegime.Init(m_symbol,m_higherTimeframe))
         {
-         m_regime.Deinit();
          PrintFormat("AX CONTEXT INIT FAILED: higher-timeframe regime handle unavailable for %s",m_symbol);
+         Deinit();
          return(false);
         }
       if(!m_liquidity.Init(m_symbol,m_signalTimeframe))
         {
-         m_higherRegime.Deinit();
-         m_regime.Deinit();
+         Deinit();
          return(false);
         }
 
@@ -127,11 +127,7 @@ public:
                             footprintStackedLevels,m_market.Point());
       if(!m_volumeProfile.Init(m_symbol,120,10.0,m_market.Point(),m_signalTimeframe))
         {
-         m_footprint.Clear();
-         m_liquidity.Deinit();
-         m_higherRegime.Deinit();
-         m_regime.Deinit();
-         m_market.Reset();
+         Deinit();
          return(false);
         }
       m_vwap.Configure(AX_VWAP_ROLLING,240,22,0,8,13,0.1);
