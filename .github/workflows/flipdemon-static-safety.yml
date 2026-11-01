@@ -11,6 +11,7 @@ on:
       - 'MQL5/**'
       - 'scripts/verify_flipdemon_safety.py'
       - 'tests/test_flipdemon_adaptive_sizing_spec.py'
+      - 'tests/test_flipdemon_account_risk.py'
       - '.github/workflows/flipdemon-static-safety.yml'
   pull_request:
     paths:
@@ -34,6 +35,6 @@ jobs:
         with:
           python-version: '3.12'
       - name: Run adaptive sizing reference tests
-        run: python -m unittest discover -s tests -p 'test_flipdemon_adaptive_sizing_spec.py' -v
+        run: python -m unittest discover -s tests -p 'test_flipdemon_*.py' -v
       - name: Verify critical safety invariants
         run: python scripts/verify_flipdemon_safety.py
