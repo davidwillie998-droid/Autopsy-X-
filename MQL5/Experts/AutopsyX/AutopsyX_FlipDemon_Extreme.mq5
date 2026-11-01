@@ -24,6 +24,7 @@
 #include <AutopsyX/FlipEngine.mqh>
 #include <AutopsyX/AntiChop.mqh>
 #include <AutopsyX/RiskEngine.mqh>
+#include <AutopsyX/AccountRiskCalculator.mqh>
 #include <AutopsyX/EntryEngine.mqh>
 #include <AutopsyX/ExecutionEngine.mqh>
 #include <AutopsyX/ExitEngine.mqh>
@@ -211,6 +212,7 @@ CSignalScorer         g_scorer;
 CFlipEngine           g_flip;
 CAntiChopEngine       g_chop;
 CRiskEngine           g_risk;
+CAccountRiskCalculator g_accountRisk;
 CEmergencyControls    g_emergency;
 ENUM_AX_VWAP_EXIT_MODE g_effectiveVwapExitMode = AX_VWAP_EXIT_OFF; // set at OnInit, may be forced
                                                                      // down from InpVWAPExitMode - see
@@ -1030,6 +1032,19 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
 
    string entryReason = AxBuildEntryReason(score,dir)+" "+tag;
    ulong newTicket; double fillPrice; double actualLots; string execErr; int fillLatencyMs;
+   // Final account-wide monetary-risk scan immediately before order submission.
+   // This uses the broker's latest quote and all broker-confirmed positions plus
+   // the remaining unfilled volume of active pending orders. It fails closed when
+   // any existing stop/exposure cannot be valued or the audit row cannot persist.
+   SAxAccountRiskDecision accountRiskDecision;
+   string accountRiskReason;
+   if(!g_accountRisk.Evaluate(_Symbol,dir,lots,slPrice,g_risk.RiskPercent(),
+                              accountRiskDecision,accountRiskReason))
+     {
+      if(InpVerboseLogging) PrintFormat("FLIPDEMON: final account risk gate blocked entry (%s)",accountRiskReason);
+      return(false);
+     }
+
    if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr,fillLatencyMs,actualLots))
      {
       g_consecutiveExecFailures++;
