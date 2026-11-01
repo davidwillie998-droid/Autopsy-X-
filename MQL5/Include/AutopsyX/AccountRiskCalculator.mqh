@@ -363,8 +363,11 @@ public:
                double entry=(direction==AX_DIR_BUY)?tick.ask:tick.bid;
                ENUM_ORDER_TYPE orderType=(direction==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
                string calcError="";
-               if(!CalculateStopRisk(orderType,symbol,volume,entry,stopPrice,false,
-                                     decision.proposedRiskMoney,calcError))
+               bool stopOnLossSide=(direction==AX_DIR_BUY)?(stopPrice<entry):(stopPrice>entry);
+               if(!stopOnLossSide)
+                  reason="PROPOSED_STOP_NOT_ON_LOSS_SIDE";
+               else if(!CalculateStopRisk(orderType,symbol,volume,entry,stopPrice,false,
+                                          decision.proposedRiskMoney,calcError))
                  {
                   reason="PROPOSED_ORDER_RISK_UNKNOWN";
                   decision.calculationError=calcError;
