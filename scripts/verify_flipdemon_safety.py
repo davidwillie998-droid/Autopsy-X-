@@ -198,6 +198,39 @@ require("CalculateLotSize(g_md,intendedPrice,slPrice,dir,sizingDecision)" in ea
 require("m_riskPercent               = AxClampD(riskPercent,0.05,2.0)" in risk,
         "decision-record integration retains the absolute per-entry risk clamp")
 
+
+# Account-wide monetary risk calculator: this is a source guard, not an MQL5 compile.
+ACCOUNT_RISK = ROOT / "MQL5/Include/AutopsyX/AccountRiskCalculator.mqh"
+require(ACCOUNT_RISK.is_file(), "dedicated account-wide risk calculator exists")
+account_risk = ACCOUNT_RISK.read_text(encoding="utf-8")
+require("#define AX_ACCOUNT_RISK_HARD_CAP_PCT 2.0" in account_risk,
+        "account-wide monetary risk has an immutable 2 percent hard ceiling")
+require("PositionsTotal()" in account_risk and "PositionGetTicket(i)" in account_risk
+        and "POSITION_SL" in account_risk and "POSITION_PRICE_OPEN" in account_risk,
+        "all broker-confirmed open positions and protective stops are enumerated")
+require("OrderCalcProfit(orderType,symbol,volume,entryPrice,stopPrice,result)" in account_risk,
+        "existing exposure is valued with broker-aware OrderCalcProfit in account currency")
+require("OrdersTotal()" in account_risk and "ORDER_VOLUME_CURRENT" in account_risk
+        and "ORDER_SL" in account_risk,
+        "active pending orders use remaining unfilled volume and their broker stop")
+require("UNPROTECTED_POSITION" in account_risk and "UNPROTECTED_PENDING_ORDER" in account_risk
+        and "exposureKnown=false" in account_risk,
+        "missing protection is classified as unknown exposure and fails closed")
+require("AMBIGUOUS_NETTING_DUPLICATE_SYMBOL" in account_risk
+        and "ACCOUNT_MARGIN_MODE_RETAIL_HEDGING" in account_risk,
+        "netting and hedging exposure reconciliation paths are distinguished")
+require("PROPOSED_ORDER_EXCEEDS_ACCOUNT_WIDE_2_PERCENT_CAP" in account_risk
+        and "PROPOSED_ORDER_EXCEEDS_PER_ENTRY_RISK_LIMIT" in account_risk,
+        "proposed order must pass both aggregate and configured per-entry monetary limits")
+require("RISK_AUDIT_PERSISTENCE_FAILED" in account_risk
+        and "WriteAudit(decision)" in account_risk,
+        "new entries fail closed when the auditable decision row cannot be persisted")
+require("#include <AutopsyX/AccountRiskCalculator.mqh>" in ea
+        and "CAccountRiskCalculator g_accountRisk;" in ea,
+        "account risk calculator is included and instantiated by the EA")
+require("g_accountRisk.Evaluate(_Symbol,dir,lots,slPrice,g_risk.RiskPercent()" in ea,
+        "final broker exposure is re-scanned immediately before market order submission")
+
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
 
 
