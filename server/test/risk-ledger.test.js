@@ -92,14 +92,23 @@ test('separate ledger connections share reservations through the same persistent
   } finally { second.close(); f.close(); }
 });
 
-test('release frees the reservation without changing broker exposure', () => {
+test('release requires a newer broker snapshot and the originating instance', () => {
   const f = fixture();
   try {
     f.ledger.reconcile(f.base);
     const reservation = f.ledger.reserve({ ...f.base, instanceId: 'terminal-a',
       idempotencyKey: 'entry-00000001', riskMoney: 150 });
-    assert.equal(f.ledger.release({ ...f.base, reservationId: reservation.reservationId }).released, true);
-    const next = f.ledger.reserve({ ...f.base, instanceId: 'terminal-b',
+    expectCode(() => f.ledger.release({ ...f.base, reservationId: reservation.reservationId,
+      instanceId: 'terminal-a' }), 'OUT_OF_ORDER_SNAPSHOT');
+    f.setNow(f.base.snapshotAtMs + 100);
+    expectCode(() => f.ledger.release({ ...f.base, snapshotAtMs: f.base.snapshotAtMs + 100,
+      snapshotId: 'snapshot-0002', reservationId: reservation.reservationId,
+      instanceId: 'terminal-b' }), 'RESERVATION_OWNER_MISMATCH');
+    assert.equal(f.ledger.release({ ...f.base, snapshotAtMs: f.base.snapshotAtMs + 100,
+      snapshotId: 'snapshot-0002', reservationId: reservation.reservationId,
+      instanceId: 'terminal-a' }).released, true);
+    const next = f.ledger.reserve({ ...f.base, snapshotAtMs: f.base.snapshotAtMs + 100,
+      snapshotId: 'snapshot-0002', instanceId: 'terminal-b',
       idempotencyKey: 'entry-00000002', riskMoney: 190 });
     assert.equal(next.ok, true);
   } finally { f.close(); }
@@ -113,7 +122,7 @@ test('settlement updates broker exposure and consumes its reservation in one tra
       idempotencyKey: 'entry-00000001', riskMoney: 100 });
     f.setNow(f.base.snapshotAtMs + 100);
     const settled = f.ledger.settle({ ...f.base, snapshotAtMs: f.base.snapshotAtMs + 100,
-      snapshotId: 'snapshot-0002', existingRiskMoney: 100, reservationId: reservation.reservationId });
+      snapshotId: 'snapshot-0002', existingRiskMoney: 100, reservationId: reservation.reservationId, instanceId: 'terminal-a' });
     assert.equal(settled.settled, true);
     assert.equal(settled.withinCap, true);
     expectCode(() => f.ledger.release({ ...f.base, reservationId: reservation.reservationId }),
@@ -127,7 +136,7 @@ test('settlement refuses to consume a reservation without a new post-fill broker
     f.ledger.reconcile(f.base);
     const reservation = f.ledger.reserve({ ...f.base, instanceId: 'terminal-a',
       idempotencyKey: 'entry-00000001', riskMoney: 100 });
-    expectCode(() => f.ledger.settle({ ...f.base, reservationId: reservation.reservationId }),
+    expectCode(() => f.ledger.settle({ ...f.base, reservationId: reservation.reservationId, instanceId: 'terminal-a' }),
       'POST_FILL_SNAPSHOT_NOT_NEW');
   } finally { f.close(); }
 });
@@ -140,7 +149,7 @@ test('settlement reports an actual broker overrun instead of hiding it', () => {
       idempotencyKey: 'entry-00000001', riskMoney: 100 });
     f.setNow(f.base.snapshotAtMs + 100);
     const result = f.ledger.settle({ ...f.base, snapshotAtMs: f.base.snapshotAtMs + 100,
-      snapshotId: 'snapshot-0002', existingRiskMoney: 205, reservationId: reservation.reservationId });
+      snapshotId: 'snapshot-0002', existingRiskMoney: 205, reservationId: reservation.reservationId, instanceId: 'terminal-a' });
     assert.equal(result.withinCap, false);
   } finally { f.close(); }
 });
@@ -156,6 +165,28 @@ test('expired reservations are not counted after a fresh broker snapshot', () =>
       snapshotId: 'snapshot-0002' });
     const next = f.ledger.reserve({ ...f.base, snapshotAtMs: f.base.snapshotAtMs + 6000,
       instanceId: 'terminal-b', idempotencyKey: 'entry-00000002', riskMoney: 190 });
+    assert.equal(next.ok, true);
+  } finally { f.close(); }
+});
+
+
+test('expired reservations block new risk until a newer broker reconciliation resolves them', () => {
+  const f = fixture({ reservationTtlMs: 5000 });
+  try {
+    f.ledger.reconcile(f.base);
+    f.ledger.reserve({ ...f.base, instanceId: 'terminal-a',
+      idempotencyKey: 'entry-00000001', riskMoney: 150 });
+    f.setNow(f.base.snapshotAtMs + 6000);
+    expectCode(() => f.ledger.reserve({ ...f.base, snapshotAtMs: f.base.snapshotAtMs + 6000,
+      snapshotId: 'snapshot-0002', instanceId: 'terminal-b',
+      idempotencyKey: 'entry-00000002', riskMoney: 190 }),
+      'EXPIRED_RESERVATION_REQUIRES_RECONCILIATION');
+    const reconciled = f.ledger.reconcile({ ...f.base, snapshotAtMs: f.base.snapshotAtMs + 6000,
+      snapshotId: 'snapshot-0002', existingRiskMoney: 0 });
+    assert.equal(reconciled.ok, true);
+    const next = f.ledger.reserve({ ...f.base, snapshotAtMs: f.base.snapshotAtMs + 6000,
+      snapshotId: 'snapshot-0002', instanceId: 'terminal-b',
+      idempotencyKey: 'entry-00000002', riskMoney: 190 });
     assert.equal(next.ok, true);
   } finally { f.close(); }
 });
