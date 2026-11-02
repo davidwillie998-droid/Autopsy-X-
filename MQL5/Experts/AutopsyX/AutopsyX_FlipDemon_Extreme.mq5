@@ -1081,8 +1081,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
      }
 
    string distributedReservationId="";
-   string distributedInstanceId=StringFormat("MT5-%I64d-%I64d",
-                                               AccountInfoInteger(ACCOUNT_LOGIN),ChartID());
+   string distributedInstanceId=g_distributedRiskCoordinator.InstanceId();
    bool distributedReservationActive=false;
    if(InpExecutionMode==AX_EXEC_LIVE)
      {
