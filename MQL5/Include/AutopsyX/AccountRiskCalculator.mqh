@@ -313,6 +313,7 @@ public:
    // atomic reservation; cross-terminal serialization is a separate coordinator task.
    bool              Evaluate(const string symbol,const ENUM_AX_DIR direction,
                               const double volume,const double stopPrice,
+                              const int maxAdverseSlippagePoints,
                               const double perEntryRiskPercent,
                               SAxAccountRiskDecision &decision,string &reason) const
      {
@@ -356,15 +357,26 @@ public:
          else
            {
             MqlTick tick;
+            double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
             if(!SymbolInfoTick(symbol,tick) || tick.bid<=0.0 || tick.ask<=0.0 || tick.ask<tick.bid)
                reason="PROPOSED_SYMBOL_QUOTE_UNAVAILABLE";
+            else if(maxAdverseSlippagePoints<0 || !ValidNumber(point) || point<=0.0)
+               reason="INVALID_ADVERSE_SLIPPAGE_ALLOWANCE";
             else
               {
-               double entry=(direction==AX_DIR_BUY)?tick.ask:tick.bid;
+               // Reserve the full configured CTrade deviation against adverse movement.
+               // BUY risk uses ask + allowance; SELL risk uses bid - allowance.
+               // Market-execution brokers may not enforce deviation as a hard bound.
+               double slippageBuffer=maxAdverseSlippagePoints*point;
+               double entry=(direction==AX_DIR_BUY)?tick.ask+slippageBuffer:tick.bid-slippageBuffer;
+               if(!ValidNumber(entry) || entry<=0.0)
+                  reason="INVALID_WORST_CASE_ENTRY_PRICE";
                ENUM_ORDER_TYPE orderType=(direction==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
                string calcError="";
                bool stopOnLossSide=(direction==AX_DIR_BUY)?(stopPrice<entry):(stopPrice>entry);
-               if(!stopOnLossSide)
+               if(reason!="")
+                  ;
+               else if(!stopOnLossSide)
                   reason="PROPOSED_STOP_NOT_ON_LOSS_SIDE";
                else if(!CalculateStopRisk(orderType,symbol,volume,entry,stopPrice,false,
                                           decision.proposedRiskMoney,calcError))
