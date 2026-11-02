@@ -9,6 +9,7 @@ on:
       - 'claude/autopsy-flipdemon-extreme-l4ei3d'
     paths:
       - 'MQL5/**'
+      - 'server/**'
       - 'scripts/verify_flipdemon_safety.py'
       - 'tests/test_flipdemon_adaptive_sizing_spec.py'
       - 'tests/test_flipdemon_account_risk.py'
@@ -31,6 +32,13 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13'
+      - name: Run distributed risk ledger tests
+        working-directory: server
+        run: npm test
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
