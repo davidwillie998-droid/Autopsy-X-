@@ -238,6 +238,15 @@ require("adverseSlippagePoints" in account_risk and "worstCaseEntryPrice" in acc
         and "adverse_slippage_points" in account_risk and "worst_case_entry_price" in account_risk,
         "risk audit persists the slippage allowance and worst-case entry used for approval")
 
+require("g_accountRisk.Scan(postFillRisk)" in ea
+        and "postFillRisk.existingRiskMoney>postFillRisk.hardRiskBudgetMoney+0.01" in ea,
+        "broker-confirmed post-fill exposure is rescanned and checked against the immutable account cap")
+require("g_accountRiskIntegrityLock=true" in ea
+        and "AxCloseAndRecord(AX_EXIT_EXECUTION_QUALITY)" in ea,
+        "unknown or over-cap post-fill exposure locks new entries and triggers a defensive close attempt")
+require("g_accountRiskIntegrityLock" in ea and "cleared after a clean broker exposure rescan" in ea,
+        "post-fill risk lock clears only after a clean broker-confirmed rescan")
+
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
 
 
