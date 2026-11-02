@@ -267,6 +267,21 @@ require("g_exec.ModifyStops(_Symbol,newSl,g_posState.initialTpPrice,modErr)" in 
         "stop modification requests trigger broker-state reconciliation rather than trusting requested stop values")
 require("double actualClosed=g_posState.lots-PositionGetDouble(POSITION_VOLUME)" in ea,
         "partial-close accounting reads broker-confirmed remaining position volume")
+
+require("class CAccountRiskCoordinator" in account_risk
+        and "GlobalVariableTemp(m_lockName)" in account_risk
+        and "GlobalVariableSetOnCondition(m_lockName,m_ownerToken,0.0)" in account_risk,
+        "account mutex uses an atomic terminal-global-variable compare-and-set")
+require("g_accountRiskCoordinator.TryAcquire()" in ea
+        and ea.index("g_accountRiskCoordinator.TryAcquire()") < ea.index("g_accountRisk.Evaluate")
+        and "g_accountRiskCoordinator.Release()" in ea,
+        "account mutex is acquired before final approval and released on entry outcomes")
+require("g_accountRisk.Scan(postFillRisk)" in ea
+        and ea.index("g_accountRisk.Scan(postFillRisk)") < ea.index("g_accountRiskCoordinator.Release()", ea.index("g_accountRisk.Scan(postFillRisk)")),
+        "account mutex remains held through broker-confirmed post-fill risk reconciliation")
+require("Separate terminals require an external coordinator" in ea
+        and "not shared across separate terminals/devices" in account_risk,
+        "coordination scope is explicitly limited to one MT5 terminal; cross-terminal claims are prohibited")
 require("g_accountRiskReconciliationPending=false" in ea
         and "exposure unknown; entries locked" in ea,
         "unknown transaction snapshots retain the retry flag and fail closed")
