@@ -17,6 +17,7 @@ on:
   pull_request:
     paths:
       - 'MQL5/**'
+      - 'server/**'
       - 'scripts/verify_flipdemon_safety.py'
       - 'tests/test_flipdemon_adaptive_sizing_spec.py'
       - 'tests/test_flipdemon_account_risk.py'
