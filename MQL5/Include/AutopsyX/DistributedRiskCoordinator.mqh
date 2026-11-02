@@ -161,8 +161,9 @@ public:
 
    bool IsReady(void) const { return(m_ready); }
 
-   bool Reconcile(const SAxAccountRiskSnapshot &snapshot,string &error)
+   bool Reconcile(const SAxAccountRiskSnapshot &snapshot,bool &withinCap,string &error)
      {
+      withinCap=false;
       string body,response;
       if(!SnapshotBody(snapshot,body,error)) return(false);
       if(!Post("/risk/reconcile",body,response,error)) return(false);
@@ -171,11 +172,7 @@ public:
          error="DISTRIBUTED_RISK_RECONCILE_REJECTED "+response;
          return(false);
         }
-      if(!JsonTrue(response,"withinCap"))
-        {
-         error="DISTRIBUTED_RISK_ACCOUNT_ALREADY_OVER_CAP "+response;
-         return(false);
-        }
+      withinCap=JsonTrue(response,"withinCap");
       return(true);
      }
 
