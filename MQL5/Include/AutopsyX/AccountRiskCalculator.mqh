@@ -440,4 +440,95 @@ public:
      }
   };
 //+------------------------------------------------------------------+
+
+// Terminal-local account mutex. It serializes risk scan -> order submission ->
+// broker-confirmed post-fill scan across EA instances in ONE MT5 terminal.
+// MT5 terminal global variables are not shared across separate terminals/devices.
+class CAccountRiskCoordinator
+  {
+private:
+   string m_lockName;
+   double m_ownerToken;
+   bool   m_initialized;
+   bool   m_owned;
+
+public:
+                     CAccountRiskCoordinator(void)
+     {
+      m_lockName="";
+      m_ownerToken=0.0;
+      m_initialized=false;
+      m_owned=false;
+     }
+
+   bool              Init(void)
+     {
+      long login=AccountInfoInteger(ACCOUNT_LOGIN);
+      string server=AccountInfoString(ACCOUNT_SERVER);
+      if(login<=0 || StringLen(server)==0)
+         return(false);
+
+      long serverHash=0;
+      for(int i=0;i<StringLen(server);i++)
+         serverHash=(serverHash*31+(long)StringGetCharacter(server,i))%1000000007;
+      m_lockName=StringFormat("AXFDX_RISK_LOCK_%I64d_%I64d",login,serverHash);
+
+      // GlobalVariableTemp creates the zero-valued mutex once. If it already
+      // exists, it leaves the active value untouched. Never reset a live lock.
+      ResetLastError();
+      if(!GlobalVariableTemp(m_lockName))
+        {
+         PrintFormat("FLIPDEMON COORDINATION ERROR: mutex initialization failed name=%s error=%d",
+                     m_lockName,GetLastError());
+         return(false);
+        }
+
+      long chart=ChartID();
+      m_ownerToken=MathAbs((double)chart)+1.0;
+      if(!MathIsValidNumber(m_ownerToken) || m_ownerToken<=0.0)
+         return(false);
+
+      m_initialized=true;
+      return(true);
+     }
+
+   bool              TryAcquire(void)
+     {
+      if(!m_initialized || m_owned)
+         return(false);
+
+      // Atomic compare-and-set: only one EA instance in this terminal can
+      // transition the shared account mutex from 0 (free) to its chart token.
+      ResetLastError();
+      if(!GlobalVariableSetOnCondition(m_lockName,m_ownerToken,0.0))
+        {
+         if(GetLastError()!=0)
+            PrintFormat("FLIPDEMON COORDINATION: account mutex unavailable or busy name=%s error=%d",
+                        m_lockName,GetLastError());
+         return(false);
+        }
+      m_owned=true;
+      return(true);
+     }
+
+   bool              Release(void)
+     {
+      if(!m_owned)
+         return(true);
+
+      // Never clear a mutex that no longer carries this instance's ownership token.
+      ResetLastError();
+      if(!GlobalVariableSetOnCondition(m_lockName,0.0,m_ownerToken))
+        {
+         PrintFormat("FLIPDEMON COORDINATION ERROR: mutex ownership changed; refusing unsafe release name=%s error=%d",
+                     m_lockName,GetLastError());
+         return(false);
+        }
+      m_owned=false;
+      return(true);
+     }
+
+   bool              IsOwned(void) const { return(m_owned); }
+  };
+
 #endif // AX_ACCOUNTRISKCALCULATOR_MQH
