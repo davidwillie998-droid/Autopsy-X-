@@ -65,6 +65,25 @@ def broker_position_risk(item: Exposure, bid: float, ask: float,
 
 
 
+
+class TerminalRiskMutex:
+    """Reference model for one MT5 terminal's atomic account mutex."""
+    def __init__(self):
+        self.owner = None
+
+    def acquire(self, owner):
+        if owner is None or self.owner is not None:
+            return False
+        self.owner = owner
+        return True
+
+    def release(self, owner):
+        if self.owner != owner:
+            return False
+        self.owner = None
+        return True
+
+
 def proposed_entry_risk(side: str, volume: float, quote_entry: float, stop: float,
                         value_per_price_unit_per_lot: float, slippage_points: int,
                         point: float) -> float:
@@ -296,6 +315,26 @@ class AccountRiskCalculatorTests(unittest.TestCase):
 
     def test_no_transaction_does_not_trigger_unnecessary_rescan(self):
         self.assertEqual(reconcile_transaction_snapshot(False, True, 500.0, 200.0), (False, False))
+
+    def test_account_mutex_allows_only_one_same_terminal_approval(self):
+        mutex = TerminalRiskMutex()
+        self.assertTrue(mutex.acquire("chart-A"))
+        self.assertFalse(mutex.acquire("chart-B"))
+        self.assertTrue(mutex.release("chart-A"))
+        self.assertTrue(mutex.acquire("chart-B"))
+
+    def test_account_mutex_rejects_release_by_non_owner(self):
+        mutex = TerminalRiskMutex()
+        self.assertTrue(mutex.acquire("chart-A"))
+        self.assertFalse(mutex.release("chart-B"))
+        self.assertFalse(mutex.acquire("chart-C"))
+
+    def test_terminal_local_mutex_does_not_claim_cross_terminal_coordination(self):
+        terminal_a = TerminalRiskMutex()
+        terminal_b = TerminalRiskMutex()
+        self.assertTrue(terminal_a.acquire("chart-A"))
+        # Separate MT5 terminals have separate terminal-global-variable stores.
+        self.assertTrue(terminal_b.acquire("chart-B"))
 
     def test_existing_exposure_already_over_cap_rejects_any_new_order(self):
         self.assertFalse(approve(10000, 201, 0.01))
