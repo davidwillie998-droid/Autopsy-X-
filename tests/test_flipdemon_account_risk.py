@@ -49,6 +49,26 @@ def exposure_risk(item: Exposure, pnl_per_price_unit_per_lot: dict[str, float],
     return max(0.0, -pnl)
 
 
+
+def proposed_entry_risk(side: str, volume: float, quote_entry: float, stop: float,
+                        value_per_price_unit_per_lot: float, slippage_points: int,
+                        point: float) -> float:
+    """Worst-case stop risk after reserving configured adverse entry slippage."""
+    if side not in ("BUY", "SELL") or slippage_points < 0:
+        raise ValueError("INVALID_PROPOSED_ENTRY")
+    if not all(isfinite(x) for x in
+               (volume, quote_entry, stop, value_per_price_unit_per_lot, point)):
+        raise ValueError("NONFINITE_PROPOSED_ENTRY")
+    if volume <= 0 or quote_entry <= 0 or value_per_price_unit_per_lot <= 0 or point <= 0:
+        raise ValueError("INVALID_PROPOSED_ENTRY")
+    buffer = slippage_points * point
+    worst_entry = quote_entry + buffer if side == "BUY" else quote_entry - buffer
+    if worst_entry <= 0:
+        raise ValueError("INVALID_WORST_CASE_ENTRY")
+    return exposure_risk(Exposure("TEST", side, volume, worst_entry, stop),
+                         {"TEST": value_per_price_unit_per_lot})
+
+
 def scan(positions: list[Exposure], pending: list[Exposure], equity: float,
          rates: dict[str, float], hedging: bool = False,
          conversions: dict[str, float] | None = None) -> tuple[float, float]:
@@ -151,6 +171,26 @@ class AccountRiskCalculatorTests(unittest.TestCase):
         for args in ((False, True), (True, False)):
             with self.assertRaisesRegex(ValueError, "ORDERCALCPROFIT"):
                 broker_calc_profit(*args)
+
+
+    def test_adverse_slippage_allowance_increases_proposed_stop_risk(self):
+        baseline = proposed_entry_risk("BUY", 1.0, 1.1000, 1.0990, 100000.0, 0, 0.0001)
+        buffered = proposed_entry_risk("BUY", 1.0, 1.1000, 1.0990, 100000.0, 5, 0.0001)
+        self.assertAlmostEqual(baseline, 100.0)
+        self.assertAlmostEqual(buffered, 150.0)
+        self.assertGreater(buffered, baseline)
+
+    def test_adverse_slippage_is_directionally_conservative_for_sell(self):
+        baseline = proposed_entry_risk("SELL", 1.0, 1.1000, 1.1010, 100000.0, 0, 0.0001)
+        buffered = proposed_entry_risk("SELL", 1.0, 1.1000, 1.1010, 100000.0, 5, 0.0001)
+        self.assertAlmostEqual(baseline, 100.0)
+        self.assertAlmostEqual(buffered, 150.0)
+
+    def test_invalid_slippage_allowance_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "INVALID_PROPOSED_ENTRY"):
+            proposed_entry_risk("BUY", 1.0, 1.1, 1.099, 100000.0, -1, 0.0001)
+        with self.assertRaisesRegex(ValueError, "INVALID_PROPOSED_ENTRY"):
+            proposed_entry_risk("BUY", 1.0, 1.1, 1.099, 100000.0, 1, 0.0)
 
     def test_existing_exposure_already_over_cap_rejects_any_new_order(self):
         self.assertFalse(approve(10000, 201, 0.01))
