@@ -16,6 +16,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://autopsy-x-dashboard.onrender.com';
 const RISK_COORDINATOR_KEY = process.env.RISK_COORDINATOR_KEY || '';
 const RISK_LEDGER_PATH = process.env.RISK_LEDGER_PATH || '';
+const RISK_LEDGER_PERSISTENCE_ACK = process.env.RISK_LEDGER_PERSISTENCE_ACK || '';
 const RISK_RESERVATION_TTL_MS = Number(process.env.RISK_RESERVATION_TTL_MS || 60000);
 const RISK_MAX_SNAPSHOT_AGE_MS = Number(process.env.RISK_MAX_SNAPSHOT_AGE_MS || 15000);
 
@@ -27,7 +28,8 @@ if (!BRIDGE_KEY) {
 }
 
 let riskLedger = null;
-if (RISK_COORDINATOR_KEY && isAbsolute(RISK_LEDGER_PATH)) {
+if (RISK_COORDINATOR_KEY.length >= 32 && isAbsolute(RISK_LEDGER_PATH) &&
+    RISK_LEDGER_PERSISTENCE_ACK === 'CONFIRMED') {
   try {
     riskLedger = openRiskLedger(RISK_LEDGER_PATH, {
       reservationTtlMs: RISK_RESERVATION_TTL_MS,
@@ -38,7 +40,7 @@ if (RISK_COORDINATOR_KEY && isAbsolute(RISK_LEDGER_PATH)) {
     console.error('FLIPDEMON risk ledger initialization failed:', error.message);
   }
 } else {
-  console.warn('FLIPDEMON distributed risk coordinator disabled: RISK_COORDINATOR_KEY and an absolute persistent RISK_LEDGER_PATH are required.');
+  console.warn('FLIPDEMON distributed risk coordinator disabled: require a 32+ character RISK_COORDINATOR_KEY, absolute RISK_LEDGER_PATH, and RISK_LEDGER_PERSISTENCE_ACK=CONFIRMED after verifying the path is on persistent storage.');
 }
 
 const app = express();
