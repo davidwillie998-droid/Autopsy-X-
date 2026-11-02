@@ -103,6 +103,18 @@ def post_fill_within_cap(equity: float, broker_confirmed_risk: float,
     return broker_confirmed_risk <= equity * hard_cap_pct / 100.0 + 0.01
 
 
+def reconcile_transaction_snapshot(dirty: bool, snapshot_known: bool,
+                                   actual_risk: float, hard_budget: float) -> tuple[bool, bool]:
+    """Return (retry_next_tick, lock_new_entries) from the broker-confirmed snapshot."""
+    if not dirty:
+        return False, False
+    if not snapshot_known or not all(isfinite(x) for x in (actual_risk, hard_budget)):
+        return True, True
+    if actual_risk < 0 or hard_budget < 0:
+        return True, True
+    return False, actual_risk > hard_budget + 0.01
+
+
 class AccountRiskCalculatorTests(unittest.TestCase):
     def setUp(self):
         self.rates = {"EURUSD": 100000.0, "XAUUSD": 100.0, "US30": 1.0}
@@ -214,6 +226,18 @@ class AccountRiskCalculatorTests(unittest.TestCase):
     def test_post_fill_invalid_equity_or_risk_fails_closed(self):
         self.assertFalse(post_fill_within_cap(0, 10.0, True))
         self.assertFalse(post_fill_within_cap(10000, float("nan"), True))
+
+    def test_transaction_reconciliation_retries_unknown_broker_snapshot(self):
+        self.assertEqual(reconcile_transaction_snapshot(True, False, 0.0, 200.0), (True, True))
+
+    def test_transaction_reconciliation_locks_on_actual_account_risk_breach(self):
+        self.assertEqual(reconcile_transaction_snapshot(True, True, 225.0, 200.0), (False, True))
+
+    def test_transaction_reconciliation_clears_dirty_state_after_clean_snapshot(self):
+        self.assertEqual(reconcile_transaction_snapshot(True, True, 175.0, 200.0), (False, False))
+
+    def test_no_transaction_does_not_trigger_unnecessary_rescan(self):
+        self.assertEqual(reconcile_transaction_snapshot(False, True, 500.0, 200.0), (False, False))
 
     def test_existing_exposure_already_over_cap_rejects_any_new_order(self):
         self.assertFalse(approve(10000, 201, 0.01))
