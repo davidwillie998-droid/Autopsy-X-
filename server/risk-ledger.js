@@ -234,6 +234,9 @@ export function openRiskLedger(path, {
         fail(409, 'RESERVATION_NOT_ACTIVE', 'Only an active, unexpired reservation can be settled.');
       }
       const snapshot = storeSnapshot(identity, input, now);
+      if (snapshot.duplicate) {
+        fail(409, 'POST_FILL_SNAPSHOT_NOT_NEW', 'Settlement requires a new broker snapshot captured after the order outcome.');
+      }
       db.prepare(`UPDATE risk_reservations SET status='settled',updated_at_ms=?
         WHERE reservation_id=? AND status='active'`).run(now, reservationId);
       return { ok: true, settled: true, withinCap: snapshot.brokerRiskMoney <= snapshot.hardCapMoney + 0.01,
