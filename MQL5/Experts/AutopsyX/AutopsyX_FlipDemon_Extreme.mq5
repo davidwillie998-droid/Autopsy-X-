@@ -236,6 +236,7 @@ CTradeReconciler       g_tradeReconciler;
 CRestartRecovery       g_restartRecovery;
 bool                   g_recoveryInitialized = false;
 bool                   g_recoveryReady = false; // false means new entries are blocked; existing positions remain managed
+bool                   g_accountRiskIntegrityLock = false; // post-fill breach/unknown exposure; cleared only by a clean broker rescan
 
 SAxPositionState      g_posState;
 bool                  g_haveOpenPosition = false;
@@ -785,6 +786,21 @@ void AxCountAccountExposure(int &positionsOut,double &grossLotsOut)
 
 bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSeq,const string tag)
   {
+   // A post-fill exposure breach latches entries until a fresh broker scan proves
+   // that all live positions and pending orders are known and back inside the cap.
+   if(g_accountRiskIntegrityLock)
+     {
+      SAxAccountRiskSnapshot unlockSnapshot;
+      if(!g_accountRisk.Scan(unlockSnapshot) || !unlockSnapshot.exposureKnown ||
+         unlockSnapshot.existingRiskMoney>unlockSnapshot.hardRiskBudgetMoney+0.01)
+        {
+         if(InpVerboseLogging) PrintFormat("FLIPDEMON ACCOUNT RISK LOCK: entries remain blocked; broker exposure is unknown or above cap (%s).",unlockSnapshot.failureReason);
+         return(false);
+        }
+      g_accountRiskIntegrityLock=false;
+      Print("FLIPDEMON ACCOUNT RISK LOCK: cleared after a clean broker exposure rescan.");
+     }
+
    // Restart recovery is a hard entry prerequisite. Never add exposure when the persisted
    // ticket-to-setup registry is unreadable, stale, or failed to save. Existing positions
    // continue through the normal management loop.
@@ -1072,6 +1088,28 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       g_recoveryReady = false;
       PrintFormat("FLIPDEMON RECOVERY ERROR: live position ticket %I64u is open but its setup registry could not be verified; managing existing position and blocking new entries.",newTicket);
      }
+
+   // Reconcile the broker-confirmed fill, not the requested size or pre-trade estimate.
+   // This catches market fills beyond the configured deviation and any concurrent account
+   // exposure change that occurred between approval and execution.
+   SAxAccountRiskSnapshot postFillRisk;
+   if(!g_accountRisk.Scan(postFillRisk) || !postFillRisk.exposureKnown ||
+      postFillRisk.existingRiskMoney>postFillRisk.hardRiskBudgetMoney+0.01)
+     {
+      g_accountRiskIntegrityLock=true;
+      string postFillReason=postFillRisk.failureReason;
+      if(postFillRisk.exposureKnown)
+         postFillReason=StringFormat("POST_FILL_ACCOUNT_RISK_OVER_CAP risk=%.2f budget=%.2f",
+                                     postFillRisk.existingRiskMoney,postFillRisk.hardRiskBudgetMoney);
+      PrintFormat("FLIPDEMON POST-FILL RISK BREACH: ticket=%I64u actualLots=%.8f fill=%.8f; %s. New entries locked; attempting defensive close.",
+                  newTicket,actualLots,fillPrice,postFillReason);
+      if(!AxCloseAndRecord(AX_EXIT_EXECUTION_QUALITY))
+         Print("FLIPDEMON POST-FILL DEFENCE: close/finalization not confirmed; existing position remains under management and entry lock stays active.");
+      return(false);
+     }
+   PrintFormat("FLIPDEMON POST-FILL RISK VERIFIED: ticket=%I64u actualLots=%.8f aggregateRisk=%.2f budget=%.2f",
+               newTicket,actualLots,postFillRisk.existingRiskMoney,postFillRisk.hardRiskBudgetMoney);
+
    // AFE's readings at the moment of this entry, carried through to the closed-trade autopsy record
    g_posState.afeCapitalState   = g_afe.State();
    g_posState.afeRiskOfRuinPct  = g_afe.RiskOfRuinPct();
