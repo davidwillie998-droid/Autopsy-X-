@@ -228,8 +228,12 @@ require("RISK_AUDIT_PERSISTENCE_FAILED" in account_risk
 require("#include <AutopsyX/AccountRiskCalculator.mqh>" in ea
         and "CAccountRiskCalculator g_accountRisk;" in ea,
         "account risk calculator is included and instantiated by the EA")
-require("g_accountRisk.Evaluate(_Symbol,dir,lots,slPrice,g_risk.RiskPercent()" in ea,
-        "final broker exposure is re-scanned immediately before market order submission")
+require("g_accountRisk.Evaluate(_Symbol,dir,lots,slPrice,deviationPts,g_risk.RiskPercent()" in ea,
+        "final broker exposure is re-scanned immediately before market order submission with execution deviation")
+require("maxAdverseSlippagePoints*point" in account_risk
+        and "tick.ask+slippageBuffer" in account_risk
+        and "tick.bid-slippageBuffer" in account_risk,
+        "proposed stop risk reserves adverse execution deviation for both directions")
 
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
 
