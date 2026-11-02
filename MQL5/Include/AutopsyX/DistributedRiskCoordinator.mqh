@@ -121,8 +121,8 @@ private:
       long snapshotAtMs=NextSnapshotTimeMs();
       string snapshotId=StringFormat("AX-%I64d-%I64d",ChartID(),snapshotAtMs);
       body="{"+AccountFields()+","+
-           "\"equity\":"+DoubleToString(snapshot.equity,2)+","+
-           "\"existingRiskMoney\":"+DoubleToString(snapshot.existingRiskMoney,2)+","+
+           "\"equity\":"+DoubleToString(snapshot.equity,8)+","+
+           "\"existingRiskMoney\":"+DoubleToString(snapshot.existingRiskMoney,8)+","+
            "\"snapshotAtMs\":"+(string)snapshotAtMs+","+
            "\"snapshotId\":\""+snapshotId+"\"}";
       return(true);
@@ -196,7 +196,7 @@ public:
       string body="{"+AccountFields()+","+
                   "\"instanceId\":\""+JsonEscape(instanceId)+"\","+
                   "\"idempotencyKey\":\""+idempotencyKey+"\","+
-                  "\"riskMoney\":"+DoubleToString(decision.proposedRiskMoney,2)+"}";
+                  "\"riskMoney\":"+DoubleToString(decision.proposedRiskMoney,8)+"}";
       if(!Post("/risk/reserve",body,response,error)) return(false);
       if(!JsonTrue(response,"ok") || !JsonString(response,"reservationId",reservationId))
         {
