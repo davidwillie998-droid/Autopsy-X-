@@ -287,6 +287,9 @@ require('#include <AutopsyX/DistributedRiskCoordinator.mqh>' in ea
 require("WebRequest(" in distributed and "x-risk-coordinator-key:" in distributed
         and 'StringFind(m_baseUrl,"https://")!=0' in distributed,
         "distributed adapter uses authenticated HTTPS WebRequest and rejects non-HTTPS endpoints")
+require("TERMINAL_DATA_PATH" in distributed and "BuildInstanceId" in distributed
+        and "g_distributedRiskCoordinator.InstanceId()" in ea,
+        "reservation ownership and idempotency are scoped to a terminal-specific instance identity")
 require("InpExecutionMode==AX_EXEC_LIVE" in ea
         and "g_distributedRiskCoordinator.Init" in ea
         and "startupRisk" in ea and "startupWithinCap" in ea,
