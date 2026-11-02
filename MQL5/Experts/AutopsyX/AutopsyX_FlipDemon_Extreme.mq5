@@ -213,6 +213,7 @@ CFlipEngine           g_flip;
 CAntiChopEngine       g_chop;
 CRiskEngine           g_risk;
 CAccountRiskCalculator g_accountRisk;
+CAccountRiskCoordinator g_accountRiskCoordinator;
 CEmergencyControls    g_emergency;
 ENUM_AX_VWAP_EXIT_MODE g_effectiveVwapExitMode = AX_VWAP_EXIT_OFF; // set at OnInit, may be forced
                                                                      // down from InpVWAPExitMode - see
@@ -1049,6 +1050,15 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
 
    string entryReason = AxBuildEntryReason(score,dir)+" "+tag;
    ulong newTicket; double fillPrice; double actualLots; string execErr; int fillLatencyMs;
+   // Hold the shared terminal-local account mutex from the final scan through the
+   // broker request and post-fill reconciliation. This closes the race where two
+   // charts both approve against the same uncommitted remaining budget.
+   if(!g_accountRiskCoordinator.TryAcquire())
+     {
+      if(InpVerboseLogging) Print("FLIPDEMON: account risk mutex busy; this entry attempt is rejected.");
+      return(false);
+     }
+
    // Final account-wide monetary-risk scan immediately before order submission.
    // This uses the broker's latest quote and all broker-confirmed positions plus
    // the remaining unfilled volume of active pending orders. It fails closed when
@@ -1058,6 +1068,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    if(!g_accountRisk.Evaluate(_Symbol,dir,lots,slPrice,deviationPts,g_risk.RiskPercent(),
                               accountRiskDecision,accountRiskReason))
      {
+      if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
       if(InpVerboseLogging) PrintFormat("FLIPDEMON: final account risk gate blocked entry (%s)",accountRiskReason);
       return(false);
      }
@@ -1069,6 +1080,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
                                           // (spec section 18) - a distinct counter/threshold from
                                           // g_consecutiveExecFailures above, which existed before this
                                           // phase for its own purposes; both now track every failure
+      if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry failed (%s)",execErr);
       return(false);
      }
@@ -1118,11 +1130,17 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
                   newTicket,actualLots,fillPrice,postFillReason);
       if(!AxCloseAndRecord(AX_EXIT_EXECUTION_QUALITY))
          Print("FLIPDEMON POST-FILL DEFENCE: close/finalization not confirmed; existing position remains under management and entry lock stays active.");
+      if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
       return(false);
      }
    PrintFormat("FLIPDEMON POST-FILL RISK VERIFIED: ticket=%I64u actualLots=%.8f aggregateRisk=%.2f budget=%.2f",
                newTicket,actualLots,postFillRisk.existingRiskMoney,postFillRisk.hardRiskBudgetMoney);
-
+   if(!g_accountRiskCoordinator.Release())
+     {
+      g_accountRiskIntegrityLock=true;
+      Print("FLIPDEMON COORDINATION ERROR: mutex release failed after fill; new entries remain locked.");
+      return(false);
+     }
 
    if(dir==AX_DIR_BUY && g_liq.BullishAttackReady(g_mom.DisplacementPts())) g_liq.ConsumeBullishAttack();
    if(dir==AX_DIR_SELL && g_liq.BearishAttackReady(g_mom.DisplacementPts())) g_liq.ConsumeBearishAttack();
@@ -1313,6 +1331,14 @@ bool AxLogBrokerCompatibility(void)
 //====================================================================
 int OnInit(void)
   {
+   // Account-wide order approval is serialized across every FLIPDEMON instance
+   // attached to this MT5 terminal. Separate terminals require an external coordinator.
+   if(!g_accountRiskCoordinator.Init())
+     {
+      Print("FLIPDEMON: account risk coordinator initialization failed; refusing to start.");
+      return(INIT_FAILED);
+     }
+
    // Inspect the connected broker and actual symbol before configuring strategy/risk modules.
    // This is metadata-driven portability, not a hard-coded broker-name allowlist.
    if(!AxLogBrokerCompatibility())
@@ -1459,6 +1485,8 @@ int OnInit(void)
 
 void OnDeinit(const int reason)
   {
+   if(!g_accountRiskCoordinator.Release())
+      Print("FLIPDEMON COORDINATION ERROR: account mutex release failed during deinitialization.");
    if(InpShowDashboard)
      {
       EventKillTimer();
