@@ -31,6 +31,8 @@ struct SAxAccountRiskDecision
    double   existingRiskMoney;
    double   existingRiskPercent;
    double   proposedRiskMoney;
+   int      adverseSlippagePoints;
+   double   worstCaseEntryPrice;
    double   remainingRiskBudgetMoney;
    int      positionCount;
    int      pendingOrderCount;
@@ -193,13 +195,14 @@ private:
 
       if(FileSize(handle)==0)
          FileWrite(handle,"timestamp","login","server","equity","existing_risk_money",
-                   "existing_risk_percent","proposed_risk_money","remaining_budget_money",
-                   "positions","pending_orders","decision","rejection_reason","calculation_error");
+                   "existing_risk_percent","proposed_risk_money","adverse_slippage_points",
+                   "worst_case_entry_price","remaining_budget_money","positions","pending_orders","decision","rejection_reason","calculation_error");
       FileSeek(handle,0,SEEK_END);
       uint written=FileWrite(handle,TimeToString(decision.evaluatedAt,TIME_DATE|TIME_SECONDS),
                               decision.login,decision.server,decision.equity,
                               decision.existingRiskMoney,decision.existingRiskPercent,
-                              decision.proposedRiskMoney,decision.remainingRiskBudgetMoney,
+                              decision.proposedRiskMoney,decision.adverseSlippagePoints,
+                              decision.worstCaseEntryPrice,decision.remainingRiskBudgetMoney,
                               decision.positionCount,decision.pendingOrderCount,
                               decision.decision,decision.rejectionReason,decision.calculationError);
       FileFlush(handle);
@@ -324,6 +327,8 @@ public:
       decision.existingRiskMoney=0.0;
       decision.existingRiskPercent=0.0;
       decision.proposedRiskMoney=0.0;
+      decision.adverseSlippagePoints=maxAdverseSlippagePoints;
+      decision.worstCaseEntryPrice=0.0;
       decision.remainingRiskBudgetMoney=0.0;
       decision.positionCount=0;
       decision.pendingOrderCount=0;
@@ -373,6 +378,7 @@ public:
                   reason="INVALID_WORST_CASE_ENTRY_PRICE";
                else
                  {
+                  decision.worstCaseEntryPrice=entry;
                   ENUM_ORDER_TYPE orderType=(direction==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
                   string calcError="";
                   bool stopOnLossSide=(direction==AX_DIR_BUY)?(stopPrice<entry):(stopPrice>entry);
