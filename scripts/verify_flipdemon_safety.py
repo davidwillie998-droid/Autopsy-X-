@@ -13,6 +13,7 @@ EA = ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5"
 RISK = ROOT / "MQL5/Include/AutopsyX/RiskEngine.mqh"
 EXEC = ROOT / "MQL5/Include/AutopsyX/ExecutionEngine.mqh"
 RECOVERY = ROOT / "MQL5/Include/AutopsyX/RestartRecovery.mqh"
+DISTRIBUTED = ROOT / "MQL5/Include/AutopsyX/DistributedRiskCoordinator.mqh"
 README = ROOT / "MQL5/README.md"
 AUTOPSY = ROOT / "MQL5/Include/AutopsyX/TradeAutopsy.mqh"
 
@@ -21,13 +22,14 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
     print(f"PASS: {message}")
 
-for path in (EA, RISK, EXEC, RECOVERY, README):
+for path in (EA, RISK, EXEC, RECOVERY, DISTRIBUTED, README):
     require(path.is_file(), f"required source exists: {path.relative_to(ROOT)}")
 
 ea = EA.read_text(encoding="utf-8")
 risk = RISK.read_text(encoding="utf-8")
 execution = EXEC.read_text(encoding="utf-8")
 recovery = RECOVERY.read_text(encoding="utf-8")
+distributed = DISTRIBUTED.read_text(encoding="utf-8")
 readme = README.read_text(encoding="utf-8")
 
 require("#property strict" in ea, "MQL5 strict mode is enabled")
@@ -279,9 +281,35 @@ require("g_accountRiskCoordinator.TryAcquire()" in ea
 require("g_accountRisk.Scan(postFillRisk)" in ea
         and ea.index("g_accountRisk.Scan(postFillRisk)") < ea.index("g_accountRiskCoordinator.Release()", ea.index("g_accountRisk.Scan(postFillRisk)")),
         "account mutex remains held through broker-confirmed post-fill risk reconciliation")
-require("Separate terminals require an external coordinator" in ea
-        and "not shared across separate terminals/devices" in account_risk,
-        "coordination scope is explicitly limited to one MT5 terminal; cross-terminal claims are prohibited")
+require('#include <AutopsyX/DistributedRiskCoordinator.mqh>' in ea
+        and "CDistributedRiskCoordinator g_distributedRiskCoordinator;" in ea,
+        "EA includes and instantiates the distributed coordinator adapter")
+require("WebRequest(" in distributed and "x-risk-coordinator-key:" in distributed
+        and 'StringFind(m_baseUrl,"https://")!=0' in distributed,
+        "distributed adapter uses authenticated HTTPS WebRequest and rejects non-HTTPS endpoints")
+require("InpExecutionMode==AX_EXEC_LIVE" in ea
+        and "g_distributedRiskCoordinator.Init" in ea
+        and "startupRisk" in ea and "startupWithinCap" in ea,
+        "LIVE mode requires coordinator credentials and a clean startup broker reconciliation")
+require(ea.index("g_accountRiskCoordinator.TryAcquire()") < ea.index("g_accountRisk.Evaluate")
+        and ea.index("g_accountRisk.Evaluate") < ea.index("g_distributedRiskCoordinator.Reserve")
+        and ea.index("g_distributedRiskCoordinator.Reserve") < ea.index("g_exec.OpenMarket"),
+        "LIVE order path acquires local mutex, passes local risk approval, reserves centrally, then submits")
+require("g_distributedRiskCoordinator.Release(distributedReservationId" in ea
+        and "failedOrderSnapshot" in ea,
+        "failed or ambiguous order outcomes release reservations only after a fresh broker exposure scan")
+require("g_distributedRiskCoordinator.Settle(distributedReservationId" in ea
+        and ea.index("g_accountRisk.Scan(postFillRisk)") < ea.index("g_distributedRiskCoordinator.Settle")
+        and ea.index("g_distributedRiskCoordinator.Settle") < ea.index("g_accountRiskCoordinator.Release()",ea.index("g_distributedRiskCoordinator.Settle")),
+        "successful fills settle central reservations from broker-confirmed post-fill exposure while mutex remains held")
+require("g_distributedRiskCoordinator.Reconcile(transactionRisk" in ea
+        and "g_accountRiskReconciliationPending=false" in ea,
+        "manual and external broker transactions are reconciled to the central ledger before clearing the dirty flag")
+require("InpRiskCoordinatorKey" in ea and "PrintFormat" in ea
+        and "InpRiskCoordinatorKey" not in ea[ea.find("void OnTick"):],
+        "coordinator secret is not written into tick-path logs")
+require("InpExecutionMode = AX_EXEC_ANALYSIS_ONLY" in ea,
+        "distributed coordinator wiring preserves ANALYSIS_ONLY as the default execution mode")
 require("g_accountRiskReconciliationPending=false" in ea
         and "exposure unknown; entries locked" in ea,
         "unknown transaction snapshots retain the retry flag and fail closed")
