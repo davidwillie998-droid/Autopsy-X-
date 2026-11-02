@@ -631,3 +631,22 @@ apply here directly:
   data-reliability surface) from what this round scopes. Noted for a
   future round rather than force-fit into something it doesn't cleanly
   become.
+
+
+## 17. Distributed account-risk coordination for LIVE execution
+
+`AX_EXEC_LIVE` now requires the authenticated distributed risk coordinator. `ANALYSIS_ONLY` remains the default, and `AX_EXEC_PAPER` does not send broker orders.
+
+Before using LIVE mode, deploy the server coordinator with Node.js 22.13+, a persistent SQLite disk, an absolute `RISK_LEDGER_PATH`, and a long random `RISK_COORDINATOR_KEY`. The current Render Blueprint deliberately does not provision a persistent disk. Do not enable LIVE mode until the service health response reports `riskCoordinatorReady: true`.
+
+In the EA inputs, set:
+
+- `InpRiskCoordinatorUrl`: the HTTPS base URL of the bridge, without a trailing slash
+- `InpRiskCoordinatorKey`: the same secret configured as `RISK_COORDINATOR_KEY`
+- `InpRiskCoordinatorTimeoutMs`: request timeout, default 3000 ms
+
+Add the bridge's exact HTTPS origin to MT5's **Tools → Options → Expert Advisors → Allow WebRequest for listed URL** list. MT5 blocks WebRequest unless the URL is explicitly allowlisted. Keep the key private. It is stored in the terminal's EA inputs and may be included in exported `.set` files, so never share a preset containing it or commit it to Git.
+
+For each LIVE entry, FLIPDEMON takes a fresh broker-wide risk snapshot, obtains an atomic central reservation, and only then submits the order. It settles that reservation against broker-confirmed post-fill exposure. A failed or ambiguous order outcome can release a reservation only after a fresh account scan. Manual and external EA transactions trigger central reconciliation. If the network, key, endpoint, or broker snapshot is unavailable, new entries are blocked. Existing positions remain under normal management.
+
+`WebRequest` is not available inside the MT5 Strategy Tester. Test the adapter on a connected demo account with `AX_EXEC_LIVE` only after configuring the service and URL allowlist. That mode sends real orders to the selected demo account. Do not use a funded account for initial integration testing. MetaEditor compilation and broker-side demo verification are still required.
