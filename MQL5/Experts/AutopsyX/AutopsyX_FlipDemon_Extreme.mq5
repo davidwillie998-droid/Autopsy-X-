@@ -237,6 +237,7 @@ CRestartRecovery       g_restartRecovery;
 bool                   g_recoveryInitialized = false;
 bool                   g_recoveryReady = false; // false means new entries are blocked; existing positions remain managed
 bool                   g_accountRiskIntegrityLock = false; // post-fill breach/unknown exposure; cleared only by a clean broker rescan
+bool                   g_accountRiskReconciliationPending = false; // any broker transaction dirties the account-wide exposure snapshot
 
 SAxPositionState      g_posState;
 bool                  g_haveOpenPosition = false;
@@ -1478,6 +1479,34 @@ void OnTick(void)
    g_risk.OnTickHousekeeping();
    g_afe.OnTickHousekeeping();
 
+   // Broker transactions can arrive in several callbacks and in an order that differs
+   // from the original request. Re-scan the actual account snapshot on the next valid tick.
+   // Keep the dirty flag set on an unknown snapshot so the next tick retries reconciliation.
+   if(g_accountRiskReconciliationPending)
+     {
+      SAxAccountRiskSnapshot transactionRisk;
+      if(!g_accountRisk.Scan(transactionRisk) || !transactionRisk.exposureKnown)
+        {
+         g_accountRiskIntegrityLock=true;
+         if(InpVerboseLogging) PrintFormat("FLIPDEMON TRANSACTION RECONCILIATION: exposure unknown; entries locked; %s",transactionRisk.failureReason);
+        }
+      else
+        {
+         g_accountRiskReconciliationPending=false;
+         if(transactionRisk.existingRiskMoney>transactionRisk.hardRiskBudgetMoney+0.01)
+           {
+            g_accountRiskIntegrityLock=true;
+            PrintFormat("FLIPDEMON TRANSACTION RECONCILIATION: account risk %.2f exceeds hard budget %.2f; new entries locked.",
+                        transactionRisk.existingRiskMoney,transactionRisk.hardRiskBudgetMoney);
+           }
+         else if(g_accountRiskIntegrityLock)
+           {
+            g_accountRiskIntegrityLock=false;
+            Print("FLIPDEMON TRANSACTION RECONCILIATION: clean broker snapshot confirmed; account risk lock cleared.");
+           }
+        }
+     }
+
    //--- roll the "poor fills today" counter at broker midnight, same day boundary RiskEngine uses ---
    MqlDateTime dtNow; TimeToStruct(TimeCurrent(),dtNow);
    datetime today = TimeCurrent()-(dtNow.hour*3600+dtNow.min*60+dtNow.sec);
@@ -1893,12 +1922,17 @@ void OnTimer(void)
 //====================================================================
 // CHART EVENTS: KILL ENGINE button
 //====================================================================
-// Broker-confirmed transaction observer. This deliberately logs only this EA's
-// symbol+magic so unrelated manual trades and other EAs do not pollute its journal.
-// It is an audit hook, not a substitute for campaign-level reconciliation/state recovery.
+// Broker-confirmed transaction observer. Campaign journaling below remains filtered to
+// this EA's symbol+magic, while account-wide risk reconciliation observes every transaction.
 void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &request,
                         const MqlTradeResult &result)
   {
+   // Every account transaction can change aggregate exposure, including manual trades,
+   // other EAs, partial fills, pending-order updates/cancellations and netting reversals.
+   // Do not trust request volume or callback ordering: dirty the snapshot and reconcile
+   // against broker positions plus remaining pending volume on the next valid tick.
+   g_accountRiskReconciliationPending=true;
+
    string symbol=trans.symbol;
    ulong magic=0;
    bool relevant=false;
