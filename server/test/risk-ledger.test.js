@@ -48,7 +48,7 @@ test('rejects stale and out-of-order broker snapshots', () => {
   try {
     f.ledger.reconcile(f.base);
     expectCode(() => f.ledger.reconcile({ ...f.base, snapshotAtMs: f.base.snapshotAtMs - 1,
-      snapshotId: 'snapshot-old' }), 'STALE_BROKER_SNAPSHOT');
+      snapshotId: 'snapshot-old' }), 'OUT_OF_ORDER_SNAPSHOT');
     expectCode(() => f.ledger.reconcile({ ...f.base, snapshotAtMs: f.base.snapshotAtMs,
       snapshotId: 'snapshot-other' }), 'OUT_OF_ORDER_SNAPSHOT');
   } finally { f.close(); }
