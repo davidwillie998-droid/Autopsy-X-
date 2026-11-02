@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import { isAbsolute } from 'node:path';
 
 export class RiskLedgerError extends Error {
   constructor(status, code, message) {
@@ -67,8 +68,8 @@ export function openRiskLedger(path, {
   maxSnapshotAgeMs = 15000,
   reservationTtlMs = 60000,
 } = {}) {
-  if (typeof path !== 'string' || !path || path === ':memory:') {
-    throw new Error('RISK_LEDGER_PATH must identify a persistent SQLite file, not an in-memory database.');
+  if (typeof path !== 'string' || !path || path === ':memory:' || !isAbsolute(path)) {
+    throw new Error('RISK_LEDGER_PATH must be an absolute path to a persistent SQLite file, not an in-memory or relative database.');
   }
   if (!Number.isInteger(maxSnapshotAgeMs) || maxSnapshotAgeMs < 1000 ||
       !Number.isInteger(reservationTtlMs) || reservationTtlMs < 5000) {
