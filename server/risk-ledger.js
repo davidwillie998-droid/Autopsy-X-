@@ -140,6 +140,12 @@ export function openRiskLedger(path, {
     const identity = accountIdentity(input);
     return transaction(db, () => {
       const snapshot = storeSnapshot(identity, input, now);
+      // An expired reservation is only released after a newer broker snapshot
+      // has been accepted. That snapshot must include all live positions and
+      // pending orders, so any fill is now represented in brokerRiskMoney.
+      db.prepare(`UPDATE risk_reservations SET status='settled',updated_at_ms=?
+        WHERE account_key=? AND status='active' AND expires_at_ms<=?`)
+        .run(now, identity.accountKey, snapshot.snapshotAtMs);
       return {
         ok: true, accountKey: identity.accountKey, snapshotId: snapshot.snapshotId,
         equity: snapshot.equity, brokerRiskMoney: snapshot.brokerRiskMoney,
@@ -162,8 +168,11 @@ export function openRiskLedger(path, {
     }
 
     return transaction(db, () => {
-      db.prepare(`UPDATE risk_reservations SET status='expired', updated_at_ms=?
-        WHERE account_key=? AND status='active' AND expires_at_ms<=?`).run(now, identity.accountKey, now);
+      const expired = db.prepare(`SELECT reservation_id FROM risk_reservations
+        WHERE account_key=? AND status='active' AND expires_at_ms<=? LIMIT 1`)
+        .get(identity.accountKey, now);
+      if (expired) fail(409, 'EXPIRED_RESERVATION_REQUIRES_RECONCILIATION',
+        'An expired reservation may represent an order with an unknown outcome. Publish a fresh broker snapshot covering positions and pending orders before new risk is reserved.');
 
       const snapshot = getSnapshot.get(identity.accountKey);
       if (!snapshot) fail(409, 'NO_BROKER_SNAPSHOT', 'No broker exposure snapshot exists for this account.');
@@ -207,18 +216,23 @@ export function openRiskLedger(path, {
     const now = clock();
     const identity = accountIdentity(input);
     const reservationId = String(input?.reservationId ?? '').trim();
-    if (!reservationId) fail(400, 'INVALID_RESERVATION_ID', 'reservationId is required.');
+    const instanceId = String(input?.instanceId ?? '').trim();
+    if (!reservationId || !instanceId) fail(400, 'INVALID_RESERVATION_IDENTITY', 'reservationId and instanceId are required.');
     return transaction(db, () => {
       const reservation = db.prepare('SELECT * FROM risk_reservations WHERE reservation_id=? AND account_key=?')
         .get(reservationId, identity.accountKey);
       if (!reservation) fail(404, 'RESERVATION_NOT_FOUND', 'Reservation was not found for this account.');
-      if (reservation.status === 'released' || reservation.status === 'expired') {
-        return { ok: true, released: false, status: reservation.status };
+      if (reservation.instance_id !== instanceId) fail(403, 'RESERVATION_OWNER_MISMATCH', 'Only the originating terminal instance may release this reservation.');
+      if (reservation.status === 'released') return { ok: true, released: false, status: 'released' };
+      if (reservation.status !== 'active') fail(409, 'RESERVATION_ALREADY_SETTLED', 'A settled or expired reservation cannot be released.');
+      const snapshot = storeSnapshot(identity, input, now);
+      if (snapshot.duplicate || snapshot.snapshotAtMs <= reservation.created_at_ms) {
+        fail(409, 'RELEASE_REQUIRES_NEW_BROKER_SNAPSHOT', 'A fresh broker snapshot captured after the reservation is required to prove the order was not filled.');
       }
-      if (reservation.status !== 'active') fail(409, 'RESERVATION_ALREADY_SETTLED', 'A settled reservation cannot be released.');
       db.prepare(`UPDATE risk_reservations SET status='released',updated_at_ms=?
         WHERE reservation_id=? AND status='active'`).run(now, reservationId);
-      return { ok: true, released: true, status: 'released' };
+      return { ok: true, released: true, status: 'released',
+        brokerRiskMoney: snapshot.brokerRiskMoney, snapshotId: snapshot.snapshotId };
     });
   }
 
@@ -232,6 +246,9 @@ export function openRiskLedger(path, {
         .get(reservationId, identity.accountKey);
       if (!reservation || reservation.status !== 'active' || reservation.expires_at_ms <= now) {
         fail(409, 'RESERVATION_NOT_ACTIVE', 'Only an active, unexpired reservation can be settled.');
+      }
+      if (String(input?.instanceId ?? '').trim() !== reservation.instance_id) {
+        fail(403, 'RESERVATION_OWNER_MISMATCH', 'Only the originating terminal instance may settle this reservation.');
       }
       const snapshot = storeSnapshot(identity, input, now);
       if (snapshot.duplicate) {
