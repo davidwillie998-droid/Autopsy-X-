@@ -12,10 +12,22 @@ class CDistributedRiskCoordinator
 private:
    string m_baseUrl;
    string m_key;
+   string m_instanceId;
    int    m_timeoutMs;
    long   m_lastSnapshotMs;
    ulong  m_requestCounter;
    bool   m_ready;
+
+   string BuildInstanceId(void) const
+     {
+      // Chart IDs are only unique inside one terminal. Mix in the terminal data
+      // directory so two terminals on the same machine cannot impersonate owners.
+      string path=TerminalInfoString(TERMINAL_DATA_PATH);
+      uint hash=2166136261;
+      for(int i=0;i<StringLen(path);i++)
+         hash=(hash ^ (uint)StringGetCharacter(path,i))*16777619;
+      return(StringFormat("MT5-%08X-%I64d",hash,ChartID()));
+     }
 
    string JsonEscape(const string value) const
      {
@@ -133,6 +145,7 @@ public:
      {
       m_baseUrl="";
       m_key="";
+      m_instanceId="";
       m_timeoutMs=3000;
       m_lastSnapshotMs=0;
       m_requestCounter=0;
@@ -144,6 +157,7 @@ public:
       m_ready=false;
       m_baseUrl=baseUrl;
       m_key=key;
+      m_instanceId=BuildInstanceId();
       m_timeoutMs=timeoutMs;
       if(StringFind(m_baseUrl,"https://")!=0 || StringLen(m_baseUrl)<12 ||
          StringLen(m_key)<32 || m_timeoutMs<500 || m_timeoutMs>10000)
@@ -160,6 +174,7 @@ public:
      }
 
    bool IsReady(void) const { return(m_ready); }
+   string InstanceId(void) const { return(m_instanceId); }
 
    bool Reconcile(const SAxAccountRiskSnapshot &snapshot,bool &withinCap,string &error)
      {
@@ -191,7 +206,7 @@ public:
         }
 
       m_requestCounter++;
-      string idempotencyKey=StringFormat("AX-%I64d-%I64d-%I64d",ChartID(),
+      string idempotencyKey=StringFormat("%s-%I64d-%I64d",m_instanceId,
                                          (long)TimeGMT(),(long)m_requestCounter);
       string body="{"+AccountFields()+","+
                   "\"instanceId\":\""+JsonEscape(instanceId)+"\","+
