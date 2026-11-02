@@ -1089,6 +1089,18 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       PrintFormat("FLIPDEMON RECOVERY ERROR: live position ticket %I64u is open but its setup registry could not be verified; managing existing position and blocking new entries.",newTicket);
      }
 
+   // AFE's readings at the moment of this entry, carried through to the closed-trade autopsy record
+   g_posState.afeCapitalState   = g_afe.State();
+   g_posState.afeRiskOfRuinPct  = g_afe.RiskOfRuinPct();
+   g_posState.afeExpectedValueR = g_afe.ExpectedValueR();
+   g_posState.afeWinProbability = g_afe.WinProbability();
+   g_posState.afeRiskMultiplier = afeRiskMultiplier;
+   g_posState.impactCostPct     = impactCostPct;
+   // arms CExitEngine's mechanical VWAP exit for THIS position only - reuses vwapAlignedForThisEntry
+   // (already computed above, same dir/g_vwapTrend comparison) rather than re-deriving it
+   g_posState.vwapAlignedAtEntry = InpUseVWAPExit && vwapAlignedForThisEntry;
+   AxRegisterFillQuality(g_posState.entrySlippagePts,fillLatencyMs);
+
    // Reconcile the broker-confirmed fill, not the requested size or pre-trade estimate.
    // This catches market fills beyond the configured deviation and any concurrent account
    // exposure change that occurred between approval and execution.
@@ -1110,17 +1122,6 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    PrintFormat("FLIPDEMON POST-FILL RISK VERIFIED: ticket=%I64u actualLots=%.8f aggregateRisk=%.2f budget=%.2f",
                newTicket,actualLots,postFillRisk.existingRiskMoney,postFillRisk.hardRiskBudgetMoney);
 
-   // AFE's readings at the moment of this entry, carried through to the closed-trade autopsy record
-   g_posState.afeCapitalState   = g_afe.State();
-   g_posState.afeRiskOfRuinPct  = g_afe.RiskOfRuinPct();
-   g_posState.afeExpectedValueR = g_afe.ExpectedValueR();
-   g_posState.afeWinProbability = g_afe.WinProbability();
-   g_posState.afeRiskMultiplier = afeRiskMultiplier;
-   g_posState.impactCostPct     = impactCostPct;
-   // arms CExitEngine's mechanical VWAP exit for THIS position only - reuses vwapAlignedForThisEntry
-   // (already computed above, same dir/g_vwapTrend comparison) rather than re-deriving it
-   g_posState.vwapAlignedAtEntry = InpUseVWAPExit && vwapAlignedForThisEntry;
-   AxRegisterFillQuality(g_posState.entrySlippagePts,fillLatencyMs);
 
    if(dir==AX_DIR_BUY && g_liq.BullishAttackReady(g_mom.DisplacementPts())) g_liq.ConsumeBullishAttack();
    if(dir==AX_DIR_SELL && g_liq.BearishAttackReady(g_mom.DisplacementPts())) g_liq.ConsumeBearishAttack();
