@@ -125,7 +125,7 @@ test('settlement updates broker exposure and consumes its reservation in one tra
       snapshotId: 'snapshot-0002', existingRiskMoney: 100, reservationId: reservation.reservationId, instanceId: 'terminal-a' });
     assert.equal(settled.settled, true);
     assert.equal(settled.withinCap, true);
-    expectCode(() => f.ledger.release({ ...f.base, reservationId: reservation.reservationId }),
+    expectCode(() => f.ledger.release({ ...f.base, reservationId: reservation.reservationId, instanceId: 'terminal-a' }),
       'RESERVATION_ALREADY_SETTLED');
   } finally { f.close(); }
 });
