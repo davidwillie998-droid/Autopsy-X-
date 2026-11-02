@@ -25,6 +25,7 @@
 #include <AutopsyX/AntiChop.mqh>
 #include <AutopsyX/RiskEngine.mqh>
 #include <AutopsyX/AccountRiskCalculator.mqh>
+#include <AutopsyX/DistributedRiskCoordinator.mqh>
 #include <AutopsyX/EntryEngine.mqh>
 #include <AutopsyX/ExecutionEngine.mqh>
 #include <AutopsyX/ExitEngine.mqh>
@@ -122,6 +123,11 @@ input int            InpMaxExecutionFailures    = 5;        // Max consecutive o
 
 input group "=== EXECUTION MODE & EMERGENCY CONTROLS ===";
 input ENUM_AX_EXECUTION_MODE InpExecutionMode = AX_EXEC_ANALYSIS_ONLY; // ANALYSIS_ONLY sends no orders at all - see EmergencyControls.mqh
+
+input group "=== DISTRIBUTED ACCOUNT RISK COORDINATOR ===";
+input string InpRiskCoordinatorUrl = ""; // HTTPS base URL for the persistent risk service
+input string InpRiskCoordinatorKey = ""; // Secret from the server environment; never share .set files containing this value
+input int    InpRiskCoordinatorTimeoutMs = 3000; // Fail-closed request timeout, milliseconds
 input bool           InpEnableTrading           = true;    // Master trading switch - false blocks ALL new entries (existing positions still managed)
 input bool           InpEnableLong              = true;    // false blocks new BUY entries specifically
 input bool           InpEnableShort             = true;    // false blocks new SELL entries specifically
@@ -214,6 +220,7 @@ CAntiChopEngine       g_chop;
 CRiskEngine           g_risk;
 CAccountRiskCalculator g_accountRisk;
 CAccountRiskCoordinator g_accountRiskCoordinator;
+CDistributedRiskCoordinator g_distributedRiskCoordinator;
 CEmergencyControls    g_emergency;
 ENUM_AX_VWAP_EXIT_MODE g_effectiveVwapExitMode = AX_VWAP_EXIT_OFF; // set at OnInit, may be forced
                                                                      // down from InpVWAPExitMode - see
@@ -1073,6 +1080,28 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       return(false);
      }
 
+   string distributedReservationId="";
+   string distributedInstanceId=StringFormat("MT5-%I64d-%I64d",
+                                               AccountInfoInteger(ACCOUNT_LOGIN),ChartID());
+   bool distributedReservationActive=false;
+   if(InpExecutionMode==AX_EXEC_LIVE)
+     {
+      SAxAccountRiskSnapshot reservationSnapshot;
+      string reservationError;
+      if(!g_accountRisk.Scan(reservationSnapshot) || !reservationSnapshot.exposureKnown ||
+         !g_distributedRiskCoordinator.Reserve(accountRiskDecision,reservationSnapshot,
+                                                distributedInstanceId,distributedReservationId,
+                                                reservationError))
+        {
+         g_accountRiskIntegrityLock=true;
+         if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
+         PrintFormat("FLIPDEMON DISTRIBUTED RISK: order blocked; central reservation was not confirmed (%s).",
+                     reservationError);
+         return(false);
+        }
+      distributedReservationActive=true;
+     }
+
    if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr,fillLatencyMs,actualLots))
      {
       g_consecutiveExecFailures++;
@@ -1080,6 +1109,25 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
                                           // (spec section 18) - a distinct counter/threshold from
                                           // g_consecutiveExecFailures above, which existed before this
                                           // phase for its own purposes; both now track every failure
+      if(distributedReservationActive)
+        {
+         SAxAccountRiskSnapshot failedOrderSnapshot;
+         string releaseError;
+         if(!g_accountRisk.Scan(failedOrderSnapshot) || !failedOrderSnapshot.exposureKnown ||
+            !g_distributedRiskCoordinator.Release(distributedReservationId,distributedInstanceId,
+                                                   failedOrderSnapshot,releaseError))
+           {
+            g_accountRiskIntegrityLock=true;
+            PrintFormat("FLIPDEMON DISTRIBUTED RISK: order outcome could not be safely reconciled/released; reservation retained (%s).",
+                        releaseError);
+           }
+         else
+           {
+            distributedReservationActive=false;
+            if(failedOrderSnapshot.existingRiskMoney>failedOrderSnapshot.hardRiskBudgetMoney+0.01)
+               g_accountRiskIntegrityLock=true;
+           }
+        }
       if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry failed (%s)",execErr);
       return(false);
@@ -1118,8 +1166,27 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    // This catches market fills beyond the configured deviation and any concurrent account
    // exposure change that occurred between approval and execution.
    SAxAccountRiskSnapshot postFillRisk;
-   if(!g_accountRisk.Scan(postFillRisk) || !postFillRisk.exposureKnown ||
-      postFillRisk.existingRiskMoney>postFillRisk.hardRiskBudgetMoney+0.01)
+   bool postFillScanOk=(g_accountRisk.Scan(postFillRisk) && postFillRisk.exposureKnown);
+   bool distributedSettlementOk=true;
+   bool distributedWithinCap=true;
+   string settlementError="";
+   if(postFillScanOk && distributedReservationActive)
+     {
+      if(!g_distributedRiskCoordinator.Settle(distributedReservationId,distributedInstanceId,
+                                               postFillRisk,distributedWithinCap,settlementError))
+        {
+         distributedSettlementOk=false;
+         g_accountRiskIntegrityLock=true;
+         PrintFormat("FLIPDEMON DISTRIBUTED RISK: broker fill is open but central settlement failed; position remains managed and new entries locked (%s).",
+                     settlementError);
+        }
+      else
+         distributedReservationActive=false;
+     }
+
+   if(!postFillScanOk || (postFillScanOk &&
+      (postFillRisk.existingRiskMoney>postFillRisk.hardRiskBudgetMoney+0.01 ||
+       !distributedWithinCap)))
      {
       g_accountRiskIntegrityLock=true;
       string postFillReason=postFillRisk.failureReason;
@@ -1130,6 +1197,12 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
                   newTicket,actualLots,fillPrice,postFillReason);
       if(!AxCloseAndRecord(AX_EXIT_EXECUTION_QUALITY))
          Print("FLIPDEMON POST-FILL DEFENCE: close/finalization not confirmed; existing position remains under management and entry lock stays active.");
+      if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
+      return(false);
+     }
+   if(!distributedSettlementOk)
+     {
+      g_accountRiskIntegrityLock=true;
       if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
       return(false);
      }
@@ -1359,6 +1432,30 @@ int OnInit(void)
       return(INIT_FAILED);
      }
 
+   // Real broker orders require the authenticated cross-terminal coordinator. Analysis and
+   // paper modes remain usable without a remote service; LIVE mode fails initialization closed.
+   if(InpExecutionMode==AX_EXEC_LIVE)
+     {
+      string coordinatorInitError;
+      if(!g_distributedRiskCoordinator.Init(InpRiskCoordinatorUrl,InpRiskCoordinatorKey,
+                                            InpRiskCoordinatorTimeoutMs,coordinatorInitError))
+        {
+         PrintFormat("FLIPDEMON DISTRIBUTED RISK: LIVE mode refused (%s).",coordinatorInitError);
+         return(INIT_FAILED);
+        }
+      SAxAccountRiskSnapshot startupRisk;
+      bool startupWithinCap=false;
+      if(!g_accountRisk.Scan(startupRisk) || !startupRisk.exposureKnown ||
+         !g_distributedRiskCoordinator.Reconcile(startupRisk,startupWithinCap,coordinatorInitError) ||
+         !startupWithinCap)
+        {
+         PrintFormat("FLIPDEMON DISTRIBUTED RISK: startup reconciliation failed; LIVE mode refused (%s).",
+                     coordinatorInitError);
+         return(INIT_FAILED);
+        }
+      Print("FLIPDEMON DISTRIBUTED RISK: authenticated broker snapshot reconciled; LIVE entries may request reservations.");
+     }
+
    // demo execution is typically near-instant with near-zero slippage - it will not surface the
    // live-only problems this EA specifically defends against (spread spikes, slow fills, real
    // slippage). Detected once here purely to label the dashboard/log honestly; behavior itself
@@ -1520,17 +1617,33 @@ void OnTick(void)
         }
       else
         {
-         g_accountRiskReconciliationPending=false;
-         if(transactionRisk.existingRiskMoney>transactionRisk.hardRiskBudgetMoney+0.01)
+         bool distributedWithinCap=true;
+         string distributedReconcileError="";
+         bool distributedReconciled=(InpExecutionMode!=AX_EXEC_LIVE ||
+            g_distributedRiskCoordinator.Reconcile(transactionRisk,distributedWithinCap,distributedReconcileError));
+         if(!distributedReconciled)
            {
             g_accountRiskIntegrityLock=true;
-            PrintFormat("FLIPDEMON TRANSACTION RECONCILIATION: account risk %.2f exceeds hard budget %.2f; new entries locked.",
-                        transactionRisk.existingRiskMoney,transactionRisk.hardRiskBudgetMoney);
+            if(InpVerboseLogging)
+               PrintFormat("FLIPDEMON DISTRIBUTED RISK: transaction snapshot not accepted; entries locked and retry retained (%s).",
+                           distributedReconcileError);
            }
-         else if(g_accountRiskIntegrityLock)
+         else
            {
-            g_accountRiskIntegrityLock=false;
-            Print("FLIPDEMON TRANSACTION RECONCILIATION: clean broker snapshot confirmed; account risk lock cleared.");
+            g_accountRiskReconciliationPending=false;
+            if(transactionRisk.existingRiskMoney>transactionRisk.hardRiskBudgetMoney+0.01 ||
+               !distributedWithinCap)
+              {
+               g_accountRiskIntegrityLock=true;
+               PrintFormat("FLIPDEMON TRANSACTION RECONCILIATION: local/central account risk breach; local=%.2f budget=%.2f centralWithinCap=%s; new entries locked.",
+                           transactionRisk.existingRiskMoney,transactionRisk.hardRiskBudgetMoney,
+                           distributedWithinCap?"true":"false");
+              }
+            else if(g_accountRiskIntegrityLock)
+              {
+               g_accountRiskIntegrityLock=false;
+               Print("FLIPDEMON TRANSACTION RECONCILIATION: local and central broker snapshots clean; account risk lock cleared.");
+              }
            }
         }
      }
