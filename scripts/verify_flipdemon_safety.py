@@ -247,6 +247,16 @@ require("g_accountRiskIntegrityLock=true" in ea
 require("g_accountRiskIntegrityLock" in ea and "cleared after a clean broker exposure rescan" in ea,
         "post-fill risk lock clears only after a clean broker-confirmed rescan")
 
+require("g_accountRiskReconciliationPending=true" in ea
+        and "if(g_accountRiskReconciliationPending)" in ea,
+        "every broker transaction dirties the account-wide exposure snapshot for tick-time reconciliation")
+require("g_accountRisk.Scan(transactionRisk)" in ea
+        and "transactionRisk.existingRiskMoney>transactionRisk.hardRiskBudgetMoney+0.01" in ea,
+        "partial fills, pending-order changes and netting updates are reconciled from broker-confirmed account state")
+require("g_accountRiskReconciliationPending=false" in ea
+        and "exposure unknown; entries locked" in ea,
+        "unknown transaction snapshots retain the retry flag and fail closed")
+
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
 
 
