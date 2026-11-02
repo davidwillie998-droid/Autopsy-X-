@@ -77,7 +77,8 @@ The bridge's original `/state` cache is in-memory and is **not** an execution-ri
 
 - Run Node.js **22.13 or later**.
 - Attach a persistent disk to the single bridge service instance and set `RISK_LEDGER_PATH` to a file on that disk (for example, `/var/data/flipdemon-risk.sqlite`).
-- Set a long, random `RISK_COORDINATOR_KEY` in the host's secret environment settings. Do not put it in Git, dashboard JavaScript, or committed EA inputs.
+- Set a long, random (at least 32 characters) `RISK_COORDINATOR_KEY` in the host's secret environment settings. Do not put it in Git, dashboard JavaScript, or committed EA inputs.
+- After verifying that `RISK_LEDGER_PATH` is mounted on durable storage that survives service restarts and redeploys, set `RISK_LEDGER_PERSISTENCE_ACK=CONFIRMED`. Without this explicit operator acknowledgement, the API stays disabled even if the path is absolute.
 - Keep the service to one instance. SQLite WAL is appropriate for one service process and a persistent local disk, not multiple independent replicas or network filesystems.
 - Set readiness only when `GET /health` returns `riskCoordinatorReady: true`. If storage or the key is missing, the risk endpoints return HTTP 503.
 
