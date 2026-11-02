@@ -234,6 +234,9 @@ require("maxAdverseSlippagePoints*point" in account_risk
         and "tick.ask+slippageBuffer" in account_risk
         and "tick.bid-slippageBuffer" in account_risk,
         "proposed stop risk reserves adverse execution deviation for both directions")
+require("adverseSlippagePoints" in account_risk and "worstCaseEntryPrice" in account_risk
+        and "adverse_slippage_points" in account_risk and "worst_case_entry_price" in account_risk,
+        "risk audit persists the slippage allowance and worst-case entry used for approval")
 
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
 
