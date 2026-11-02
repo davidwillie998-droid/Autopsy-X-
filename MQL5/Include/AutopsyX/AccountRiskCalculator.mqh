@@ -371,27 +371,28 @@ public:
                double entry=(direction==AX_DIR_BUY)?tick.ask+slippageBuffer:tick.bid-slippageBuffer;
                if(!ValidNumber(entry) || entry<=0.0)
                   reason="INVALID_WORST_CASE_ENTRY_PRICE";
-               ENUM_ORDER_TYPE orderType=(direction==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
-               string calcError="";
-               bool stopOnLossSide=(direction==AX_DIR_BUY)?(stopPrice<entry):(stopPrice>entry);
-               if(reason!="")
-                  ;
-               else if(!stopOnLossSide)
-                  reason="PROPOSED_STOP_NOT_ON_LOSS_SIDE";
-               else if(!CalculateStopRisk(orderType,symbol,volume,entry,stopPrice,false,
-                                          decision.proposedRiskMoney,calcError))
+               else
                  {
-                  reason="PROPOSED_ORDER_RISK_UNKNOWN";
-                  decision.calculationError=calcError;
+                  ENUM_ORDER_TYPE orderType=(direction==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
+                  string calcError="";
+                  bool stopOnLossSide=(direction==AX_DIR_BUY)?(stopPrice<entry):(stopPrice>entry);
+                  if(!stopOnLossSide)
+                     reason="PROPOSED_STOP_NOT_ON_LOSS_SIDE";
+                  else if(!CalculateStopRisk(orderType,symbol,volume,entry,stopPrice,false,
+                                             decision.proposedRiskMoney,calcError))
+                    {
+                     reason="PROPOSED_ORDER_RISK_UNKNOWN";
+                     decision.calculationError=calcError;
+                    }
+                  else if(snapshot.existingRiskMoney>snapshot.hardRiskBudgetMoney+0.01)
+                     reason="EXISTING_ACCOUNT_RISK_ALREADY_EXCEEDS_2_PERCENT";
+                  else if(decision.proposedRiskMoney>
+                          snapshot.equity*perEntryRiskPercent/100.0+0.01)
+                     reason="PROPOSED_ORDER_EXCEEDS_PER_ENTRY_RISK_LIMIT";
+                  else if(snapshot.existingRiskMoney+decision.proposedRiskMoney>
+                          snapshot.hardRiskBudgetMoney+0.01)
+                     reason="PROPOSED_ORDER_EXCEEDS_ACCOUNT_WIDE_2_PERCENT_CAP";
                  }
-               else if(snapshot.existingRiskMoney>snapshot.hardRiskBudgetMoney+0.01)
-                  reason="EXISTING_ACCOUNT_RISK_ALREADY_EXCEEDS_2_PERCENT";
-               else if(decision.proposedRiskMoney>
-                       snapshot.equity*perEntryRiskPercent/100.0+0.01)
-                  reason="PROPOSED_ORDER_EXCEEDS_PER_ENTRY_RISK_LIMIT";
-               else if(snapshot.existingRiskMoney+decision.proposedRiskMoney>
-                       snapshot.hardRiskBudgetMoney+0.01)
-                  reason="PROPOSED_ORDER_EXCEEDS_ACCOUNT_WIDE_2_PERCENT_CAP";
               }
            }
         }
