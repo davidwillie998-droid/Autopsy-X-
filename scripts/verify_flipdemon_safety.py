@@ -253,6 +253,20 @@ require("g_accountRiskReconciliationPending=true" in ea
 require("g_accountRisk.Scan(transactionRisk)" in ea
         and "transactionRisk.existingRiskMoney>transactionRisk.hardRiskBudgetMoney+0.01" in ea,
         "partial fills, pending-order changes and netting updates are reconciled from broker-confirmed account state")
+
+require("PositionRisk(const ulong ticket" in account_risk
+        and "PositionGetDouble(POSITION_VOLUME)" in account_risk
+        and "PositionGetDouble(POSITION_PRICE_OPEN)" in account_risk
+        and "PositionGetDouble(POSITION_SL)" in account_risk,
+        "live position risk uses broker-confirmed remaining volume, entry price and current stop")
+require("POSITION_STOP_CROSSED_OR_INVALID" in account_risk
+        and "stop>=tick.bid" in account_risk and "stop<=tick.ask" in account_risk,
+        "removed, crossed or invalid live stops make account exposure unknown and block new entries")
+require("g_exec.ModifyStops(_Symbol,newSl,g_posState.initialTpPrice,modErr)" in ea
+        and "g_accountRiskReconciliationPending=true" in ea,
+        "stop modification requests trigger broker-state reconciliation rather than trusting requested stop values")
+require("double actualClosed=g_posState.lots-PositionGetDouble(POSITION_VOLUME)" in ea,
+        "partial-close accounting reads broker-confirmed remaining position volume")
 require("g_accountRiskReconciliationPending=false" in ea
         and "exposure unknown; entries locked" in ea,
         "unknown transaction snapshots retain the retry flag and fail closed")
