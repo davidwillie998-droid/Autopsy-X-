@@ -93,6 +93,16 @@ def approve(equity: float, existing: float, proposed: float,
             and existing + proposed <= equity * HARD_CAP_PCT / 100.0 + 0.01)
 
 
+def post_fill_within_cap(equity: float, broker_confirmed_risk: float,
+                         snapshot_known: bool, hard_cap_pct: float = HARD_CAP_PCT) -> bool:
+    """Only retain a new fill when broker-confirmed aggregate stop risk is known and capped."""
+    if not snapshot_known or not all(isfinite(x) for x in (equity, broker_confirmed_risk, hard_cap_pct)):
+        return False
+    if equity <= 0 or broker_confirmed_risk < 0 or hard_cap_pct <= 0:
+        return False
+    return broker_confirmed_risk <= equity * hard_cap_pct / 100.0 + 0.01
+
+
 class AccountRiskCalculatorTests(unittest.TestCase):
     def setUp(self):
         self.rates = {"EURUSD": 100000.0, "XAUUSD": 100.0, "US30": 1.0}
@@ -191,6 +201,19 @@ class AccountRiskCalculatorTests(unittest.TestCase):
             proposed_entry_risk("BUY", 1.0, 1.1, 1.099, 100000.0, -1, 0.0001)
         with self.assertRaisesRegex(ValueError, "INVALID_PROPOSED_ENTRY"):
             proposed_entry_risk("BUY", 1.0, 1.1, 1.099, 100000.0, 1, 0.0)
+
+    def test_post_fill_actual_exposure_inside_cap_is_retained(self):
+        self.assertTrue(post_fill_within_cap(10000, 199.99, True))
+
+    def test_post_fill_slippage_breach_triggers_defensive_close(self):
+        self.assertFalse(post_fill_within_cap(10000, 205.0, True))
+
+    def test_post_fill_unknown_broker_snapshot_triggers_defensive_close(self):
+        self.assertFalse(post_fill_within_cap(10000, 50.0, False))
+
+    def test_post_fill_invalid_equity_or_risk_fails_closed(self):
+        self.assertFalse(post_fill_within_cap(0, 10.0, True))
+        self.assertFalse(post_fill_within_cap(10000, float("nan"), True))
 
     def test_existing_exposure_already_over_cap_rejects_any_new_order(self):
         self.assertFalse(approve(10000, 201, 0.01))
