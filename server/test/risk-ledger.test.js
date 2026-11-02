@@ -99,7 +99,7 @@ test('release requires a newer broker snapshot and the originating instance', ()
     const reservation = f.ledger.reserve({ ...f.base, instanceId: 'terminal-a',
       idempotencyKey: 'entry-00000001', riskMoney: 150 });
     expectCode(() => f.ledger.release({ ...f.base, reservationId: reservation.reservationId,
-      instanceId: 'terminal-a' }), 'OUT_OF_ORDER_SNAPSHOT');
+      instanceId: 'terminal-a' }), 'RELEASE_REQUIRES_NEW_BROKER_SNAPSHOT');
     f.setNow(f.base.snapshotAtMs + 100);
     expectCode(() => f.ledger.release({ ...f.base, snapshotAtMs: f.base.snapshotAtMs + 100,
       snapshotId: 'snapshot-0002', reservationId: reservation.reservationId,
