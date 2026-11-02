@@ -121,6 +121,17 @@ test('settlement updates broker exposure and consumes its reservation in one tra
   } finally { f.close(); }
 });
 
+test('settlement refuses to consume a reservation without a new post-fill broker snapshot', () => {
+  const f = fixture();
+  try {
+    f.ledger.reconcile(f.base);
+    const reservation = f.ledger.reserve({ ...f.base, instanceId: 'terminal-a',
+      idempotencyKey: 'entry-00000001', riskMoney: 100 });
+    expectCode(() => f.ledger.settle({ ...f.base, reservationId: reservation.reservationId }),
+      'POST_FILL_SNAPSHOT_NOT_NEW');
+  } finally { f.close(); }
+});
+
 test('settlement reports an actual broker overrun instead of hiding it', () => {
   const f = fixture();
   try {
