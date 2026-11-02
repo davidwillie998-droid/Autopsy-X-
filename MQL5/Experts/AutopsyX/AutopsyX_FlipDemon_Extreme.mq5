@@ -1038,7 +1038,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    // any existing stop/exposure cannot be valued or the audit row cannot persist.
    SAxAccountRiskDecision accountRiskDecision;
    string accountRiskReason;
-   if(!g_accountRisk.Evaluate(_Symbol,dir,lots,slPrice,g_risk.RiskPercent(),
+   if(!g_accountRisk.Evaluate(_Symbol,dir,lots,slPrice,deviationPts,g_risk.RiskPercent(),
                               accountRiskDecision,accountRiskReason))
      {
       if(InpVerboseLogging) PrintFormat("FLIPDEMON: final account risk gate blocked entry (%s)",accountRiskReason);
