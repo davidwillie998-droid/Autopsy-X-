@@ -49,6 +49,21 @@ def exposure_risk(item: Exposure, pnl_per_price_unit_per_lot: dict[str, float],
     return max(0.0, -pnl)
 
 
+def broker_position_risk(item: Exposure, bid: float, ask: float,
+                         rates: dict[str, float]) -> float:
+    """Mirror live position checks: actual SL must exist and remain beyond market."""
+    if item.pending:
+        raise ValueError("NOT_A_LIVE_POSITION")
+    if not all(isfinite(x) for x in (bid, ask)) or bid <= 0 or ask < bid:
+        raise ValueError("POSITION_QUOTE_UNAVAILABLE")
+    if item.stop is None:
+        raise ValueError("UNPROTECTED_POSITION")
+    if ((item.side == "BUY" and item.stop >= bid) or
+            (item.side == "SELL" and item.stop <= ask)):
+        raise ValueError("POSITION_STOP_CROSSED_OR_INVALID")
+    return exposure_risk(item, rates)
+
+
 
 def proposed_entry_risk(side: str, volume: float, quote_entry: float, stop: float,
                         value_per_price_unit_per_lot: float, slippage_points: int,
@@ -140,6 +155,49 @@ class AccountRiskCalculatorTests(unittest.TestCase):
     def test_missing_stop_is_unknown_not_zero(self):
         with self.assertRaisesRegex(ValueError, "UNKNOWN_STOP"):
             scan([Exposure("EURUSD", "BUY", 0.1, 1.1, None)], [], 10000, self.rates)
+
+    def test_live_position_without_broker_stop_is_unprotected(self):
+        with self.assertRaisesRegex(ValueError, "UNPROTECTED_POSITION"):
+            broker_position_risk(Exposure("EURUSD", "BUY", 0.1, 1.10, None),
+                                 1.1000, 1.1002, self.rates)
+
+    def test_stop_widening_increases_actual_broker_risk(self):
+        tight = Exposure("EURUSD", "BUY", 0.1, 1.10, 1.0995)
+        widened = Exposure("EURUSD", "BUY", 0.1, 1.10, 1.0980)
+        tight_risk = broker_position_risk(tight, 1.1000, 1.1002, self.rates)
+        widened_risk = broker_position_risk(widened, 1.1000, 1.1002, self.rates)
+        self.assertAlmostEqual(tight_risk, 5.0)
+        self.assertAlmostEqual(widened_risk, 20.0)
+        self.assertGreater(widened_risk, tight_risk)
+
+    def test_stop_tightening_reduces_actual_broker_risk(self):
+        original = Exposure("EURUSD", "BUY", 0.1, 1.10, 1.0980)
+        tightened = Exposure("EURUSD", "BUY", 0.1, 1.10, 1.0995)
+        self.assertLess(broker_position_risk(tightened, 1.1000, 1.1002, self.rates),
+                        broker_position_risk(original, 1.1000, 1.1002, self.rates))
+
+    def test_stop_crossed_by_market_is_not_accepted_as_protection(self):
+        crossed_buy = Exposure("EURUSD", "BUY", 0.1, 1.10, 1.1001)
+        crossed_sell = Exposure("EURUSD", "SELL", 0.1, 1.10, 1.0999)
+        with self.assertRaisesRegex(ValueError, "POSITION_STOP_CROSSED_OR_INVALID"):
+            broker_position_risk(crossed_buy, 1.1000, 1.1002, self.rates)
+        with self.assertRaisesRegex(ValueError, "POSITION_STOP_CROSSED_OR_INVALID"):
+            broker_position_risk(crossed_sell, 1.0998, 1.1000, self.rates)
+
+    def test_partial_close_recalculates_risk_from_remaining_volume(self):
+        before = Exposure("EURUSD", "BUY", 0.4, 1.10, 1.099)
+        after = Exposure("EURUSD", "BUY", 0.15, 1.10, 1.099)
+        before_risk = broker_position_risk(before, 1.1000, 1.1002, self.rates)
+        after_risk = broker_position_risk(after, 1.1000, 1.1002, self.rates)
+        self.assertAlmostEqual(before_risk, 40.0)
+        self.assertAlmostEqual(after_risk, 15.0)
+
+    def test_netting_reversal_uses_actual_reversed_position_side_and_entry(self):
+        # A reversal is one broker net position. Risk must follow its new SELL side,
+        # actual open price and current stop, never the old BUY campaign metadata.
+        reversed_position = Exposure("EURUSD", "SELL", 0.2, 1.1010, 1.1020)
+        self.assertAlmostEqual(broker_position_risk(reversed_position, 1.1000, 1.1002,
+                                                    self.rates), 20.0)
 
     def test_invalid_stop_side_for_pending_order_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "PENDING_STOP"):
