@@ -1,6 +1,9 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { timingSafeEqual } from 'node:crypto';
+import { isAbsolute } from 'node:path';
+import { openRiskLedger, RiskLedgerError } from './risk-ledger.js';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 const BRIDGE_KEY = process.env.BRIDGE_KEY || '';
@@ -11,12 +14,33 @@ const MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 // localhost). Set HOST=127.0.0.1 to restrict to local-machine-only use.
 const HOST = process.env.HOST || '0.0.0.0';
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || 'https://autopsy-x-dashboard.onrender.com';
+const RISK_COORDINATOR_KEY = process.env.RISK_COORDINATOR_KEY || '';
+const RISK_LEDGER_PATH = process.env.RISK_LEDGER_PATH || '';
+const RISK_LEDGER_PERSISTENCE_ACK = process.env.RISK_LEDGER_PERSISTENCE_ACK || '';
+const RISK_RESERVATION_TTL_MS = Number(process.env.RISK_RESERVATION_TTL_MS || 60000);
+const RISK_MAX_SNAPSHOT_AGE_MS = Number(process.env.RISK_MAX_SNAPSHOT_AGE_MS || 15000);
 
 if (!ANTHROPIC_API_KEY) {
   console.warn('WARNING: ANTHROPIC_API_KEY is not set. /analyze will return an error until it is.');
 }
 if (!BRIDGE_KEY) {
   console.warn('WARNING: BRIDGE_KEY is not set — /analyze and /ingest/* are UNAUTHENTICATED. Set BRIDGE_KEY before exposing this beyond localhost.');
+}
+
+let riskLedger = null;
+if (RISK_COORDINATOR_KEY.length >= 32 && isAbsolute(RISK_LEDGER_PATH) &&
+    RISK_LEDGER_PERSISTENCE_ACK === 'CONFIRMED') {
+  try {
+    riskLedger = openRiskLedger(RISK_LEDGER_PATH, {
+      reservationTtlMs: RISK_RESERVATION_TTL_MS,
+      maxSnapshotAgeMs: RISK_MAX_SNAPSHOT_AGE_MS,
+    });
+    console.log('FLIPDEMON distributed risk ledger initialized.');
+  } catch (error) {
+    console.error('FLIPDEMON risk ledger initialization failed:', error.message);
+  }
+} else {
+  console.warn('FLIPDEMON distributed risk coordinator disabled: require a 32+ character RISK_COORDINATOR_KEY, absolute RISK_LEDGER_PATH, and RISK_LEDGER_PERSISTENCE_ACK=CONFIRMED after verifying the path is on persistent storage.');
 }
 
 const app = express();
@@ -47,7 +71,7 @@ function requireBridgeKey(req, res, next) {
 }
 
 app.get('/health', (req, res) => {
-  res.json({ ok: true, hasAnthropicKey: Boolean(ANTHROPIC_API_KEY) });
+  res.json({ ok: true, hasAnthropicKey: Boolean(ANTHROPIC_API_KEY), riskCoordinatorReady: Boolean(riskLedger && RISK_COORDINATOR_KEY) });
 });
 
 // Matches the frontend's pollBridgeOnce()/renderBridgeTicker() shape.
@@ -79,6 +103,49 @@ app.post('/ingest/account', requireBridgeKey, (req, res) => {
   }
   state.account = { balance, equity, margin, freeMargin, currency, leverage, type, receivedAt: Date.now() };
   res.json({ ok: true });
+});
+
+// Distributed FLIPDEMON account-risk coordinator. This ledger is separate from the
+// dashboard's in-memory state and requires its own key plus persistent storage.
+function requireRiskCoordinator(req, res, next) {
+  if (!riskLedger || !RISK_COORDINATOR_KEY) {
+    return res.status(503).json({ error: 'Distributed risk coordinator is not configured with persistent storage and a dedicated key.' });
+  }
+  const supplied = req.get('x-risk-coordinator-key') || '';
+  const expected = Buffer.from(RISK_COORDINATOR_KEY);
+  const candidate = Buffer.from(supplied);
+  if (candidate.length !== expected.length || !timingSafeEqual(candidate, expected)) {
+    return res.status(401).json({ error: 'Invalid or missing risk coordinator key.' });
+  }
+  next();
+}
+
+function riskError(res, error) {
+  if (error instanceof RiskLedgerError) {
+    return res.status(error.status).json({ error: error.message, code: error.code });
+  }
+  console.error('FLIPDEMON risk ledger operation failed:', error.message);
+  return res.status(503).json({ error: 'Risk ledger operation failed. New entries must remain blocked.' });
+}
+
+app.post('/risk/reconcile', requireRiskCoordinator, (req, res) => {
+  try { return res.json(riskLedger.reconcile(req.body || {})); }
+  catch (error) { return riskError(res, error); }
+});
+
+app.post('/risk/reserve', requireRiskCoordinator, (req, res) => {
+  try { return res.json(riskLedger.reserve(req.body || {})); }
+  catch (error) { return riskError(res, error); }
+});
+
+app.post('/risk/release', requireRiskCoordinator, (req, res) => {
+  try { return res.json(riskLedger.release(req.body || {})); }
+  catch (error) { return riskError(res, error); }
+});
+
+app.post('/risk/settle', requireRiskCoordinator, (req, res) => {
+  try { return res.json(riskLedger.settle(req.body || {})); }
+  catch (error) { return riskError(res, error); }
 });
 
 // Proxies to Claude so the API key never reaches the browser.
