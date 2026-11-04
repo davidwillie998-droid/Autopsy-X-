@@ -196,3 +196,24 @@ The retry queue is in-memory by design. If the terminal restarts before a retry 
 
 
 Delayed deal persistence first checks the exact open-setup registry mapping. If that mapping has already been removed after a completed close, the retry may reuse an attribution already persisted for another deal with the same broker `POSITION_IDENTIFIER`. This fallback is position-identity scoped and reads only an existing durable campaign assignment. It never derives a campaign from symbol, direction, comment, or timing.
+
+
+## Durable pre-order campaign intent
+
+The EA now writes a separate account/server/magic/symbol-scoped intent ledger before calling the market execution engine. Each `PREPARE` record contains a unique intent/campaign ID, signal key, symbol, direction, requested volume, intended protective stop, proposed risk budget in account currency, and creation time. The ledger is append-only and checksummed. If the write fails, the market order is not sent.
+
+After the execution engine receives a broker order result, the exact `ResultOrder()` ticket is appended as a `BIND` event. The engine exposes both the order ticket and final server retcode to its caller. The setup registry uses the campaign ID from the pre-order intent rather than generating a new post-fill identity. Partial fills therefore resolve to the same campaign through their broker order ticket.
+
+The deal callback and startup history replay now resolve attribution in this order:
+
+1. Exact persisted open-position mapping by broker `POSITION_IDENTIFIER`.
+2. Exact broker `DEAL_ORDER` to durable intent order-ticket binding.
+3. Existing durable campaign attribution for the same broker position identifier.
+
+No mapping is inferred from symbol, direction, order comment, or approximate time.
+
+A definitive rejected send is recorded as `REJECT`. A timeout, connection failure, missing server retcode, or other ambiguous outcome leaves the intent in `PREPARED`. Any unresolved prepared intent blocks subsequent entries, including after restart. This deliberately favours a manual reconciliation requirement over risking a duplicate order after a crash or uncertain broker response. A prepared intent is not automatically discarded merely because no fill is visible at startup.
+
+A bound intent records broker order identity, not proof that every requested unit filled. Actual filled volume and economics continue to come only from broker deal history. The ledger does not change the 2% aggregate account risk ceiling, does not enable pyramiding, and does not alter the `ANALYSIS_ONLY` default.
+
+Python acceptance tests model prepare-before-submit, failed persistence, broker-ticket binding, idempotent binding, terminal rejection, and restart blocking for unresolved intents. They are reference tests only. MetaEditor compilation, MT5 Strategy Tester validation, partial-fill broker testing, and crash-injection tests remain outstanding.
