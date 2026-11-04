@@ -165,3 +165,7 @@ This integration is still preliminary. It does not yet replay broker history int
 - If history selection fails, startup remains blocked. If history is available but does not contain the opening deal for an open position, that position remains managed while new entries stay blocked.
 
 This closes the basic delayed-callback recovery path after restart. It is not a complete event-sourced campaign state machine: attribution amendments to already-written unattributed rows, durable pre-order intent, and automatic same-session retry of a temporarily unavailable deal remain open work.
+
+### Deal stop snapshot semantics
+
+The persisted field is named `dealStopSnapshot`, not `stopAtFill`. MT5's `DEAL_SL` property is contextual: entry and reversal deals carry the stop from the opening order, while exit deals carry the position stop as it stood at closure. It must not be interpreted as the original stop for every deal type. Current open-risk is still recalculated from live broker positions and their current protective stops. See the [MQL5 Deal Properties reference](https://www.mql5.com/en/docs/constants/tradingconstants/dealproperties).
