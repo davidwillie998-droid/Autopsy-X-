@@ -117,6 +117,7 @@ class CampaignIntent:
     risk_budget: float
     status: str = "PREPARED"
     order_ticket: int = 0
+    created_at: int = 1000
 
 
 @dataclass
@@ -158,6 +159,22 @@ class IntentLedger:
     def by_order(self, order_ticket: int):
         return next((item for item in self.intents.values()
                      if item.status == "BOUND" and item.order_ticket == order_ticket), None)
+
+
+def recover_prepared_order(intent, broker_orders):
+    """Require one exact broker-history match; never guess from symbol alone."""
+    matches = [
+        order for order in broker_orders
+        if order["symbol"] == intent.symbol
+        and order["direction"] == intent.direction
+        and order["created_at"] >= intent.created_at - 5
+        and abs(order["volume"] - intent.requested_volume) <= 1e-8
+        and abs(order["stop"] - intent.intended_stop) <= 1e-8
+        and order["magic_matches"]
+    ]
+    if len(matches) == 1:
+        return matches[0]["ticket"]
+    return 0
 
 
 def resolve_intent_attribution(order_ticket, position_id, intent_ledger, open_registry):
@@ -252,6 +269,34 @@ class CampaignReconciliationTests(unittest.TestCase):
         self.assertFalse(queue.enqueue(7032))
         self.assertEqual(queue.tickets, [7030, 7031])
         self.assertTrue(queue.blocked)
+
+    def test_restart_recovers_prepared_intent_from_one_exact_broker_order(self):
+        intent = CampaignIntent("I-REC", "C-REC", "SIG-REC", "XAUUSD", "BUY",
+                                0.02, 2300, 20, created_at=1000)
+        orders = [
+            {"ticket": 9100, "symbol": "XAUUSD", "direction": "BUY",
+             "created_at": 1001, "volume": 0.02, "stop": 2300, "magic_matches": True}
+        ]
+        self.assertEqual(recover_prepared_order(intent, orders), 9100)
+
+    def test_restart_does_not_guess_when_multiple_broker_orders_match(self):
+        intent = CampaignIntent("I-REC2", "C-REC2", "SIG-REC2", "XAUUSD", "SELL",
+                                0.02, 2400, 20, created_at=1000)
+        orders = [
+            {"ticket": ticket, "symbol": "XAUUSD", "direction": "SELL",
+             "created_at": 1001, "volume": 0.02, "stop": 2400, "magic_matches": True}
+            for ticket in (9101, 9102)
+        ]
+        self.assertEqual(recover_prepared_order(intent, orders), 0)
+
+    def test_restart_rejects_order_match_with_wrong_protective_stop(self):
+        intent = CampaignIntent("I-REC3", "C-REC3", "SIG-REC3", "XAUUSD", "BUY",
+                                0.02, 2300, 20, created_at=1000)
+        orders = [
+            {"ticket": 9103, "symbol": "XAUUSD", "direction": "BUY",
+             "created_at": 1001, "volume": 0.02, "stop": 2290, "magic_matches": True}
+        ]
+        self.assertEqual(recover_prepared_order(intent, orders), 0)
 
     def test_exact_order_intent_preserves_signal_key_ahead_of_position_fallback(self):
         ledger = IntentLedger()
