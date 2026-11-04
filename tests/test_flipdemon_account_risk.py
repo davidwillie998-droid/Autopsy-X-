@@ -347,3 +347,57 @@ class AccountRiskCalculatorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class Mql5SourceContractTests(unittest.TestCase):
+    """Static wiring checks for the production MQL5 implementation.
+
+    These checks catch source-level regressions, but they do not replace MetaEditor
+    compilation, MT5 Strategy Tester runs, or broker-side execution tests.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        cls.ea = (root / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text()
+        cls.risk = (root / "MQL5/Include/AutopsyX/AccountRiskCalculator.mqh").read_text()
+
+    def test_production_ea_includes_account_risk_calculator(self):
+        self.assertIn("#include <AutopsyX/AccountRiskCalculator.mqh>", self.ea)
+        self.assertIn("CAccountRiskCalculator g_accountRisk", self.ea)
+
+    def test_production_calculator_uses_account_currency_order_calc_profit(self):
+        self.assertIn("OrderCalcProfit(orderType,symbol,volume,entryPrice,stopPrice,result)", self.risk)
+        self.assertIn("#define AX_ACCOUNT_RISK_HARD_CAP_PCT 2.0", self.risk)
+
+    def test_pending_orders_use_remaining_unfilled_volume(self):
+        self.assertIn("OrderGetDouble(ORDER_VOLUME_CURRENT)", self.risk)
+        self.assertIn("PendingOrderRisk(ticket,risk,error)", self.risk)
+
+    def test_live_ea_keeps_hedging_disabled_until_multi_ticket_management_exists(self):
+        # Risk arithmetic can enumerate hedging tickets, but this EA's position
+        # lifecycle remains single-position oriented. Do not remove this guard
+        # until entry, exit, partial-close and restart recovery are multi-ticket safe.
+        self.assertIn("marginMode==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING", self.ea)
+        self.assertIn("return(INIT_FAILED);", self.ea[
+            self.ea.index("marginMode==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING"):
+            self.ea.index("marginMode==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING") + 800
+        ])
+
+    def test_execution_defaults_to_analysis_only(self):
+        self.assertIn("InpExecutionMode = AX_EXEC_ANALYSIS_ONLY", self.ea)
+
+    def test_account_mutex_covers_final_risk_check_and_order_submission(self):
+        acquire = self.ea.index("g_accountRiskCoordinator.TryAcquire()")
+        evaluate = self.ea.index("g_accountRisk.Evaluate(", acquire)
+        submit = self.ea.index("g_exec.OpenMarket(", evaluate)
+        self.assertLess(acquire, evaluate)
+        self.assertLess(evaluate, submit)
+        self.assertIn("g_accountRisk.Scan(postFillRisk)", self.ea[submit:])
+
+    def test_broker_transactions_mark_account_snapshot_dirty(self):
+        callback = self.ea.index("void OnTradeTransaction(")
+        dirty = self.ea.index("g_accountRiskReconciliationPending=true;", callback)
+        self.assertLess(callback, dirty)
+        self.assertIn("if(g_accountRiskReconciliationPending)", self.ea[dirty:])
