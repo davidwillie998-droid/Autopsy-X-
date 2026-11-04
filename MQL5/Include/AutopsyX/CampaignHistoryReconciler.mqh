@@ -45,6 +45,66 @@ public:
          return(false);
         }
 
+      // A terminal crash can occur after the broker accepts the market order
+      // but before the caller appends its BIND event. Recover only one outstanding
+      // intent and only from a unique exact broker-history order match.
+      int preparedCount=intentJournal.PreparedIntentCount();
+      if(preparedCount>1)
+        {
+         error="MULTIPLE_UNRESOLVED_CAMPAIGN_INTENTS";
+         return(false);
+        }
+      if(preparedCount==1)
+        {
+         SAxCampaignIntent pendingIntent;
+         if(!intentJournal.FindOnlyPreparedIntent(pendingIntent))
+           {
+            error="UNRESOLVED_CAMPAIGN_INTENT_LOOKUP_FAILED";
+            return(false);
+           }
+         double volumeStep=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+         double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+         if(volumeStep<=0.0 || tickSize<=0.0)
+           {
+            error="BROKER_ORDER_MATCH_REQUIRES_VALID_VOLUME_STEP_AND_TICK_SIZE";
+            return(false);
+           }
+         int matches=0;
+         ulong matchedOrder=0;
+         for(int o=0;o<HistoryOrdersTotal();o++)
+           {
+            ulong orderTicket=HistoryOrderGetTicket(o);
+            if(orderTicket==0) continue;
+            if((ulong)HistoryOrderGetInteger(orderTicket,ORDER_MAGIC)!=magic ||
+               HistoryOrderGetString(orderTicket,ORDER_SYMBOL)!=symbol) continue;
+            ENUM_ORDER_TYPE orderType=(ENUM_ORDER_TYPE)HistoryOrderGetInteger(orderTicket,ORDER_TYPE);
+            string direction=(orderType==ORDER_TYPE_BUY)?"BUY":
+                             (orderType==ORDER_TYPE_SELL)?"SELL":"";
+            if(direction!=pendingIntent.direction) continue;
+            datetime setupTime=(datetime)HistoryOrderGetInteger(orderTicket,ORDER_TIME_SETUP);
+            if(setupTime<(pendingIntent.createdAt-5)) continue;
+            double orderVolume=HistoryOrderGetDouble(orderTicket,ORDER_VOLUME_INITIAL);
+            double orderStop=HistoryOrderGetDouble(orderTicket,ORDER_SL);
+            if(MathAbs(orderVolume-pendingIntent.requestedVolume)>MathMax(volumeStep*0.5,0.00000001) ||
+               MathAbs(orderStop-pendingIntent.intendedStop)>MathMax(tickSize*0.5,0.00000001))
+               continue;
+            matches++;
+            matchedOrder=orderTicket;
+           }
+         if(matches>1)
+           {
+            error="AMBIGUOUS_BROKER_ORDER_MATCH_FOR_PREPARED_INTENT";
+            return(false);
+           }
+         if(matches==1 && !intentJournal.BindOrder(pendingIntent.intentId,matchedOrder))
+           {
+            error="PREPARED_INTENT_ORDER_BIND_FAILED";
+            return(false);
+           }
+         // Zero matches leaves the PREPARED intent untouched. OnInit will keep
+         // entries disabled rather than assume that the broker never accepted it.
+        }
+
       int total=HistoryDealsTotal();
       for(int i=0;i<total;i++)
         {
