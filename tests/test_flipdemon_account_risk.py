@@ -411,6 +411,7 @@ class FullMarginModeSourceTests(unittest.TestCase):
         cls.ea = (root / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text()
         cls.risk = (root / "MQL5/Include/AutopsyX/RiskEngine.mqh").read_text()
         cls.account_risk = (root / "MQL5/Include/AutopsyX/AccountRiskCalculator.mqh").read_text()
+        cls.execution = (root / "MQL5/Include/AutopsyX/ExecutionEngine.mqh").read_text()
 
     def test_mode_is_disabled_by_default_and_risk_remains_capped(self):
         self.assertIn("InpEnableFullMarginMode    = false", self.ea)
@@ -467,6 +468,53 @@ class FullMarginModeSourceTests(unittest.TestCase):
         self.assertLess(attempt.index("g_chop.IsInCooldown()"), attempt.index("PreTradeAllowed("))
         self.assertLess(attempt.index("AxHtfConfluenceOk(dir)"), attempt.index("PreTradeAllowed("))
 
+
+    def test_runtime_guard_is_opt_in_and_only_runs_for_an_open_ea_position(self):
+        start = self.ea.index("bool AxFullMarginRuntimeProtection(void)")
+        end = self.ea.index("void AxRecordExternalClose(void)", start)
+        guard = self.ea[start:end]
+        self.assertIn("if(!InpEnableFullMarginMode || !g_haveOpenPosition) return(false)", guard)
+        self.assertIn("(ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber", guard)
+
+    def test_runtime_guard_fails_closed_on_non_percent_stopout_mode_and_invalid_data(self):
+        start = self.ea.index("bool AxFullMarginRuntimeProtection(void)")
+        end = self.ea.index("void AxRecordExternalClose(void)", start)
+        guard = self.ea[start:end]
+        self.assertIn("ACCOUNT_MARGIN_SO_MODE", guard)
+        self.assertIn("ACCOUNT_STOPOUT_MODE_PERCENT", guard)
+        self.assertIn("ACCOUNT_MARGIN_LEVEL", guard)
+        self.assertIn("FULL_MARGIN_RUNTIME_MARGIN_DATA_INVALID", guard)
+        self.assertIn("MathIsValidNumber(marginLevel)", guard)
+
+    def test_runtime_guard_uses_broker_floor_plus_configured_buffer(self):
+        start = self.ea.index("bool AxFullMarginRuntimeProtection(void)")
+        end = self.ea.index("void AxRecordExternalClose(void)", start)
+        guard = self.ea[start:end]
+        self.assertIn("MathMax(callLevel,stopoutLevel)+InpFullMarginStopoutBufferPercent", guard)
+        self.assertIn("marginLevel<=safetyFloor", guard)
+
+    def test_runtime_breach_latches_entries_and_uses_recorded_risk_exit(self):
+        start = self.ea.index("bool AxFullMarginRuntimeProtection(void)")
+        end = self.ea.index("void AxRecordExternalClose(void)", start)
+        guard = self.ea[start:end]
+        self.assertIn("g_emergency.TriggerEmergencyStop(failureReason)", guard)
+        self.assertIn("AxCloseAndRecord(AX_EXIT_RISK_SHUTDOWN)", guard)
+        self.assertIn("if(!AxCloseAndRecord(AX_EXIT_RISK_SHUTDOWN))", guard)
+
+    def test_runtime_guard_runs_before_signal_processing_and_retries_normal_management_on_close_failure(self):
+        on_tick = self.ea[self.ea.index("void OnTick(void)"):]
+        self.assertLess(on_tick.index("AxFullMarginRuntimeProtection()"),
+                        on_tick.index("g_mom.Update(g_md)"))
+        self.assertIn("if(AxFullMarginRuntimeProtection()) return;", on_tick)
+        self.assertIn("normal position management remains active for retry", self.ea)
+
+    def test_execution_close_rechecks_magic_before_initial_and_retry_close(self):
+        close_start = self.execution.index("bool              ClosePosition(")
+        close_end = self.execution.index("//--- close part of an open position", close_start)
+        close_method = self.execution[close_start:close_end]
+        self.assertGreaterEqual(close_method.count("POSITION_MAGIC"), 2)
+        self.assertIn("!=m_magic", close_method)
+        self.assertIn("Position ownership changed before close", close_method)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
