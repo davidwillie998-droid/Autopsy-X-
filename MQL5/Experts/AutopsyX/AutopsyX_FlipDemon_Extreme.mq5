@@ -616,6 +616,64 @@ bool AxCloseAndRecord(const ENUM_AX_EXIT_REASON reason)
    return(true);
   }
 
+// Runtime protection for margin deterioration after an EA-managed position is open.
+// This guard is opt-in with Full Margin Mode and fails closed when broker stop-out
+// units or live margin data cannot be interpreted safely. It never closes foreign positions.
+bool AxFullMarginRuntimeProtection(void)
+  {
+   if(!InpEnableFullMarginMode || !g_haveOpenPosition) return(false);
+   if(!PositionSelect(_Symbol)) return(false);
+
+   if((ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber)
+     {
+      if(InpVerboseLogging)
+         Print("FULL MARGIN RUNTIME GUARD: selected position is not owned by this EA; refusing to close it.");
+      return(false);
+     }
+
+   string failureReason="";
+   ENUM_ACCOUNT_STOPOUT_MODE stopoutMode=
+      (ENUM_ACCOUNT_STOPOUT_MODE)AccountInfoInteger(ACCOUNT_MARGIN_SO_MODE);
+   double marginLevel=AccountInfoDouble(ACCOUNT_MARGIN_LEVEL);
+   double callLevel=AccountInfoDouble(ACCOUNT_MARGIN_SO_CALL);
+   double stopoutLevel=AccountInfoDouble(ACCOUNT_MARGIN_SO_SO);
+
+   if(stopoutMode!=ACCOUNT_STOPOUT_MODE_PERCENT)
+      failureReason="FULL_MARGIN_RUNTIME_REQUIRES_PERCENT_STOP_OUT_MODE";
+   else if(!MathIsValidNumber(marginLevel) || marginLevel<=0.0 ||
+           !MathIsValidNumber(callLevel) || callLevel<0.0 ||
+           !MathIsValidNumber(stopoutLevel) || stopoutLevel<0.0 ||
+           !MathIsValidNumber(InpFullMarginStopoutBufferPercent) ||
+           InpFullMarginStopoutBufferPercent<0.0)
+      failureReason="FULL_MARGIN_RUNTIME_MARGIN_DATA_INVALID";
+   else
+     {
+      double safetyFloor=MathMax(callLevel,stopoutLevel)+InpFullMarginStopoutBufferPercent;
+      if(!MathIsValidNumber(safetyFloor) || safetyFloor<0.0)
+         failureReason="FULL_MARGIN_RUNTIME_SAFETY_FLOOR_INVALID";
+      else if(marginLevel<=safetyFloor)
+         failureReason=StringFormat("FULL_MARGIN_RUNTIME_BREACH: margin level %.2f%%; safety floor %.2f%%",
+                                    marginLevel,safetyFloor);
+     }
+
+   if(failureReason=="") return(false);
+
+   if(!g_emergency.IsEmergencyStopActive())
+      g_emergency.TriggerEmergencyStop(failureReason);
+
+   PrintFormat("FLIPDEMON FULL MARGIN RUNTIME PROTECTION: %s; new entries latched off; requesting EA-position close.",
+               failureReason);
+
+   if(!AxCloseAndRecord(AX_EXIT_RISK_SHUTDOWN))
+     {
+      if(InpVerboseLogging)
+         Print("FULL MARGIN RUNTIME GUARD: close not yet confirmed; normal position management remains active for retry.");
+      return(false);
+     }
+
+   return(true);
+  }
+
 void AxRecordExternalClose(void)
   {
    double closePrice=0,grossProfit=0,commission=0,swap=0; datetime closeTime=0; ulong lastTicket=0;
@@ -1817,6 +1875,10 @@ void OnTick(void)
 
    if(g_haveOpenPosition && !g_exec.HasOpenPosition(_Symbol))
       AxRecordExternalClose();
+
+   // Check broker margin health before signal processing. A confirmed emergency close
+   // ends this tick; a failed close leaves ordinary exit management running for retry.
+   if(AxFullMarginRuntimeProtection()) return;
 
    //--- SCAN: cheap per-tick microstructure/momentum update ---
    g_mom.Update(g_md);
