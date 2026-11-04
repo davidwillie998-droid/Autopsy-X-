@@ -364,6 +364,23 @@ public:
       return(false);
      }
 
+   bool              FindAttributionByPositionIdentifier(const ulong positionIdentifier,
+                                                           string &campaignId,string &signalKey) const
+     {
+      campaignId="";
+      signalKey="";
+      if(positionIdentifier==0) return(false);
+      for(int i=0;i<ArraySize(m_deals);i++)
+        {
+         if(m_deals[i].positionIdentifier!=positionIdentifier ||
+            m_deals[i].campaignId=="") continue;
+         campaignId=m_deals[i].campaignId;
+         signalKey=m_deals[i].signalKey;
+         return(true);
+        }
+      return(false);
+     }
+
    bool              AmendAttribution(const ulong dealTicket,const string campaignId,const string signalKey)
      {
       if(!m_ready || m_handle==INVALID_HANDLE || dealTicket==0 ||
