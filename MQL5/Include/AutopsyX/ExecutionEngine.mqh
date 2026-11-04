@@ -17,6 +17,7 @@ private:
    string            m_symbol;
    int               m_maxRetries;
    int               m_retryDelayMs;
+   ulong             m_magic;
 
    bool              RetryableRetcode(const uint code) const
      {
@@ -38,11 +39,12 @@ private:
      }
 
 public:
-                     CExecutionEngine(void) { m_maxRetries=2; m_retryDelayMs=200; }
+                     CExecutionEngine(void) { m_maxRetries=2; m_retryDelayMs=200; m_magic=0; }
 
    void              Init(const string symbol,const ulong magic,const int deviationPts,const int maxRetries=2)
      {
       m_symbol = symbol;
+      m_magic = magic;
       m_trade.SetExpertMagicNumber(magic);
       m_trade.SetDeviationInPoints(deviationPts);
       m_trade.SetTypeFilling(DetectFillingMode(symbol));
@@ -141,12 +143,22 @@ public:
    bool              ClosePosition(const string symbol,string &errorReason)
      {
       if(!PositionSelect(symbol)) { errorReason=""; return(true); } // already flat
+      if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+        {
+         errorReason="Refusing to close a position not owned by this EA magic number";
+         return(false);
+        }
 
       bool ok=false;
       for(int attempt=0; attempt<=m_maxRetries; attempt++)
         {
          if(attempt>0) Sleep(m_retryDelayMs);
          if(!PositionSelect(symbol)) { errorReason=""; return(true); }
+         if((ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+           {
+            errorReason="Position ownership changed before close; refusing foreign position";
+            return(false);
+           }
          ok = m_trade.PositionClose(symbol);
          if(ok)
            {
