@@ -155,3 +155,13 @@ This integration is still preliminary. It does not yet replay broker history int
 - Journal identity now includes account login, broker server hash, EA magic, and chart symbol. The file path and header are symbol-scoped, preventing two symbol instances with the same magic from writing into one journal.
 - The journal schema was advanced to version 2 for the symbol-bound header. The earlier development schema is not silently accepted.
 - If MT5 announces a deal but the history record is not yet readable, the EA latches the entry gate closed. It does not create a zero-value fill. Automatic retry/backfill of that missed callback is still outstanding and must be implemented before this can be considered restart-complete.
+
+### Startup broker-history replay integration
+
+- Startup now selects broker history from the beginning of available history through the current server time, scoped to this EA magic and chart symbol.
+- For a deal whose stable position identifier still exists in the verified restart registry, replay attaches that exact persisted setup ID as campaign attribution.
+- Closed historical deals whose setup mapping no longer exists are retained as broker-confirmed but unattributed records. They are not assigned a guessed campaign.
+- Replay is idempotent by deal ticket. Existing records are checked against broker identity and fill economics; current open positions still require an attributed opening deal before the entry gate can be enabled.
+- If history selection fails, startup remains blocked. If history is available but does not contain the opening deal for an open position, that position remains managed while new entries stay blocked.
+
+This closes the basic delayed-callback recovery path after restart. It is not a complete event-sourced campaign state machine: attribution amendments to already-written unattributed rows, durable pre-order intent, and automatic same-session retry of a temporarily unavailable deal remain open work.
