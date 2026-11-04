@@ -345,8 +345,6 @@ class AccountRiskCalculatorTests(unittest.TestCase):
                 scan([], [], equity, self.rates)
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
 
 
 class Mql5SourceContractTests(unittest.TestCase):
@@ -401,3 +399,7 @@ class Mql5SourceContractTests(unittest.TestCase):
         dirty = self.ea.index("g_accountRiskReconciliationPending=true;", callback)
         self.assertLess(callback, dirty)
         self.assertIn("if(g_accountRiskReconciliationPending)", self.ea[dirty:])
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
