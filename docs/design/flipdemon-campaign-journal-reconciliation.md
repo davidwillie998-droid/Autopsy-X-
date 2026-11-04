@@ -206,8 +206,8 @@ After the execution engine receives a broker order result, the exact `ResultOrde
 
 The deal callback and startup history replay now resolve attribution in this order:
 
-1. Exact persisted open-position mapping by broker `POSITION_IDENTIFIER`.
-2. Exact broker `DEAL_ORDER` to durable intent order-ticket binding.
+1. Exact broker `DEAL_ORDER` to durable intent order-ticket binding. This preserves the original signal key as well as the campaign ID.
+2. Exact persisted open-position mapping by broker `POSITION_IDENTIFIER`, used for legacy positions without a matching intent.
 3. Existing durable campaign attribution for the same broker position identifier.
 
 No mapping is inferred from symbol, direction, order comment, or approximate time.
