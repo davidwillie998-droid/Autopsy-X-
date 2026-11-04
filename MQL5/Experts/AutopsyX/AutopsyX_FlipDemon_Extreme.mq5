@@ -1913,7 +1913,7 @@ int OnInit(void)
       int replayAppended=0,replayKnown=0,replayUnattributed=0;
       string replayError="";
       if(!g_campaignHistoryReconciler.Replay(0,TimeCurrent(),InpMagicNumber,_Symbol,
-                                              g_restartRecovery,g_campaignJournal,
+                                              g_restartRecovery,g_campaignJournal,g_campaignIntentJournal,
                                               replayAppended,replayKnown,replayUnattributed,
                                               replayError))
         {
