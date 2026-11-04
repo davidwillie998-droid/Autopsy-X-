@@ -432,6 +432,35 @@ class FullMarginModeSourceTests(unittest.TestCase):
         self.assertIn("InpMinFreeMarginPercent    = 150.0", self.ea)
         self.assertIn("InpMaxMarginUsagePercent   = 50.0", self.ea)
 
+    def test_full_margin_requires_confidence_strictly_above_75_and_direction_match(self):
+        start = self.ea.index("bool AxFullMarginQualityQualified(")
+        end = self.ea.index("// Fail closed unless the broker reports percentage-based stop-out levels", start)
+        gate = self.ea[start:end]
+        self.assertIn("score.confidence<=75.0", gate)
+        self.assertIn("score.action!=dir", gate)
+        self.assertIn("AxStrongMomentumForDirection(dir)", gate)
+
+    def test_full_margin_requires_vwap_and_clear_htf_alignment(self):
+        start = self.ea.index("bool AxFullMarginQualityQualified(")
+        end = self.ea.index("// Fail closed unless the broker reports percentage-based stop-out levels", start)
+        gate = self.ea[start:end]
+        self.assertIn('g_vwapTrend!="BULLISH"', gate)
+        self.assertIn('g_vwapTrend!="BEARISH"', gate)
+        self.assertIn("g_regimeHtf.R2()<InpHtfMinR2ToBlock", gate)
+        self.assertIn("g_regimeHtf.Slope()", gate)
+
+    def test_non_qualifying_setup_keeps_standard_margin_policy(self):
+        self.assertIn("bool fullMarginCandidate=AxFullMarginQualityQualified(dir,score)", self.ea)
+        self.assertIn("quality threshold or confluence not met; standard margin limits will apply", self.ea)
+        self.assertIn("fullMarginActive?100.0:-1.0", self.ea)
+        self.assertIn("fullMarginActive?0.0:-1.0", self.ea)
+
+    def test_full_margin_risk_gate_runs_after_standard_entry_confluence(self):
+        attempt = self.ea[self.ea.index("bool AxAttemptEntry("):]
+        self.assertLess(attempt.index("SessionAllowed("), attempt.index("PreTradeAllowed("))
+        self.assertLess(attempt.index("g_chop.IsInCooldown()"), attempt.index("PreTradeAllowed("))
+        self.assertLess(attempt.index("AxHtfConfluenceOk(dir)"), attempt.index("PreTradeAllowed("))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
