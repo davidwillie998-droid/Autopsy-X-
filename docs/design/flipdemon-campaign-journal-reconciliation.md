@@ -193,3 +193,6 @@ The EA retries at most four queued tickets per tick or one-second timer event. T
 The retry lock is separate from the broader restart-recovery latch. It clears only after the queue drains and every currently open position owned by this EA on the chart symbol has an attributed opening deal. Unknown mappings, journal write failures, and unresolved history keep new entries blocked. Existing position management remains active.
 
 The retry queue is in-memory by design. If the terminal restarts before a retry completes, startup broker-history replay remains the recovery path. This queue is not a substitute for the still-pending durable pre-order intent journal.
+
+
+Delayed deal persistence first checks the exact open-setup registry mapping. If that mapping has already been removed after a completed close, the retry may reuse an attribution already persisted for another deal with the same broker `POSITION_IDENTIFIER`. This fallback is position-identity scoped and reads only an existing durable campaign assignment. It never derives a campaign from symbol, direction, comment, or timing.
