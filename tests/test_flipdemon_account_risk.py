@@ -401,5 +401,37 @@ class Mql5SourceContractTests(unittest.TestCase):
         self.assertIn("if(g_accountRiskReconciliationPending)", self.ea[dirty:])
 
 
+class FullMarginModeSourceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[1]
+        cls.ea = (root / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text()
+        cls.risk = (root / "MQL5/Include/AutopsyX/RiskEngine.mqh").read_text()
+
+    def test_mode_is_disabled_by_default_and_risk_remains_capped(self):
+        self.assertIn("InpEnableFullMarginMode    = false", self.ea)
+        self.assertIn("AxClampD(riskPercent,0.05,2.0)", self.risk)
+        self.assertIn("#define AX_ACCOUNT_RISK_HARD_CAP_PCT 2.0", self.risk)
+
+    def test_full_margin_requires_directional_momentum(self):
+        self.assertIn("AxStrongMomentumForDirection(dir)", self.ea)
+        self.assertIn("g_mom.PersistentBull()", self.ea)
+        self.assertIn("g_mom.PersistentBear()", self.ea)
+        self.assertIn("g_mom.IsExhausted()", self.ea)
+
+    def test_full_margin_checks_broker_stopout_buffer(self):
+        self.assertIn("ACCOUNT_MARGIN_SO_MODE", self.ea)
+        self.assertIn("ACCOUNT_STOPOUT_MODE_PERCENT", self.ea)
+        self.assertIn("ACCOUNT_MARGIN_SO_CALL", self.ea)
+        self.assertIn("ACCOUNT_MARGIN_SO_SO", self.ea)
+        self.assertIn("AxFullMarginStopoutSafe(requiredMargin,stopoutReason)", self.ea)
+        self.assertIn("projectedMarginLevel<=requiredMarginLevel", self.ea)
+
+    def test_standard_margin_limits_remain_default(self):
+        self.assertIn("InpMinFreeMarginPercent    = 150.0", self.ea)
+        self.assertIn("InpMaxMarginUsagePercent   = 50.0", self.ea)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
