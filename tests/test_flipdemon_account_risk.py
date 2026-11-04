@@ -396,11 +396,11 @@ class Mql5SourceContractTests(unittest.TestCase):
 
     def test_broker_transactions_mark_account_snapshot_dirty(self):
         on_tick = self.ea.index("void OnTick(void)")
-        callback = self.ea.index("void OnTradeTransaction(")
+        callback = self.ea.rindex("void OnTradeTransaction(")
         dirty = self.ea.index("g_accountRiskReconciliationPending=true;", callback)
-        self.assertLess(on_tick, dirty)
-        self.assertLess(dirty, callback)
-        self.assertIn("if(g_accountRiskReconciliationPending)", self.ea[on_tick:dirty])
+        self.assertLess(on_tick, callback)
+        self.assertLess(callback, dirty)
+        self.assertIn("if(g_accountRiskReconciliationPending)", self.ea[on_tick:callback])
 
 
 class FullMarginModeSourceTests(unittest.TestCase):
