@@ -217,3 +217,12 @@ A definitive rejected send is recorded as `REJECT`. A timeout, connection failur
 A bound intent records broker order identity, not proof that every requested unit filled. Actual filled volume and economics continue to come only from broker deal history. The ledger does not change the 2% aggregate account risk ceiling, does not enable pyramiding, and does not alter the `ANALYSIS_ONLY` default.
 
 Python acceptance tests model prepare-before-submit, failed persistence, broker-ticket binding, idempotent binding, terminal rejection, and restart blocking for unresolved intents. They are reference tests only. MetaEditor compilation, MT5 Strategy Tester validation, partial-fill broker testing, and crash-injection tests remain outstanding.
+
+
+### Crash window between broker acceptance and intent binding
+
+There is an unavoidable interval between the broker accepting a market request and the EA durably appending the returned order ticket. If the terminal stops in that interval, the intent remains `PREPARED`.
+
+On startup, after selecting broker history, the reconciler checks whether there is exactly one prepared intent. It searches historical orders for a unique match on account-scoped EA magic, symbol, direction, setup time, initial requested volume, and protective stop. Only one exact match is bound to the intent. Zero matches leave the intent unresolved; multiple matches are treated as ambiguous and fail recovery. No comment-only or symbol-only matching is permitted.
+
+The unresolved-intent gate is evaluated after this broker-history reconciliation attempt, so a crash after broker acceptance but before the local bind can recover automatically when the broker's historical order is available. A crash before order submission leaves no matching order and requires manual resolution. The reference tests cover unique match, ambiguous multiple matches, and stop mismatch rejection.
