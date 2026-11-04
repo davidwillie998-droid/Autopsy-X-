@@ -137,3 +137,15 @@ Do not clear an orphan or unknown record merely because it is inconvenient. Reso
 - History replay deliberately leaves campaign ID and signal key empty when no trusted attribution source exists. It does not promote broker comments into authoritative campaign identity. Such records remain unresolved and must block campaign additions.
 - The journal and replay component are not yet wired into EA startup or `OnTradeTransaction`. No campaign can be considered recovered solely because these files exist.
 - Python reference tests cover idempotent deal identity, partial fills, netting volume, reversals, unresolved attribution, and missing historical stop snapshots. The latest commits returned no associated pull-request workflow runs. MQL5 compilation and Strategy Tester validation remain outstanding.
+
+## EA integration progress (2026-11-04)
+
+- The EA now includes and initializes `CampaignJournal.mqh` after the existing open-setup registry has reconciled.
+- Journal initialization failure blocks new entries while leaving existing-position management active.
+- On startup, every currently open position owned by this EA must have an attributed `IN` or `INOUT` deal in the journal. Legacy open positions without that evidence remain managed but block new entries.
+- The `OnTradeTransaction` deal-add path now reads broker deal properties, resolves the stable position identifier through the existing restart registry, and appends the actual fill/exit deal before final-exit handling can remove that setup mapping.
+- Missing setup attribution, an invalid deal record, or a failed journal append latches the existing recovery entry gate closed.
+- The journal records zero for historical stop/risk-at-fill snapshots when those values are unavailable. Current account risk continues to be calculated from broker positions and protective stops, not journal snapshots.
+- Netting reversal `INOUT` deals can satisfy the attributed-position recovery check when they carry a trusted campaign ID.
+
+This integration is still preliminary. It does not yet replay broker history into the journal at startup, reconstruct campaign state from all prior deals, persist an explicit campaign-intent event before order submission, or manage multiple concurrent legs. The EA remains single-position-oriented and hedging accounts remain rejected. A source review and MQL5 compile are still required before treating this integration as validated.
