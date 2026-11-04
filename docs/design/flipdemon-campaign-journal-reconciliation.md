@@ -128,3 +128,12 @@ Do not clear an orphan or unknown record merely because it is inconvenient. Reso
 - Additions require positive campaign net PnL after known costs, a fresh continuation signal, intact structure, resumed momentum, and protection on every managed leg.
 - Unknown or unreconciled exposure blocks new entries and additions.
 - Cut losing trades when the thesis is invalidated, while recognizing that gaps and execution latency can prevent an exact stop fill.
+
+## Current implementation progress (2026-11-04)
+
+- `CampaignJournal.mqh` provides an isolated append-only deal ledger with account/server/magic identity, monotonic sequence, checksum validation, duplicate deal protection, and fail-closed write handling.
+- Historical stop and risk snapshots may be zero when the broker history does not supply them. Zero means unknown, not zero live exposure. Live risk must still come from current broker positions and protective stops.
+- `CampaignHistoryReconciler.mqh` replays broker-selected deal history for the configured EA magic, records actual broker deal volume/price and costs, classifies IN/OUT/INOUT/OUT_BY, and rejects incomplete or conflicting deal identities.
+- History replay deliberately leaves campaign ID and signal key empty when no trusted attribution source exists. It does not promote broker comments into authoritative campaign identity. Such records remain unresolved and must block campaign additions.
+- The journal and replay component are not yet wired into EA startup or `OnTradeTransaction`. No campaign can be considered recovered solely because these files exist.
+- Python reference tests cover idempotent deal identity, partial fills, netting volume, reversals, unresolved attribution, and missing historical stop snapshots. The latest commits returned no associated pull-request workflow runs. MQL5 compilation and Strategy Tester validation remain outstanding.
