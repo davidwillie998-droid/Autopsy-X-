@@ -73,6 +73,38 @@ class Journal:
         return True
 
 
+@dataclass
+class PendingDealRetries:
+    capacity: int = 128
+    tickets: list = field(default_factory=list)
+    blocked: bool = False
+
+    def enqueue(self, ticket: int) -> bool:
+        if ticket <= 0:
+            return False
+        if ticket in self.tickets:
+            self.blocked = True
+            return True
+        if len(self.tickets) >= self.capacity:
+            self.blocked = True
+            return False
+        self.tickets.append(ticket)
+        self.blocked = True
+        return True
+
+    def process(self, persist, all_live_positions_attributed, budget=4):
+        attempts = 0
+        for ticket in list(self.tickets)[:budget]:
+            attempts += 1
+            if persist(ticket):
+                self.tickets.remove(ticket)
+        if not self.tickets and all_live_positions_attributed:
+            self.blocked = False
+        else:
+            self.blocked = True
+        return attempts
+
+
 def signed_volume(deal: Deal) -> float:
     return deal.volume if deal.side == "BUY" else -deal.volume
 
@@ -104,6 +136,51 @@ def recovery_status(*, journal_valid, broker_positions, attributed_position_ids,
 
 
 class CampaignReconciliationTests(unittest.TestCase):
+    def test_delayed_history_deal_retries_and_unlocks_only_after_durable_attribution(self):
+        queue = PendingDealRetries()
+        readable = set()
+        persisted = set()
+        self.assertTrue(queue.enqueue(7001))
+        self.assertFalse(queue.process(lambda t: t in readable and not persisted.add(t),
+                                       all_live_positions_attributed=True) and queue.blocked is False)
+        self.assertEqual(queue.tickets, [7001])
+        readable.add(7001)
+        queue.process(lambda t: (persisted.add(t) is None) if t in readable else False,
+                      all_live_positions_attributed=True)
+        self.assertEqual(queue.tickets, [])
+        self.assertFalse(queue.blocked)
+        self.assertEqual(persisted, {7001})
+
+    def test_duplicate_transaction_notification_is_deduplicated(self):
+        queue = PendingDealRetries()
+        self.assertTrue(queue.enqueue(7002))
+        self.assertTrue(queue.enqueue(7002))
+        self.assertEqual(queue.tickets, [7002])
+
+    def test_retry_work_is_bounded_per_timer_or_tick(self):
+        queue = PendingDealRetries()
+        for ticket in range(7010, 7016):
+            self.assertTrue(queue.enqueue(ticket))
+        attempts = queue.process(lambda _ticket: False, all_live_positions_attributed=False, budget=4)
+        self.assertEqual(attempts, 4)
+        self.assertEqual(len(queue.tickets), 6)
+        self.assertTrue(queue.blocked)
+
+    def test_unresolved_ticket_remains_queued_and_blocks_entries(self):
+        queue = PendingDealRetries()
+        queue.enqueue(7020)
+        queue.process(lambda _ticket: False, all_live_positions_attributed=True)
+        self.assertEqual(queue.tickets, [7020])
+        self.assertTrue(queue.blocked)
+
+    def test_queue_capacity_never_discards_an_unresolved_ticket_silently(self):
+        queue = PendingDealRetries(capacity=2)
+        self.assertTrue(queue.enqueue(7030))
+        self.assertTrue(queue.enqueue(7031))
+        self.assertFalse(queue.enqueue(7032))
+        self.assertEqual(queue.tickets, [7030, 7031])
+        self.assertTrue(queue.blocked)
+
     def test_deal_is_attributed_to_campaign_after_restart(self):
         journal = Journal(12345, "Broker-Demo", 1500015)
         deal = Deal(1001, 9001, "XAUUSD", "BUY", "IN", 0.03, 2350.0,
