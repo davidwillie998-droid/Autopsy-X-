@@ -45,9 +45,20 @@
 #include <AutopsyX/Dashboard.mqh>
 
 //====================================================================
+// RISK PROFILE
+//====================================================================
+enum ENUM_AX_RISK_PROFILE
+  {
+   AX_RISK_PROFILE_LOW = 0,
+   AX_RISK_PROFILE_MEDIUM = 1,
+   AX_RISK_PROFILE_HIGH = 2
+  };
+
+//====================================================================
 // INPUTS
 //====================================================================
 input group "=== MODE ===";
+input ENUM_AX_RISK_PROFILE InpRiskProfile = AX_RISK_PROFILE_MEDIUM; // High profile may request Full Margin, subject to every qualification and broker-safety gate
 input ENUM_AX_MODE   InpMode                    = AX_MODE_AGGRESSIVE; // Aggression mode
 input double         InpExtremeRiskPercent      = 2.0;                // EXTREME mode risk % per trade (hard-capped at 2.0)
 
@@ -119,7 +130,7 @@ input double         InpWeeklyLossLimitPercent  = 15.0;    // Weekly loss limit 
 input int            InpMaxPositionsPerSymbol   = 1;       // Max simultaneously open positions on this symbol specifically
 input double         InpMaxDirectionalExposureLots = 1.0;  // Max exposure lots in one direction (BUY or SELL) at once
 input double         InpMaxMarginUsagePercent   = 50.0;     // Standard-mode max ACCOUNT_MARGIN / ACCOUNT_EQUITY, percent
-input bool           InpEnableFullMarginMode    = false;    // Optional aggressive mode; strong aligned momentum required
+input bool           InpEnableFullMarginMode    = true;     // Master permission; Full Margin remains exclusive to HIGH profile and all qualification gates
 input double         InpFullMarginMinPersistence = 0.70;    // Directional tick persistence required, 0..1
 input int            InpFullMarginMinConsecutiveTicks = 5;   // Consecutive directional ticks required
 input double         InpFullMarginMinVelocity    = 1.5;      // Minimum ticks/second
@@ -1022,8 +1033,9 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
       return(false);
      }
-   bool fullMarginCandidate=AxFullMarginQualityQualified(dir,score);
-   if(InpEnableFullMarginMode && !fullMarginCandidate && InpVerboseLogging)
+   bool highRiskFullMarginEligible=(InpRiskProfile==AX_RISK_PROFILE_HIGH && InpEnableFullMarginMode);
+   bool fullMarginCandidate=(highRiskFullMarginEligible && AxFullMarginQualityQualified(dir,score));
+   if(highRiskFullMarginEligible && !fullMarginCandidate && InpVerboseLogging)
       Print("FLIPDEMON FULL MARGIN: quality threshold or confluence not met; standard margin limits will apply.");
    if(AxHasForeignPositionOnSymbol(gateReason))
      {
