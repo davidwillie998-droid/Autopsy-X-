@@ -104,6 +104,24 @@ private:
              a.campaignId==b.campaignId && a.signalKey==b.signalKey);
      }
 
+   bool SameDealEconomics(const SAxCampaignDealRecord &a,const SAxCampaignDealRecord &b) const
+     {
+      return(a.dealTicket==b.dealTicket &&
+             a.orderTicket==b.orderTicket &&
+             a.positionIdentifier==b.positionIdentifier &&
+             a.symbol==b.symbol && a.direction==b.direction &&
+             a.entryType==b.entryType &&
+             MathAbs(a.volume-b.volume)<0.00000001 &&
+             MathAbs(a.price-b.price)<0.00000001 &&
+             MathAbs(a.dealStopSnapshot-b.dealStopSnapshot)<0.00000001 &&
+             MathAbs(a.riskAtFillMoney-b.riskAtFillMoney)<0.00000001 &&
+             MathAbs(a.commission-b.commission)<0.00000001 &&
+             MathAbs(a.swap-b.swap)<0.00000001 &&
+             MathAbs(a.fee-b.fee)<0.00000001 &&
+             MathAbs(a.profit-b.profit)<0.00000001 &&
+             a.dealTime==b.dealTime);
+     }
+
    int FindDealIndex(const ulong dealTicket) const
      {
       for(int i=0;i<ArraySize(m_deals);i++)
@@ -296,14 +314,7 @@ public:
                return(false);
               }
             SAxCampaignDealRecord original=m_deals[existing];
-            bool sameEconomics=(original.orderTicket==record.orderTicket &&
-               original.positionIdentifier==record.positionIdentifier &&
-               original.symbol==record.symbol && original.direction==record.direction &&
-               original.entryType==record.entryType &&
-               MathAbs(original.volume-record.volume)<0.00000001 &&
-               MathAbs(original.price-record.price)<0.00000001 &&
-               original.dealTime==record.dealTime);
-            if(!sameEconomics ||
+            if(!SameDealEconomics(original,record) ||
                (original.campaignId!="" && original.campaignId!=record.campaignId) ||
                (original.signalKey!="" && original.signalKey!=record.signalKey))
               {
