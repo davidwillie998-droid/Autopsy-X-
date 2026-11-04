@@ -169,3 +169,16 @@ This closes the basic delayed-callback recovery path after restart. It is not a 
 ### Deal stop snapshot semantics
 
 The persisted field is named `dealStopSnapshot`, not `stopAtFill`. MT5's `DEAL_SL` property is contextual: entry and reversal deals carry the stop from the opening order, while exit deals carry the position stop as it stood at closure. It must not be interpreted as the original stop for every deal type. Current open-risk is still recalculated from live broker positions and their current protective stops. See the [MQL5 Deal Properties reference](https://www.mql5.com/en/docs/constants/tradingconstants/dealproperties).
+
+
+### Append-only attribution amendments
+
+A broker deal row is immutable after append. If startup replay initially records a deal without a campaign because its exact open-position setup mapping is temporarily unavailable, a later replay may add a separate `ATTR` journal event.
+
+The amendment repeats the original deal identity and economics, references the same deal ticket, and supplies the campaign/setup ID and signal key. It is accepted only when the original deal row exists, every immutable broker field matches, and no conflicting campaign or signal attribution exists. Repeated identical amendments are idempotent.
+
+Journal replay applies the amendment as an overlay to the in-memory deal record. The original `DEAL` row is never rewritten. Orphan amendments, altered economics, and conflicting attribution invalidate journal recovery and keep new entries blocked.
+
+The history reconciler attempts this upgrade only when `CRestartRecovery` returns the exact persisted setup mapping for the same broker position identifier and symbol. A comment, symbol match alone, or guessed campaign is not sufficient.
+
+Reference acceptance tests cover successful upgrade, repeated idempotent amendment, conflicting campaign IDs, and invalid-journal rejection. These are Python reference tests, not MQL5 compilation or broker-runtime proof.
