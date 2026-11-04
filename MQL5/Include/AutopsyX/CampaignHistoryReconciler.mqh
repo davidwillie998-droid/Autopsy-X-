@@ -7,6 +7,7 @@
 #define AX_CAMPAIGNHISTORYRECONCILER_MQH
 
 #include "CampaignJournal.mqh"
+#include "RestartRecovery.mqh"
 
 class CCampaignHistoryReconciler
   {
@@ -15,7 +16,8 @@ public:
    // campaign IDs from comments. Unattributed records remain unresolved and
    // must block campaign additions until a separate trusted attribution step.
    bool Replay(const datetime fromTime,const datetime toTime,
-               const ulong magic,CCampaignJournal &journal,
+               const ulong magic,const string symbol,
+               CRestartRecovery &recovery,CCampaignJournal &journal,
                int &appended,int &alreadyKnown,int &unattributed,
                string &error) const
      {
@@ -24,7 +26,7 @@ public:
       unattributed=0;
       error="";
 
-      if(magic==0 || fromTime<=0 || toTime<fromTime)
+      if(magic==0 || symbol=="" || fromTime<0 || toTime<fromTime)
         {
          error="INVALID_REPLAY_RANGE_OR_MAGIC";
          return(false);
@@ -53,6 +55,7 @@ public:
 
          ulong dealMagic=(ulong)HistoryDealGetInteger(ticket,DEAL_MAGIC);
          if(dealMagic!=magic) continue;
+         if(HistoryDealGetString(ticket,DEAL_SYMBOL)!=symbol) continue;
 
          long dealType=HistoryDealGetInteger(ticket,DEAL_TYPE);
          if(dealType!=DEAL_TYPE_BUY && dealType!=DEAL_TYPE_SELL)
@@ -85,8 +88,18 @@ public:
          record.fee=HistoryDealGetDouble(ticket,DEAL_FEE);
          record.profit=HistoryDealGetDouble(ticket,DEAL_PROFIT);
          record.dealTime=(datetime)HistoryDealGetInteger(ticket,DEAL_TIME);
-         record.campaignId="";
-         record.signalKey="";
+         SAxOpenSetupRecord setupRecord;
+         if(recovery.FindByPositionIdentifier(record.positionIdentifier,setupRecord) &&
+            setupRecord.symbol==symbol)
+           {
+            record.campaignId=setupRecord.setupId;
+            record.signalKey=setupRecord.setupId;
+           }
+         else
+           {
+            record.campaignId="";
+            record.signalKey="";
+           }
 
          if(record.dealTicket==0 || record.orderTicket==0 ||
             record.positionIdentifier==0 || record.symbol=="" ||
