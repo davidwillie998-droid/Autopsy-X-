@@ -354,6 +354,13 @@ bool AxFullMarginQualityQualified(const ENUM_AX_DIR dir,const SAxScore &score)
    if(dir==AX_DIR_SELL && g_vwapTrend!="BEARISH") return(false);
    if(dir!=AX_DIR_BUY && dir!=AX_DIR_SELL) return(false);
 
+   // Full-margin qualification demands a clear higher-timeframe direction, not
+   // merely the ordinary filter's permission to trade when HTF evidence is neutral.
+   if(g_regimeHtf.R2()<InpHtfMinR2ToBlock) return(false);
+   double htfSlope=g_regimeHtf.Slope();
+   if(dir==AX_DIR_BUY && htfSlope<=0.0) return(false);
+   if(dir==AX_DIR_SELL && htfSlope>=0.0) return(false);
+
    if(InpUseOrderFlow)
      {
       double refPrice=g_md.CurrentMid();
