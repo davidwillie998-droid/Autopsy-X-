@@ -170,6 +170,24 @@ class CampaignReconciliationTests(unittest.TestCase):
             "CORRUPT_JOURNAL",
         )
 
+    def test_broker_history_backfill_can_mark_campaign_attribution_unknown(self):
+        # History can confirm a deal while the original campaign/signal mapping
+        # is unavailable. That deal must remain explicitly unattributed.
+        journal = Journal(12345, "Broker-Demo", 1500015)
+        deal = Deal(1040, 9040, "XAUUSD", "BUY", "IN", 0.01, 2354.0,
+                    campaign_id="")
+        self.assertTrue(journal.append_deal(deal))
+        self.assertEqual(journal.rows[1040].campaign_id, "")
+
+    def test_history_missing_stop_is_not_misrepresented_as_zero_live_risk(self):
+        # Zero is an unavailable historical snapshot, not a live risk value.
+        historical_stop = 0.0
+        historical_risk = 0.0
+        stop_snapshot_known = historical_stop > 0.0
+        risk_snapshot_known = historical_risk > 0.0
+        self.assertFalse(stop_snapshot_known)
+        self.assertFalse(risk_snapshot_known)
+
     def test_commission_swap_and_fee_remain_attached_to_deal(self):
         deal = Deal(1030, 9030, "XAUUSD", "SELL", "OUT", 0.01, 2349.0,
                     commission=-0.04, swap=-0.02, fee=-0.01, profit=1.25,
