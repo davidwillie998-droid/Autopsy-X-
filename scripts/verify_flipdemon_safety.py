@@ -344,6 +344,9 @@ require("intentJournal.FindByOrderTicket(record.orderTicket,intent)" in history_
         and "g_campaignJournal.FindAttributionByPositionIdentifier" in ea,
         "broker deal attribution can recover through exact order-ticket intent binding")
 
+require(history_reconciler.index("intentJournal.FindByOrderTicket(record.orderTicket,intent)") <
+        history_reconciler.index("recovery.FindByPositionIdentifier(record.positionIdentifier"),
+        "startup replay preserves the original signal key from the exact order-bound intent before registry fallback")
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
 
 
