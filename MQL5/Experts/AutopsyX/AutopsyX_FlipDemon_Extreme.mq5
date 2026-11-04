@@ -1807,7 +1807,7 @@ int OnInit(void)
 
    // The deal journal is stricter than the open-setup registry. A failed or
    // corrupt journal blocks new entries while existing positions remain managed.
-   g_campaignJournalReady=g_campaignJournal.Init(InpMagicNumber);
+   g_campaignJournalReady=g_campaignJournal.Init(InpMagicNumber,_Symbol);
    if(!g_campaignJournalReady)
      {
       g_recoveryReady=false;
@@ -2355,6 +2355,13 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
       symbol=request.symbol;
       magic=request.magic;
       relevant=(symbol==_Symbol && magic==InpMagicNumber);
+     }
+   else if(trans.type==TRADE_TRANSACTION_DEAL_ADD && trans.deal>0 &&
+           !HistoryDealSelect(trans.deal))
+     {
+      g_recoveryReady=false;
+      PrintFormat("FLIPDEMON CAMPAIGN JOURNAL: deal history unavailable for deal %I64u; new entries blocked.",
+                  trans.deal);
      }
    else if(trans.type==TRADE_TRANSACTION_DEAL_ADD && trans.deal>0 && HistoryDealSelect(trans.deal))
      {
