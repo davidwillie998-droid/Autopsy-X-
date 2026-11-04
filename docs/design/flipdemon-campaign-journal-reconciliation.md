@@ -182,3 +182,14 @@ Journal replay applies the amendment as an overlay to the in-memory deal record.
 The history reconciler attempts this upgrade only when `CRestartRecovery` returns the exact persisted setup mapping for the same broker position identifier and symbol. A comment, symbol match alone, or guessed campaign is not sufficient.
 
 Reference acceptance tests cover successful upgrade, repeated idempotent amendment, conflicting campaign IDs, and invalid-journal rejection. These are Python reference tests, not MQL5 compilation or broker-runtime proof.
+
+
+### Same-session deal-history retry
+
+A `DEAL_ADD` callback whose history record is not yet readable is now queued by exact deal ticket. The queue is deduplicated, bounded to 128 tickets, and never silently evicts an unresolved ticket. Capacity or allocation failure keeps the recovery entry gate closed.
+
+The EA retries at most four queued tickets per tick or one-second timer event. The timer is active even when the dashboard is disabled, so recovery does not depend on dashboard rendering or a fresh market tick. A queued deal is removed only after its broker history is readable, the exact persisted position-to-setup mapping is available, and the deal is durably appended or reconciled in the campaign journal.
+
+The retry lock is separate from the broader restart-recovery latch. It clears only after the queue drains and every currently open position owned by this EA on the chart symbol has an attributed opening deal. Unknown mappings, journal write failures, and unresolved history keep new entries blocked. Existing position management remains active.
+
+The retry queue is in-memory by design. If the terminal restarts before a retry completes, startup broker-history replay remains the recovery path. This queue is not a substitute for the still-pending durable pre-order intent journal.
