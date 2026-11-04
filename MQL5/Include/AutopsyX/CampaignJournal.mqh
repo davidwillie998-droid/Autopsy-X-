@@ -7,7 +7,7 @@
 #ifndef AX_CAMPAIGNJOURNAL_MQH
 #define AX_CAMPAIGNJOURNAL_MQH
 
-#define AX_CAMPAIGN_JOURNAL_SCHEMA 1
+#define AX_CAMPAIGN_JOURNAL_SCHEMA 2
 #define AX_CAMPAIGN_JOURNAL_FIELD_COUNT 25
 
 struct SAxCampaignDealRecord
@@ -37,6 +37,7 @@ private:
    string                 m_fileName;
    long                   m_login;
    ulong                  m_magic;
+   string                 m_symbol;
    uint                   m_serverHash;
    int                    m_handle;
    long                   m_sequence;
@@ -68,7 +69,7 @@ private:
       if(record.dealTicket==0 || record.positionIdentifier==0 ||
          record.orderTicket==0 || !SafeToken(record.symbol) ||
          !SafeToken(record.direction) || !SafeToken(record.entryType) ||
-         !SafeToken(record.campaignId,true) || !SafeToken(record.signalKey,true))
+         !SafeToken(record.campaignId,true) || !SafeToken(record.signalKey,true) || record.symbol!=m_symbol)
          return(false);
       if(record.direction!="BUY" && record.direction!="SELL") return(false);
       if(record.entryType!="IN" && record.entryType!="OUT" &&
@@ -112,8 +113,8 @@ private:
 
    string Header(void) const
      {
-      return(StringFormat("AXCJ|%d|%I64d|%I64u|%u",
-                          AX_CAMPAIGN_JOURNAL_SCHEMA,m_login,m_magic,m_serverHash));
+      return(StringFormat("AXCJ|%d|%I64d|%I64u|%u|%s",
+                          AX_CAMPAIGN_JOURNAL_SCHEMA,m_login,m_magic,m_serverHash,m_symbol));
      }
 
    string Serialize(const SAxCampaignDealRecord &r,const long sequence) const
@@ -133,12 +134,12 @@ private:
    bool ParseHeader(const string line) const
      {
       string fields[];
-      if(StringSplit(line,'|',fields)!=5) return(false);
+      if(StringSplit(line,'|',fields)!=6) return(false);
       if(fields[0]!="AXCJ" || StringToInteger(fields[1])!=AX_CAMPAIGN_JOURNAL_SCHEMA)
          return(false);
       if(StringToInteger(fields[2])!=m_login ||
          (ulong)StringToInteger(fields[3])!=m_magic ||
-         (uint)StringToInteger(fields[4])!=m_serverHash)
+         (uint)StringToInteger(fields[4])!=m_serverHash || fields[5]!=m_symbol)
          return(false);
       return(true);
      }
@@ -206,18 +207,19 @@ public:
       ArrayResize(m_deals,0);
      }
 
-   bool              Init(const ulong magic)
+   bool              Init(const ulong magic,const string symbol)
      {
       Deinit();
       ArrayResize(m_deals,0);
       m_sequence=0;
       m_login=AccountInfoInteger(ACCOUNT_LOGIN);
       string server=AccountInfoString(ACCOUNT_SERVER);
-      if(m_login<=0 || magic==0 || StringLen(server)==0) return(false);
+      if(m_login<=0 || magic==0 || StringLen(server)==0 || symbol=="") return(false);
       m_magic=magic;
+      m_symbol=symbol;
       m_serverHash=HashText(server);
-      m_fileName=StringFormat("FlipDemon_CampaignJournal_%I64d_%I64u_%u.log",
-                              m_login,m_magic,m_serverHash);
+      m_fileName=StringFormat("FlipDemon_CampaignJournal_%I64d_%I64u_%u_%s.log",
+                              m_login,m_magic,m_serverHash,m_symbol);
 
       if(!FileIsExist(m_fileName) && !CreateNewFile())
         {
