@@ -312,7 +312,8 @@ public:
       if(positionIdentifier==0) return(false);
       for(int i=0;i<ArraySize(m_deals);i++)
          if(m_deals[i].positionIdentifier==positionIdentifier &&
-            m_deals[i].entryType=="IN" && m_deals[i].campaignId!="")
+            (m_deals[i].entryType=="IN" || m_deals[i].entryType=="INOUT") &&
+            m_deals[i].campaignId!="")
             return(true);
       return(false);
      }
