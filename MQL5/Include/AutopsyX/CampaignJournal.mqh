@@ -307,6 +307,16 @@ public:
       return(true);
      }
 
+   bool              HasAttributedPosition(const ulong positionIdentifier) const
+     {
+      if(positionIdentifier==0) return(false);
+      for(int i=0;i<ArraySize(m_deals);i++)
+         if(m_deals[i].positionIdentifier==positionIdentifier &&
+            m_deals[i].entryType=="IN" && m_deals[i].campaignId!="")
+            return(true);
+      return(false);
+     }
+
    bool              AppendDeal(const SAxCampaignDealRecord &record)
      {
       if(!m_ready || m_handle==INVALID_HANDLE || !ValidRecord(record)) return(false);
