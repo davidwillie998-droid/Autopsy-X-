@@ -2362,6 +2362,66 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
       magic=(ulong)HistoryDealGetInteger(trans.deal,DEAL_MAGIC);
       relevant=(symbol==_Symbol && magic==InpMagicNumber);
 
+      // Persist broker-confirmed deal economics before exit handling can remove
+      // the open-setup mapping. Requested volume and callback request fields are
+      // deliberately ignored. Missing attribution blocks future entries.
+      if(relevant && g_campaignJournalReady)
+        {
+         long dealType=HistoryDealGetInteger(trans.deal,DEAL_TYPE);
+         if(dealType==DEAL_TYPE_BUY || dealType==DEAL_TYPE_SELL)
+           {
+            SAxCampaignDealRecord dealRecord;
+            dealRecord.dealTicket=trans.deal;
+            dealRecord.orderTicket=(ulong)HistoryDealGetInteger(trans.deal,DEAL_ORDER);
+            dealRecord.positionIdentifier=(ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID);
+            dealRecord.symbol=symbol;
+            dealRecord.direction=(dealType==DEAL_TYPE_BUY)?"BUY":"SELL";
+            long dealEntry=HistoryDealGetInteger(trans.deal,DEAL_ENTRY);
+            if(dealEntry==DEAL_ENTRY_IN) dealRecord.entryType="IN";
+            else if(dealEntry==DEAL_ENTRY_OUT) dealRecord.entryType="OUT";
+            else if(dealEntry==DEAL_ENTRY_INOUT) dealRecord.entryType="INOUT";
+            else if(dealEntry==DEAL_ENTRY_OUT_BY) dealRecord.entryType="OUT_BY";
+            else dealRecord.entryType="";
+
+            dealRecord.volume=HistoryDealGetDouble(trans.deal,DEAL_VOLUME);
+            dealRecord.price=HistoryDealGetDouble(trans.deal,DEAL_PRICE);
+            dealRecord.stopAtFill=0.0; // unavailable in a dependable deal-history snapshot
+            dealRecord.riskAtFillMoney=0.0; // live risk is recalculated from current broker positions
+            dealRecord.commission=HistoryDealGetDouble(trans.deal,DEAL_COMMISSION);
+            dealRecord.swap=HistoryDealGetDouble(trans.deal,DEAL_SWAP);
+            dealRecord.fee=HistoryDealGetDouble(trans.deal,DEAL_FEE);
+            dealRecord.profit=HistoryDealGetDouble(trans.deal,DEAL_PROFIT);
+            dealRecord.dealTime=(datetime)HistoryDealGetInteger(trans.deal,DEAL_TIME);
+
+            SAxOpenSetupRecord setupRecord;
+            if(g_restartRecovery.FindByPositionIdentifier(dealRecord.positionIdentifier,setupRecord))
+              {
+               dealRecord.campaignId=setupRecord.setupId;
+               dealRecord.signalKey=setupRecord.setupId;
+              }
+            else
+              {
+               dealRecord.campaignId="";
+               dealRecord.signalKey="";
+               g_recoveryReady=false;
+               PrintFormat("FLIPDEMON CAMPAIGN JOURNAL: deal %I64u has no trusted setup mapping; entries blocked.",
+                           trans.deal);
+              }
+
+            if(dealRecord.entryType=="" || !g_campaignJournal.AppendDeal(dealRecord))
+              {
+               g_recoveryReady=false;
+               PrintFormat("FLIPDEMON CAMPAIGN JOURNAL: could not persist broker deal %I64u; entries blocked.",
+                           trans.deal);
+              }
+           }
+        }
+      else if(relevant && !g_campaignJournalReady)
+        {
+         g_recoveryReady=false;
+         Print("FLIPDEMON CAMPAIGN JOURNAL: deal received while journal unavailable; entries blocked.");
+        }
+
       // A DEAL_ADD is a broker-confirmed fill, but MT5 may deliver several deal/order
       // transactions for one request and their order is not guaranteed. Only finalize
       // when the deal is an exit, our tracked campaign is active, and the symbol no
