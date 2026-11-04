@@ -414,9 +414,29 @@ class FullMarginModeSourceTests(unittest.TestCase):
         cls.execution = (root / "MQL5/Include/AutopsyX/ExecutionEngine.mqh").read_text()
 
     def test_mode_is_disabled_by_default_and_risk_remains_capped(self):
-        self.assertIn("InpEnableFullMarginMode    = false", self.ea)
+        self.assertIn("InpEnableFullMarginMode    = true", self.ea)
+        self.assertIn("InpRiskProfile = AX_RISK_PROFILE_MEDIUM", self.ea)
         self.assertIn("AxClampD(riskPercent,0.05,2.0)", self.risk)
         self.assertIn("#define AX_ACCOUNT_RISK_HARD_CAP_PCT 2.0", self.account_risk)
+
+    def test_full_margin_is_exclusive_to_high_risk_profile(self):
+        self.assertIn("AX_RISK_PROFILE_LOW = 0", self.ea)
+        self.assertIn("AX_RISK_PROFILE_MEDIUM = 1", self.ea)
+        self.assertIn("AX_RISK_PROFILE_HIGH = 2", self.ea)
+        self.assertIn("InpRiskProfile==AX_RISK_PROFILE_HIGH && InpEnableFullMarginMode", self.ea)
+        self.assertIn("bool fullMarginCandidate=(highRiskFullMarginEligible && AxFullMarginQualityQualified(dir,score))", self.ea)
+
+    def test_low_and_medium_profiles_cannot_request_full_margin(self):
+        start = self.ea.index("bool AxAttemptEntry(")
+        end = self.ea.index("double intendedPrice", start)
+        entry = self.ea[start:end]
+        self.assertIn("InpRiskProfile==AX_RISK_PROFILE_HIGH", entry)
+        self.assertIn("fullMarginActive?100.0:-1.0", entry)
+        self.assertIn("fullMarginActive?0.0:-1.0", entry)
+
+    def test_full_margin_permission_does_not_change_account_risk_hard_cap(self):
+        self.assertIn("#define AX_ACCOUNT_RISK_HARD_CAP_PCT 2.0", self.account_risk)
+        self.assertIn("g_accountRisk.Evaluate(", self.ea)
 
     def test_full_margin_requires_directional_momentum(self):
         self.assertIn("AxStrongMomentumForDirection(dir)", self.ea)
