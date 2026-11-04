@@ -333,6 +333,10 @@ require("m_trade.ResultOrder()" in execution
 require("g_campaignIntentJournal.BindOrder(campaignIntent.intentId,brokerOrderTicket)" in ea
         and "string recoverySetupId = campaignIntent.campaignId;" in ea,
         "broker order ticket and confirmed position registry retain the pre-order campaign identity")
+require("AxBuildCampaignSignalKey(dir,flipSeq)" in ea
+        and "iTime(_Symbol,PERIOD_M15,0)" in ea
+        and "campaignIntent.signalKey=AxBuildCampaignSignalKey(dir,flipSeq);" in ea,
+        "signal identity is stable across retries for the same symbol, direction, flip sequence and M15 setup bar")
 require("g_campaignIntentJournal.HasUnresolvedIntent()" in ea
         and "g_campaignIntentJournal.RejectIntent(campaignIntent.intentId)" in ea,
         "ambiguous pre-order outcomes remain fail-closed across restart while definitive rejections are terminal")
