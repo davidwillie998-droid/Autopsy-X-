@@ -98,12 +98,13 @@ public:
    bool              OpenMarket(const string symbol,const ENUM_AX_DIR dir,const double lots,
                                  const double slPrice,const double tpPrice,const string comment,
                                  ulong &ticketOut,double &fillPriceOut,string &errorReason,
-                                 int &latencyMsOut,double &actualLotsOut,ulong &orderTicketOut)
+                                 int &latencyMsOut,double &actualLotsOut,ulong &orderTicketOut,uint &retcodeOut)
      {
       uint startTick = GetTickCount();
       latencyMsOut = 0;
       actualLotsOut = 0.0;
       orderTicketOut = 0;
+      retcodeOut = 0;
       if(dir==AX_DIR_NONE || lots<=0) { errorReason="Invalid direction/lots"; return(false); }
 
       bool ok=false;
@@ -134,6 +135,7 @@ public:
            }
 
          uint retcode = m_trade.ResultRetcode();
+         retcodeOut=retcode;
          errorReason = StringFormat("OrderSend failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
          if(!RetryableRetcode(retcode)) { latencyMsOut=(int)(GetTickCount()-startTick); return(false); }
         }
@@ -235,7 +237,9 @@ public:
       if(!ClosePosition(symbol,errorReason)) return(false);
       int latencyMs;
       double actualLots;
-      return(OpenMarket(symbol,newDir,lots,slPrice,tpPrice,comment,ticketOut,fillPriceOut,errorReason,latencyMs,actualLots));
+      ulong orderTicket;
+      uint retcode;
+      return(OpenMarket(symbol,newDir,lots,slPrice,tpPrice,comment,ticketOut,fillPriceOut,errorReason,latencyMs,actualLots,orderTicket,retcode));
      }
 
    bool              ModifyStops(const string symbol,const double slPrice,const double tpPrice,string &errorReason)
