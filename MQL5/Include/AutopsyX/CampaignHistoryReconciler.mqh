@@ -139,7 +139,7 @@ public:
             return(false);
            }
          appended++;
-         unattributed++;
+         if(record.campaignId=="") unattributed++;
         }
 
       return(true);
