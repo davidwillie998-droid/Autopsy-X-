@@ -1048,6 +1048,12 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       if(InpVerboseLogging) Print("FLIPDEMON CAMPAIGN RETRY: new entry blocked while broker deals remain unresolved.");
       return(false);
      }
+   if(!g_campaignIntentJournalReady || !g_campaignIntentJournal.IsReady() ||
+      g_campaignIntentJournal.HasUnresolvedIntent())
+     {
+      if(InpVerboseLogging) Print("FLIPDEMON CAMPAIGN INTENT: new entry blocked; durable intent journal is unavailable or has an unresolved submission.");
+      return(false);
+     }
    string gateReason;
    //--- emergency controls checked FIRST, ahead of every other gate - an operator-triggered stop or
    //--- a disabled direction is a deliberate override and should never be shadowed by a message that
@@ -1355,8 +1361,63 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       distributedReservationActive=true;
      }
 
+   // The campaign identity and risk budget must be durable before the broker sees an order.
+   SAxCampaignIntent campaignIntent;
+   campaignIntent.intentId=AxCreateCampaignIntentId();
+   campaignIntent.campaignId=campaignIntent.intentId;
+   campaignIntent.signalKey=campaignIntent.intentId;
+   campaignIntent.symbol=_Symbol;
+   campaignIntent.direction=(dir==AX_DIR_BUY)?"BUY":"SELL";
+   campaignIntent.requestedVolume=lots;
+   campaignIntent.intendedStop=slPrice;
+   campaignIntent.riskBudgetMoney=accountRiskDecision.proposedRiskMoney;
+   campaignIntent.createdAt=TimeCurrent();
+   campaignIntent.orderTicket=0;
+   campaignIntent.status="PREPARED";
+   if(!g_campaignIntentJournal.CreateIntent(campaignIntent))
+     {
+      g_recoveryReady=false;
+      g_accountRiskIntegrityLock=true;
+      if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
+      Print("FLIPDEMON CAMPAIGN INTENT: could not durably persist pre-order intent; broker order was not sent.");
+      return(false);
+     }
+
    string orderComment=fullMarginActive?"AXFDX|FULL_MARGIN":"AXFDX";
-    if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,orderComment,newTicket,fillPrice,execErr,fillLatencyMs,actualLots))
+   ulong brokerOrderTicket=0;
+   uint brokerRetcode=0;
+   bool marketOrderConfirmed=g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,orderComment,
+                                                newTicket,fillPrice,execErr,fillLatencyMs,actualLots,
+                                                brokerOrderTicket,brokerRetcode);
+   if(brokerOrderTicket>0)
+     {
+      if(!g_campaignIntentJournal.BindOrder(campaignIntent.intentId,brokerOrderTicket))
+        {
+         g_recoveryReady=false;
+         g_accountRiskIntegrityLock=true;
+         PrintFormat("FLIPDEMON CAMPAIGN INTENT: broker order %I64u exists but order-to-intent binding failed; managing any fill and blocking new entries.",
+                     brokerOrderTicket);
+        }
+     }
+   else if(!marketOrderConfirmed)
+     {
+      // A definitive server rejection can close the intent. Timeout/connection
+      // outcomes remain PREPARED because the broker may have accepted the request.
+      if(brokerRetcode!=TRADE_RETCODE_TIMEOUT && brokerRetcode!=TRADE_RETCODE_CONNECTION &&
+         brokerRetcode!=0)
+        {
+         if(!g_campaignIntentJournal.RejectIntent(campaignIntent.intentId))
+            g_recoveryReady=false;
+        }
+      else
+        {
+         g_recoveryReady=false;
+         PrintFormat("FLIPDEMON CAMPAIGN INTENT: ambiguous send outcome (retcode=%u); intent retained and new entries blocked.",
+                     brokerRetcode);
+        }
+     }
+
+   if(!marketOrderConfirmed)
      {
       g_consecutiveExecFailures++;
       g_risk.RegisterExecutionFailure(); // feeds CRiskEngine's own MaxExecutionFailures circuit breaker
@@ -1386,6 +1447,12 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry failed (%s)",execErr);
       return(false);
      }
+   if(brokerOrderTicket==0)
+     {
+      g_recoveryReady=false;
+      g_accountRiskIntegrityLock=true;
+      Print("FLIPDEMON CAMPAIGN INTENT: confirmed position has no broker order ticket; managing position but blocking future entries.");
+     }
    g_consecutiveExecFailures = 0;
    g_risk.RegisterExecutionSuccess();
 
@@ -1395,7 +1462,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    AxInitPositionState(newTicket,dir,lots,fillPrice,slPrice,tpPrice,score,entryReason,flipSeq,intendedPrice);
    // The broker has already confirmed this fill. Persist its real ticket and a unique setup ID
    // immediately; if persistence fails, keep managing the open position but block every new entry.
-   string recoverySetupId = AxGenerateSetupId(_Symbol,dir);
+   string recoverySetupId = campaignIntent.campaignId;
    bool recoverySaved = g_recoveryInitialized &&
                         g_restartRecovery.RecordOpenSetup(newTicket,g_positionIdentifier,recoverySetupId,_Symbol,dir,TimeCurrent());
    if(!recoverySaved || !g_restartRecovery.IsPersisting())
@@ -1827,7 +1894,18 @@ int OnInit(void)
       g_recoveryReady=false;
       Print("FLIPDEMON CAMPAIGN JOURNAL: initialization failed; new entries blocked.");
      }
-   else
+   g_campaignIntentJournalReady=g_campaignIntentJournal.Init(InpMagicNumber,_Symbol);
+   if(!g_campaignIntentJournalReady)
+     {
+      g_recoveryReady=false;
+      Print("FLIPDEMON CAMPAIGN INTENT: journal initialization failed; new entries blocked.");
+     }
+   else if(g_campaignIntentJournal.HasUnresolvedIntent())
+     {
+      g_recoveryReady=false;
+      Print("FLIPDEMON CAMPAIGN INTENT: unresolved pre-order intent found after restart; broker reconciliation/manual review required before new entries.");
+     }
+   if(g_campaignJournalReady)
      {
       // Backfill broker history before checking open-position attribution. The
       // recovery registry can identify current open campaigns; closed historical
@@ -1885,6 +1963,7 @@ void OnDeinit(const int reason)
    EventKillTimer();
    if(InpShowDashboard)
       g_dash.RemoveAll();
+   g_campaignIntentJournal.Deinit();
    g_campaignJournal.Deinit();
    g_autopsy.Deinit();
    g_regime.Deinit();
@@ -2415,13 +2494,22 @@ bool AxPersistCampaignDeal(const ulong dealTicket)
       record.campaignId=setup.setupId;
       record.signalKey=setup.setupId;
      }
-   else if(!g_campaignJournal.FindAttributionByPositionIdentifier(record.positionIdentifier,
-                                                                    record.campaignId,record.signalKey))
+   else
      {
-      // An entry callback can precede the registry write. An exit callback can
-      // arrive after registry cleanup. Retry only until either the exact registry
-      // mapping or an already-durable attributed deal for this position exists.
-      return(false);
+      SAxCampaignIntent intent;
+      if(g_campaignIntentJournalReady &&
+         g_campaignIntentJournal.FindByOrderTicket(record.orderTicket,intent))
+        {
+         record.campaignId=intent.campaignId;
+         record.signalKey=intent.signalKey;
+        }
+      else if(!g_campaignJournal.FindAttributionByPositionIdentifier(record.positionIdentifier,
+                                                                       record.campaignId,record.signalKey))
+        {
+         // The exact broker order ticket may resolve to a durable pre-order intent
+         // before the open-position registry write completes.
+         return(false);
+        }
      }
 
    if(!g_campaignJournal.AppendDeal(record))
