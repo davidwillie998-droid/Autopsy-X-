@@ -1365,7 +1365,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    SAxCampaignIntent campaignIntent;
    campaignIntent.intentId=AxCreateCampaignIntentId();
    campaignIntent.campaignId=campaignIntent.intentId;
-   campaignIntent.signalKey=campaignIntent.intentId;
+   campaignIntent.signalKey=AxBuildCampaignSignalKey(dir,flipSeq);
    campaignIntent.symbol=_Symbol;
    campaignIntent.direction=(dir==AX_DIR_BUY)?"BUY":"SELL";
    campaignIntent.requestedVolume=lots;
@@ -2628,6 +2628,14 @@ string AxCreateCampaignIntentId(void)
    static uint sequence=0;
    sequence++;
    return(StringFormat("AXI-%I64d-%u-%u",(long)TimeCurrent(),GetTickCount(),sequence));
+  }
+
+string AxBuildCampaignSignalKey(const ENUM_AX_DIR dir,const int flipSeq)
+  {
+   datetime barTime=iTime(_Symbol,PERIOD_M15,0);
+   if(barTime<=0) return("");
+   string direction=(dir==AX_DIR_BUY)?"BUY":"SELL";
+   return(StringFormat("SIG-%s-%s-%d-%I64d",_Symbol,direction,flipSeq,(long)barTime));
   }
 
 //====================================================================
