@@ -288,6 +288,28 @@ public:
       return(false);
      }
 
+   int PreparedIntentCount(void) const
+     {
+      int count=0;
+      for(int i=0;i<ArraySize(m_items);i++)
+         if(m_items[i].status=="PREPARED") count++;
+      return(count);
+     }
+
+   bool FindOnlyPreparedIntent(SAxCampaignIntent &item) const
+     {
+      int found=-1;
+      for(int i=0;i<ArraySize(m_items);i++)
+         if(m_items[i].status=="PREPARED")
+           {
+            if(found>=0) return(false);
+            found=i;
+           }
+      if(found<0) return(false);
+      item=m_items[found];
+      return(true);
+     }
+
    void Deinit(void)
      {
       if(m_handle!=INVALID_HANDLE) FileClose(m_handle);
