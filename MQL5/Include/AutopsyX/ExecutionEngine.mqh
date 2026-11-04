@@ -98,11 +98,12 @@ public:
    bool              OpenMarket(const string symbol,const ENUM_AX_DIR dir,const double lots,
                                  const double slPrice,const double tpPrice,const string comment,
                                  ulong &ticketOut,double &fillPriceOut,string &errorReason,
-                                 int &latencyMsOut,double &actualLotsOut)
+                                 int &latencyMsOut,double &actualLotsOut,ulong &orderTicketOut)
      {
       uint startTick = GetTickCount();
       latencyMsOut = 0;
       actualLotsOut = 0.0;
+      orderTicketOut = 0;
       if(dir==AX_DIR_NONE || lots<=0) { errorReason="Invalid direction/lots"; return(false); }
 
       bool ok=false;
@@ -121,6 +122,7 @@ public:
 
          if(ok)
            {
+            orderTicketOut=m_trade.ResultOrder();
             latencyMsOut = (int)(GetTickCount()-startTick);
             if(ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut,actualLotsOut))
               {
