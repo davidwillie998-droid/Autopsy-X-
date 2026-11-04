@@ -43,6 +43,7 @@
 #include <AutopsyX/TradeReconciliation.mqh>
 #include <AutopsyX/RestartRecovery.mqh>
 #include <AutopsyX/CampaignJournal.mqh>
+#include <AutopsyX/CampaignIntentJournal.mqh>
 #include <AutopsyX/CampaignHistoryReconciler.mqh>
 #include <AutopsyX/Dashboard.mqh>
 
@@ -261,6 +262,8 @@ CDashboard            g_dash;
 CTradeReconciler       g_tradeReconciler;
 CRestartRecovery       g_restartRecovery;
 CCampaignJournal       g_campaignJournal;
+CCampaignIntentJournal g_campaignIntentJournal;
+bool                   g_campaignIntentJournalReady = false;
 CCampaignHistoryReconciler g_campaignHistoryReconciler;
 bool                   g_campaignJournalReady = false;
 bool                   g_campaignDealRetryBlocked = false;
@@ -2518,6 +2521,13 @@ void AxProcessCampaignDealRetries(void)
      }
    else
       g_campaignDealRetryBlocked=true;
+  }
+
+string AxCreateCampaignIntentId(void)
+  {
+   static uint sequence=0;
+   sequence++;
+   return(StringFormat("AXI-%I64d-%u-%u",(long)TimeCurrent(),GetTickCount(),sequence));
   }
 
 //====================================================================
