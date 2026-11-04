@@ -20,8 +20,8 @@ struct SAxCampaignDealRecord
    string      entryType;       // IN, OUT, INOUT, or OUT_BY
    double      volume;          // actual broker-confirmed deal volume
    double      price;           // actual broker-confirmed deal price
-   double      stopAtFill;
-   double      riskAtFillMoney;
+   double      stopAtFill;       // zero means unavailable in broker history
+   double      riskAtFillMoney;  // zero means unavailable, never treated as zero live risk
    double      commission;
    double      swap;
    double      fee;
@@ -75,7 +75,7 @@ private:
          record.entryType!="INOUT" && record.entryType!="OUT_BY") return(false);
       if(!MathIsValidNumber(record.volume) || record.volume<=0.0 ||
          !MathIsValidNumber(record.price) || record.price<=0.0 ||
-         !MathIsValidNumber(record.stopAtFill) || record.stopAtFill<=0.0 ||
+         !MathIsValidNumber(record.stopAtFill) || record.stopAtFill<0.0 ||
          !MathIsValidNumber(record.riskAtFillMoney) || record.riskAtFillMoney<0.0 ||
          !MathIsValidNumber(record.commission) || !MathIsValidNumber(record.swap) ||
          !MathIsValidNumber(record.fee) || !MathIsValidNumber(record.profit) ||
