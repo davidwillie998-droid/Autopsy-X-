@@ -57,6 +57,11 @@ def net_position_from_deals(deals):
     return total
 
 
+def resolve_campaign_attribution(position_id, open_setup_registry):
+    """Only trust a persisted setup mapping for the exact broker position ID."""
+    return open_setup_registry.get(position_id, "")
+
+
 def recovery_status(*, journal_valid, broker_positions, attributed_position_ids,
                     history_available=True, identity_matches=True):
     if not identity_matches or not journal_valid:
@@ -177,6 +182,11 @@ class CampaignReconciliationTests(unittest.TestCase):
                             attributed_position_ids={9001}, identity_matches=False),
             "CORRUPT_JOURNAL",
         )
+
+    def test_history_replay_uses_exact_open_position_setup_mapping(self):
+        registry = {9005: "SETUP-9005"}
+        self.assertEqual(resolve_campaign_attribution(9005, registry), "SETUP-9005")
+        self.assertEqual(resolve_campaign_attribution(9006, registry), "")
 
     def test_broker_history_backfill_can_mark_campaign_attribution_unknown(self):
         # History can confirm a deal while the original campaign/signal mapping
