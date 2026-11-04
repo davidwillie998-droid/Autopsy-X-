@@ -4,6 +4,7 @@ These tests validate the policy contract, not MQL5 compilation, broker execution
 durable recovery, or live multi-position management.
 """
 from dataclasses import dataclass
+import unittest
 
 
 @dataclass
