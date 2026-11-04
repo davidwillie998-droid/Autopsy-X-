@@ -43,6 +43,7 @@
 #include <AutopsyX/TradeReconciliation.mqh>
 #include <AutopsyX/RestartRecovery.mqh>
 #include <AutopsyX/CampaignJournal.mqh>
+#include <AutopsyX/CampaignHistoryReconciler.mqh>
 #include <AutopsyX/Dashboard.mqh>
 
 //====================================================================
@@ -260,6 +261,7 @@ CDashboard            g_dash;
 CTradeReconciler       g_tradeReconciler;
 CRestartRecovery       g_restartRecovery;
 CCampaignJournal       g_campaignJournal;
+CCampaignHistoryReconciler g_campaignHistoryReconciler;
 bool                   g_campaignJournalReady = false;
 bool                   g_recoveryInitialized = false;
 bool                   g_recoveryReady = false; // false means new entries are blocked; existing positions remain managed
@@ -1815,6 +1817,23 @@ int OnInit(void)
      }
    else
      {
+      // Backfill broker history before checking open-position attribution. The
+      // recovery registry can identify current open campaigns; closed historical
+      // deals without a surviving mapping remain explicitly unattributed.
+      int replayAppended=0,replayKnown=0,replayUnattributed=0;
+      string replayError="";
+      if(!g_campaignHistoryReconciler.Replay(0,TimeCurrent(),InpMagicNumber,_Symbol,
+                                              g_restartRecovery,g_campaignJournal,
+                                              replayAppended,replayKnown,replayUnattributed,
+                                              replayError))
+        {
+         g_recoveryReady=false;
+         PrintFormat("FLIPDEMON CAMPAIGN REPLAY: failed; new entries blocked (%s).",replayError);
+        }
+      else
+         PrintFormat("FLIPDEMON CAMPAIGN REPLAY: appended=%d known=%d unattributed=%d.",
+                     replayAppended,replayKnown,replayUnattributed);
+
       // Legacy open positions need a broker-confirmed attributed entry deal.
       // Never fabricate a campaign mapping from current position metadata.
       for(int p=0;p<PositionsTotal();p++)
