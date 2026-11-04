@@ -200,7 +200,7 @@ Delayed deal persistence first checks the exact open-setup registry mapping. If 
 
 ## Durable pre-order campaign intent
 
-The EA now writes a separate account/server/magic/symbol-scoped intent ledger before calling the market execution engine. Each `PREPARE` record contains a unique intent/campaign ID, signal key, symbol, direction, requested volume, intended protective stop, proposed risk budget in account currency, and creation time. The ledger is append-only and checksummed. If the write fails, the market order is not sent.
+The EA now writes a separate account/server/magic/symbol-scoped intent ledger before calling the market execution engine. Each `PREPARE` record contains a unique intent/campaign ID, a signal key derived from symbol, direction, flip sequence and the active M15 setup-bar timestamp, symbol, direction, requested volume, intended protective stop, proposed risk budget in account currency, and creation time. The ledger is append-only and checksummed. If the write fails, the market order is not sent.
 
 After the execution engine receives a broker order result, the exact `ResultOrder()` ticket is appended as a `BIND` event. The engine exposes both the order ticket and final server retcode to its caller. The setup registry uses the campaign ID from the pre-order intent rather than generating a new post-fill identity. Partial fills therefore resolve to the same campaign through their broker order ticket.
 
