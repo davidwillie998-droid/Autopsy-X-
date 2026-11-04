@@ -105,6 +105,61 @@ class PendingDealRetries:
         return attempts
 
 
+@dataclass
+class CampaignIntent:
+    intent_id: str
+    campaign_id: str
+    signal_key: str
+    symbol: str
+    direction: str
+    requested_volume: float
+    intended_stop: float
+    risk_budget: float
+    status: str = "PREPARED"
+    order_ticket: int = 0
+
+
+@dataclass
+class IntentLedger:
+    checksum_valid: bool = True
+    intents: dict = field(default_factory=dict)
+
+    def prepare(self, intent: CampaignIntent) -> bool:
+        if not self.checksum_valid or not intent.intent_id or intent.intent_id in self.intents:
+            return False
+        if intent.requested_volume <= 0 or intent.intended_stop <= 0 or intent.risk_budget <= 0:
+            return False
+        if intent.status != "PREPARED" or intent.order_ticket != 0:
+            return False
+        self.intents[intent.intent_id] = intent
+        return True
+
+    def bind(self, intent_id: str, order_ticket: int) -> bool:
+        intent = self.intents.get(intent_id)
+        if not self.checksum_valid or intent is None or order_ticket <= 0:
+            return False
+        if intent.status == "BOUND":
+            return intent.order_ticket == order_ticket
+        if intent.status != "PREPARED":
+            return False
+        intent.status, intent.order_ticket = "BOUND", order_ticket
+        return True
+
+    def reject(self, intent_id: str) -> bool:
+        intent = self.intents.get(intent_id)
+        if not self.checksum_valid or intent is None or intent.status != "PREPARED":
+            return False
+        intent.status = "REJECTED"
+        return True
+
+    def unresolved(self) -> bool:
+        return any(item.status == "PREPARED" for item in self.intents.values())
+
+    def by_order(self, order_ticket: int):
+        return next((item for item in self.intents.values()
+                     if item.status == "BOUND" and item.order_ticket == order_ticket), None)
+
+
 def signed_volume(deal: Deal) -> float:
     return deal.volume if deal.side == "BUY" else -deal.volume
 
@@ -187,6 +242,47 @@ class CampaignReconciliationTests(unittest.TestCase):
         self.assertFalse(queue.enqueue(7032))
         self.assertEqual(queue.tickets, [7030, 7031])
         self.assertTrue(queue.blocked)
+
+    def test_pre_order_intent_must_persist_before_order_submission(self):
+        ledger = IntentLedger()
+        intent = CampaignIntent("I-1", "C-1", "S-1", "XAUUSD", "BUY", 0.02, 2300, 20)
+        self.assertTrue(ledger.prepare(intent))
+        self.assertTrue(ledger.unresolved())
+        self.assertIsNone(ledger.by_order(9001))
+
+    def test_intent_write_failure_prevents_order_authorization(self):
+        ledger = IntentLedger(checksum_valid=False)
+        intent = CampaignIntent("I-2", "C-2", "S-2", "XAUUSD", "BUY", 0.01, 2300, 10)
+        self.assertFalse(ledger.prepare(intent))
+        self.assertEqual(ledger.intents, {})
+
+    def test_broker_order_ticket_binds_intent_and_supports_fill_lookup(self):
+        ledger = IntentLedger()
+        intent = CampaignIntent("I-3", "C-3", "S-3", "XAUUSD", "SELL", 0.03, 2400, 30)
+        self.assertTrue(ledger.prepare(intent))
+        self.assertTrue(ledger.bind("I-3", 9003))
+        self.assertEqual(ledger.by_order(9003).campaign_id, "C-3")
+        self.assertFalse(ledger.unresolved())
+
+    def test_duplicate_order_binding_is_idempotent_but_conflicts_fail(self):
+        ledger = IntentLedger()
+        ledger.prepare(CampaignIntent("I-4", "C-4", "S-4", "XAUUSD", "BUY", 0.01, 2300, 10))
+        self.assertTrue(ledger.bind("I-4", 9004))
+        self.assertTrue(ledger.bind("I-4", 9004))
+        self.assertFalse(ledger.bind("I-4", 9005))
+
+    def test_rejected_intent_is_terminal_and_does_not_block_restart(self):
+        ledger = IntentLedger()
+        ledger.prepare(CampaignIntent("I-5", "C-5", "S-5", "XAUUSD", "BUY", 0.01, 2300, 10))
+        self.assertTrue(ledger.reject("I-5"))
+        self.assertFalse(ledger.unresolved())
+        self.assertFalse(ledger.bind("I-5", 9005))
+
+    def test_crash_left_prepared_intent_blocks_new_entries(self):
+        ledger = IntentLedger()
+        ledger.prepare(CampaignIntent("I-6", "C-6", "S-6", "XAUUSD", "BUY", 0.01, 2300, 10))
+        recovered = IntentLedger(intents=dict(ledger.intents))
+        self.assertTrue(recovered.unresolved())
 
     def test_deal_is_attributed_to_campaign_after_restart(self):
         journal = Journal(12345, "Broker-Demo", 1500015)
