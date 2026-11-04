@@ -23,6 +23,7 @@ on:
       - 'scripts/verify_flipdemon_safety.py'
       - 'tests/test_flipdemon_adaptive_sizing_spec.py'
       - 'tests/test_flipdemon_account_risk.py'
+      - 'tests/test_flipdemon_campaign_reconciliation.py'
       - '.github/workflows/flipdemon-static-safety.yml'
 
 permissions:
