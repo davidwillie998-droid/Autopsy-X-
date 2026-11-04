@@ -450,6 +450,7 @@ class FullMarginModeSourceTests(unittest.TestCase):
         self.assertIn("ACCOUNT_MARGIN_SO_CALL", self.ea)
         self.assertIn("ACCOUNT_MARGIN_SO_SO", self.ea)
         self.assertIn("AxFullMarginStopoutSafe(requiredMargin,stopoutReason)", self.ea)
+        self.assertIn("(callLevel<=0.0 && stopoutLevel<=0.0)", self.ea)
         self.assertIn("projectedMarginLevel<=requiredMarginLevel", self.ea)
 
     def test_standard_margin_limits_remain_default(self):
@@ -495,6 +496,8 @@ class FullMarginModeSourceTests(unittest.TestCase):
         guard = self.ea[start:end]
         self.assertIn("if(!InpEnableFullMarginMode || !g_haveOpenPosition) return(false)", guard)
         self.assertIn("(ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber", guard)
+        self.assertIn('StringFind(positionComment,"FULL_MARGIN")<0', guard)
+        self.assertIn('string orderComment=fullMarginActive?"AXFDX|FULL_MARGIN":"AXFDX";', self.ea)
 
     def test_runtime_guard_fails_closed_on_non_percent_stopout_mode_and_invalid_data(self):
         start = self.ea.index("bool AxFullMarginRuntimeProtection(void)")
@@ -505,6 +508,7 @@ class FullMarginModeSourceTests(unittest.TestCase):
         self.assertIn("ACCOUNT_MARGIN_LEVEL", guard)
         self.assertIn("FULL_MARGIN_RUNTIME_MARGIN_DATA_INVALID", guard)
         self.assertIn("MathIsValidNumber(marginLevel)", guard)
+        self.assertIn("(callLevel<=0.0 && stopoutLevel<=0.0)", guard)
 
     def test_runtime_guard_uses_broker_floor_plus_configured_buffer(self):
         start = self.ea.index("bool AxFullMarginRuntimeProtection(void)")
