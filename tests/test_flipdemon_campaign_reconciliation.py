@@ -30,6 +30,7 @@ class Journal:
     magic: int
     checksum_valid: bool = True
     rows: dict = field(default_factory=dict)
+    amendment_count: int = 0
 
     def append_deal(self, deal: Deal) -> bool:
         if not self.checksum_valid:
@@ -40,8 +41,34 @@ class Journal:
             return False
         existing = self.rows.get(deal.ticket)
         if existing is not None:
-            return existing == deal
+            same_broker_deal = (
+                existing.position_id == deal.position_id
+                and existing.symbol == deal.symbol
+                and existing.side == deal.side
+                and existing.entry == deal.entry
+                and existing.volume == deal.volume
+                and existing.price == deal.price
+            )
+            if not same_broker_deal:
+                return False
+            if not deal.campaign_id:
+                return True
+            return self.amend_attribution(deal.ticket, deal.campaign_id, deal.campaign_id)
         self.rows[deal.ticket] = deal
+        return True
+
+    def amend_attribution(self, ticket: int, campaign_id: str, signal_key: str) -> bool:
+        if not self.checksum_valid or not campaign_id:
+            return False
+        existing = self.rows.get(ticket)
+        if existing is None:
+            return False
+        if existing.campaign_id:
+            return existing.campaign_id == campaign_id
+        self.rows[ticket] = Deal(
+            **{**existing.__dict__, "campaign_id": campaign_id}
+        )
+        self.amendment_count += 1
         return True
 
 
@@ -100,6 +127,37 @@ class CampaignReconciliationTests(unittest.TestCase):
                         campaign_id="CAMP-003")
         self.assertTrue(journal.append_deal(first))
         self.assertFalse(journal.append_deal(conflict))
+
+    def test_unattributed_deal_can_receive_trusted_append_only_amendment(self):
+        journal = Journal(12345, "Broker-Demo", 1500015)
+        deal = Deal(1050, 9050, "XAUUSD", "BUY", "IN", 0.02, 2355.0)
+        self.assertTrue(journal.append_deal(deal))
+        self.assertEqual(journal.rows[1050].campaign_id, "")
+        self.assertTrue(journal.amend_attribution(1050, "CAMP-050", "SETUP-050"))
+        self.assertEqual(journal.rows[1050].campaign_id, "CAMP-050")
+
+    def test_repeated_identical_attribution_amendment_is_idempotent(self):
+        journal = Journal(12345, "Broker-Demo", 1500015)
+        deal = Deal(1051, 9051, "XAUUSD", "SELL", "IN", 0.01, 2356.0)
+        self.assertTrue(journal.append_deal(deal))
+        self.assertTrue(journal.amend_attribution(1051, "CAMP-051", "SETUP-051"))
+        self.assertTrue(journal.amend_attribution(1051, "CAMP-051", "SETUP-051"))
+        self.assertEqual(journal.amendment_count, 1)
+
+    def test_conflicting_campaign_attribution_is_rejected(self):
+        journal = Journal(12345, "Broker-Demo", 1500015)
+        deal = Deal(1052, 9052, "XAUUSD", "BUY", "IN", 0.01, 2357.0)
+        self.assertTrue(journal.append_deal(deal))
+        self.assertTrue(journal.amend_attribution(1052, "CAMP-052", "SETUP-052"))
+        self.assertFalse(journal.amend_attribution(1052, "CAMP-OTHER", "SETUP-OTHER"))
+        self.assertEqual(journal.rows[1052].campaign_id, "CAMP-052")
+
+    def test_attribution_amendment_requires_existing_deal_and_valid_journal(self):
+        journal = Journal(12345, "Broker-Demo", 1500015)
+        self.assertFalse(journal.amend_attribution(9999, "CAMP-X", "SETUP-X"))
+        journal.checksum_valid = False
+        deal = Deal(1053, 9053, "XAUUSD", "BUY", "IN", 0.01, 2358.0)
+        self.assertFalse(journal.append_deal(deal))
 
     def test_partial_fill_uses_confirmed_deal_volume(self):
         journal = Journal(12345, "Broker-Demo", 1500015)
