@@ -347,6 +347,15 @@ require("intentJournal.FindByOrderTicket(record.orderTicket,intent)" in history_
 require(history_reconciler.index("intentJournal.FindByOrderTicket(record.orderTicket,intent)") <
         history_reconciler.index("recovery.FindByPositionIdentifier(record.positionIdentifier"),
         "startup replay preserves the original signal key from the exact order-bound intent before registry fallback")
+require("intentJournal.PreparedIntentCount()" in history_reconciler
+        and "HistoryOrdersTotal()" in history_reconciler
+        and "ORDER_VOLUME_INITIAL" in history_reconciler
+        and "ORDER_SL" in history_reconciler
+        and "AMBIGUOUS_BROKER_ORDER_MATCH_FOR_PREPARED_INTENT" in history_reconciler,
+        "restart recovery binds an unbound intent only to one exact broker-history order match")
+require("g_campaignIntentJournal.HasUnresolvedIntent()" in ea
+        and ea.index("g_campaignHistoryReconciler.Replay") < ea.index("g_campaignIntentJournal.HasUnresolvedIntent()"),
+        "startup history replay gets a chance to recover sent orders before unresolved-intent entry lock")
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
 
 
