@@ -354,7 +354,8 @@ require("intentJournal.PreparedIntentCount()" in history_reconciler
         and "AMBIGUOUS_BROKER_ORDER_MATCH_FOR_PREPARED_INTENT" in history_reconciler,
         "restart recovery binds an unbound intent only to one exact broker-history order match")
 require("g_campaignIntentJournal.HasUnresolvedIntent()" in ea
-        and ea.index("g_campaignHistoryReconciler.Replay") < ea.index("g_campaignIntentJournal.HasUnresolvedIntent()"),
+        and ea.index("g_campaignHistoryReconciler.Replay") <
+            ea.index("g_campaignIntentJournal.HasUnresolvedIntent()",ea.index("g_campaignHistoryReconciler.Replay")),
         "startup history replay gets a chance to recover sent orders before unresolved-intent entry lock")
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
 
