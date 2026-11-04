@@ -90,21 +90,21 @@ public:
          record.fee=HistoryDealGetDouble(ticket,DEAL_FEE);
          record.profit=HistoryDealGetDouble(ticket,DEAL_PROFIT);
          record.dealTime=(datetime)HistoryDealGetInteger(ticket,DEAL_TIME);
-         SAxOpenSetupRecord setupRecord;
-         if(recovery.FindByPositionIdentifier(record.positionIdentifier,setupRecord) &&
-            setupRecord.symbol==symbol)
+         SAxCampaignIntent intent;
+         if(intentJournal.IsReady() &&
+            intentJournal.FindByOrderTicket(record.orderTicket,intent))
            {
-            record.campaignId=setupRecord.setupId;
-            record.signalKey=setupRecord.setupId;
+            record.campaignId=intent.campaignId;
+            record.signalKey=intent.signalKey;
            }
          else
            {
-            SAxCampaignIntent intent;
-            if(intentJournal.IsReady() &&
-               intentJournal.FindByOrderTicket(record.orderTicket,intent))
+            SAxOpenSetupRecord setupRecord;
+            if(recovery.FindByPositionIdentifier(record.positionIdentifier,setupRecord) &&
+               setupRecord.symbol==symbol)
               {
-               record.campaignId=intent.campaignId;
-               record.signalKey=intent.signalKey;
+               record.campaignId=setupRecord.setupId;
+               record.signalKey=setupRecord.setupId;
               }
             else
               {
