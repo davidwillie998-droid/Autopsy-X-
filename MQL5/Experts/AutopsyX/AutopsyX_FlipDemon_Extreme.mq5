@@ -2411,7 +2411,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
 
             dealRecord.volume=HistoryDealGetDouble(trans.deal,DEAL_VOLUME);
             dealRecord.price=HistoryDealGetDouble(trans.deal,DEAL_PRICE);
-            dealRecord.stopAtFill=0.0; // unavailable in a dependable deal-history snapshot
+            dealRecord.dealStopSnapshot=HistoryDealGetDouble(trans.deal,DEAL_SL); // broker-reported SL snapshot for this deal
             dealRecord.riskAtFillMoney=0.0; // live risk is recalculated from current broker positions
             dealRecord.commission=HistoryDealGetDouble(trans.deal,DEAL_COMMISSION);
             dealRecord.swap=HistoryDealGetDouble(trans.deal,DEAL_SWAP);
