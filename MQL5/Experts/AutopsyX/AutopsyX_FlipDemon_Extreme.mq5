@@ -266,6 +266,7 @@ bool                   g_campaignJournalReady = false;
 bool                   g_campaignDealRetryBlocked = false;
 ulong                  g_pendingCampaignDealTickets[];
 int                    g_campaignDealRetryCursor = 0;
+uint                   g_nextCampaignRetryTick = 0;
 bool                   g_recoveryInitialized = false;
 bool                   g_recoveryReady = false; // false means new entries are blocked; existing positions remain managed
 bool                   g_accountRiskIntegrityLock = false; // post-fill breach/unknown exposure; cleared only by a clean broker rescan
@@ -2484,7 +2485,11 @@ void AxProcessCampaignDealRetries(void)
       return;
      }
 
-   int budget=MathMin(4,count);
+   uint nowTick=GetTickCount();
+   if(g_nextCampaignRetryTick!=0 && (int)(nowTick-g_nextCampaignRetryTick)<0)
+      return; // at most one bounded batch per second, even on a high-frequency tick stream
+   g_nextCampaignRetryTick=nowTick+1000;
+   int budget=(count<4)?count:4;
    for(int n=0;n<budget;n++)
      {
       count=ArraySize(g_pendingCampaignDealTickets);
