@@ -141,9 +141,9 @@ class CampaignReconciliationTests(unittest.TestCase):
         readable = set()
         persisted = set()
         self.assertTrue(queue.enqueue(7001))
-        self.assertFalse(queue.process(lambda t: t in readable and not persisted.add(t),
-                                       all_live_positions_attributed=True) and queue.blocked is False)
+        queue.process(lambda _ticket: False, all_live_positions_attributed=True)
         self.assertEqual(queue.tickets, [7001])
+        self.assertTrue(queue.blocked)
         readable.add(7001)
         queue.process(lambda t: (persisted.add(t) is None) if t in readable else False,
                       all_live_positions_attributed=True)
