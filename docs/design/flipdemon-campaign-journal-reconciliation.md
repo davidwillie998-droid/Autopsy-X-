@@ -149,3 +149,9 @@ Do not clear an orphan or unknown record merely because it is inconvenient. Reso
 - Netting reversal `INOUT` deals can satisfy the attributed-position recovery check when they carry a trusted campaign ID.
 
 This integration is still preliminary. It does not yet replay broker history into the journal at startup, reconstruct campaign state from all prior deals, persist an explicit campaign-intent event before order submission, or manage multiple concurrent legs. The EA remains single-position-oriented and hedging accounts remain rejected. A source review and MQL5 compile are still required before treating this integration as validated.
+
+### Multi-instance isolation and delayed history
+
+- Journal identity now includes account login, broker server hash, EA magic, and chart symbol. The file path and header are symbol-scoped, preventing two symbol instances with the same magic from writing into one journal.
+- The journal schema was advanced to version 2 for the symbol-bound header. The earlier development schema is not silently accepted.
+- If MT5 announces a deal but the history record is not yet readable, the EA latches the entry gate closed. It does not create a zero-value fill. Automatic retry/backfill of that missed callback is still outstanding and must be implemented before this can be considered restart-complete.
