@@ -81,7 +81,7 @@ public:
 
          record.volume=HistoryDealGetDouble(ticket,DEAL_VOLUME);
          record.price=HistoryDealGetDouble(ticket,DEAL_PRICE);
-         record.stopAtFill=HistoryDealGetDouble(ticket,DEAL_SL);
+         record.dealStopSnapshot=HistoryDealGetDouble(ticket,DEAL_SL);
          record.riskAtFillMoney=0.0; // broker history does not provide reliable risk-at-fill
          record.commission=HistoryDealGetDouble(ticket,DEAL_COMMISSION);
          record.swap=HistoryDealGetDouble(ticket,DEAL_SWAP);
