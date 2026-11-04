@@ -448,6 +448,9 @@ class FullMarginModeSourceTests(unittest.TestCase):
         self.assertIn('g_vwapTrend!="BEARISH"', gate)
         self.assertIn("g_regimeHtf.R2()<InpHtfMinR2ToBlock", gate)
         self.assertIn("g_regimeHtf.Slope()", gate)
+        self.assertIn("if(InpUseOrderFlow)", gate)
+        self.assertIn("buyEvidence<=sellEvidence", gate)
+        self.assertIn("sellEvidence<=buyEvidence", gate)
 
     def test_non_qualifying_setup_keeps_standard_margin_policy(self):
         self.assertIn("bool fullMarginCandidate=AxFullMarginQualityQualified(dir,score)", self.ea)
