@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 EA = ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5"
 RISK = ROOT / "MQL5/Include/AutopsyX/RiskEngine.mqh"
 EXEC = ROOT / "MQL5/Include/AutopsyX/ExecutionEngine.mqh"
+INTENT = ROOT / "MQL5/Include/AutopsyX/CampaignIntentJournal.mqh"
+HISTORY_RECONCILER = ROOT / "MQL5/Include/AutopsyX/CampaignHistoryReconciler.mqh"
 RECOVERY = ROOT / "MQL5/Include/AutopsyX/RestartRecovery.mqh"
 DISTRIBUTED = ROOT / "MQL5/Include/AutopsyX/DistributedRiskCoordinator.mqh"
 README = ROOT / "MQL5/README.md"
@@ -22,12 +24,13 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
     print(f"PASS: {message}")
 
-for path in (EA, RISK, EXEC, RECOVERY, DISTRIBUTED, README):
+for path in (EA, RISK, EXEC, INTENT, HISTORY_RECONCILER, RECOVERY, DISTRIBUTED, README):
     require(path.is_file(), f"required source exists: {path.relative_to(ROOT)}")
 
 ea = EA.read_text(encoding="utf-8")
 risk = RISK.read_text(encoding="utf-8")
 execution = EXEC.read_text(encoding="utf-8")
+history_reconciler = HISTORY_RECONCILER.read_text(encoding="utf-8")
 recovery = RECOVERY.read_text(encoding="utf-8")
 distributed = DISTRIBUTED.read_text(encoding="utf-8")
 readme = README.read_text(encoding="utf-8")
