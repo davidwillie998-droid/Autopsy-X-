@@ -21,6 +21,7 @@ class Deal:
     fee: float = 0.0
     profit: float = 0.0
     campaign_id: str = ""
+    signal_key: str = ""
 
 
 @dataclass
@@ -53,7 +54,7 @@ class Journal:
                 return False
             if not deal.campaign_id:
                 return True
-            return self.amend_attribution(deal.ticket, deal.campaign_id, deal.campaign_id)
+            return self.amend_attribution(deal.ticket, deal.campaign_id, deal.signal_key)
         self.rows[deal.ticket] = deal
         return True
 
@@ -66,7 +67,7 @@ class Journal:
         if existing.campaign_id:
             return existing.campaign_id == campaign_id
         self.rows[ticket] = Deal(
-            **{**existing.__dict__, "campaign_id": campaign_id}
+            **{**existing.__dict__, "campaign_id": campaign_id, "signal_key": signal_key}
         )
         self.amendment_count += 1
         return True
@@ -135,6 +136,7 @@ class CampaignReconciliationTests(unittest.TestCase):
         self.assertEqual(journal.rows[1050].campaign_id, "")
         self.assertTrue(journal.amend_attribution(1050, "CAMP-050", "SETUP-050"))
         self.assertEqual(journal.rows[1050].campaign_id, "CAMP-050")
+        self.assertEqual(journal.rows[1050].signal_key, "SETUP-050")
 
     def test_repeated_identical_attribution_amendment_is_idempotent(self):
         journal = Journal(12345, "Broker-Demo", 1500015)
