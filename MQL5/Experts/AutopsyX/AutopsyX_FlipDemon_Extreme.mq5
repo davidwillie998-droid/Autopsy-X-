@@ -42,6 +42,7 @@
 #include <AutopsyX/EmergencyControls.mqh>
 #include <AutopsyX/TradeReconciliation.mqh>
 #include <AutopsyX/RestartRecovery.mqh>
+#include <AutopsyX/CampaignJournal.mqh>
 #include <AutopsyX/Dashboard.mqh>
 
 //====================================================================
@@ -258,6 +259,8 @@ CAccuracyEngine       g_accuracy;
 CDashboard            g_dash;
 CTradeReconciler       g_tradeReconciler;
 CRestartRecovery       g_restartRecovery;
+CCampaignJournal       g_campaignJournal;
+bool                   g_campaignJournalReady = false;
 bool                   g_recoveryInitialized = false;
 bool                   g_recoveryReady = false; // false means new entries are blocked; existing positions remain managed
 bool                   g_accountRiskIntegrityLock = false; // post-fill breach/unknown exposure; cleared only by a clean broker rescan
@@ -1802,6 +1805,33 @@ int OnInit(void)
       Print("FLIPDEMON RECOVERY ERROR: registry initialization failed. Existing positions will still be managed; new entries are blocked.");
      }
 
+   // The deal journal is stricter than the open-setup registry. A failed or
+   // corrupt journal blocks new entries while existing positions remain managed.
+   g_campaignJournalReady=g_campaignJournal.Init(InpMagicNumber);
+   if(!g_campaignJournalReady)
+     {
+      g_recoveryReady=false;
+      Print("FLIPDEMON CAMPAIGN JOURNAL: initialization failed; new entries blocked.");
+     }
+   else
+     {
+      // Legacy open positions need a broker-confirmed attributed entry deal.
+      // Never fabricate a campaign mapping from current position metadata.
+      for(int p=0;p<PositionsTotal();p++)
+        {
+         ulong liveTicket=PositionGetTicket(p);
+         if(liveTicket==0 || PositionGetString(POSITION_SYMBOL)!=_Symbol ||
+            (ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber) continue;
+         ulong positionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+         if(!g_campaignJournal.HasAttributedPosition(positionId))
+           {
+            g_recoveryReady=false;
+            PrintFormat("FLIPDEMON CAMPAIGN JOURNAL: open position %I64u has no attributed entry deal; new entries blocked.",
+                        liveTicket);
+           }
+        }
+     }
+
    g_risk.OnTickHousekeeping();
    AxReconcileExistingPosition();
 
@@ -1826,6 +1856,7 @@ void OnDeinit(const int reason)
       EventKillTimer();
       g_dash.RemoveAll();
      }
+   g_campaignJournal.Deinit();
    g_autopsy.Deinit();
    g_regime.Deinit();
    g_regimeHtf.Deinit();
