@@ -395,10 +395,12 @@ class Mql5SourceContractTests(unittest.TestCase):
         self.assertIn("g_accountRisk.Scan(postFillRisk)", self.ea[submit:])
 
     def test_broker_transactions_mark_account_snapshot_dirty(self):
+        on_tick = self.ea.index("void OnTick(void)")
         callback = self.ea.index("void OnTradeTransaction(")
         dirty = self.ea.index("g_accountRiskReconciliationPending=true;", callback)
-        self.assertLess(callback, dirty)
-        self.assertIn("if(g_accountRiskReconciliationPending)", self.ea[dirty:])
+        self.assertLess(on_tick, dirty)
+        self.assertLess(dirty, callback)
+        self.assertIn("if(g_accountRiskReconciliationPending)", self.ea[on_tick:dirty])
 
 
 class FullMarginModeSourceTests(unittest.TestCase):
@@ -408,11 +410,12 @@ class FullMarginModeSourceTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         cls.ea = (root / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text()
         cls.risk = (root / "MQL5/Include/AutopsyX/RiskEngine.mqh").read_text()
+        cls.account_risk = (root / "MQL5/Include/AutopsyX/AccountRiskCalculator.mqh").read_text()
 
     def test_mode_is_disabled_by_default_and_risk_remains_capped(self):
         self.assertIn("InpEnableFullMarginMode    = false", self.ea)
         self.assertIn("AxClampD(riskPercent,0.05,2.0)", self.risk)
-        self.assertIn("#define AX_ACCOUNT_RISK_HARD_CAP_PCT 2.0", self.risk)
+        self.assertIn("#define AX_ACCOUNT_RISK_HARD_CAP_PCT 2.0", self.account_risk)
 
     def test_full_margin_requires_directional_momentum(self):
         self.assertIn("AxStrongMomentumForDirection(dir)", self.ea)
