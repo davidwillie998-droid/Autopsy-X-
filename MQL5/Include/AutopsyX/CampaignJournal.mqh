@@ -144,12 +144,12 @@ private:
       return(true);
      }
 
-   bool ParseDeal(const string line,long &sequence,SAxCampaignDealRecord &r) const
+   bool ParseDeal(const string line,long &sequence,SAxCampaignDealRecord &r,string &eventType) const
      {
       string fields[];
       if(StringSplit(line,'|',fields)!=AX_CAMPAIGN_JOURNAL_FIELD_COUNT) return(false);
       if(fields[0]!="AXCJ" || StringToInteger(fields[1])!=AX_CAMPAIGN_JOURNAL_SCHEMA ||
-         fields[6]!="DEAL") return(false);
+         (fields[6]!="DEAL" && fields[6]!="ATTR")) return(false);
       if(StringToInteger(fields[3])!=m_login ||
          (ulong)StringToInteger(fields[4])!=m_magic ||
          (uint)StringToInteger(fields[5])!=m_serverHash) return(false);
@@ -161,6 +161,7 @@ private:
       string payload=StringSubstr(line,0,checksumDelimiter);
       if((uint)StringToInteger(fields[24])!=HashText(payload)) return(false);
 
+      eventType=fields[6];
       sequence=StringToInteger(fields[2]);
       r.dealTicket=(ulong)StringToInteger(fields[7]);
       r.orderTicket=(ulong)StringToInteger(fields[8]);
@@ -258,7 +259,8 @@ public:
          if(StringLen(line)==0) continue;
          SAxCampaignDealRecord record;
          long sequence=0;
-         if(!ParseDeal(line,sequence,record) || sequence!=previousSequence+1)
+         string eventType="";
+         if(!ParseDeal(line,sequence,record,eventType) || sequence!=previousSequence+1)
            {
             PrintFormat("FLIPDEMON CAMPAIGN JOURNAL: corrupt or non-monotonic row in %s; entries blocked",
                         m_fileName);
@@ -266,21 +268,50 @@ public:
             return(false);
            }
          int existing=FindDealIndex(record.dealTicket);
-         if(existing>=0 && !SameDeal(m_deals[existing],record))
+         if(eventType=="DEAL")
            {
-            PrintFormat("FLIPDEMON CAMPAIGN JOURNAL: conflicting duplicate deal %I64u",record.dealTicket);
-            Deinit();
-            return(false);
-           }
-         if(existing<0)
-           {
-            int next=ArraySize(m_deals);
-            if(ArrayResize(m_deals,next+1)!=next+1)
+            if(existing>=0 && !SameDeal(m_deals[existing],record))
               {
+               PrintFormat("FLIPDEMON CAMPAIGN JOURNAL: conflicting duplicate deal %I64u",record.dealTicket);
                Deinit();
                return(false);
               }
-            m_deals[next]=record;
+            if(existing<0)
+              {
+               int next=ArraySize(m_deals);
+               if(ArrayResize(m_deals,next+1)!=next+1)
+                 {
+                  Deinit();
+                  return(false);
+                 }
+               m_deals[next]=record;
+              }
+           }
+         else
+           {
+            if(existing<0 || record.campaignId=="")
+              {
+               PrintFormat("FLIPDEMON CAMPAIGN JOURNAL: orphan/empty attribution amendment for deal %I64u",record.dealTicket);
+               Deinit();
+               return(false);
+              }
+            SAxCampaignDealRecord original=m_deals[existing];
+            bool sameEconomics=(original.orderTicket==record.orderTicket &&
+               original.positionIdentifier==record.positionIdentifier &&
+               original.symbol==record.symbol && original.direction==record.direction &&
+               original.entryType==record.entryType &&
+               MathAbs(original.volume-record.volume)<0.00000001 &&
+               MathAbs(original.price-record.price)<0.00000001 &&
+               original.dealTime==record.dealTime);
+            if(!sameEconomics ||
+               (original.campaignId!="" && original.campaignId!=record.campaignId) ||
+               (original.signalKey!="" && original.signalKey!=record.signalKey))
+              {
+               PrintFormat("FLIPDEMON CAMPAIGN JOURNAL: conflicting attribution amendment for deal %I64u",record.dealTicket);
+               Deinit();
+               return(false);
+              }
+            m_deals[existing]=record;
            }
          previousSequence=sequence;
         }
@@ -322,11 +353,64 @@ public:
       return(false);
      }
 
+   bool              AmendAttribution(const ulong dealTicket,const string campaignId,const string signalKey)
+     {
+      if(!m_ready || m_handle==INVALID_HANDLE || dealTicket==0 ||
+         !SafeToken(campaignId) || !SafeToken(signalKey,true)) return(false);
+      int index=FindDealIndex(dealTicket);
+      if(index<0) return(false);
+      if(m_deals[index].campaignId!="")
+         return(m_deals[index].campaignId==campaignId &&
+                (m_deals[index].signalKey=="" || m_deals[index].signalKey==signalKey));
+
+      SAxCampaignDealRecord amended=m_deals[index];
+      amended.campaignId=campaignId;
+      amended.signalKey=signalKey;
+      long nextSequence=m_sequence+1;
+      string payload=StringFormat(
+         "AXCJ|%d|%I64d|%I64d|%I64u|%u|ATTR|%I64u|%I64u|%I64u|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%I64d|%s|%s",
+         AX_CAMPAIGN_JOURNAL_SCHEMA,nextSequence,m_login,m_magic,m_serverHash,
+         amended.dealTicket,amended.orderTicket,amended.positionIdentifier,
+         amended.symbol,amended.direction,amended.entryType,
+         DoubleToString(amended.volume,12),DoubleToString(amended.price,12),
+         DoubleToString(amended.dealStopSnapshot,12),DoubleToString(amended.riskAtFillMoney,8),
+         DoubleToString(amended.commission,8),DoubleToString(amended.swap,8),
+         DoubleToString(amended.fee,8),DoubleToString(amended.profit,8),
+         (long)amended.dealTime,amended.campaignId,amended.signalKey);
+      string line=payload+"|"+IntegerToString((long)HashText(payload))+"\r\n";
+      FileSeek(m_handle,0,SEEK_END);
+      uint expected=(uint)StringLen(line);
+      uint written=FileWriteString(m_handle,line);
+      FileFlush(m_handle);
+      if(written!=expected)
+        {
+         m_ready=false;
+         PrintFormat("FLIPDEMON CAMPAIGN JOURNAL: attribution amendment write failed for deal %I64u",dealTicket);
+         return(false);
+        }
+      m_deals[index]=amended;
+      m_sequence=nextSequence;
+      return(true);
+     }
+
    bool              AppendDeal(const SAxCampaignDealRecord &record)
      {
       if(!m_ready || m_handle==INVALID_HANDLE || !ValidRecord(record)) return(false);
       int existing=FindDealIndex(record.dealTicket);
-      if(existing>=0) return(SameDeal(m_deals[existing],record));
+      if(existing>=0)
+        {
+         SAxCampaignDealRecord current=m_deals[existing];
+         bool sameBrokerDeal=(current.orderTicket==record.orderTicket &&
+            current.positionIdentifier==record.positionIdentifier &&
+            current.symbol==record.symbol && current.direction==record.direction &&
+            current.entryType==record.entryType &&
+            MathAbs(current.volume-record.volume)<0.00000001 &&
+            MathAbs(current.price-record.price)<0.00000001 &&
+            current.dealTime==record.dealTime);
+         if(!sameBrokerDeal) return(false);
+         if(record.campaignId=="") return(true);
+         return(AmendAttribution(record.dealTicket,record.campaignId,record.signalKey));
+        }
 
       int oldSize=ArraySize(m_deals);
       if(ArrayResize(m_deals,oldSize+1)!=oldSize+1) return(false);
