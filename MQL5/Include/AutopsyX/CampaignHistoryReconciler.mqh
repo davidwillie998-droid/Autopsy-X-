@@ -7,6 +7,7 @@
 #define AX_CAMPAIGNHISTORYRECONCILER_MQH
 
 #include "CampaignJournal.mqh"
+#include "CampaignIntentJournal.mqh"
 #include "RestartRecovery.mqh"
 
 class CCampaignHistoryReconciler
@@ -18,6 +19,7 @@ public:
    bool Replay(const datetime fromTime,const datetime toTime,
                const ulong magic,const string symbol,
                CRestartRecovery &recovery,CCampaignJournal &journal,
+               CCampaignIntentJournal &intentJournal,
                int &appended,int &alreadyKnown,int &unattributed,
                string &error) const
      {
@@ -97,8 +99,18 @@ public:
            }
          else
            {
-            record.campaignId="";
-            record.signalKey="";
+            SAxCampaignIntent intent;
+            if(intentJournal.IsReady() &&
+               intentJournal.FindByOrderTicket(record.orderTicket,intent))
+              {
+               record.campaignId=intent.campaignId;
+               record.signalKey=intent.signalKey;
+              }
+            else
+              {
+               record.campaignId="";
+               record.signalKey="";
+              }
            }
 
          if(record.dealTicket==0 || record.orderTicket==0 ||
