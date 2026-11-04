@@ -336,6 +336,45 @@ bool AxStrongMomentumForDirection(const ENUM_AX_DIR dir)
    return(false);
   }
 
+// Full Margin is reserved for exceptional setups. The existing confidence field is a
+// strategy score, not a calibrated win probability. A score must be strictly above 75,
+// match the proposed direction, and agree with momentum and VWAP. When order-flow inputs
+// are enabled, their combined directional evidence must also agree. Failure here falls
+// back to standard margin limits; it does not reject an otherwise-valid standard trade.
+bool AxFullMarginQualityQualified(const ENUM_AX_DIR dir,const SAxScore &score)
+  {
+   if(!InpEnableFullMarginMode ||
+      !MathIsValidNumber(score.confidence) ||
+      score.confidence<=75.0 ||
+      score.action!=dir ||
+      !AxStrongMomentumForDirection(dir))
+      return(false);
+
+   if(dir==AX_DIR_BUY && g_vwapTrend!="BULLISH") return(false);
+   if(dir==AX_DIR_SELL && g_vwapTrend!="BEARISH") return(false);
+   if(dir!=AX_DIR_BUY && dir!=AX_DIR_SELL) return(false);
+
+   if(InpUseOrderFlow)
+     {
+      double refPrice=g_md.CurrentMid();
+      double buyEvidence=g_orderFlow.BullishScoreComponent()
+                        +g_footprint.BullishScoreComponent()
+                        +g_volProfile.BullishScoreComponent(refPrice);
+      double sellEvidence=g_orderFlow.BearishScoreComponent()
+                         +g_footprint.BearishScoreComponent()
+                         +g_volProfile.BearishScoreComponent(refPrice);
+      if(InpUseHeatmap && g_heatmap.IsAvailable())
+        {
+         buyEvidence+=g_heatmap.BullishScoreComponent();
+         sellEvidence+=g_heatmap.BearishScoreComponent();
+        }
+      if(dir==AX_DIR_BUY && buyEvidence<=sellEvidence) return(false);
+      if(dir==AX_DIR_SELL && sellEvidence<=buyEvidence) return(false);
+     }
+
+   return(true);
+  }
+
 // Fail closed unless the broker reports percentage-based stop-out levels that can
 // be compared with the projected post-order margin level. This is a pre-entry guard,
 // not a claim that the EA can liquidate unrelated/manual positions during a margin call.
@@ -918,17 +957,9 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
       return(false);
      }
-   bool fullMarginActive=false;
-   if(InpEnableFullMarginMode)
-     {
-      if(!AxStrongMomentumForDirection(dir))
-        {
-         if(InpVerboseLogging)
-            Print("FLIPDEMON FULL MARGIN: entry blocked; strong directional momentum is not confirmed.");
-         return(false);
-        }
-      fullMarginActive=true;
-     }
+   bool fullMarginCandidate=AxFullMarginQualityQualified(dir,score);
+   if(InpEnableFullMarginMode && !fullMarginCandidate && InpVerboseLogging)
+      Print("FLIPDEMON FULL MARGIN: quality threshold or confluence not met; standard margin limits will apply.");
    if(AxHasForeignPositionOnSymbol(gateReason))
      {
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
@@ -938,13 +969,6 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    AxCountRealPositions(realPositionsForSymbol,realDirectionalExposure,dir);
    int accountOpenPositions; double accountExposureLots;
    AxCountAccountExposure(accountOpenPositions,accountExposureLots);
-   if(!g_risk.PreTradeAllowed(accountOpenPositions,accountExposureLots,g_md.CurrentSpreadPts(),gateReason,
-                               realPositionsForSymbol,realDirectionalExposure,
-                               fullMarginActive?100.0:-1.0,fullMarginActive?0.0:-1.0))
-     {
-      if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
-      return(false);
-     }
    if(!g_entryEngine.SessionAllowed(InpSessionStartHour,InpSessionEndHour,InpAvoidRolloverMinutes,gateReason))
      {
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
@@ -958,6 +982,22 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    if(!AxHtfConfluenceOk(dir))
      {
       if(InpVerboseLogging) Print("AUTOPSY X: entry blocked (HTF confluence)");
+      return(false);
+     }
+
+   // Only after the ordinary session, anti-chop and HTF gates pass may a setup
+   // receive the aggressive margin ceiling. Every non-qualifying setup retains
+   // the standard 50% cap and 150% minimum margin-level requirement.
+   bool fullMarginActive=fullMarginCandidate;
+   if(fullMarginActive && InpVerboseLogging)
+      PrintFormat("FLIPDEMON FULL MARGIN QUALIFIED: confidence=%.2f%% direction=%s; applying 100%% ceiling subject to stop-out buffer and 2%% account risk cap.",
+                  score.confidence,dir==AX_DIR_BUY?"BUY":"SELL");
+
+   if(!g_risk.PreTradeAllowed(accountOpenPositions,accountExposureLots,g_md.CurrentSpreadPts(),gateReason,
+                               realPositionsForSymbol,realDirectionalExposure,
+                               fullMarginActive?100.0:-1.0,fullMarginActive?0.0:-1.0))
+     {
+      if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
       return(false);
      }
 
