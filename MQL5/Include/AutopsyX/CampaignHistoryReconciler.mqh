@@ -112,9 +112,8 @@ public:
          SAxCampaignDealRecord existing;
          if(journal.FindDeal(ticket,existing))
            {
-            // Existing record must match the broker's immutable deal identity
-            // and fill economics. Stop snapshots may differ if broker history
-            // omits them on later reads, so compare the durable deal fields here.
+            // Existing broker economics are immutable. Attribution can be
+            // upgraded only from the exact persisted open-position mapping.
             bool same=(existing.orderTicket==record.orderTicket &&
                        existing.positionIdentifier==record.positionIdentifier &&
                        existing.symbol==record.symbol &&
@@ -128,8 +127,22 @@ public:
                error=StringFormat("BROKER_JOURNAL_DEAL_CONFLICT_%I64u",ticket);
                return(false);
               }
+            if(existing.campaignId=="")
+              {
+               if(record.campaignId!="" &&
+                  !journal.AmendAttribution(ticket,record.campaignId,record.signalKey))
+                 {
+                  error=StringFormat("JOURNAL_ATTRIBUTION_AMENDMENT_FAILED_DEAL_%I64u",ticket);
+                  return(false);
+                 }
+               if(record.campaignId=="") unattributed++;
+              }
+            else if(record.campaignId!="" && existing.campaignId!=record.campaignId)
+              {
+               error=StringFormat("BROKER_JOURNAL_ATTRIBUTION_CONFLICT_%I64u",ticket);
+               return(false);
+              }
             alreadyKnown++;
-            if(existing.campaignId=="") unattributed++;
             continue;
            }
 
