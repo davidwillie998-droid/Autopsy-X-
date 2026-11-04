@@ -20,7 +20,7 @@ struct SAxCampaignDealRecord
    string      entryType;       // IN, OUT, INOUT, or OUT_BY
    double      volume;          // actual broker-confirmed deal volume
    double      price;           // actual broker-confirmed deal price
-   double      stopAtFill;       // zero means unavailable in broker history
+   double      dealStopSnapshot;       // zero means unavailable in broker history
    double      riskAtFillMoney;  // zero means unavailable, never treated as zero live risk
    double      commission;
    double      swap;
@@ -76,7 +76,7 @@ private:
          record.entryType!="INOUT" && record.entryType!="OUT_BY") return(false);
       if(!MathIsValidNumber(record.volume) || record.volume<=0.0 ||
          !MathIsValidNumber(record.price) || record.price<=0.0 ||
-         !MathIsValidNumber(record.stopAtFill) || record.stopAtFill<0.0 ||
+         !MathIsValidNumber(record.dealStopSnapshot) || record.dealStopSnapshot<0.0 ||
          !MathIsValidNumber(record.riskAtFillMoney) || record.riskAtFillMoney<0.0 ||
          !MathIsValidNumber(record.commission) || !MathIsValidNumber(record.swap) ||
          !MathIsValidNumber(record.fee) || !MathIsValidNumber(record.profit) ||
@@ -94,7 +94,7 @@ private:
              a.entryType==b.entryType &&
              MathAbs(a.volume-b.volume)<0.00000001 &&
              MathAbs(a.price-b.price)<0.00000001 &&
-             MathAbs(a.stopAtFill-b.stopAtFill)<0.00000001 &&
+             MathAbs(a.dealStopSnapshot-b.dealStopSnapshot)<0.00000001 &&
              MathAbs(a.riskAtFillMoney-b.riskAtFillMoney)<0.00000001 &&
              MathAbs(a.commission-b.commission)<0.00000001 &&
              MathAbs(a.swap-b.swap)<0.00000001 &&
@@ -124,7 +124,7 @@ private:
          AX_CAMPAIGN_JOURNAL_SCHEMA,sequence,m_login,m_magic,m_serverHash,
          r.dealTicket,r.orderTicket,r.positionIdentifier,r.symbol,r.direction,r.entryType,
          DoubleToString(r.volume,12),DoubleToString(r.price,12),
-         DoubleToString(r.stopAtFill,12),DoubleToString(r.riskAtFillMoney,8),
+         DoubleToString(r.dealStopSnapshot,12),DoubleToString(r.riskAtFillMoney,8),
          DoubleToString(r.commission,8),DoubleToString(r.swap,8),
          DoubleToString(r.fee,8),DoubleToString(r.profit,8),
          (long)r.dealTime,r.campaignId,r.signalKey);
@@ -170,7 +170,7 @@ private:
       r.entryType=fields[12];
       r.volume=StringToDouble(fields[13]);
       r.price=StringToDouble(fields[14]);
-      r.stopAtFill=StringToDouble(fields[15]);
+      r.dealStopSnapshot=StringToDouble(fields[15]);
       r.riskAtFillMoney=StringToDouble(fields[16]);
       r.commission=StringToDouble(fields[17]);
       r.swap=StringToDouble(fields[18]);
