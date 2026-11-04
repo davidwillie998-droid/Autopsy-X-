@@ -1912,11 +1912,6 @@ int OnInit(void)
       g_recoveryReady=false;
       Print("FLIPDEMON CAMPAIGN INTENT: journal initialization failed; new entries blocked.");
      }
-   else if(g_campaignIntentJournal.HasUnresolvedIntent())
-     {
-      g_recoveryReady=false;
-      Print("FLIPDEMON CAMPAIGN INTENT: unresolved pre-order intent found after restart; broker reconciliation/manual review required before new entries.");
-     }
    if(g_campaignJournalReady)
      {
       // Backfill broker history before checking open-position attribution. The
@@ -1951,6 +1946,13 @@ int OnInit(void)
                         liveTicket);
            }
         }
+     }
+   // Replay gets the first opportunity to bind a PREPARED intent to an exact
+   // broker-history order. Anything still unresolved remains a hard entry lock.
+   if(g_campaignIntentJournalReady && g_campaignIntentJournal.HasUnresolvedIntent())
+     {
+      g_recoveryReady=false;
+      Print("FLIPDEMON CAMPAIGN INTENT: unresolved pre-order intent remains after broker-history reconciliation; manual review required before new entries.");
      }
 
    g_risk.OnTickHousekeeping();
