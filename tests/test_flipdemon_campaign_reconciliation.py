@@ -117,9 +117,16 @@ def net_position_from_deals(deals):
     return total
 
 
-def resolve_campaign_attribution(position_id, open_setup_registry):
-    """Only trust a persisted setup mapping for the exact broker position ID."""
-    return open_setup_registry.get(position_id, "")
+def resolve_campaign_attribution(position_id, open_setup_registry, journal=None):
+    """Prefer the exact open registry, then an already-durable deal attribution."""
+    mapped = open_setup_registry.get(position_id, "")
+    if mapped:
+        return mapped
+    if journal is not None:
+        for deal in journal.rows.values():
+            if deal.position_id == position_id and deal.campaign_id:
+                return deal.campaign_id
+    return ""
 
 
 def recovery_status(*, journal_valid, broker_positions, attributed_position_ids,
@@ -319,6 +326,13 @@ class CampaignReconciliationTests(unittest.TestCase):
                             attributed_position_ids={9001}, identity_matches=False),
             "CORRUPT_JOURNAL",
         )
+
+    def test_delayed_exit_can_reuse_existing_durable_position_attribution(self):
+        journal = Journal(12345, "Broker-Demo", 1500015)
+        entry = Deal(1045, 9045, "XAUUSD", "BUY", "IN", 0.02, 2354.0,
+                     campaign_id="CAMP-EXIT")
+        self.assertTrue(journal.append_deal(entry))
+        self.assertEqual(resolve_campaign_attribution(9045, {}, journal), "CAMP-EXIT")
 
     def test_history_replay_uses_exact_open_position_setup_mapping(self):
         registry = {9005: "SETUP-9005"}
