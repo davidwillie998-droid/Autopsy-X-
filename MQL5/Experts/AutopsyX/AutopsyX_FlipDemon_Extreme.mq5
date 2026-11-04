@@ -2411,10 +2411,12 @@ bool AxPersistCampaignDeal(const ulong dealTicket)
       record.campaignId=setup.setupId;
       record.signalKey=setup.setupId;
      }
-   else
+   else if(!g_campaignJournal.FindAttributionByPositionIdentifier(record.positionIdentifier,
+                                                                    record.campaignId,record.signalKey))
      {
-      // A fill can arrive before the post-send recovery registry write completes.
-      // Keep it pending and retry after the exact position mapping is durable.
+      // An entry callback can precede the registry write. An exit callback can
+      // arrive after registry cleanup. Retry only until either the exact registry
+      // mapping or an already-durable attributed deal for this position exists.
       return(false);
      }
 
