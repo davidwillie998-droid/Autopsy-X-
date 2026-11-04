@@ -1378,6 +1378,18 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
      {
       g_recoveryReady=false;
       g_accountRiskIntegrityLock=true;
+      if(distributedReservationActive)
+        {
+         SAxAccountRiskSnapshot intentFailureSnapshot;
+         string intentReleaseError;
+         if(!g_accountRisk.Scan(intentFailureSnapshot) || !intentFailureSnapshot.exposureKnown ||
+            !g_distributedRiskCoordinator.Release(distributedReservationId,distributedInstanceId,
+                                                   intentFailureSnapshot,intentReleaseError))
+            PrintFormat("FLIPDEMON CAMPAIGN INTENT: write failed before send; distributed reservation retained because safe release could not be confirmed (%s).",
+                        intentReleaseError);
+         else
+            distributedReservationActive=false;
+        }
       if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
       Print("FLIPDEMON CAMPAIGN INTENT: could not durably persist pre-order intent; broker order was not sent.");
       return(false);
