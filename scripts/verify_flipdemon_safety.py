@@ -317,6 +317,26 @@ require("g_accountRiskReconciliationPending=false" in ea
         and "exposure unknown; entries locked" in ea,
         "unknown transaction snapshots retain the retry flag and fail closed")
 
+require('#include <AutopsyX/CampaignIntentJournal.mqh>' in ea
+        and "CCampaignIntentJournal g_campaignIntentJournal;" in ea,
+        "EA initializes a dedicated durable campaign-intent journal")
+require(ea.index("g_campaignIntentJournal.CreateIntent(campaignIntent)") < ea.index("g_exec.OpenMarket(")
+        and "campaignIntent.riskBudgetMoney=accountRiskDecision.proposedRiskMoney" in ea,
+        "pre-order intent and approved account-currency risk budget are durably recorded before broker submission")
+require("m_trade.ResultOrder()" in execution
+        and "ulong &orderTicketOut" in execution
+        and "uint &retcodeOut" in execution,
+        "execution engine returns broker order identity and final server retcode for intent binding")
+require("g_campaignIntentJournal.BindOrder(campaignIntent.intentId,brokerOrderTicket)" in ea
+        and "string recoverySetupId = campaignIntent.campaignId;" in ea,
+        "broker order ticket and confirmed position registry retain the pre-order campaign identity")
+require("g_campaignIntentJournal.HasUnresolvedIntent()" in ea
+        and "g_campaignIntentJournal.RejectIntent(campaignIntent.intentId)" in ea,
+        "ambiguous pre-order outcomes remain fail-closed across restart while definitive rejections are terminal")
+require("intentJournal.FindByOrderTicket(record.orderTicket,intent)" in history_reconciler
+        and "g_campaignJournal.FindAttributionByPositionIdentifier" in ea,
+        "broker deal attribution can recover through exact order-ticket intent binding")
+
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
 
 
