@@ -160,6 +160,16 @@ class IntentLedger:
                      if item.status == "BOUND" and item.order_ticket == order_ticket), None)
 
 
+def resolve_intent_attribution(order_ticket, position_id, intent_ledger, open_registry):
+    intent = intent_ledger.by_order(order_ticket)
+    if intent is not None:
+        return intent.campaign_id, intent.signal_key
+    setup_id = open_registry.get(position_id, "")
+    if setup_id:
+        return setup_id, setup_id
+    return "", ""
+
+
 def signed_volume(deal: Deal) -> float:
     return deal.volume if deal.side == "BUY" else -deal.volume
 
@@ -242,6 +252,16 @@ class CampaignReconciliationTests(unittest.TestCase):
         self.assertFalse(queue.enqueue(7032))
         self.assertEqual(queue.tickets, [7030, 7031])
         self.assertTrue(queue.blocked)
+
+    def test_exact_order_intent_preserves_signal_key_ahead_of_position_fallback(self):
+        ledger = IntentLedger()
+        ledger.prepare(CampaignIntent("I-SIGNAL", "C-SIGNAL", "SIG-XAU-BUY-42",
+                                      "XAUUSD", "BUY", 0.02, 2300, 20))
+        ledger.bind("I-SIGNAL", 9042)
+        self.assertEqual(
+            resolve_intent_attribution(9042, 9042, ledger, {9042: "LEGACY-SETUP"}),
+            ("C-SIGNAL", "SIG-XAU-BUY-42"),
+        )
 
     def test_pre_order_intent_must_persist_before_order_submission(self):
         ledger = IntentLedger()
