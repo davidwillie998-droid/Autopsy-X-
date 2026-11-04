@@ -118,7 +118,12 @@ input double         InpMinFreeMarginPercent    = 150.0;   // Min margin level %
 input double         InpWeeklyLossLimitPercent  = 15.0;    // Weekly loss limit (%), Monday-anchored - stops the week when hit
 input int            InpMaxPositionsPerSymbol   = 1;       // Max simultaneously open positions on this symbol specifically
 input double         InpMaxDirectionalExposureLots = 1.0;  // Max exposure lots in one direction (BUY or SELL) at once
-input double         InpMaxMarginUsagePercent   = 50.0;     // Max ACCOUNT_MARGIN / ACCOUNT_EQUITY, as a percent
+input double         InpMaxMarginUsagePercent   = 50.0;     // Standard-mode max ACCOUNT_MARGIN / ACCOUNT_EQUITY, percent
+input bool           InpEnableFullMarginMode    = false;    // Optional aggressive mode; strong aligned momentum required
+input double         InpFullMarginMinPersistence = 0.70;    // Directional tick persistence required, 0..1
+input int            InpFullMarginMinConsecutiveTicks = 5;   // Consecutive directional ticks required
+input double         InpFullMarginMinVelocity    = 1.5;      // Minimum ticks/second
+input double         InpFullMarginStopoutBufferPercent = 25.0; // Margin-level points above broker call/stop-out threshold
 input int            InpMaxExecutionFailures    = 5;        // Max consecutive order-send failures before blocking new entries
 
 input group "=== EXECUTION MODE & EMERGENCY CONTROLS ===";
@@ -300,6 +305,92 @@ double AxRiskPercentForMode(void)
    if(InpMode==AX_MODE_NORMAL)      return(0.5);
    if(InpMode==AX_MODE_AGGRESSIVE)  return(1.0);
    return(AxClampD(InpExtremeRiskPercent,0.05,2.0));
+  }
+
+// Full Margin Mode is eligible only when the live tick stream shows strong momentum
+// in the proposed trade direction. Persistence alone is not enough: the latest streak,
+// velocity, signed displacement and exhaustion state must agree as well.
+bool AxStrongMomentumForDirection(const ENUM_AX_DIR dir)
+  {
+   if(!MathIsValidNumber(InpFullMarginMinPersistence) ||
+      InpFullMarginMinPersistence<=0.0 || InpFullMarginMinPersistence>1.0 ||
+      InpFullMarginMinConsecutiveTicks<1 ||
+      !MathIsValidNumber(InpFullMarginMinVelocity) || InpFullMarginMinVelocity<=0.0)
+      return(false);
+   if(!MathIsValidNumber(g_mom.PersistenceRatio()) ||
+      !MathIsValidNumber(g_mom.Velocity()) ||
+      !MathIsValidNumber(g_mom.DisplacementPts()))
+      return(false);
+   if(g_mom.PersistenceRatio()<InpFullMarginMinPersistence ||
+      MathAbs(g_mom.Velocity())<InpFullMarginMinVelocity ||
+      g_mom.IsExhausted())
+      return(false);
+   if(dir==AX_DIR_BUY)
+      return(g_mom.PersistentBull() &&
+             g_mom.ConsecBull()>=InpFullMarginMinConsecutiveTicks &&
+             g_mom.DisplacementPts()>0.0);
+   if(dir==AX_DIR_SELL)
+      return(g_mom.PersistentBear() &&
+             g_mom.ConsecBear()>=InpFullMarginMinConsecutiveTicks &&
+             g_mom.DisplacementPts()<0.0);
+   return(false);
+  }
+
+// Fail closed unless the broker reports percentage-based stop-out levels that can
+// be compared with the projected post-order margin level. This is a pre-entry guard,
+// not a claim that the EA can liquidate unrelated/manual positions during a margin call.
+bool AxFullMarginStopoutSafe(const double additionalMargin,string &reasonOut)
+  {
+   reasonOut="FULL_MARGIN_STOP_OUT_GUARD_UNAVAILABLE";
+   if(!MathIsValidNumber(additionalMargin) || additionalMargin<=0.0 ||
+      !MathIsValidNumber(InpFullMarginStopoutBufferPercent) ||
+      InpFullMarginStopoutBufferPercent<0.0)
+      return(false);
+
+   ENUM_ACCOUNT_STOPOUT_MODE stopoutMode=
+      (ENUM_ACCOUNT_STOPOUT_MODE)AccountInfoInteger(ACCOUNT_MARGIN_SO_MODE);
+   if(stopoutMode!=ACCOUNT_STOPOUT_MODE_PERCENT)
+     {
+      reasonOut="FULL_MARGIN_REQUIRES_PERCENT_STOP_OUT_MODE";
+      return(false);
+     }
+
+   double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+   double currentMargin=AccountInfoDouble(ACCOUNT_MARGIN);
+   double callLevel=AccountInfoDouble(ACCOUNT_MARGIN_SO_CALL);
+   double stopoutLevel=AccountInfoDouble(ACCOUNT_MARGIN_SO_SO);
+   if(!MathIsValidNumber(equity) || equity<=0.0 ||
+      !MathIsValidNumber(currentMargin) || currentMargin<0.0 ||
+      !MathIsValidNumber(callLevel) || callLevel<0.0 ||
+      !MathIsValidNumber(stopoutLevel) || stopoutLevel<0.0)
+     {
+      reasonOut="FULL_MARGIN_STOP_OUT_DATA_INVALID";
+      return(false);
+     }
+
+   double projectedMargin=currentMargin+additionalMargin;
+   if(!MathIsValidNumber(projectedMargin) || projectedMargin<=0.0)
+     {
+      reasonOut="FULL_MARGIN_PROJECTED_MARGIN_INVALID";
+      return(false);
+     }
+   double projectedUsagePct=projectedMargin/equity*100.0;
+   double projectedMarginLevel=equity/projectedMargin*100.0;
+   double brokerStopoutFloor=MathMax(callLevel,stopoutLevel);
+   double requiredMarginLevel=brokerStopoutFloor+InpFullMarginStopoutBufferPercent;
+
+   if(!MathIsValidNumber(projectedUsagePct) ||
+      !MathIsValidNumber(projectedMarginLevel) ||
+      projectedUsagePct>100.0 ||
+      projectedMarginLevel<=requiredMarginLevel)
+     {
+      reasonOut=StringFormat("FULL_MARGIN_STOP_OUT_BUFFER: projected usage %.2f%%; margin level %.2f%%; required above %.2f%%",
+                             projectedUsagePct,projectedMarginLevel,requiredMarginLevel);
+      return(false);
+     }
+
+   reasonOut="";
+   return(true);
   }
 
 //--- sums only OUT deals with a ticket strictly greater than sinceTicketExclusive - lets partial ---
@@ -827,6 +918,17 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
       return(false);
      }
+   bool fullMarginActive=false;
+   if(InpEnableFullMarginMode)
+     {
+      if(!AxStrongMomentumForDirection(dir))
+        {
+         if(InpVerboseLogging)
+            Print("FLIPDEMON FULL MARGIN: entry blocked; strong directional momentum is not confirmed.");
+         return(false);
+        }
+      fullMarginActive=true;
+     }
    if(AxHasForeignPositionOnSymbol(gateReason))
      {
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
@@ -837,7 +939,8 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    int accountOpenPositions; double accountExposureLots;
    AxCountAccountExposure(accountOpenPositions,accountExposureLots);
    if(!g_risk.PreTradeAllowed(accountOpenPositions,accountExposureLots,g_md.CurrentSpreadPts(),gateReason,
-                               realPositionsForSymbol,realDirectionalExposure))
+                               realPositionsForSymbol,realDirectionalExposure,
+                               fullMarginActive?100.0:-1.0,fullMarginActive?0.0:-1.0))
      {
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
       return(false);
@@ -1037,6 +1140,15 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       PrintFormat("FLIPDEMON MARGIN ERROR: OrderCalcMargin failed or returned invalid margin for %s lots=%.8f price=%.10g; entry blocked. error=%d",
                   _Symbol,lots,marginPrice,GetLastError());
       return(false);
+     }
+   if(fullMarginActive)
+     {
+      string stopoutReason;
+      if(!AxFullMarginStopoutSafe(requiredMargin,stopoutReason))
+        {
+         PrintFormat("FLIPDEMON FULL MARGIN BLOCK: %s",stopoutReason);
+         return(false);
+        }
      }
    double freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
    if(!MathIsValidNumber(freeMargin) || freeMargin<=0.0 || requiredMargin>freeMargin)
