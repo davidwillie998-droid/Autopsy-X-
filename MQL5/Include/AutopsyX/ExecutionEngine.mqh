@@ -121,9 +121,12 @@ public:
          else
             ok = m_trade.Sell(lots,symbol,0.0,slPrice,tpPrice,comment);
 
+         // Capture broker identity even when the client call reports an ambiguous failure.
+         // A timeout/connection loss must never trigger an automatic second market order.
+         orderTicketOut=m_trade.ResultOrder();
+         retcodeOut=m_trade.ResultRetcode();
          if(ok)
            {
-            orderTicketOut=m_trade.ResultOrder();
             latencyMsOut = (int)(GetTickCount()-startTick);
             if(ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut,actualLotsOut))
               {
@@ -134,10 +137,14 @@ public:
             return(false);
            }
 
-         uint retcode = m_trade.ResultRetcode();
-         retcodeOut=retcode;
+         uint retcode = retcodeOut;
          errorReason = StringFormat("OrderSend failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
-         if(!RetryableRetcode(retcode)) { latencyMsOut=(int)(GetTickCount()-startTick); return(false); }
+         if(retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION ||
+            !RetryableRetcode(retcode))
+           {
+            latencyMsOut=(int)(GetTickCount()-startTick);
+            return(false);
+           }
         }
       latencyMsOut = (int)(GetTickCount()-startTick);
       return(false);
