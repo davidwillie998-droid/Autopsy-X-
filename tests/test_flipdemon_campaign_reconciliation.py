@@ -127,6 +127,14 @@ class CampaignReconciliationTests(unittest.TestCase):
         self.assertAlmostEqual(net_position_from_deals(deals), -0.20)
         self.assertEqual(deals[-1].entry, "INOUT")
 
+    def test_attributed_netting_reversal_counts_as_position_opening(self):
+        # DEAL_ENTRY_INOUT both closes the old net direction and opens the
+        # residual opposite direction. It must carry a trusted campaign ID.
+        reversal = Deal(1022, 9020, "XAUUSD", "SELL", "INOUT", 0.50, 2348.0,
+                       campaign_id="CAMP-REV")
+        self.assertEqual(reversal.entry, "INOUT")
+        self.assertEqual(reversal.campaign_id, "CAMP-REV")
+
     def test_hedging_positions_remain_separate_risk_objects(self):
         hedging_positions = [
             {"ticket": 501, "position_id": 9501, "volume": 0.01},
