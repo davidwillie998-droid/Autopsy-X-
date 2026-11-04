@@ -1034,6 +1034,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       return(false);
      }
    bool highRiskFullMarginEligible=(InpRiskProfile==AX_RISK_PROFILE_HIGH && InpEnableFullMarginMode);
+   // Profile-gated replacement for the former unconditional check: bool fullMarginCandidate=AxFullMarginQualityQualified(dir,score);
    bool fullMarginCandidate=(highRiskFullMarginEligible && AxFullMarginQualityQualified(dir,score));
    if(highRiskFullMarginEligible && !fullMarginCandidate && InpVerboseLogging)
       Print("FLIPDEMON FULL MARGIN: quality threshold or confluence not met; standard margin limits will apply.");
