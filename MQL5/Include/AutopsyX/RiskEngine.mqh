@@ -281,13 +281,17 @@ public:
    //--- equity<=0 (no real account data) fails CLOSED here, deliberately NOT expressed as
    //--- "MarginUsagePercent() < max" (0.0 < max would read as acceptable) - see MarginUsagePercent()'s
    //--- own comment for why that reformulation would silently drop this exact guard. ---
-   bool              MarginUsageAcceptable(void) const
+   bool              MarginUsageAcceptable(const double maxMarginUsageOverride=-1.0) const
      {
       double equity = AccountInfoDouble(ACCOUNT_EQUITY);
       if(equity<=0) return(false);
       double marginUsed = AccountInfoDouble(ACCOUNT_MARGIN);
       double usagePct = (marginUsed/equity)*100.0;
-      return(usagePct<m_maxMarginUsagePercent);
+      double allowedPct = (maxMarginUsageOverride>0.0)
+                          ? MathMin(100.0,maxMarginUsageOverride)
+                          : m_maxMarginUsagePercent;
+      if(!MathIsValidNumber(allowedPct) || allowedPct<=0.0) return(false);
+      return(usagePct<allowedPct);
      }
 
    //--- consecutive execution failures (order send rejected, fill never confirmed) - distinct from  ---
@@ -329,7 +333,9 @@ public:
    bool              PreTradeAllowed(const int openPositions,const double currentExposureLots,
                                       const double spreadPts,string &reason,
                                       const int positionsForSymbol=-1,
-                                      const double directionalExposureLots=-1)
+                                      const double directionalExposureLots=-1,
+                                      const double maxMarginUsageOverride=-1.0,
+                                      const double minMarginLevelOverride=-1.0)
      {
       int posForSymbol = (positionsForSymbol<0) ? openPositions : positionsForSymbol;
       double dirExposure = (directionalExposureLots<0) ? currentExposureLots : directionalExposureLots;
@@ -347,11 +353,16 @@ public:
       if(m_flipsToday>=m_maxFlipsPerDay) { reason="Max flips per day reached"; return(false); }
       if(TradesInRollingWindow()>=m_maxTradesPerRollingPeriod) { reason="Max trades in rolling window reached"; return(false); }
       if(spreadPts>m_maxSpreadPts) { reason="Spread above maximum allowed"; return(false); }
-      if(!MarginUsageAcceptable()) { reason="Margin usage above maximum allowed"; return(false); }
+      if(!MarginUsageAcceptable(maxMarginUsageOverride))
+        { reason="Margin usage above maximum allowed"; return(false); }
 
       double marginFree  = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
       double marginLevel = AccountInfoDouble(ACCOUNT_MARGIN_LEVEL); // 0 when no margin is currently used
-      if(marginLevel>0 && marginLevel<m_minFreeMarginPercent)
+      double minimumMarginLevel = (minMarginLevelOverride>=0.0)
+                                  ? minMarginLevelOverride
+                                  : m_minFreeMarginPercent;
+      if(!MathIsValidNumber(minimumMarginLevel) ||
+         (marginLevel>0 && marginLevel<minimumMarginLevel))
         { reason="Margin level below minimum threshold"; return(false); }
       if(marginFree<=0) { reason="No free margin"; return(false); }
 
