@@ -209,6 +209,8 @@ public:
    bool              Init(const ulong magic)
      {
       Deinit();
+      ArrayResize(m_deals,0);
+      m_sequence=0;
       m_login=AccountInfoInteger(ACCOUNT_LOGIN);
       string server=AccountInfoString(ACCOUNT_SERVER);
       if(m_login<=0 || magic==0 || StringLen(server)==0) return(false);
