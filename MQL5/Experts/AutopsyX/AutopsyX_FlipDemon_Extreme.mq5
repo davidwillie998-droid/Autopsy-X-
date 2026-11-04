@@ -263,6 +263,9 @@ CRestartRecovery       g_restartRecovery;
 CCampaignJournal       g_campaignJournal;
 CCampaignHistoryReconciler g_campaignHistoryReconciler;
 bool                   g_campaignJournalReady = false;
+bool                   g_campaignDealRetryBlocked = false;
+ulong                  g_pendingCampaignDealTickets[];
+int                    g_campaignDealRetryCursor = 0;
 bool                   g_recoveryInitialized = false;
 bool                   g_recoveryReady = false; // false means new entries are blocked; existing positions remain managed
 bool                   g_accountRiskIntegrityLock = false; // post-fill breach/unknown exposure; cleared only by a clean broker rescan
@@ -1034,6 +1037,11 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    if(!g_recoveryReady)
      {
       if(InpVerboseLogging) Print("FLIPDEMON RECOVERY: new entry blocked; registry is not verified and persisted.");
+      return(false);
+     }
+   if(g_campaignDealRetryBlocked)
+     {
+      if(InpVerboseLogging) Print("FLIPDEMON CAMPAIGN RETRY: new entry blocked while broker deals remain unresolved.");
       return(false);
      }
    string gateReason;
@@ -1888,6 +1896,9 @@ void OnDeinit(const int reason)
 void OnTick(void)
   {
    if(!g_md.OnTickUpdate()) return;
+   // Deal-history callbacks may arrive before the terminal exposes the deal in history
+   // or before the post-fill setup registry is durable. Retry without dropping the ticket.
+   AxProcessCampaignDealRetries();
    g_risk.OnTickHousekeeping();
    g_afe.OnTickHousekeeping();
 
@@ -2351,6 +2362,158 @@ void OnTimer(void)
                  snap.maxDrawdownPercent,g_risk.RiskPercent(),displayState,gate,extras);
   }
 
+// Persist one broker-confirmed deal. False means the ticket must remain queued:
+// history may not be readable yet, the exact setup mapping may not exist yet,
+// or the durable journal rejected the record. No guessed attribution is allowed.
+bool AxPersistCampaignDeal(const ulong dealTicket)
+  {
+   if(dealTicket==0 || !g_campaignJournalReady || !g_campaignJournal.IsReady())
+      return(false);
+   ResetLastError();
+   if(!HistoryDealSelect(dealTicket))
+      return(false);
+
+   long dealType=HistoryDealGetInteger(dealTicket,DEAL_TYPE);
+   if(dealType!=DEAL_TYPE_BUY && dealType!=DEAL_TYPE_SELL)
+      return(true); // non-directional broker events do not belong in this deal journal
+
+   string symbol=HistoryDealGetString(dealTicket,DEAL_SYMBOL);
+   ulong magic=(ulong)HistoryDealGetInteger(dealTicket,DEAL_MAGIC);
+   if(symbol!=_Symbol || magic!=InpMagicNumber)
+      return(true);
+
+   SAxCampaignDealRecord record;
+   record.dealTicket=dealTicket;
+   record.orderTicket=(ulong)HistoryDealGetInteger(dealTicket,DEAL_ORDER);
+   record.positionIdentifier=(ulong)HistoryDealGetInteger(dealTicket,DEAL_POSITION_ID);
+   record.symbol=symbol;
+   record.direction=(dealType==DEAL_TYPE_BUY)?"BUY":"SELL";
+   long entry=HistoryDealGetInteger(dealTicket,DEAL_ENTRY);
+   if(entry==DEAL_ENTRY_IN) record.entryType="IN";
+   else if(entry==DEAL_ENTRY_OUT) record.entryType="OUT";
+   else if(entry==DEAL_ENTRY_INOUT) record.entryType="INOUT";
+   else if(entry==DEAL_ENTRY_OUT_BY) record.entryType="OUT_BY";
+   else return(false);
+
+   record.volume=HistoryDealGetDouble(dealTicket,DEAL_VOLUME);
+   record.price=HistoryDealGetDouble(dealTicket,DEAL_PRICE);
+   record.dealStopSnapshot=HistoryDealGetDouble(dealTicket,DEAL_SL);
+   record.riskAtFillMoney=0.0;
+   record.commission=HistoryDealGetDouble(dealTicket,DEAL_COMMISSION);
+   record.swap=HistoryDealGetDouble(dealTicket,DEAL_SWAP);
+   record.fee=HistoryDealGetDouble(dealTicket,DEAL_FEE);
+   record.profit=HistoryDealGetDouble(dealTicket,DEAL_PROFIT);
+   record.dealTime=(datetime)HistoryDealGetInteger(dealTicket,DEAL_TIME);
+
+   SAxOpenSetupRecord setup;
+   if(g_restartRecovery.FindByPositionIdentifier(record.positionIdentifier,setup) &&
+      setup.symbol==symbol)
+     {
+      record.campaignId=setup.setupId;
+      record.signalKey=setup.setupId;
+     }
+   else
+     {
+      // A fill can arrive before the post-send recovery registry write completes.
+      // Keep it pending and retry after the exact position mapping is durable.
+      return(false);
+     }
+
+   if(!g_campaignJournal.AppendDeal(record))
+      return(false);
+   return(true);
+  }
+
+bool AxQueueCampaignDealRetry(const ulong dealTicket)
+  {
+   if(dealTicket==0) return(false);
+   for(int i=0;i<ArraySize(g_pendingCampaignDealTickets);i++)
+      if(g_pendingCampaignDealTickets[i]==dealTicket)
+         {
+          g_campaignDealRetryBlocked=true;
+          return(true); // duplicate transaction notification, already queued
+         }
+   int count=ArraySize(g_pendingCampaignDealTickets);
+   if(count>=128)
+     {
+      g_campaignDealRetryBlocked=true;
+      g_recoveryReady=false;
+      PrintFormat("FLIPDEMON CAMPAIGN RETRY: queue capacity reached; deal %I64u not discarded, entries remain blocked.",dealTicket);
+      return(false);
+     }
+   if(ArrayResize(g_pendingCampaignDealTickets,count+1)!=count+1)
+     {
+      g_campaignDealRetryBlocked=true;
+      g_recoveryReady=false;
+      PrintFormat("FLIPDEMON CAMPAIGN RETRY: queue allocation failed for deal %I64u; entries remain blocked.",dealTicket);
+      return(false);
+     }
+   g_pendingCampaignDealTickets[count]=dealTicket;
+   g_campaignDealRetryBlocked=true;
+   PrintFormat("FLIPDEMON CAMPAIGN RETRY: queued deal %I64u for bounded same-session reconciliation.",dealTicket);
+   return(true);
+  }
+
+bool AxAllOpenPositionsHaveCampaignAttribution(void)
+  {
+   if(!g_campaignJournalReady || !g_campaignJournal.IsReady()) return(false);
+   for(int i=0;i<PositionsTotal();i++)
+     {
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0 || PositionGetString(POSITION_SYMBOL)!=_Symbol ||
+         (ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber) continue;
+      ulong positionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      if(!g_campaignJournal.HasAttributedPosition(positionId)) return(false);
+     }
+   return(true);
+  }
+
+// Retry a bounded number of queued tickets per tick. A ticket is removed only
+// after the broker history is readable and its journal record is durable.
+void AxProcessCampaignDealRetries(void)
+  {
+   int count=ArraySize(g_pendingCampaignDealTickets);
+   if(count==0)
+     {
+      if(g_campaignDealRetryBlocked && AxAllOpenPositionsHaveCampaignAttribution())
+        {
+         g_campaignDealRetryBlocked=false;
+         Print("FLIPDEMON CAMPAIGN RETRY: queue drained and all live EA positions have attributed entry deals.");
+        }
+      return;
+     }
+
+   int budget=MathMin(4,count);
+   for(int n=0;n<budget;n++)
+     {
+      count=ArraySize(g_pendingCampaignDealTickets);
+      if(count==0) break;
+      if(g_campaignDealRetryCursor>=count) g_campaignDealRetryCursor=0;
+      int index=g_campaignDealRetryCursor;
+      ulong ticket=g_pendingCampaignDealTickets[index];
+      if(AxPersistCampaignDeal(ticket))
+        {
+         for(int j=index;j<count-1;j++)
+            g_pendingCampaignDealTickets[j]=g_pendingCampaignDealTickets[j+1];
+         ArrayResize(g_pendingCampaignDealTickets,count-1);
+         if(g_campaignDealRetryCursor>=ArraySize(g_pendingCampaignDealTickets))
+            g_campaignDealRetryCursor=0;
+        }
+      else
+        {
+         g_campaignDealRetryCursor=(index+1)%count;
+        }
+     }
+
+   if(ArraySize(g_pendingCampaignDealTickets)==0 && AxAllOpenPositionsHaveCampaignAttribution())
+     {
+      g_campaignDealRetryBlocked=false;
+      Print("FLIPDEMON CAMPAIGN RETRY: all queued deals persisted and live-position attribution verified; retry lock cleared.");
+     }
+   else
+      g_campaignDealRetryBlocked=true;
+  }
+
 //====================================================================
 // CHART EVENTS: KILL ENGINE button
 //====================================================================
@@ -2375,77 +2538,25 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
       magic=request.magic;
       relevant=(symbol==_Symbol && magic==InpMagicNumber);
      }
-   else if(trans.type==TRADE_TRANSACTION_DEAL_ADD && trans.deal>0 &&
-           !HistoryDealSelect(trans.deal))
+   else if(trans.type==TRADE_TRANSACTION_DEAL_ADD && trans.deal>0)
      {
-      g_recoveryReady=false;
-      PrintFormat("FLIPDEMON CAMPAIGN JOURNAL: deal history unavailable for deal %I64u; new entries blocked.",
-                  trans.deal);
-     }
-   else if(trans.type==TRADE_TRANSACTION_DEAL_ADD && trans.deal>0 && HistoryDealSelect(trans.deal))
-     {
-      symbol=HistoryDealGetString(trans.deal,DEAL_SYMBOL);
-      magic=(ulong)HistoryDealGetInteger(trans.deal,DEAL_MAGIC);
-      relevant=(symbol==_Symbol && magic==InpMagicNumber);
-
-      // Persist broker-confirmed deal economics before exit handling can remove
-      // the open-setup mapping. Requested volume and callback request fields are
-      // deliberately ignored. Missing attribution blocks future entries.
-      if(relevant && g_campaignJournalReady)
+      if(!HistoryDealSelect(trans.deal))
         {
-         long dealType=HistoryDealGetInteger(trans.deal,DEAL_TYPE);
-         if(dealType==DEAL_TYPE_BUY || dealType==DEAL_TYPE_SELL)
-           {
-            SAxCampaignDealRecord dealRecord;
-            dealRecord.dealTicket=trans.deal;
-            dealRecord.orderTicket=(ulong)HistoryDealGetInteger(trans.deal,DEAL_ORDER);
-            dealRecord.positionIdentifier=(ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID);
-            dealRecord.symbol=symbol;
-            dealRecord.direction=(dealType==DEAL_TYPE_BUY)?"BUY":"SELL";
-            long dealEntry=HistoryDealGetInteger(trans.deal,DEAL_ENTRY);
-            if(dealEntry==DEAL_ENTRY_IN) dealRecord.entryType="IN";
-            else if(dealEntry==DEAL_ENTRY_OUT) dealRecord.entryType="OUT";
-            else if(dealEntry==DEAL_ENTRY_INOUT) dealRecord.entryType="INOUT";
-            else if(dealEntry==DEAL_ENTRY_OUT_BY) dealRecord.entryType="OUT_BY";
-            else dealRecord.entryType="";
-
-            dealRecord.volume=HistoryDealGetDouble(trans.deal,DEAL_VOLUME);
-            dealRecord.price=HistoryDealGetDouble(trans.deal,DEAL_PRICE);
-            dealRecord.dealStopSnapshot=HistoryDealGetDouble(trans.deal,DEAL_SL); // broker-reported SL snapshot for this deal
-            dealRecord.riskAtFillMoney=0.0; // live risk is recalculated from current broker positions
-            dealRecord.commission=HistoryDealGetDouble(trans.deal,DEAL_COMMISSION);
-            dealRecord.swap=HistoryDealGetDouble(trans.deal,DEAL_SWAP);
-            dealRecord.fee=HistoryDealGetDouble(trans.deal,DEAL_FEE);
-            dealRecord.profit=HistoryDealGetDouble(trans.deal,DEAL_PROFIT);
-            dealRecord.dealTime=(datetime)HistoryDealGetInteger(trans.deal,DEAL_TIME);
-
-            SAxOpenSetupRecord setupRecord;
-            if(g_restartRecovery.FindByPositionIdentifier(dealRecord.positionIdentifier,setupRecord))
-              {
-               dealRecord.campaignId=setupRecord.setupId;
-               dealRecord.signalKey=setupRecord.setupId;
-              }
-            else
-              {
-               dealRecord.campaignId="";
-               dealRecord.signalKey="";
-               g_recoveryReady=false;
-               PrintFormat("FLIPDEMON CAMPAIGN JOURNAL: deal %I64u has no trusted setup mapping; entries blocked.",
-                           trans.deal);
-              }
-
-            if(dealRecord.entryType=="" || !g_campaignJournal.AppendDeal(dealRecord))
-              {
-               g_recoveryReady=false;
-               PrintFormat("FLIPDEMON CAMPAIGN JOURNAL: could not persist broker deal %I64u; entries blocked.",
-                           trans.deal);
-              }
-           }
+         // Transaction callbacks can precede availability in the history cache.
+         // Keep the exact deal ticket and retry later instead of losing the event.
+         AxQueueCampaignDealRetry(trans.deal);
         }
-      else if(relevant && !g_campaignJournalReady)
+      else
         {
-         g_recoveryReady=false;
-         Print("FLIPDEMON CAMPAIGN JOURNAL: deal received while journal unavailable; entries blocked.");
+         symbol=HistoryDealGetString(trans.deal,DEAL_SYMBOL);
+         magic=(ulong)HistoryDealGetInteger(trans.deal,DEAL_MAGIC);
+         relevant=(symbol==_Symbol && magic==InpMagicNumber);
+         if(relevant && (!g_campaignJournalReady || !AxPersistCampaignDeal(trans.deal)))
+           {
+            AxQueueCampaignDealRetry(trans.deal);
+            PrintFormat("FLIPDEMON CAMPAIGN JOURNAL: deal %I64u not yet durably attributed; retry lock active.",
+                        trans.deal);
+           }
         }
 
       // A DEAL_ADD is a broker-confirmed fill, but MT5 may deliver several deal/order
