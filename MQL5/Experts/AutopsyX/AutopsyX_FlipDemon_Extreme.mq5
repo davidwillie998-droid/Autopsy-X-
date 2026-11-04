@@ -2499,27 +2499,27 @@ bool AxPersistCampaignDeal(const ulong dealTicket)
    record.profit=HistoryDealGetDouble(dealTicket,DEAL_PROFIT);
    record.dealTime=(datetime)HistoryDealGetInteger(dealTicket,DEAL_TIME);
 
-   SAxOpenSetupRecord setup;
-   if(g_restartRecovery.FindByPositionIdentifier(record.positionIdentifier,setup) &&
-      setup.symbol==symbol)
+   SAxCampaignIntent intent;
+   if(g_campaignIntentJournalReady &&
+      g_campaignIntentJournal.FindByOrderTicket(record.orderTicket,intent))
      {
-      record.campaignId=setup.setupId;
-      record.signalKey=setup.setupId;
+      record.campaignId=intent.campaignId;
+      record.signalKey=intent.signalKey;
      }
    else
      {
-      SAxCampaignIntent intent;
-      if(g_campaignIntentJournalReady &&
-         g_campaignIntentJournal.FindByOrderTicket(record.orderTicket,intent))
+      SAxOpenSetupRecord setup;
+      if(g_restartRecovery.FindByPositionIdentifier(record.positionIdentifier,setup) &&
+         setup.symbol==symbol)
         {
-         record.campaignId=intent.campaignId;
-         record.signalKey=intent.signalKey;
+         record.campaignId=setup.setupId;
+         record.signalKey=setup.setupId;
         }
       else if(!g_campaignJournal.FindAttributionByPositionIdentifier(record.positionIdentifier,
                                                                        record.campaignId,record.signalKey))
         {
-         // The exact broker order ticket may resolve to a durable pre-order intent
-         // before the open-position registry write completes.
+         // The exact broker order ticket or a previously durable position
+         // attribution must resolve the deal. No guessed campaign is allowed.
          return(false);
         }
      }
