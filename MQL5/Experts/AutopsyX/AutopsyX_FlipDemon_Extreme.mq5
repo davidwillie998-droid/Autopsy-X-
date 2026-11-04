@@ -419,7 +419,8 @@ bool AxFullMarginStopoutSafe(const double additionalMargin,string &reasonOut)
    if(!MathIsValidNumber(equity) || equity<=0.0 ||
       !MathIsValidNumber(currentMargin) || currentMargin<0.0 ||
       !MathIsValidNumber(callLevel) || callLevel<0.0 ||
-      !MathIsValidNumber(stopoutLevel) || stopoutLevel<0.0)
+      !MathIsValidNumber(stopoutLevel) || stopoutLevel<0.0 ||
+       (callLevel<=0.0 && stopoutLevel<=0.0))
      {
       reasonOut="FULL_MARGIN_STOP_OUT_DATA_INVALID";
       return(false);
@@ -642,6 +643,11 @@ bool AxFullMarginRuntimeProtection(void)
       return(false);
      }
 
+   // Broker position comments persist across EA restarts. Only positions explicitly
+   // tagged by the approved Full Margin entry path receive this runtime guard.
+   string positionComment=PositionGetString(POSITION_COMMENT);
+   if(StringFind(positionComment,"FULL_MARGIN")<0) return(false);
+
    string failureReason="";
    ENUM_ACCOUNT_STOPOUT_MODE stopoutMode=
       (ENUM_ACCOUNT_STOPOUT_MODE)AccountInfoInteger(ACCOUNT_MARGIN_SO_MODE);
@@ -654,6 +660,7 @@ bool AxFullMarginRuntimeProtection(void)
    else if(!MathIsValidNumber(marginLevel) || marginLevel<=0.0 ||
            !MathIsValidNumber(callLevel) || callLevel<0.0 ||
            !MathIsValidNumber(stopoutLevel) || stopoutLevel<0.0 ||
+           (callLevel<=0.0 && stopoutLevel<=0.0) ||
            !MathIsValidNumber(InpFullMarginStopoutBufferPercent) ||
            InpFullMarginStopoutBufferPercent<0.0)
       failureReason="FULL_MARGIN_RUNTIME_MARGIN_DATA_INVALID";
@@ -1331,7 +1338,8 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       distributedReservationActive=true;
      }
 
-   if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr,fillLatencyMs,actualLots))
+   string orderComment=fullMarginActive?"AXFDX|FULL_MARGIN":"AXFDX";
+    if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,orderComment,newTicket,fillPrice,execErr,fillLatencyMs,actualLots))
      {
       g_consecutiveExecFailures++;
       g_risk.RegisterExecutionFailure(); // feeds CRiskEngine's own MaxExecutionFailures circuit breaker
