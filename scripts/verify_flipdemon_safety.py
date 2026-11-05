@@ -197,8 +197,18 @@ require("g_positionIdentifier          = (ulong)PositionGetInteger(POSITION_IDEN
 autopsy = AUTOPSY.read_text(encoding="utf-8")
 require("LastAccountedDealTicket(const ulong positionIdentifier)" in autopsy
         and "TradeAutopsy_v3.csv" in autopsy
+        and "TradeAutopsy_v4.csv" in autopsy
+        and "LoadRiskHistory" in autopsy
+        and "RiskHistoryCount" in autopsy
         and "PositionIdentifier" in autopsy,
-        "trade journal restores DealIdOut boundary per stable position identifier")
+        "versioned trade journal restores deal boundaries and persistent risk history")
+require("ReadRiskHistoryFile(m_legacyFileName,true)" in autopsy
+        and "ReadRiskHistoryFile(m_fileName,false)" in autopsy
+        and "legacyV3 && rMultiple==0.0" in autopsy,
+        "journal migration preserves known v3 outcomes while excluding ambiguous legacy zero-R rows")
+require("rMultiple!=EMPTY_VALUE" in (ROOT / "MQL5/Include/AutopsyX/Statistics.mqh").read_text(encoding="utf-8")
+        and "autopsy.RiskHistoryCount()" in (ROOT / "MQL5/Include/AutopsyX/Statistics.mqh").read_text(encoding="utf-8"),
+        "loss streak and Expected Shortfall are rebuilt from persisted, provenance-filtered records")
 require("rec.dealIdOut=lastDealTicket;" in ea and "rec.positionIdentifier = g_positionIdentifier;" in ea and "rLastTicket>journalBoundary" in ea and "g_autopsy.LastAccountedDealTicket(g_positionIdentifier)" in ea
         and "NEW ENTRIES BLOCKED pending accounting reconciliation" in ea,
         "restart compares broker exit history with journal boundary and blocks entries on an accounting gap")
