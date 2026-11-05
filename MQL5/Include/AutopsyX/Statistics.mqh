@@ -117,9 +117,9 @@ struct SAxStatsSnapshot
    double exitEfficiencyPct;   // realized profit / MFE, averaged over winners
    double dailyPnL;
    double netProfitTotal;
-   int    consecutiveLosses;     // trailing full-trade losing streak, partials excluded
-   double expectedShortfall10R;  // mean of worst 10% observed non-zero trade R-multiples
-   int    tailRiskSample;        // count of valid R-multiple observations used for ES
+   int    consecutiveLosses;     // trailing full-trade losing streak in this EA run, partials excluded
+   double expectedShortfall10R;  // mean of worst 10% observed valid trade R-multiples in this run
+   int    tailRiskSample;        // valid R-multiple observations held in current-run memory
   };
 
 //+------------------------------------------------------------------+
@@ -174,12 +174,12 @@ public:
          else lossStreak=0;
          s.consecutiveLosses=lossStreak;
 
-         // A zero R-multiple means the journal could not calculate original stop risk.
-         // Exclude it rather than fabricating a normalized return for tail estimation.
-         if(r.rMultiple!=0.0)
+         // EMPTY_VALUE marks an unavailable original-risk denominator. A true breakeven
+         // trade has R=0 and must remain in the sample; do not confuse the two.
+         if(r.rMultiple!=EMPTY_VALUE && MathIsValidNumber(r.rMultiple))
            {
             int rn=ArraySize(rSamples);
-            ArrayResize(rSamples,rn+1);
+            ArrayResize(rSamples,rn+1,64);
             rSamples[rn]=r.rMultiple;
            }
 
@@ -227,9 +227,9 @@ public:
       s.exitEfficiencyPct          = (exitEffCount>0)? 100.0*exitEffSum/exitEffCount : 0;
       s.dailyPnL = netProfitAll;
 
-      // Historical Expected Shortfall: average of the worst 10% of observed trade R.
-      // This is a descriptive sample statistic, not a parametric forecast. Require at
-      // least 20 valid observations before exposing it to the live risk overlay.
+      // Current-run Expected Shortfall: this in-memory journal is not rehydrated from CSV
+      // on restart, so this is NOT a persistent historical sample. It is descriptive only,
+      // not a parametric forecast. Require 20 valid observations before exposing it to AFE.
       s.tailRiskSample=ArraySize(rSamples);
       if(s.tailRiskSample>=20)
         {
