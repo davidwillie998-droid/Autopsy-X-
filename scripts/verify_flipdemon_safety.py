@@ -14,6 +14,7 @@ RISK = ROOT / "MQL5/Include/AutopsyX/RiskEngine.mqh"
 EXEC = ROOT / "MQL5/Include/AutopsyX/ExecutionEngine.mqh"
 RECOVERY = ROOT / "MQL5/Include/AutopsyX/RestartRecovery.mqh"
 DISTRIBUTED = ROOT / "MQL5/Include/AutopsyX/DistributedRiskCoordinator.mqh"
+REGIME = ROOT / "MQL5/Include/AutopsyX/Regime.mqh"
 README = ROOT / "MQL5/README.md"
 AUTOPSY = ROOT / "MQL5/Include/AutopsyX/TradeAutopsy.mqh"
 
@@ -22,7 +23,7 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
     print(f"PASS: {message}")
 
-for path in (EA, RISK, EXEC, RECOVERY, DISTRIBUTED, README):
+for path in (EA, RISK, EXEC, RECOVERY, DISTRIBUTED, REGIME, README):
     require(path.is_file(), f"required source exists: {path.relative_to(ROOT)}")
 
 ea = EA.read_text(encoding="utf-8")
@@ -30,9 +31,23 @@ risk = RISK.read_text(encoding="utf-8")
 execution = EXEC.read_text(encoding="utf-8")
 recovery = RECOVERY.read_text(encoding="utf-8")
 distributed = DISTRIBUTED.read_text(encoding="utf-8")
+regime = REGIME.read_text(encoding="utf-8")
 readme = README.read_text(encoding="utf-8")
 
 require("#property strict" in ea, "MQL5 strict mode is enabled")
+require("CopyBuffer(m_atrHandle,0,1,need,atrBuf)" in regime
+        and "int need = AX_REGIME_ATR_LOOKBACK+1" in regime,
+        "regime ATR uses the latest completed bar and a separate prior-bar reference window")
+require("CopyClose(m_symbol,m_tf,1,AX_REGIME_TREND_BARS,closes)" in regime,
+        "regime trend regression uses completed closes rather than the forming bar")
+require("CopyHigh(m_symbol,m_tf,1,n,high)" in regime
+        and "CopyLow(m_symbol,m_tf,1,n,low)" in regime
+        and "CopyClose(m_symbol,m_tf,1,n,close)" in regime,
+        "breakout detection compares the latest completed OHLC bar with prior completed bars")
+require("bool DetectBreakout(bool &dataAvailable)" in regime
+        and "if(!breakoutDataAvailable)" in regime
+        and "ResetUnavailable();" in regime,
+        "incomplete or invalid regime history fails closed instead of reusing stale readings")
 require("bool AxLogBrokerCompatibility(void)" in ea and "if(!AxLogBrokerCompatibility())" in ea,
         "EA inspects connected broker/symbol capabilities before module initialization")
 require("ACCOUNT_COMPANY" in ea and "ACCOUNT_SERVER" in ea and "ACCOUNT_CURRENCY" in ea

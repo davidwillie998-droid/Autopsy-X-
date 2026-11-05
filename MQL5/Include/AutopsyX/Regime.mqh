@@ -63,33 +63,73 @@ public:
       if(m_atrHandle!=INVALID_HANDLE) IndicatorRelease(m_atrHandle);
      }
 
-   //--- call once per new bar (cheap) ---
+   //--- call once per new bar. Every structural input is taken from completed bars (shift 1+).
    void              Update(void)
      {
-      if(m_atrHandle==INVALID_HANDLE) { m_regime=AX_REGIME_UNSAFE; return; }
+      ResetUnavailable();
+      if(m_atrHandle==INVALID_HANDLE) return;
 
+      // The newest completed ATR is shift 1. The reference mean uses the 100
+      // completed ATR observations before it, avoiding both the forming bar and
+      // self-inclusion of the observation being ranked.
       double atrBuf[];
       ArraySetAsSeries(atrBuf,true);
-      int need = AX_REGIME_ATR_LOOKBACK+2;
-      if(CopyBuffer(m_atrHandle,0,0,need,atrBuf) < AX_REGIME_ATR_LOOKBACK)
+      int need = AX_REGIME_ATR_LOOKBACK+1;
+      int copiedAtr = CopyBuffer(m_atrHandle,0,1,need,atrBuf);
+      if(copiedAtr<need) return;
+
+      m_currentAtr = atrBuf[0];
+      if(!MathIsValidNumber(m_currentAtr) || m_currentAtr<=0.0)
         {
-         m_regime = AX_REGIME_UNSAFE;
+         ResetUnavailable();
          return;
         }
-      m_currentAtr = atrBuf[0];
-      double sum=0; int cnt=0;
-      for(int i=0;i<AX_REGIME_ATR_LOOKBACK && i<ArraySize(atrBuf);i++) { sum+=atrBuf[i]; cnt++; }
-      m_avgAtr = (cnt>0)? sum/cnt : m_currentAtr;
-      m_volRatio = (m_avgAtr>0)? m_currentAtr/m_avgAtr : 1.0;
 
-      //--- linear regression slope/R^2 of closes over trend window ---
+      double sum=0.0;
+      for(int i=1;i<=AX_REGIME_ATR_LOOKBACK;i++)
+        {
+         if(!MathIsValidNumber(atrBuf[i]) || atrBuf[i]<=0.0)
+           {
+            ResetUnavailable();
+            return;
+           }
+         sum+=atrBuf[i];
+        }
+      m_avgAtr = sum/(double)AX_REGIME_ATR_LOOKBACK;
+      if(!MathIsValidNumber(m_avgAtr) || m_avgAtr<=0.0)
+        {
+         ResetUnavailable();
+         return;
+        }
+      m_volRatio = m_currentAtr/m_avgAtr;
+
+      // Regression uses the 20 most recently completed closes, never bar 0.
       double closes[];
       ArraySetAsSeries(closes,true);
-      int copied = CopyClose(m_symbol,m_tf,0,AX_REGIME_TREND_BARS,closes);
+      int copied = CopyClose(m_symbol,m_tf,1,AX_REGIME_TREND_BARS,closes);
+      if(copied<AX_REGIME_TREND_BARS)
+        {
+         ResetUnavailable();
+         return;
+        }
+      for(int i=0;i<copied;i++)
+        {
+         if(!MathIsValidNumber(closes[i]) || closes[i]<=0.0)
+           {
+            ResetUnavailable();
+            return;
+           }
+        }
       ComputeRegression(closes,copied);
 
-      //--- breakout detection: latest bar range vs average range, closing beyond prior range ---
-      m_isBreakout = DetectBreakout();
+      // A breakout is evaluated only after the latest completed OHLC bar is available.
+      bool breakoutDataAvailable=false;
+      m_isBreakout = DetectBreakout(breakoutDataAvailable);
+      if(!breakoutDataAvailable)
+        {
+         ResetUnavailable();
+         return;
+        }
 
       Classify();
      }
@@ -126,6 +166,17 @@ public:
      }
 
 private:
+   void              ResetUnavailable(void)
+     {
+      m_currentAtr=0.0;
+      m_avgAtr=0.0;
+      m_volRatio=0.0;
+      m_slope=0.0;
+      m_r2=0.0;
+      m_isBreakout=false;
+      m_regime=AX_REGIME_UNSAFE;
+     }
+
    void              ComputeRegression(const double &y[],const int n)
      {
       m_slope=0; m_r2=0;
@@ -152,25 +203,40 @@ private:
       m_r2 = corr*corr;
      }
 
-   bool              DetectBreakout(void)
+   bool              DetectBreakout(bool &dataAvailable)
      {
+      dataAvailable=false;
       double high[],low[],close[];
-      ArraySetAsSeries(high,true); ArraySetAsSeries(low,true); ArraySetAsSeries(close,true);
+      ArraySetAsSeries(high,true);
+      ArraySetAsSeries(low,true);
+      ArraySetAsSeries(close,true);
       int n = AX_REGIME_BREAKOUT_BARS;
-      if(CopyHigh(m_symbol,m_tf,0,n,high)<n) return(false);
-      if(CopyLow(m_symbol,m_tf,0,n,low)<n) return(false);
-      if(CopyClose(m_symbol,m_tf,0,n,close)<n) return(false);
 
-      double priorHigh=-DBL_MAX, priorLow=DBL_MAX, sumRange=0;
+      // Shift 1 is the latest completed bar. Indices 1..n-1 are the
+      // preceding completed bars used to build the comparison range.
+      if(CopyHigh(m_symbol,m_tf,1,n,high)<n) return(false);
+      if(CopyLow(m_symbol,m_tf,1,n,low)<n) return(false);
+      if(CopyClose(m_symbol,m_tf,1,n,close)<n) return(false);
+
+      for(int i=0;i<n;i++)
+        {
+         if(!MathIsValidNumber(high[i]) || !MathIsValidNumber(low[i]) ||
+            !MathIsValidNumber(close[i]) || high[i]<=0.0 || low[i]<=0.0 ||
+            close[i]<=0.0 || high[i]<low[i] || close[i]<low[i] || close[i]>high[i])
+            return(false);
+        }
+      dataAvailable=true;
+
+      double priorHigh=-DBL_MAX, priorLow=DBL_MAX, sumRange=0.0;
       for(int i=1;i<n;i++)
         {
          if(high[i]>priorHigh) priorHigh=high[i];
          if(low[i]<priorLow) priorLow=low[i];
          sumRange += (high[i]-low[i]);
         }
-      double avgRange = sumRange/(n-1);
+      double avgRange = sumRange/(double)(n-1);
       double latestRange = high[0]-low[0];
-      bool rangeExpansion = avgRange>0 && latestRange > avgRange*1.8;
+      bool rangeExpansion = avgRange>0.0 && latestRange > avgRange*1.8;
       bool closedBeyond = (close[0]>priorHigh) || (close[0]<priorLow);
       return(rangeExpansion && closedBeyond);
      }
