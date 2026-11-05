@@ -49,18 +49,10 @@ private:
       m_riskCount++;
      }
 
-   bool              LoadRiskHistory(void)
+   bool              ReadRiskHistoryFile(const string sourceFile,const bool legacyV3)
      {
-      int handle=FileOpen(m_fileName,FILE_READ|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,',');
-      if(handle==INVALID_HANDLE) return(false);
-      m_riskCount=0;
-      ArrayResize(m_riskNetProfit,0);
-      ArrayResize(m_riskMultiple,0);
-      ArrayResize(m_riskPartial,0);
-      ArrayResize(m_riskProvenance,0);
-
-      // The v3 journal has exactly 44 columns. Read fields, not physical lines,
-      // because FILE_CSV returns one delimited field per FileReadString call.
+      int handle=FileOpen(sourceFile,FILE_READ|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,',');
+      if(handle==INVALID_HANDLE) return(true); // absent legacy file is not a startup failure
       string fields[44];
       bool header=true;
       while(!FileIsEnding(handle))
@@ -75,73 +67,28 @@ private:
          if(!rowRead) break;
          if(header) { header=false; continue; }
 
-         string provenance=fields[42];
          double rMultiple=StringToDouble(fields[25]);
-         // Older v3 rows may contain zero for an unavailable R denominator.
-         // They remain excluded until a journal version carries an explicit sentinel.
-         // New rows use EMPTY_VALUE for unavailable risk and retain true R=0 breakevens.
-         if(rMultiple==0.0) rMultiple=EMPTY_VALUE;
+         // v3 used zero for both unavailable R and true breakeven. Treat those
+         // ambiguous legacy zeros as unavailable. v4 has an explicit sentinel.
+         if(legacyV3 && rMultiple==0.0) rMultiple=EMPTY_VALUE;
          AddRiskHistory(StringToDouble(fields[24]),rMultiple,
-                        (StringToInteger(fields[28])!=0),provenance);
+                        (StringToInteger(fields[28])!=0),fields[42]);
         }
       FileClose(handle);
       return(true);
      }
 
-   void              WriteHeaderIfNew(void)
+   bool              LoadRiskHistory(void)
      {
-      if(FileSize(m_fileHandle)>0) return;
-      FileWrite(m_fileHandle,
-                "SetupId","Ticket","DealIdIn","DealIdOut","EntryTime","ExitTime","Direction","EntryPrice",
-                "ExitPrice","Lots","SpreadAtEntry","SlippagePts","HoldSeconds","BuyScore","SellScore",
-                "Confidence","Regime","EntryReason","ExitReason","MFE","MAE","GrossProfit","Commission","Swap",
-                "NetProfit","RMultiple","Classification","FlipSeq","IsPartial",
-                "AfeCapitalState","AfeRiskOfRuinPct","AfeExpectedValueR","AfeWinProbability","AfeRiskMultiplier",
-                "ImpactCostPct","VWAPState","VPMACDState","OrderFlowState","StructureState","LiquidityState",
-                "NewsState","Session","Provenance","PositionIdentifier");
-     }
-
- 
-   string            ParseCsvField(const string line,const int wantedField) const
-     {
-      int field=0;
-      bool quoted=false;
-      string value="";
-      int length=StringLen(line);
-      for(int i=0;i<length;i++)
-        {
-         ushort ch=StringGetCharacter(line,i);
-         if(ch==34)
-           {
-            if(quoted && i+1<length && StringGetCharacter(line,i+1)==34)
-              { i++; if(field==wantedField) value+=ShortToString(34); continue; }
-            quoted=!quoted;
-            continue;
-           }
-         if(ch==44 && !quoted) { field++; continue; }
-         if(field==wantedField) value+=ShortToString(ch);
-        }
-      return(value);
-     }
-
-   ulong             LastAccountedDealTicket(const ulong positionIdentifier) const
-     {
-      if(positionIdentifier==0) return(0);
-      ulong lastDeal=0;
-      int handle=FileOpen(m_fileName,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE);
-      if(handle==INVALID_HANDLE) return(0);
-      bool firstLine=true;
-      while(!FileIsEnding(handle))
-        {
-         string line=FileReadString(handle);
-         if(firstLine) { firstLine=false; continue; }
-         ulong rowPosition=(ulong)StringToInteger(ParseCsvField(line,43));
-         if(rowPosition!=positionIdentifier) continue;
-         ulong deal=(ulong)StringToInteger(ParseCsvField(line,3));
-         if(deal>lastDeal) lastDeal=deal;
-        }
-      FileClose(handle);
-      return(lastDeal);
+      m_riskCount=0;
+      ArrayResize(m_riskNetProfit,0);
+      ArrayResize(m_riskMultiple,0);
+      ArrayResize(m_riskPartial,0);
+      ArrayResize(m_riskProvenance,0);
+      string legacyFile=StringFormat("%s_%s_TradeAutopsy_v3.csv",
+                                     "AutopsyX_FlipDemon_Extreme",_Symbol);
+      if(!ReadRiskHistoryFile(legacyFile,true)) return(false);
+      return(ReadRiskHistoryFile(m_fileName,false));
      }
 
 public:
@@ -150,13 +97,9 @@ public:
    bool              Init(const string eaName,const string symbol)
      {
       m_digits = (int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
-      //--- "_v2" because this schema added 18 columns to the original 25 (Journal v2, spec section  ---
-      //--- 27) - a v1 journal on disk from before this change keeps its 25-column header forever,    ---
-      //--- and silently appending 43-field rows under it would misalign every downstream reader       ---
-      //--- (spreadsheet import, Monte Carlo/Kelly's own CSV consumers). A distinct filename means      ---
-      //--- the new schema always starts its own clean file rather than corrupting an old one          ---
-      //--- (code-review finding). ---
-      m_fileName = StringFormat("%s_%s_TradeAutopsy_v3.csv",eaName,symbol);
+      //--- v4 retains the 44-column schema and gives R-multiple an explicit EMPTY_VALUE sentinel.
+      //--- v3 rows are read as legacy history, but ambiguous zero-R rows are excluded safely.
+      m_fileName = StringFormat("%s_%s_TradeAutopsy_v4.csv",eaName,symbol);
       m_fileHandle = FileOpen(m_fileName,FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ,',');
       if(m_fileHandle==INVALID_HANDLE) return(false);
       FileSeek(m_fileHandle,0,SEEK_END);
