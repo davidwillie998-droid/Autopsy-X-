@@ -287,8 +287,9 @@ class CampaignReconciliationTests(unittest.TestCase):
         intent = CampaignIntent("I-REC", "C-REC", "SIG-REC", "XAUUSD", "BUY",
                                 0.02, 2300, 20, created_at=1000)
         orders = [
-            {"ticket": 9100, "symbol": "XAUUSD", "direction": "BUY",
-             "created_at": 1001, "volume": 0.02, "stop": 2300, "magic_matches": True}
+            {"ticket": 9100, "comment": broker_intent_token(intent.intent_id), "symbol": "XAUUSD", "direction": "BUY",
+             "created_at": 1001, "volume": 0.02, "stop": 2300, "magic_matches": True,
+             "filled": True, "has_deal": True}
         ]
         self.assertEqual(recover_prepared_order(intent, orders), 9100)
 
@@ -296,8 +297,9 @@ class CampaignReconciliationTests(unittest.TestCase):
         intent = CampaignIntent("I-REC2", "C-REC2", "SIG-REC2", "XAUUSD", "SELL",
                                 0.02, 2400, 20, created_at=1000)
         orders = [
-            {"ticket": ticket, "symbol": "XAUUSD", "direction": "SELL",
-             "created_at": 1001, "volume": 0.02, "stop": 2400, "magic_matches": True}
+            {"ticket": ticket, "comment": broker_intent_token(intent.intent_id), "symbol": "XAUUSD", "direction": "SELL",
+             "created_at": 1001, "volume": 0.02, "stop": 2400, "magic_matches": True,
+             "filled": True, "has_deal": True}
             for ticket in (9101, 9102)
         ]
         self.assertEqual(recover_prepared_order(intent, orders), 0)
@@ -306,8 +308,9 @@ class CampaignReconciliationTests(unittest.TestCase):
         intent = CampaignIntent("I-REC3", "C-REC3", "SIG-REC3", "XAUUSD", "BUY",
                                 0.02, 2300, 20, created_at=1000)
         orders = [
-            {"ticket": 9103, "symbol": "XAUUSD", "direction": "BUY",
-             "created_at": 1001, "volume": 0.02, "stop": 2290, "magic_matches": True}
+            {"ticket": 9103, "comment": broker_intent_token(intent.intent_id), "symbol": "XAUUSD", "direction": "BUY",
+             "created_at": 1001, "volume": 0.02, "stop": 2290, "magic_matches": True,
+             "filled": True, "has_deal": True}
         ]
         self.assertEqual(recover_prepared_order(intent, orders), 0)
 
