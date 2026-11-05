@@ -226,3 +226,14 @@ There is an unavoidable interval between the broker accepting a market request a
 On startup, after selecting broker history, the reconciler checks whether there is exactly one prepared intent. It searches historical orders for a unique match on account-scoped EA magic, symbol, direction, setup time, initial requested volume, and protective stop. Only one exact match is bound to the intent. Zero matches leave the intent unresolved; multiple matches are treated as ambiguous and fail recovery. No comment-only or symbol-only matching is permitted.
 
 The unresolved-intent gate is evaluated after this broker-history reconciliation attempt, so a crash after broker acceptance but before the local bind can recover automatically when the broker's historical order is available. A crash before order submission leaves no matching order and requires manual resolution. The reference tests cover unique match, ambiguous multiple matches, and stop mismatch rejection.
+
+
+## Broker-history recovery for the order-binding crash window
+
+Each prepared intent now produces a short broker comment token from its persisted intent ID. The token is included in the market-order comment (with an optional full-margin suffix) and is retained in the intent journal by deterministic derivation. It is a lookup key, not proof of identity.
+
+On startup, timer and tick, the EA scans broker order history for each unresolved prepared intent. It binds an order only when exactly one order carries that token, the token is owned by exactly one journal intent, and broker metadata agrees on account-scoped magic, symbol, direction, requested initial volume, protective stop and a bounded creation-time window. A fill or linked broker deal must exist before a candidate is bound. Definitive canceled, expired or rejected orders with no linked fill can be closed as rejected. Duplicate token matches, metadata mismatches, missing tokens, missing history and uncertain states remain unresolved and block new entries.
+
+The history scan is not capped to the most recent day. An intent left unresolved during a long terminal outage can still be checked against the broker history from its creation time. The scan never submits another order. If a broker strips or rewrites comments, recovery deliberately stops for manual reconciliation rather than guessing from symbol, side, volume or timestamp alone.
+
+Reference tests cover unique recovery, duplicate candidates, wrong side, wrong magic, stale timestamps, missing broker token and unfilled orders. These are Python reference tests and static source checks, not a broker integration test. The exact comment-preservation behaviour and order-history semantics still require validation on each target broker.
