@@ -25,6 +25,62 @@ private:
    string            m_riskProvenance[];
    int               m_riskCount;
 
+   void              WriteHeaderIfNew(void)
+     {
+      if(FileSize(m_fileHandle)>0) return;
+      FileWrite(m_fileHandle,
+                "SetupId","Ticket","DealIdIn","DealIdOut","EntryTime","ExitTime","Direction","EntryPrice",
+                "ExitPrice","Lots","SpreadAtEntry","SlippagePts","HoldSeconds","BuyScore","SellScore",
+                "Confidence","Regime","EntryReason","ExitReason","MFE","MAE","GrossProfit","Commission","Swap",
+                "NetProfit","RMultiple","Classification","FlipSeq","IsPartial",
+                "AfeCapitalState","AfeRiskOfRuinPct","AfeExpectedValueR","AfeWinProbability","AfeRiskMultiplier",
+                "ImpactCostPct","VWAPState","VPMACDState","OrderFlowState","StructureState","LiquidityState",
+                "NewsState","Session","Provenance","PositionIdentifier");
+     }
+
+   string            ParseCsvField(const string line,const int wantedField) const
+     {
+      int field=0;
+      bool quoted=false;
+      string value="";
+      int length=StringLen(line);
+      for(int i=0;i<length;i++)
+        {
+         ushort ch=StringGetCharacter(line,i);
+         if(ch==34)
+           {
+            if(quoted && i+1<length && StringGetCharacter(line,i+1)==34)
+              { i++; if(field==wantedField) value+=ShortToString(34); continue; }
+            quoted=!quoted;
+            continue;
+           }
+         if(ch==44 && !quoted) { field++; continue; }
+         if(field==wantedField) value+=ShortToString(ch);
+        }
+      return(value);
+     }
+
+   ulong             LastAccountedDealTicketInFile(const string sourceFile,
+                                                       const ulong positionIdentifier) const
+     {
+      if(positionIdentifier==0) return(0);
+      ulong lastDeal=0;
+      int handle=FileOpen(sourceFile,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE);
+      if(handle==INVALID_HANDLE) return(0);
+      bool firstLine=true;
+      while(!FileIsEnding(handle))
+        {
+         string line=FileReadString(handle);
+         if(firstLine) { firstLine=false; continue; }
+         ulong rowPosition=(ulong)StringToInteger(ParseCsvField(line,43));
+         if(rowPosition!=positionIdentifier) continue;
+         ulong deal=(ulong)StringToInteger(ParseCsvField(line,3));
+         if(deal>lastDeal) lastDeal=deal;
+        }
+      FileClose(handle);
+      return(lastDeal);
+     }
+
    void              AddRiskHistory(const double netProfit,const double rMultiple,
                                     const bool isPartial,const string provenance)
      {
@@ -206,6 +262,13 @@ public:
 
       AddRiskHistory(rec.netProfit,rec.rMultiple,rec.isPartial,AxProvenanceToString(rec.provenance));
       return(rec.tradeClass);
+     }
+
+   ulong             LastAccountedDealTicket(const ulong positionIdentifier) const
+     {
+      ulong currentLast=LastAccountedDealTicketInFile(m_fileName,positionIdentifier);
+      ulong legacyLast=LastAccountedDealTicketInFile(m_legacyFileName,positionIdentifier);
+      return((currentLast>legacyLast) ? currentLast : legacyLast);
      }
 
    int               RiskHistoryCount(void) const { return(m_riskCount); }
