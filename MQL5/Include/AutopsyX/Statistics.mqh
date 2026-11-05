@@ -117,6 +117,9 @@ struct SAxStatsSnapshot
    double exitEfficiencyPct;   // realized profit / MFE, averaged over winners
    double dailyPnL;
    double netProfitTotal;
+   int    consecutiveLosses;     // trailing full-trade losing streak, partials excluded
+   double expectedShortfall10R;  // mean of worst 10% observed non-zero trade R-multiples
+   int    tailRiskSample;        // count of valid R-multiple observations used for ES
   };
 
 //+------------------------------------------------------------------+
@@ -134,6 +137,9 @@ public:
       s.netExpectancy=0; s.grossExpectancy=0; s.avgWin=0; s.avgLoss=0;
       s.maxDrawdownCurrency=0; s.maxDrawdownPercent=0; s.avgHoldSeconds=0;
       s.entryAccuracyPct=0; s.exitEfficiencyPct=0; s.dailyPnL=0; s.netProfitTotal=0;
+      s.consecutiveLosses=0; s.expectedShortfall10R=0; s.tailRiskSample=0;
+      int lossStreak=0;
+      double rSamples[]; ArrayResize(rSamples,0);
 
       int n = autopsy.Count();
       if(n<=0) return(s);
@@ -162,6 +168,20 @@ public:
          // a partial is a banked slice of an still-open position, not a standalone trade
          // outcome - it never counts toward win/loss, expectancy, or accuracy statistics
          if(r.isPartial) continue;
+
+         // Track the current chronological loss run using completed full trades only.
+         if(r.netProfit<0) lossStreak++;
+         else lossStreak=0;
+         s.consecutiveLosses=lossStreak;
+
+         // A zero R-multiple means the journal could not calculate original stop risk.
+         // Exclude it rather than fabricating a normalized return for tail estimation.
+         if(r.rMultiple!=0.0)
+           {
+            int rn=ArraySize(rSamples);
+            ArrayResize(rSamples,rn+1);
+            rSamples[rn]=r.rMultiple;
+           }
 
          s.totalTrades++;
          sumNetFull   += r.netProfit;
@@ -206,6 +226,20 @@ public:
       s.entryAccuracyPct          = (s.totalTrades>0)? 100.0*entryOk/s.totalTrades : 0;
       s.exitEfficiencyPct          = (exitEffCount>0)? 100.0*exitEffSum/exitEffCount : 0;
       s.dailyPnL = netProfitAll;
+
+      // Historical Expected Shortfall: average of the worst 10% of observed trade R.
+      // This is a descriptive sample statistic, not a parametric forecast. Require at
+      // least 20 valid observations before exposing it to the live risk overlay.
+      s.tailRiskSample=ArraySize(rSamples);
+      if(s.tailRiskSample>=20)
+        {
+         ArraySort(rSamples);
+         int tailCount=(int)MathCeil((double)s.tailRiskSample*0.10);
+         tailCount=MathMax(1,MathMin(tailCount,s.tailRiskSample));
+         double tailSum=0.0;
+         for(int j=0;j<tailCount;j++) tailSum+=rSamples[j];
+         s.expectedShortfall10R=tailSum/tailCount;
+        }
       return(s);
      }
 
