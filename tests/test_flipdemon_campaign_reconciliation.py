@@ -170,6 +170,13 @@ def broker_intent_token(intent_id: str) -> str:
     return f"AXI{value}"
 
 
+def is_definitive_order_rejection(retcode: int) -> bool:
+    return retcode in {
+        10006, 10007, 10011, 10013, 10014, 10015, 10016,
+        10017, 10018, 10019, 10024, 10030,
+    }
+
+
 def recover_prepared_order(intent, broker_orders):
     """Token locates a candidate; every broker field and uniqueness must agree."""
     token = broker_intent_token(intent.intent_id)
@@ -364,6 +371,14 @@ class CampaignReconciliationTests(unittest.TestCase):
         ledger.prepare(CampaignIntent("I-6", "C-6", "S-6", "XAUUSD", "BUY", 0.01, 2300, 10))
         recovered = IntentLedger(intents=dict(ledger.intents))
         self.assertTrue(recovered.unresolved())
+
+    def test_success_retcodes_are_never_treated_as_definitive_rejection(self):
+        for retcode in (10008, 10009, 10010, 10012, 10031, 0):
+            self.assertFalse(is_definitive_order_rejection(retcode))
+
+    def test_only_explicit_negative_server_retcodes_close_prepared_intents(self):
+        for retcode in (10006, 10007, 10011, 10013, 10014, 10016, 10019, 10030):
+            self.assertTrue(is_definitive_order_rejection(retcode))
 
     def test_crash_window_recovers_unique_token_and_exact_broker_order(self):
         intent = CampaignIntent("I-RECOVER", "C-RECOVER", "S-RECOVER",
