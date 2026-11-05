@@ -163,8 +163,10 @@ class IntentLedger:
 
 def broker_intent_token(intent_id: str) -> str:
     value = 2166136261
-    for byte in intent_id.encode("utf-16le"):
-        value = ((value ^ byte) * 16777619) & 0xFFFFFFFF
+    encoded = intent_id.encode("utf-16le")
+    for index in range(0, len(encoded), 2):
+        code_unit = encoded[index] | (encoded[index + 1] << 8)
+        value = ((value ^ code_unit) * 16777619) & 0xFFFFFFFF
     return f"AXI{value}"
 
 
