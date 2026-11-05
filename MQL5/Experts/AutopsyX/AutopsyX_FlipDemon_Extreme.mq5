@@ -1395,7 +1395,14 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       return(false);
      }
 
-   string orderComment=fullMarginActive?"AXFDX|FULL_MARGIN":"AXFDX";
+   string orderComment=g_campaignIntentJournal.BuildBrokerComment(campaignIntent.intentId,fullMarginActive);
+   if(orderComment=="")
+     {
+      g_recoveryReady=false;
+      g_accountRiskIntegrityLock=true;
+      Print("FLIPDEMON CAMPAIGN INTENT: could not build unique broker recovery token; order was not sent.");
+      return(false);
+     }
    ulong brokerOrderTicket=0;
    uint brokerRetcode=0;
    bool marketOrderConfirmed=g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,orderComment,
@@ -1912,6 +1919,8 @@ int OnInit(void)
       g_recoveryReady=false;
       Print("FLIPDEMON CAMPAIGN INTENT: journal initialization failed; new entries blocked.");
      }
+   if(g_campaignIntentJournalReady)
+      AxProcessCampaignIntentRecovery();
    if(g_campaignJournalReady)
      {
       // Backfill broker history before checking open-position attribution. The
@@ -1991,8 +2000,9 @@ void OnDeinit(const int reason)
 void OnTick(void)
   {
    if(!g_md.OnTickUpdate()) return;
-   // Deal-history callbacks may arrive before the terminal exposes the deal in history
-   // or before the post-fill setup registry is durable. Retry without dropping the ticket.
+   // Recover any broker-accepted order whose ticket binding was interrupted by a crash.
+   // Then retry deal persistence whose history or attribution was temporarily unavailable.
+   AxProcessCampaignIntentRecovery();
    AxProcessCampaignDealRetries();
    g_risk.OnTickHousekeeping();
    g_afe.OnTickHousekeeping();
@@ -2351,6 +2361,7 @@ void OnTick(void)
 //====================================================================
 void OnTimer(void)
   {
+   AxProcessCampaignIntentRecovery();
    AxProcessCampaignDealRetries();
    if(!InpShowDashboard) return;
 
@@ -2456,6 +2467,25 @@ void OnTimer(void)
                  g_md.CurrentSpreadPts(),g_posState.dir,g_posState.entryPrice,curPrice,floatingPnl,
                  holdSeconds,g_risk.FlipsToday(),g_autopsy.Count(),snap,g_risk.DailyPnL(),
                  snap.maxDrawdownPercent,g_risk.RiskPercent(),displayState,gate,extras);
+  }
+
+// Retry crash-window order binding against broker order/deal history. The journal
+// performs strict token and broker-metadata matching; ambiguity remains fail-closed.
+void AxProcessCampaignIntentRecovery(void)
+  {
+   if(!g_campaignIntentJournalReady || !g_campaignIntentJournal.IsReady() ||
+      !g_campaignIntentJournal.HasUnresolvedIntent())
+      return;
+   int bound=0,rejected=0,ambiguous=0;
+   if(!g_campaignIntentJournal.ReconcilePreparedOrders(86400,bound,rejected,ambiguous))
+     {
+      if(InpVerboseLogging)
+         Print("FLIPDEMON CAMPAIGN INTENT: broker-history recovery scan failed; unresolved intent remains blocked.");
+      return;
+     }
+   if(bound>0 || rejected>0 || ambiguous>0)
+      PrintFormat("FLIPDEMON CAMPAIGN INTENT RECOVERY: bound=%d rejected=%d ambiguous=%d unresolved=%d.",
+                  bound,rejected,ambiguous,g_campaignIntentJournal.PreparedIntentCount());
   }
 
 // Persist one broker-confirmed deal. False means the ticket must remain queued:
