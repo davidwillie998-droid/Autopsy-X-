@@ -411,9 +411,8 @@ struct SAxTradeRecord
    //--- AFE/impact-cost capping (Patnaik & Thomas 2004) - 0 when depth was unavailable to measure it ---
    double                impactCostPct;
 
-   //--- R-multiple: netProfit expressed as a multiple of the ORIGINAL risk (entryPrice to          ---
-   //--- originalSlPrice, in currency) - the unit Monte Carlo/Kelly both operate on. 0 for a record  ---
-   //--- where original risk couldn't be computed (never fabricated as a made-up ratio). ---
+   //--- R-multiple: netProfit expressed as a multiple of ORIGINAL risk. EMPTY_VALUE means the      ---
+   //--- original risk denominator could not be computed. A real breakeven trade is R=0. ---
    double                rMultiple;
 
    //--- engine states AT ENTRY TIME, journaled as their own columns (not just folded into the free- ---
