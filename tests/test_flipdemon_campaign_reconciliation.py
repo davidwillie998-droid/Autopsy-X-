@@ -399,6 +399,32 @@ class CampaignReconciliationTests(unittest.TestCase):
                  "filled": False, "has_deal": False}
         self.assertEqual(recover_prepared_order(intent, [order]), 0)
 
+    def test_crash_recovery_refuses_order_with_wrong_magic(self):
+        intent = CampaignIntent("I-RECOVER-5", "C-5", "S-5",
+                                "XAUUSD", "BUY", 0.02, 2300, 20)
+        order = {"ticket": 9105, "comment": broker_intent_token(intent.intent_id),
+                 "symbol": "XAUUSD", "direction": "BUY", "created_at": 1001,
+                 "volume": 0.02, "stop": 2300, "magic_matches": False,
+                 "filled": True, "has_deal": True}
+        self.assertEqual(recover_prepared_order(intent, [order]), 0)
+
+    def test_crash_recovery_refuses_order_outside_creation_window(self):
+        intent = CampaignIntent("I-RECOVER-6", "C-6", "S-6",
+                                "XAUUSD", "BUY", 0.02, 2300, 20)
+        order = {"ticket": 9106, "comment": broker_intent_token(intent.intent_id),
+                 "symbol": "XAUUSD", "direction": "BUY", "created_at": 1400,
+                 "volume": 0.02, "stop": 2300, "magic_matches": True,
+                 "filled": True, "has_deal": True}
+        self.assertEqual(recover_prepared_order(intent, [order]), 0)
+
+    def test_crash_recovery_refuses_order_when_broker_did_not_preserve_token(self):
+        intent = CampaignIntent("I-RECOVER-7", "C-7", "S-7",
+                                "XAUUSD", "BUY", 0.02, 2300, 20)
+        order = {"ticket": 9107, "comment": "AXFDX", "symbol": "XAUUSD",
+                 "direction": "BUY", "created_at": 1001, "volume": 0.02,
+                 "stop": 2300, "magic_matches": True, "filled": True, "has_deal": True}
+        self.assertEqual(recover_prepared_order(intent, [order]), 0)
+
     def test_deal_is_attributed_to_campaign_after_restart(self):
         journal = Journal(12345, "Broker-Demo", 1500015)
         deal = Deal(1001, 9001, "XAUUSD", "BUY", "IN", 0.03, 2350.0,
