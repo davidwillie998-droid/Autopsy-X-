@@ -237,3 +237,8 @@ On startup, timer and tick, the EA scans broker order history for each unresolve
 The history scan is not capped to the most recent day. An intent left unresolved during a long terminal outage can still be checked against the broker history from its creation time. The scan never submits another order. If a broker strips or rewrites comments, recovery deliberately stops for manual reconciliation rather than guessing from symbol, side, volume or timestamp alone.
 
 Reference tests cover unique recovery, duplicate candidates, wrong side, wrong magic, stale timestamps, missing broker token and unfilled orders. These are Python reference tests and static source checks, not a broker integration test. The exact comment-preservation behaviour and order-history semantics still require validation on each target broker.
+
+
+### Execution-result classification
+
+A nonzero trade retcode is not automatically treated as a rejection. Only an explicit allowlist of negative server outcomes can close a prepared intent as rejected, and only when no broker order ticket was returned. A returned order ticket is bound to the intent even when the terminal cannot yet confirm the resulting position. In that case, the EA locks new entries until the position and campaign state can be reconciled. Success retcodes, partial-success retcodes, timeouts, connection loss, zero and unknown retcodes never become a false rejection.
