@@ -161,20 +161,31 @@ class IntentLedger:
                      if item.status == "BOUND" and item.order_ticket == order_ticket), None)
 
 
+def broker_intent_token(intent_id: str) -> str:
+    value = 2166136261
+    for byte in intent_id.encode("utf-16le"):
+        value = ((value ^ byte) * 16777619) & 0xFFFFFFFF
+    return f"AXI{value}"
+
+
 def recover_prepared_order(intent, broker_orders):
-    """Require one exact broker-history match; never guess from symbol alone."""
-    matches = [
-        order for order in broker_orders
-        if order["symbol"] == intent.symbol
-        and order["direction"] == intent.direction
-        and order["created_at"] >= intent.created_at - 5
-        and abs(order["volume"] - intent.requested_volume) <= 1e-8
-        and abs(order["stop"] - intent.intended_stop) <= 1e-8
-        and order["magic_matches"]
-    ]
-    if len(matches) == 1:
-        return matches[0]["ticket"]
-    return 0
+    """Token locates a candidate; every broker field and uniqueness must agree."""
+    token = broker_intent_token(intent.intent_id)
+    token_matches = [order for order in broker_orders
+                     if order["comment"] == token or order["comment"].startswith(token + "|")]
+    if len(token_matches) != 1:
+        return 0
+    order = token_matches[0]
+    if (order["symbol"] != intent.symbol
+            or order["direction"] != intent.direction
+            or not order["magic_matches"]
+            or order["created_at"] < intent.created_at - 10
+            or order["created_at"] > intent.created_at + 300
+            or abs(order["volume"] - intent.requested_volume) > 1e-8
+            or abs(order["stop"] - intent.intended_stop) > 1e-8
+            or not (order["filled"] or order["has_deal"])):
+        return 0
+    return order["ticket"]
 
 
 def resolve_intent_attribution(order_ticket, position_id, intent_ledger, open_registry):
@@ -348,6 +359,43 @@ class CampaignReconciliationTests(unittest.TestCase):
         ledger.prepare(CampaignIntent("I-6", "C-6", "S-6", "XAUUSD", "BUY", 0.01, 2300, 10))
         recovered = IntentLedger(intents=dict(ledger.intents))
         self.assertTrue(recovered.unresolved())
+
+    def test_crash_window_recovers_unique_token_and_exact_broker_order(self):
+        intent = CampaignIntent("I-RECOVER", "C-RECOVER", "S-RECOVER",
+                                "XAUUSD", "BUY", 0.02, 2300, 20)
+        order = {"ticket": 9100, "comment": broker_intent_token(intent.intent_id) + "|FM",
+                 "symbol": "XAUUSD", "direction": "BUY", "created_at": 1001,
+                 "volume": 0.02, "stop": 2300, "magic_matches": True,
+                 "filled": True, "has_deal": True}
+        self.assertEqual(recover_prepared_order(intent, [order]), 9100)
+
+    def test_crash_recovery_refuses_comment_token_with_wrong_broker_metadata(self):
+        intent = CampaignIntent("I-RECOVER-2", "C-2", "S-2",
+                                "XAUUSD", "BUY", 0.02, 2300, 20)
+        order = {"ticket": 9101, "comment": broker_intent_token(intent.intent_id),
+                 "symbol": "XAUUSD", "direction": "SELL", "created_at": 1001,
+                 "volume": 0.02, "stop": 2300, "magic_matches": True,
+                 "filled": True, "has_deal": True}
+        self.assertEqual(recover_prepared_order(intent, [order]), 0)
+
+    def test_crash_recovery_refuses_ambiguous_duplicate_token_matches(self):
+        intent = CampaignIntent("I-RECOVER-3", "C-3", "S-3",
+                                "XAUUSD", "BUY", 0.02, 2300, 20)
+        base = {"comment": broker_intent_token(intent.intent_id), "symbol": "XAUUSD",
+                "direction": "BUY", "created_at": 1001, "volume": 0.02, "stop": 2300,
+                "magic_matches": True, "filled": True, "has_deal": True}
+        self.assertEqual(recover_prepared_order(intent, [
+            dict(base, ticket=9102), dict(base, ticket=9103)
+        ]), 0)
+
+    def test_crash_recovery_refuses_unfilled_order_without_deal(self):
+        intent = CampaignIntent("I-RECOVER-4", "C-4", "S-4",
+                                "XAUUSD", "SELL", 0.01, 2400, 10)
+        order = {"ticket": 9104, "comment": broker_intent_token(intent.intent_id),
+                 "symbol": "XAUUSD", "direction": "SELL", "created_at": 1001,
+                 "volume": 0.01, "stop": 2400, "magic_matches": True,
+                 "filled": False, "has_deal": False}
+        self.assertEqual(recover_prepared_order(intent, [order]), 0)
 
     def test_deal_is_attributed_to_campaign_after_restart(self):
         journal = Journal(12345, "Broker-Demo", 1500015)
