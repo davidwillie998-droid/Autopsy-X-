@@ -142,7 +142,6 @@ public:
       double rSamples[]; ArrayResize(rSamples,0);
 
       int n = autopsy.Count();
-      if(n<=0) return(s);
 
       double equity = startingEquity;
       double peak = startingEquity;
@@ -173,15 +172,6 @@ public:
          if(r.netProfit<0) lossStreak++;
          else lossStreak=0;
          s.consecutiveLosses=lossStreak;
-
-         // EMPTY_VALUE marks an unavailable original-risk denominator. A true breakeven
-         // trade has R=0 and must remain in the sample; do not confuse the two.
-         if(r.rMultiple!=EMPTY_VALUE && MathIsValidNumber(r.rMultiple))
-           {
-            int rn=ArraySize(rSamples);
-            ArrayResize(rSamples,rn+1,64);
-            rSamples[rn]=r.rMultiple;
-           }
 
          s.totalTrades++;
          sumNetFull   += r.netProfit;
@@ -227,9 +217,35 @@ public:
       s.exitEfficiencyPct          = (exitEffCount>0)? 100.0*exitEffSum/exitEffCount : 0;
       s.dailyPnL = netProfitAll;
 
-      // Current-run Expected Shortfall: this in-memory journal is not rehydrated from CSV
-      // on restart, so this is NOT a persistent historical sample. It is descriptive only,
-      // not a parametric forecast. Require 20 valid observations before exposing it to AFE.
+      // Rebuild the adaptive risk sequence from the durable journal on every calculation.
+      // Only records from the current tester/demo/live provenance contribute. Partial exits
+      // affect cash P&L above, but never count as independent trade outcomes.
+      s.consecutiveLosses=0;
+      int lossStreak=0;
+      string activeProvenance=AxProvenanceToString(AxDetectProvenance());
+      int riskCount=autopsy.RiskHistoryCount();
+      for(int h=0;h<riskCount;h++)
+        {
+         double netProfit=0.0,rMultiple=EMPTY_VALUE;
+         bool isPartial=false;
+         string provenance="";
+         if(!autopsy.GetRiskHistoryRecord(h,netProfit,rMultiple,isPartial,provenance)) continue;
+         if(provenance!=activeProvenance || isPartial) continue;
+
+         if(netProfit<0.0) lossStreak++;
+         else lossStreak=0;
+         s.consecutiveLosses=lossStreak;
+
+         if(rMultiple!=EMPTY_VALUE && MathIsValidNumber(rMultiple))
+           {
+            int rn=ArraySize(rSamples);
+            ArrayResize(rSamples,rn+1,64);
+            rSamples[rn]=rMultiple;
+           }
+        }
+
+      // Historical Expected Shortfall is a descriptive sample statistic, not a forecast.
+      // It is enabled only after 20 valid full-trade R observations from this data source.
       s.tailRiskSample=ArraySize(rSamples);
       if(s.tailRiskSample>=20)
         {
