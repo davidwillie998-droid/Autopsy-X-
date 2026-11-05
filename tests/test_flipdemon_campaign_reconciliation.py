@@ -408,6 +408,15 @@ class CampaignReconciliationTests(unittest.TestCase):
             dict(base, ticket=9102), dict(base, ticket=9103)
         ]), 0)
 
+    def test_crash_recovery_binds_partially_filled_order_with_linked_deal(self):
+        intent = CampaignIntent("I-RECOVER-PARTIAL", "C-PARTIAL", "S-PARTIAL",
+                                "XAUUSD", "BUY", 0.04, 2300, 40)
+        order = {"ticket": 9110, "comment": broker_intent_token(intent.intent_id),
+                 "symbol": "XAUUSD", "direction": "BUY", "created_at": 1001,
+                 "volume": 0.04, "stop": 2300, "magic_matches": True,
+                 "filled": False, "has_deal": True}
+        self.assertEqual(recover_prepared_order(intent, [order]), 9110)
+
     def test_crash_recovery_refuses_unfilled_order_without_deal(self):
         intent = CampaignIntent("I-RECOVER-4", "C-4", "S-4",
                                 "XAUUSD", "SELL", 0.01, 2400, 10)
