@@ -1420,10 +1420,9 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
      }
    else if(!marketOrderConfirmed)
      {
-      // A definitive server rejection can close the intent. Timeout/connection
-      // outcomes remain PREPARED because the broker may have accepted the request.
-      if(brokerRetcode!=TRADE_RETCODE_TIMEOUT && brokerRetcode!=TRADE_RETCODE_CONNECTION &&
-         brokerRetcode!=0)
+      // A broker order ticket is stronger evidence than the local position snapshot.
+      // Without a ticket, close the intent only for an explicit negative server retcode.
+      if(brokerOrderTicket==0 && AxIsDefinitiveOrderRejection(brokerRetcode))
         {
          if(!g_campaignIntentJournal.RejectIntent(campaignIntent.intentId))
             g_recoveryReady=false;
@@ -1431,8 +1430,8 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       else
         {
          g_recoveryReady=false;
-         PrintFormat("FLIPDEMON CAMPAIGN INTENT: ambiguous send outcome (retcode=%u); intent retained and new entries blocked.",
-                     brokerRetcode);
+         PrintFormat("FLIPDEMON CAMPAIGN INTENT: order outcome not fully confirmed (retcode=%u order=%I64u); intent retained or bound and new entries blocked.",
+                     brokerRetcode,brokerOrderTicket);
         }
      }
 
@@ -2660,6 +2659,25 @@ string AxCreateCampaignIntentId(void)
    static uint sequence=0;
    sequence++;
    return(StringFormat("AXI-%I64d-%u-%u",(long)TimeCurrent(),GetTickCount(),sequence));
+  }
+
+bool AxIsDefinitiveOrderRejection(const uint retcode)
+  {
+   // Only explicit negative server outcomes may close a prepared intent.
+   // DONE/DONE_PARTIAL/PLACED, timeout, connection loss, zero and unknown codes
+   // are never interpreted as proof that the broker did not accept the order.
+   return(retcode==TRADE_RETCODE_REJECT ||
+          retcode==TRADE_RETCODE_CANCEL ||
+          retcode==TRADE_RETCODE_ERROR ||
+          retcode==TRADE_RETCODE_INVALID ||
+          retcode==TRADE_RETCODE_INVALID_VOLUME ||
+          retcode==TRADE_RETCODE_INVALID_PRICE ||
+          retcode==TRADE_RETCODE_INVALID_STOPS ||
+          retcode==TRADE_RETCODE_TRADE_DISABLED ||
+          retcode==TRADE_RETCODE_MARKET_CLOSED ||
+          retcode==TRADE_RETCODE_NO_MONEY ||
+          retcode==TRADE_RETCODE_INVALID_FILL ||
+          retcode==TRADE_RETCODE_TOO_MANY_REQUESTS);
   }
 
 string AxBuildCampaignSignalKey(const ENUM_AX_DIR dir,const int flipSeq)
