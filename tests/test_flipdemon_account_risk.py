@@ -497,7 +497,7 @@ class FullMarginModeSourceTests(unittest.TestCase):
         self.assertIn("if(!InpEnableFullMarginMode || !g_haveOpenPosition) return(false)", guard)
         self.assertIn("(ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber", guard)
         self.assertIn('StringFind(positionComment,"FULL_MARGIN")<0', guard)
-        self.assertIn('string orderComment=fullMarginActive?"AXFDX|FULL_MARGIN":"AXFDX";', self.ea)
+        self.assertIn("g_campaignIntentJournal.BuildBrokerComment(campaignIntent.intentId,fullMarginActive)", self.ea)
 
     def test_runtime_guard_fails_closed_on_non_percent_stopout_mode_and_invalid_data(self):
         start = self.ea.index("bool AxFullMarginRuntimeProtection(void)")
