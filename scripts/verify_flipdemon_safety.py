@@ -196,12 +196,15 @@ require("g_positionIdentifier          = (ulong)PositionGetInteger(POSITION_IDEN
         "position identifier is captured on restart reconciliation and fresh position initialization")
 autopsy = AUTOPSY.read_text(encoding="utf-8")
 require("LastAccountedDealTicket(const ulong positionIdentifier)" in autopsy
+        and "LastAccountedDealTicketInFile(m_legacyFileName,positionIdentifier)" in autopsy
         and "TradeAutopsy_v3.csv" in autopsy
         and "TradeAutopsy_v4.csv" in autopsy
+        and "WriteHeaderIfNew(void)" in autopsy
+        and "ParseCsvField(const string line" in autopsy
         and "LoadRiskHistory" in autopsy
         and "RiskHistoryCount" in autopsy
         and "PositionIdentifier" in autopsy,
-        "versioned trade journal restores deal boundaries and persistent risk history")
+        "versioned trade journal restores deal boundaries and persistent risk history across upgrades")
 require("ReadRiskHistoryFile(m_legacyFileName,true)" in autopsy
         and "ReadRiskHistoryFile(m_fileName,false)" in autopsy
         and 'fields[25]=="NA"' in autopsy
