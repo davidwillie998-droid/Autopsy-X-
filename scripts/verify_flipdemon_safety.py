@@ -44,7 +44,7 @@ require("CopyHigh(m_symbol,m_tf,1,n,high)" in regime
         and "CopyLow(m_symbol,m_tf,1,n,low)" in regime
         and "CopyClose(m_symbol,m_tf,1,n,close)" in regime,
         "breakout detection compares the latest completed OHLC bar with prior completed bars")
-require("bool DetectBreakout(bool &dataAvailable)" in regime
+require("DetectBreakout(bool &dataAvailable)" in regime
         and "if(!breakoutDataAvailable)" in regime
         and "ResetUnavailable();" in regime,
         "incomplete or invalid regime history fails closed instead of reusing stale readings")
