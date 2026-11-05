@@ -398,7 +398,7 @@ SAxTradeRecord AxBuildTradeRecord(const double closePrice,const double grossProf
    //--- placeholder). Uses g_posState.originalSlPrice - the AS-PLACED stop, never mutated by break-   ---
    //--- even/trailing - so this is always measured against the true original risk, same invariant    ---
    //--- the existing partial-take-profit R-multiple trigger already relies on. ---
-   rec.rMultiple = 0.0;
+   rec.rMultiple = EMPTY_VALUE;
    if(!isPartial && g_posState.originalSlPrice>0)
      {
       double riskPricePts = MathAbs(g_posState.entryPrice-g_posState.originalSlPrice);
