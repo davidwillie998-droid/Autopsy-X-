@@ -105,7 +105,7 @@ public:
 
    bool Init(const string eaName,const string symbol,const ulong magic)
      {
-      m_fileName=StringFormat("%s_%s_%I64u_VirtualExits_v1.csv",eaName,symbol,magic);
+      m_fileName=StringFormat("%s_%s_%I64u_%I64u_VirtualExits_v1.csv",eaName,symbol,(ulong)AccountInfoInteger(ACCOUNT_LOGIN),magic);
       m_count=0;
       int handle=FileOpen(m_fileName,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ);
       if(handle==INVALID_HANDLE)
