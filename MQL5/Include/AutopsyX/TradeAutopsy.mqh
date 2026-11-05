@@ -18,6 +18,75 @@ private:
    int               m_digits;
    SAxTradeRecord    m_records[];
    int               m_count;
+   double            m_riskNetProfit[];
+   double            m_riskMultiple[];
+   bool              m_riskPartial[];
+   string            m_riskProvenance[];
+   int               m_riskCount;
+
+   void              AddRiskHistory(const double netProfit,const double rMultiple,
+                                    const bool isPartial,const string provenance)
+     {
+      if(m_riskCount>=AX_AUTOPSY_MAX_MEMORY)
+        {
+         for(int i=1;i<AX_AUTOPSY_MAX_MEMORY;i++)
+           {
+            m_riskNetProfit[i-1]=m_riskNetProfit[i];
+            m_riskMultiple[i-1]=m_riskMultiple[i];
+            m_riskPartial[i-1]=m_riskPartial[i];
+            m_riskProvenance[i-1]=m_riskProvenance[i];
+           }
+         m_riskCount=AX_AUTOPSY_MAX_MEMORY-1;
+        }
+      ArrayResize(m_riskNetProfit,m_riskCount+1);
+      ArrayResize(m_riskMultiple,m_riskCount+1);
+      ArrayResize(m_riskPartial,m_riskCount+1);
+      ArrayResize(m_riskProvenance,m_riskCount+1);
+      m_riskNetProfit[m_riskCount]=netProfit;
+      m_riskMultiple[m_riskCount]=rMultiple;
+      m_riskPartial[m_riskCount]=isPartial;
+      m_riskProvenance[m_riskCount]=provenance;
+      m_riskCount++;
+     }
+
+   bool              LoadRiskHistory(void)
+     {
+      int handle=FileOpen(m_fileName,FILE_READ|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,',');
+      if(handle==INVALID_HANDLE) return(false);
+      m_riskCount=0;
+      ArrayResize(m_riskNetProfit,0);
+      ArrayResize(m_riskMultiple,0);
+      ArrayResize(m_riskPartial,0);
+      ArrayResize(m_riskProvenance,0);
+
+      // The v3 journal has exactly 44 columns. Read fields, not physical lines,
+      // because FILE_CSV returns one delimited field per FileReadString call.
+      string fields[44];
+      bool header=true;
+      while(!FileIsEnding(handle))
+        {
+         bool rowRead=false;
+         for(int f=0;f<44;f++)
+           {
+            if(FileIsEnding(handle) && f==0) { rowRead=false; break; }
+            fields[f]=FileReadString(handle);
+            rowRead=true;
+           }
+         if(!rowRead) break;
+         if(header) { header=false; continue; }
+
+         string provenance=fields[42];
+         double rMultiple=StringToDouble(fields[25]);
+         // Older v3 rows may contain zero for an unavailable R denominator.
+         // They remain excluded until a journal version carries an explicit sentinel.
+         // New rows use EMPTY_VALUE for unavailable risk and retain true R=0 breakevens.
+         if(rMultiple==0.0) rMultiple=EMPTY_VALUE;
+         AddRiskHistory(StringToDouble(fields[24]),rMultiple,
+                        (StringToInteger(fields[28])!=0),provenance);
+        }
+      FileClose(handle);
+      return(true);
+     }
 
    void              WriteHeaderIfNew(void)
      {
@@ -76,7 +145,7 @@ private:
      }
 
 public:
-                     CTradeAutopsy(void) { m_fileHandle=INVALID_HANDLE; m_count=0; }
+                     CTradeAutopsy(void) { m_fileHandle=INVALID_HANDLE; m_count=0; m_riskCount=0; }
 
    bool              Init(const string eaName,const string symbol)
      {
@@ -94,6 +163,11 @@ public:
       WriteHeaderIfNew();
       ArrayResize(m_records,0);
       m_count=0;
+      if(!LoadRiskHistory())
+        {
+         FileClose(m_fileHandle); m_fileHandle=INVALID_HANDLE;
+         return(false);
+        }
       return(true);
      }
 
@@ -186,7 +260,20 @@ public:
          FileFlush(m_fileHandle);
         }
 
+      AddRiskHistory(rec.netProfit,rec.rMultiple,rec.isPartial,AxProvenanceToString(rec.provenance));
       return(rec.tradeClass);
+     }
+
+   int               RiskHistoryCount(void) const { return(m_riskCount); }
+   bool              GetRiskHistoryRecord(const int i,double &netProfit,double &rMultiple,
+                                           bool &isPartial,string &provenance) const
+     {
+      if(i<0 || i>=m_riskCount) return(false);
+      netProfit=m_riskNetProfit[i];
+      rMultiple=m_riskMultiple[i];
+      isPartial=m_riskPartial[i];
+      provenance=m_riskProvenance[i];
+      return(true);
      }
 
    int               Count(void) const { return(m_count); }
