@@ -1417,6 +1417,13 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
          PrintFormat("FLIPDEMON CAMPAIGN INTENT: broker order %I64u exists but order-to-intent binding failed; managing any fill and blocking new entries.",
                      brokerOrderTicket);
         }
+      if(!marketOrderConfirmed)
+        {
+         g_recoveryReady=false;
+         g_accountRiskIntegrityLock=true;
+         PrintFormat("FLIPDEMON CAMPAIGN INTENT: broker order %I64u exists but the position snapshot is not confirmed; managing known exposure and blocking new entries.",
+                     brokerOrderTicket);
+        }
      }
    else if(!marketOrderConfirmed)
      {
