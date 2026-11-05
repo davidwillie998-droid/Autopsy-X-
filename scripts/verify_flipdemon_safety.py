@@ -31,6 +31,7 @@ ea = EA.read_text(encoding="utf-8")
 risk = RISK.read_text(encoding="utf-8")
 execution = EXEC.read_text(encoding="utf-8")
 history_reconciler = HISTORY_RECONCILER.read_text(encoding="utf-8")
+intent_journal = INTENT.read_text(encoding="utf-8")
 recovery = RECOVERY.read_text(encoding="utf-8")
 distributed = DISTRIBUTED.read_text(encoding="utf-8")
 readme = README.read_text(encoding="utf-8")
@@ -347,12 +348,19 @@ require("intentJournal.FindByOrderTicket(record.orderTicket,intent)" in history_
 require(history_reconciler.index("intentJournal.FindByOrderTicket(record.orderTicket,intent)") <
         history_reconciler.index("recovery.FindByPositionIdentifier(record.positionIdentifier"),
         "startup replay preserves the original signal key from the exact order-bound intent before registry fallback")
-require("intentJournal.PreparedIntentCount()" in history_reconciler
-        and "HistoryOrdersTotal()" in history_reconciler
-        and "ORDER_VOLUME_INITIAL" in history_reconciler
-        and "ORDER_SL" in history_reconciler
-        and "AMBIGUOUS_BROKER_ORDER_MATCH_FOR_PREPARED_INTENT" in history_reconciler,
-        "restart recovery binds an unbound intent only to one exact broker-history order match")
+require("HistoryOrdersTotal()" in intent_journal
+        and "ORDER_VOLUME_INITIAL" in intent_journal
+        and "ORDER_SL" in intent_journal
+        and "CountTokenOwners(token)!=1" in intent_journal
+        and "tokenMatches!=1" in intent_journal
+        and "setupTime>=intent.createdAt-10" in intent_journal
+        and "hasDeal" in intent_journal
+        and "BindOrder(intent.intentId,matchedTicket)" in intent_journal,
+        "restart recovery requires a unique comment token plus exact broker metadata and fill evidence")
+require("AxProcessCampaignIntentRecovery();" in ea
+        and "g_campaignIntentJournal.BuildBrokerComment(campaignIntent.intentId,fullMarginActive)" in ea
+        and "ORDER_COMMENT" in intent_journal,
+        "startup, timer and tick recovery use the persisted intent token to close the broker-acceptance crash window")
 require("g_campaignIntentJournal.HasUnresolvedIntent()" in ea
         and ea.index("g_campaignHistoryReconciler.Replay") <
             ea.index("g_campaignIntentJournal.HasUnresolvedIntent()",ea.index("g_campaignHistoryReconciler.Replay")),
