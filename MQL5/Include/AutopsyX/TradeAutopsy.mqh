@@ -68,9 +68,9 @@ private:
          if(!rowRead) break;
          if(header) { header=false; continue; }
 
-         double rMultiple=StringToDouble(fields[25]);
+         double rMultiple=(fields[25]=="NA") ? EMPTY_VALUE : StringToDouble(fields[25]);
          // v3 used zero for both unavailable R and true breakeven. Treat those
-         // ambiguous legacy zeros as unavailable. v4 has an explicit sentinel.
+         // ambiguous legacy zeros as unavailable. v4 writes an explicit NA token.
          if(legacyV3 && rMultiple==0.0) rMultiple=EMPTY_VALUE;
          AddRiskHistory(StringToDouble(fields[24]),rMultiple,
                         (StringToInteger(fields[28])!=0),fields[42]);
@@ -192,7 +192,8 @@ public:
                    DoubleToString(rec.confidence,1),AxRegimeToString(rec.regime),rec.entryReason,
                    AxExitReasonToString(rec.exitReason),DoubleToString(rec.mfe,2),DoubleToString(rec.mae,2),
                    DoubleToString(rec.grossProfit,2),DoubleToString(rec.commission,2),
-                   DoubleToString(rec.swap,2),DoubleToString(rec.netProfit,2),DoubleToString(rec.rMultiple,3),
+                   DoubleToString(rec.swap,2),DoubleToString(rec.netProfit,2),
+                   (rec.rMultiple==EMPTY_VALUE ? "NA" : DoubleToString(rec.rMultiple,3)),
                    AxTradeClassToString(rec.tradeClass),rec.flipSeq,rec.isPartial,
                    AxCapitalStateToString(rec.afeCapitalState),DoubleToString(rec.afeRiskOfRuinPct,1),
                    DoubleToString(rec.afeExpectedValueR,2),DoubleToString(rec.afeWinProbability,3),
