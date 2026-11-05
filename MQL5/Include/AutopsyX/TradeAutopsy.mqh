@@ -15,6 +15,7 @@ class CTradeAutopsy
 private:
    int               m_fileHandle;
    string            m_fileName;
+   string            m_legacyFileName;
    int               m_digits;
    SAxTradeRecord    m_records[];
    int               m_count;
@@ -85,9 +86,7 @@ private:
       ArrayResize(m_riskMultiple,0);
       ArrayResize(m_riskPartial,0);
       ArrayResize(m_riskProvenance,0);
-      string legacyFile=StringFormat("%s_%s_TradeAutopsy_v3.csv",
-                                     "AutopsyX_FlipDemon_Extreme",_Symbol);
-      if(!ReadRiskHistoryFile(legacyFile,true)) return(false);
+      if(!ReadRiskHistoryFile(m_legacyFileName,true)) return(false);
       return(ReadRiskHistoryFile(m_fileName,false));
      }
 
@@ -100,6 +99,7 @@ public:
       //--- v4 retains the 44-column schema and gives R-multiple an explicit EMPTY_VALUE sentinel.
       //--- v3 rows are read as legacy history, but ambiguous zero-R rows are excluded safely.
       m_fileName = StringFormat("%s_%s_TradeAutopsy_v4.csv",eaName,symbol);
+      m_legacyFileName = StringFormat("%s_%s_TradeAutopsy_v3.csv",eaName,symbol);
       m_fileHandle = FileOpen(m_fileName,FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ,',');
       if(m_fileHandle==INVALID_HANDLE) return(false);
       FileSeek(m_fileHandle,0,SEEK_END);
