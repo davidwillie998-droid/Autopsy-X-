@@ -67,6 +67,19 @@ private:
       return(-1);
      }
 
+   string BrokerToken(const string intentId) const
+     {
+      return("AXI"+StringFormat("%u",HashText(intentId)));
+     }
+
+   int CountTokenOwners(const string token) const
+     {
+      int count=0;
+      for(int i=0;i<ArraySize(m_items);i++)
+         if(BrokerToken(m_items[i].intentId)==token) count++;
+      return(count);
+     }
+
    string Serialize(const SAxCampaignIntent &item,const string eventType,const long sequence) const
      {
       string payload=StringFormat("AXCI|%d|%I64d|%I64d|%I64d|%u|%s|%s|%s|%s|%s|%s|%s|%s|%I64d|%I64u|%s",
@@ -228,6 +241,130 @@ public:
      }
 
    bool IsReady(void) const { return(m_ready && m_handle!=INVALID_HANDLE); }
+
+   string BuildBrokerComment(const string intentId,const bool fullMargin) const
+     {
+      if(Find(intentId)<0) return("");
+      string token=BrokerToken(intentId);
+      return(fullMargin ? token+"|FM" : token);
+     }
+
+   // Recover the crash window between broker acceptance and durable order-ticket binding.
+   // The comment token is only a lookup key. Broker magic, symbol, side, requested volume,
+   // stop price, setup time and unique candidate count must all agree before binding.
+   bool ReconcilePreparedOrders(const int maxAgeSeconds,int &boundCount,int &rejectedCount,
+                                int &ambiguousCount)
+     {
+      boundCount=0;
+      rejectedCount=0;
+      ambiguousCount=0;
+      if(!IsReady()) return(false);
+      if(PreparedIntentCount()==0) return(true);
+
+      for(int i=0;i<ArraySize(m_items);i++)
+        {
+         if(m_items[i].status!="PREPARED") continue;
+         SAxCampaignIntent intent=m_items[i];
+         string token=BrokerToken(intent.intentId);
+         if(CountTokenOwners(token)!=1)
+           {
+            ambiguousCount++;
+            continue;
+           }
+
+         datetime fromTime=intent.createdAt-10;
+         datetime toTime=TimeCurrent()+60;
+         if(maxAgeSeconds>0 && toTime-fromTime>maxAgeSeconds)
+            fromTime=toTime-maxAgeSeconds;
+         if(!HistorySelect(fromTime,toTime))
+            continue;
+
+         int tokenMatches=0;
+         ulong matchedTicket=0;
+         ENUM_ORDER_STATE matchedState=ORDER_STATE_STARTED;
+         bool metadataMismatch=false;
+         double volumeStep=SymbolInfoDouble(intent.symbol,SYMBOL_VOLUME_STEP);
+         double tickSize=SymbolInfoDouble(intent.symbol,SYMBOL_TRADE_TICK_SIZE);
+         if(volumeStep<=0.0) volumeStep=SymbolInfoDouble(intent.symbol,SYMBOL_VOLUME_MIN);
+         if(tickSize<=0.0) tickSize=SymbolInfoDouble(intent.symbol,SYMBOL_POINT);
+         if(volumeStep<=0.0 || tickSize<=0.0)
+           {
+            ambiguousCount++;
+            continue;
+           }
+
+         for(int n=0;n<HistoryOrdersTotal();n++)
+           {
+            ulong orderTicket=HistoryOrderGetTicket(n);
+            if(orderTicket==0) continue;
+            if(HistoryOrderGetString(orderTicket,ORDER_COMMENT)!=token &&
+               StringFind(HistoryOrderGetString(orderTicket,ORDER_COMMENT),token+"|")!=0)
+               continue;
+            tokenMatches++;
+            long magic=HistoryOrderGetInteger(orderTicket,ORDER_MAGIC);
+            string symbol=HistoryOrderGetString(orderTicket,ORDER_SYMBOL);
+            ENUM_ORDER_TYPE orderType=(ENUM_ORDER_TYPE)HistoryOrderGetInteger(orderTicket,ORDER_TYPE);
+            ENUM_ORDER_STATE state=(ENUM_ORDER_STATE)HistoryOrderGetInteger(orderTicket,ORDER_STATE);
+            datetime setupTime=(datetime)HistoryOrderGetInteger(orderTicket,ORDER_TIME_SETUP);
+            double volume=HistoryOrderGetDouble(orderTicket,ORDER_VOLUME_INITIAL);
+            double stop=HistoryOrderGetDouble(orderTicket,ORDER_SL);
+            bool sideMatches=(intent.direction=="BUY" && orderType==ORDER_TYPE_BUY) ||
+                             (intent.direction=="SELL" && orderType==ORDER_TYPE_SELL);
+            bool metadataMatches=(magic==(long)m_magic && symbol==intent.symbol && sideMatches &&
+                                  MathAbs(volume-intent.requestedVolume)<=volumeStep*0.51 &&
+                                  MathAbs(stop-intent.intendedStop)<=tickSize*0.51 &&
+                                  setupTime>=intent.createdAt-10 &&
+                                  setupTime<=intent.createdAt+300);
+            if(metadataMatches)
+              {
+               matchedTicket=orderTicket;
+               matchedState=state;
+              }
+            else
+               metadataMismatch=true;
+           }
+
+         if(tokenMatches!=1 || matchedTicket==0 || metadataMismatch)
+           {
+            if(tokenMatches>0) ambiguousCount++;
+            continue;
+           }
+
+         bool hasDeal=false;
+         for(int d=0;d<HistoryDealsTotal();d++)
+           {
+            ulong dealTicket=HistoryDealGetTicket(d);
+            if(dealTicket==0 ||
+               (ulong)HistoryDealGetInteger(dealTicket,DEAL_ORDER)!=matchedTicket)
+               continue;
+            if((ulong)HistoryDealGetInteger(dealTicket,DEAL_MAGIC)==m_magic &&
+               HistoryDealGetString(dealTicket,DEAL_SYMBOL)==intent.symbol)
+              {
+               long dealType=HistoryDealGetInteger(dealTicket,DEAL_TYPE);
+               if(dealType==DEAL_TYPE_BUY || dealType==DEAL_TYPE_SELL)
+                  hasDeal=true;
+              }
+           }
+
+         if(matchedState==ORDER_STATE_FILLED || matchedState==ORDER_STATE_PARTIAL || hasDeal)
+           {
+            if(BindOrder(intent.intentId,matchedTicket))
+               boundCount++;
+            else
+               ambiguousCount++;
+           }
+         else if(matchedState==ORDER_STATE_REJECTED ||
+                 matchedState==ORDER_STATE_CANCELED ||
+                 matchedState==ORDER_STATE_EXPIRED)
+           {
+            if(RejectIntent(intent.intentId))
+               rejectedCount++;
+            else
+               ambiguousCount++;
+           }
+        }
+      return(true);
+     }
 
    bool CreateIntent(const SAxCampaignIntent &item)
      {
