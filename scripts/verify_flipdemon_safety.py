@@ -204,8 +204,10 @@ require("LastAccountedDealTicket(const ulong positionIdentifier)" in autopsy
         "versioned trade journal restores deal boundaries and persistent risk history")
 require("ReadRiskHistoryFile(m_legacyFileName,true)" in autopsy
         and "ReadRiskHistoryFile(m_fileName,false)" in autopsy
+        and 'fields[25]=="NA"' in autopsy
+        and '(rec.rMultiple==EMPTY_VALUE ? "NA" : DoubleToString(rec.rMultiple,3))' in autopsy
         and "legacyV3 && rMultiple==0.0" in autopsy,
-        "journal migration preserves known v3 outcomes while excluding ambiguous legacy zero-R rows")
+        "journal migration preserves known v3 outcomes and explicitly encodes unavailable v4 R values")
 require("rMultiple!=EMPTY_VALUE" in (ROOT / "MQL5/Include/AutopsyX/Statistics.mqh").read_text(encoding="utf-8")
         and "autopsy.RiskHistoryCount()" in (ROOT / "MQL5/Include/AutopsyX/Statistics.mqh").read_text(encoding="utf-8"),
         "loss streak and Expected Shortfall are rebuilt from persisted, provenance-filtered records")
