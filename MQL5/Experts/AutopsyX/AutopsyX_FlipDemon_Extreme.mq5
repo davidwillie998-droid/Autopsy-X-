@@ -2477,7 +2477,7 @@ void AxProcessCampaignIntentRecovery(void)
       !g_campaignIntentJournal.HasUnresolvedIntent())
       return;
    int bound=0,rejected=0,ambiguous=0;
-   if(!g_campaignIntentJournal.ReconcilePreparedOrders(86400,bound,rejected,ambiguous))
+   if(!g_campaignIntentJournal.ReconcilePreparedOrders(0,bound,rejected,ambiguous))
      {
       if(InpVerboseLogging)
          Print("FLIPDEMON CAMPAIGN INTENT: broker-history recovery scan failed; unresolved intent remains blocked.");
