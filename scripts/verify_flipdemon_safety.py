@@ -341,6 +341,11 @@ require("AxBuildCampaignSignalKey(dir,flipSeq)" in ea
 require("g_campaignIntentJournal.HasUnresolvedIntent()" in ea
         and "g_campaignIntentJournal.RejectIntent(campaignIntent.intentId)" in ea,
         "ambiguous pre-order outcomes remain fail-closed across restart while definitive rejections are terminal")
+require("bool AxIsDefinitiveOrderRejection(const uint retcode)" in ea
+        and "brokerOrderTicket==0 && AxIsDefinitiveOrderRejection(brokerRetcode)" in ea
+        and "brokerOrderTicket>0" in ea
+        and "if(!marketOrderConfirmed)" in ea,
+        "success and ambiguous broker outcomes cannot be mislabeled as rejected; unconfirmed accepted orders lock new entries")
 require("intentJournal.FindByOrderTicket(record.orderTicket,intent)" in history_reconciler
         and "g_campaignJournal.FindAttributionByPositionIdentifier" in ea,
         "broker deal attribution can recover through exact order-ticket intent binding")
