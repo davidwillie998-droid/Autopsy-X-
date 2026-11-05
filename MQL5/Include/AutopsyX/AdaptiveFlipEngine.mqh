@@ -384,6 +384,26 @@ public:
       if(vwapExitActive && vwapAligned && baseMult<1.0)
          baseMult = MathMin(1.0,baseMult*m_vwapAlignmentBonus);
 
+      //--- empirical sequence/tail overlay -----------------------------------
+      // AFE's closed-form ruin estimate above remains an independent-outcome
+      // heuristic. This separate overlay responds to observed full-trade loss
+      // clustering and the sample's worst-decile R outcomes without pretending
+      // that a small sample can produce a calibrated probability forecast.
+      // Two or more consecutive losses progressively reduce the next risk.
+      double sequenceMult=1.0;
+      if(stats.consecutiveLosses>=2)
+         sequenceMult=1.0/(1.0+0.25*(stats.consecutiveLosses-1));
+
+      // Expected Shortfall is only populated after 20 valid, non-zero R records.
+      // More severe observed left-tail outcomes reduce risk smoothly. Unknown
+      // original stop risk is excluded upstream, never imputed as a synthetic R.
+      double tailMult=1.0;
+      if(stats.tailRiskSample>=20 && stats.expectedShortfall10R<-1.0)
+         tailMult=1.0/(1.0+MathAbs(stats.expectedShortfall10R+1.0));
+
+      double sequenceTailMult=AxClampD(sequenceMult*tailMult,0.25,1.0);
+      baseMult=AxClampD(baseMult*sequenceTailMult,0.0,1.0);
+
       m_lastRiskMultiplier = AxClampD(baseMult,0.0,1.0);
       riskMultiplierOut = m_lastRiskMultiplier;
       reasonOut = "";
