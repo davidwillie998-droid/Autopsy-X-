@@ -258,13 +258,12 @@ public:
 
    bool Clear(void)
      {
+      // The record array is left untouched until the empty snapshot is durable.
+      // If persistence fails, restoring the count restores the in-memory view.
       int previousCount=m_count;
-      SAxVirtualExitRecord previous[AX_VIRTUAL_EXIT_MAX_RECORDS];
-      for(int i=0;i<previousCount;i++) previous[i]=m_records[i];
       m_count=0;
       if(RewriteFile()) return(true);
       m_count=previousCount;
-      for(int i=0;i<previousCount;i++) m_records[i]=previous[i];
       return(false);
      }
 
