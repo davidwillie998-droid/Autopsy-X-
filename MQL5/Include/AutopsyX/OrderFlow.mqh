@@ -36,6 +36,8 @@ private:
 
    bool              m_bullAbsorption;  // heavy one-sided SELLING failed to move price down - hidden buyers
    bool              m_bearAbsorption;  // heavy one-sided BUYING failed to move price up - hidden sellers
+   bool              m_bullCvdDivergence; // price makes a lower low while normalized signed flow improves
+   bool              m_bearCvdDivergence; // price makes a higher high while normalized signed flow weakens
 
 public:
                      COrderFlowEngine(void) { Clear(); }
@@ -46,6 +48,7 @@ public:
       m_windowDelta=0; m_windowVolume=0; m_imbalanceRatio=0; m_priceRangePts=0;
       m_lastTickBuyVol=0; m_lastTickSellVol=0;
       m_bullAbsorption=false; m_bearAbsorption=false;
+      m_bullCvdDivergence=false; m_bearCvdDivergence=false;
      }
 
    //--- call once per genuine tick (i.e. from inside OnTick, after CMarketData::OnTickUpdate() has ---
@@ -59,6 +62,7 @@ public:
       if(dayStart!=m_sessionDay) { m_sessionDay=dayStart; m_sessionCvd=0; }
 
       m_lastTickBuyVol=0; m_lastTickSellVol=0;
+      m_bullCvdDivergence=false; m_bearCvdDivergence=false;
 
       SAxTick newest;
       if(!md.GetSample(0,newest)) return;
@@ -98,6 +102,57 @@ public:
       bool rangeStalled  = m_priceRangePts < (md.CurrentSpreadPts()*1.5 + 2.0);
       m_bullAbsorption = heavyOneSided && rangeStalled && m_imbalanceRatio<0; // sellers pressed, price held -> bullish
       m_bearAbsorption = heavyOneSided && rangeStalled && m_imbalanceRatio>0; // buyers pressed, price held -> bearish
+
+      //--- short-horizon CVD divergence: compare two adjacent halves of the same rolling tick
+      //--- window. The older half is the reference; the newer half must extend price beyond the
+      //--- older extreme while its normalized signed-volume delta fails to confirm. This uses
+      //--- per-half delta ratios, not raw contract/lot counts, so it remains scale-independent
+      //--- across feeds. It is still a tick-direction proxy, not exchange aggressor data.
+      if(n>=20)
+        {
+         int split=n/2;
+         double oldDelta=0, oldVolume=0, oldHigh=-DBL_MAX, oldLow=DBL_MAX;
+         double newDelta=0, newVolume=0, newHigh=-DBL_MAX, newLow=DBL_MAX;
+         int oldDirectional=0, newDirectional=0;
+
+         for(int i=split;i<n;i++)
+           {
+            SAxTick t;
+            if(!md.GetSample(i,t)) continue;
+            if(t.mid>oldHigh) oldHigh=t.mid;
+            if(t.mid<oldLow)  oldLow=t.mid;
+            double vol=(double)MathMax((long)1,t.volume);
+            if(t.dir>0) { oldDelta+=vol; oldVolume+=vol; oldDirectional++; }
+            else if(t.dir<0) { oldDelta-=vol; oldVolume+=vol; oldDirectional++; }
+           }
+
+         for(int i=0;i<split;i++)
+           {
+            SAxTick t;
+            if(!md.GetSample(i,t)) continue;
+            if(t.mid>newHigh) newHigh=t.mid;
+            if(t.mid<newLow)  newLow=t.mid;
+            double vol=(double)MathMax((long)1,t.volume);
+            if(t.dir>0) { newDelta+=vol; newVolume+=vol; newDirectional++; }
+            else if(t.dir<0) { newDelta-=vol; newVolume+=vol; newDirectional++; }
+           }
+
+         if(oldDirectional>=5 && newDirectional>=5 && oldVolume>0 && newVolume>0 &&
+            oldHigh>-DBL_MAX && oldLow<DBL_MAX && newHigh>-DBL_MAX && newLow<DBL_MAX)
+           {
+            double oldRatio=oldDelta/oldVolume;
+            double newRatio=newDelta/newVolume;
+            double minExtensionPts=MathMax(md.CurrentSpreadPts()*1.5,2.0);
+            double extension=(hi-lo); // retain the already-validated full-window price span
+            if(point>0 && extension>=0)
+              {
+               bool lowerLow=(newLow<oldLow-minExtensionPts*point);
+               bool higherHigh=(newHigh>oldHigh+minExtensionPts*point);
+               m_bullCvdDivergence=lowerLow && newRatio>=oldRatio+0.15;
+               m_bearCvdDivergence=higherHigh && newRatio<=oldRatio-0.15;
+              }
+           }
+        }
      }
 
    double            SessionCvd(void)        const { return(m_sessionCvd); }
@@ -106,25 +161,29 @@ public:
    double            ImbalanceRatio(void)    const { return(m_imbalanceRatio); }
    bool              BullishAbsorption(void) const { return(m_bullAbsorption); }
    bool              BearishAbsorption(void) const { return(m_bearAbsorption); }
+   bool              BullishCvdDivergence(void) const { return(m_bullCvdDivergence); }
+   bool              BearishCvdDivergence(void) const { return(m_bearCvdDivergence); }
 
    //--- this tick's classified volume, for CFootprintEngine to bin without re-deriving direction ---
    double            LastTickBuyVol(void)  const { return(m_lastTickBuyVol); }
    double            LastTickSellVol(void) const { return(m_lastTickSellVol); }
 
    //--- 0..100 bias components, same pattern as Microstructure/Liquidity for SignalScore blending ---
-   double            BullishScoreComponent(void) const
+   double            BullishScoreComponent(const bool includeCvdDivergence=true) const
      {
       double score=0;
       if(m_imbalanceRatio>0) score += m_imbalanceRatio*60.0;
       if(m_bullAbsorption)   score += 40.0;
+      if(includeCvdDivergence && m_bullCvdDivergence) score += 25.0;
       return(AxClampD(score,0,100));
      }
 
-   double            BearishScoreComponent(void) const
+   double            BearishScoreComponent(const bool includeCvdDivergence=true) const
      {
       double score=0;
       if(m_imbalanceRatio<0) score += (-m_imbalanceRatio)*60.0;
       if(m_bearAbsorption)   score += 40.0;
+      if(includeCvdDivergence && m_bearCvdDivergence) score += 25.0;
       return(AxClampD(score,0,100));
      }
   };
