@@ -60,6 +60,7 @@ input int             InpPyramidMaxTiers          = 5;      // Includes the init
 input double          InpPyramidLotMultiplier     = 1.5;    // Each tier must exceed the prior tier; anti-martingale only
 input double          InpPyramidAtrGapMultiplier  = 0.75;   // Minimum favorable continuation distance from the last confirmed tier fill
 input double          InpPyramidMinProfitMoney    = 0.01;   // Require positive broker-reported floating P/L plus swap before considering an add
+input bool            InpEnablePyramidExecution    = false;  // Explicit opt-in; ANALYSIS_ONLY remains the default
 
 input group "=== SNIPER ENTRY (PRECISION TIMING) ===";
 input bool            InpUseSniperEntry           = true; // Wait for a precise pullback-then-resume before entering, instead of firing immediately
@@ -1384,6 +1385,243 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    return(true);
   }
 
+// Broker-confirmed pyramid add for NETTING/EXCHANGE accounts. Hedging remains blocked
+// until each campaign leg has ticket-specific exit, recovery and protection management.
+bool AxAttemptPyramidNettingAdd(SAxPyramidCampaignRecord &campaign,
+                               const double requestedLots,const datetime triggerBar)
+  {
+   string gateReason="";
+   if(!g_emergency.CanEnterDirection(campaign.dir,gateReason))
+     {
+      if(InpVerboseLogging) PrintFormat("FLIPDEMON PYRAMID BLOCKED: %s",gateReason);
+      return(false);
+     }
+   if(!InpEnablePyramidExecution || !g_pyramidReady || g_pyramidReconcilePending ||
+      g_accountRiskIntegrityLock || g_accountRiskReconciliationPending ||
+      g_nettingReversalQuarantined || !g_recoveryReady ||
+      !g_virtualExitReady || !g_virtualExitRegistry.IsPersisting())
+      return(false);
+
+   long marginMode=AccountInfoInteger(ACCOUNT_MARGIN_MODE);
+   if(marginMode!=ACCOUNT_MARGIN_MODE_RETAIL_NETTING &&
+      marginMode!=ACCOUNT_MARGIN_MODE_EXCHANGE)
+     {
+      Print("FLIPDEMON PYRAMID BLOCKED: hedging-account execution requires ticket-specific lifecycle integration.");
+      return(false);
+     }
+   if(!PositionSelectByTicket(campaign.ticket) ||
+      PositionGetString(POSITION_SYMBOL)!=_Symbol ||
+      (ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber ||
+      (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=campaign.positionIdentifier)
+     {
+      g_pyramidReady=false;
+      Print("FLIPDEMON PYRAMID BLOCKED: campaign broker identity changed.");
+      return(false);
+     }
+   long liveType=PositionGetInteger(POSITION_TYPE);
+   ENUM_AX_DIR liveDir=(liveType==POSITION_TYPE_BUY)?AX_DIR_BUY:AX_DIR_SELL;
+   double stop=PositionGetDouble(POSITION_SL);
+   if(liveDir!=campaign.dir || PositionGetDouble(POSITION_VOLUME)<=0.0 || stop<=0.0)
+     {
+      g_pyramidReady=false;
+      Print("FLIPDEMON PYRAMID BLOCKED: direction, volume or protective stop is invalid.");
+      return(false);
+     }
+
+   double step=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
+   double minLot=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
+   double maxLot=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
+   if(step<=0.0 || minLot<=0.0 || maxLot<minLot ||
+      requestedLots<minLot || requestedLots>maxLot ||
+      MathAbs(requestedLots/step-MathRound(requestedLots/step))>0.000001)
+     {
+      PrintFormat("FLIPDEMON PYRAMID BLOCKED: add volume %.8f violates broker min/step/max %.8f/%.8f/%.8f.",
+                  requestedLots,minLot,step,maxLot);
+      return(false);
+     }
+   if(!g_micro.SpreadAcceptable(InpMaxSpreadPoints)) return(false);
+
+   double grossLots=0.0,sameDirectionLots=0.0;
+   for(int i=0;i<PositionsTotal();i++)
+     {
+      ulong ticket=PositionGetTicket(i);
+      if(ticket==0) continue;
+      double volume=PositionGetDouble(POSITION_VOLUME);
+      if(volume<=0.0) continue;
+      grossLots+=volume;
+      long type=PositionGetInteger(POSITION_TYPE);
+      if((campaign.dir==AX_DIR_BUY && type==POSITION_TYPE_BUY) ||
+         (campaign.dir==AX_DIR_SELL && type==POSITION_TYPE_SELL))
+         sameDirectionLots+=volume;
+     }
+   if(InpMaxExposureLots<=0.0 || grossLots+requestedLots>InpMaxExposureLots+0.0000001 ||
+      InpMaxDirectionalExposureLots<=0.0 ||
+      sameDirectionLots+requestedLots>InpMaxDirectionalExposureLots+0.0000001)
+     {
+      PrintFormat("FLIPDEMON PYRAMID BLOCKED: gross %.8f + %.8f exceeds %.8f or directional %.8f + %.8f exceeds %.8f.",
+                  grossLots,requestedLots,InpMaxExposureLots,
+                  sameDirectionLots,requestedLots,InpMaxDirectionalExposureLots);
+      return(false);
+     }
+
+   MqlTick quote;
+   if(!SymbolInfoTick(_Symbol,quote) || quote.bid<=0.0 || quote.ask<quote.bid) return(false);
+   ENUM_ORDER_TYPE orderType=(campaign.dir==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
+   double orderPrice=(campaign.dir==AX_DIR_BUY)?quote.ask:quote.bid;
+   double requiredMargin=0.0;
+   double freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   if(!OrderCalcMargin(orderType,_Symbol,requestedLots,orderPrice,requiredMargin) ||
+      !MathIsValidNumber(requiredMargin) || requiredMargin<=0.0 ||
+      !MathIsValidNumber(freeMargin) || requiredMargin>freeMargin)
+     {
+      PrintFormat("FLIPDEMON PYRAMID BLOCKED: margin preflight failed; required=%.2f free=%.2f.",
+                  requiredMargin,freeMargin);
+      return(false);
+     }
+
+   int deviationPts=(int)MathMax(InpDeviationPoints,
+                                 MathRound(g_md.CurrentSpreadPts()*InpDeviationSpreadMultiplier));
+   g_exec.SetDeviationPoints(deviationPts);
+   if(!g_accountRiskCoordinator.TryAcquire()) return(false);
+
+   SAxAccountRiskDecision riskDecision;
+   string riskReason="";
+   if(!g_accountRisk.Evaluate(_Symbol,campaign.dir,requestedLots,stop,deviationPts,
+                              g_risk.RiskPercent(),riskDecision,riskReason))
+     {
+      if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
+      PrintFormat("FLIPDEMON PYRAMID BLOCKED: final account risk check failed (%s).",riskReason);
+      return(false);
+     }
+
+   string reservationId="";
+   string instanceId=g_distributedRiskCoordinator.InstanceId();
+   bool reservationActive=false;
+   if(InpExecutionMode==AX_EXEC_LIVE)
+     {
+      SAxAccountRiskSnapshot reserveSnapshot;
+      string reserveError="";
+      if(!g_accountRisk.Scan(reserveSnapshot) || !reserveSnapshot.exposureKnown ||
+         !g_distributedRiskCoordinator.Reserve(riskDecision,reserveSnapshot,instanceId,
+                                                reservationId,reserveError))
+        {
+         g_accountRiskIntegrityLock=true;
+         if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
+         PrintFormat("FLIPDEMON PYRAMID BLOCKED: central reservation not confirmed (%s).",reserveError);
+         return(false);
+        }
+      reservationActive=true;
+     }
+
+   // Persist the H1 bar guard before sending. A failed attempt cannot loop on ticks
+   // or repeat immediately after a restart in the same completed bar.
+   campaign.lastTriggerBarTime=triggerBar;
+   if(!g_pyramidCampaignRegistry.Save(campaign) || !g_pyramidCampaignRegistry.IsPersisting())
+     {
+      g_accountRiskIntegrityLock=true;
+      if(reservationActive)
+        {
+         SAxAccountRiskSnapshot releaseSnapshot;
+         string releaseError="";
+         if(!g_accountRisk.Scan(releaseSnapshot) ||
+            !g_distributedRiskCoordinator.Release(reservationId,instanceId,releaseSnapshot,releaseError))
+            PrintFormat("FLIPDEMON PYRAMID: reservation retained after campaign guard persistence failure (%s).",releaseError);
+        }
+      if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
+      return(false);
+     }
+
+   ulong newTicket=0,newPositionId=0,orderTicket=0;
+   double actualAddLots=0.0,fillPrice=0.0;
+   bool outcomeUncertain=false;
+   string executionError="";
+   bool added=g_exec.AddToNettingPosition(_Symbol,campaign.dir,campaign.ticket,
+                    campaign.positionIdentifier,requestedLots,InpMagicNumber,
+                    "AXFDX|PYRAMID",newTicket,newPositionId,orderTicket,
+                    actualAddLots,fillPrice,outcomeUncertain,executionError);
+   if(!added)
+     {
+      if(outcomeUncertain)
+        {
+         g_accountRiskIntegrityLock=true;
+         g_accountRiskReconciliationPending=true;
+         g_pyramidReady=false;
+         g_pyramidReconcilePending=true;
+         PrintFormat("FLIPDEMON PYRAMID UNCERTAIN: no retry permitted; broker reconciliation required (%s).",executionError);
+        }
+      else
+        {
+         if(reservationActive)
+           {
+            SAxAccountRiskSnapshot releaseSnapshot;
+            string releaseError="";
+            if(!g_accountRisk.Scan(releaseSnapshot) ||
+               !g_distributedRiskCoordinator.Release(reservationId,instanceId,releaseSnapshot,releaseError))
+              {
+               g_accountRiskIntegrityLock=true;
+               PrintFormat("FLIPDEMON PYRAMID: failed-order reservation retained (%s).",releaseError);
+              }
+           }
+         PrintFormat("FLIPDEMON PYRAMID: broker rejected add (%s).",executionError);
+        }
+      if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
+      return(false);
+     }
+
+   // Exact order deals and the resulting net position are broker-confirmed.
+   g_pyramidReady=false;
+   g_pyramidReconcilePending=true;
+   g_accountRiskReconciliationPending=true;
+   if(PositionSelectByTicket(newTicket) &&
+      (ulong)PositionGetInteger(POSITION_IDENTIFIER)==newPositionId)
+     {
+      g_posState.ticket=newTicket;
+      g_posState.lots=PositionGetDouble(POSITION_VOLUME);
+      g_posState.entryPrice=PositionGetDouble(POSITION_PRICE_OPEN);
+      g_posState.initialSlPrice=PositionGetDouble(POSITION_SL);
+      g_posState.initialTpPrice=PositionGetDouble(POSITION_TP);
+      g_positionIdentifier=newPositionId;
+      g_haveOpenPosition=true;
+     }
+   else
+      g_accountRiskIntegrityLock=true;
+
+   SAxAccountRiskSnapshot postFill;
+   bool postFillKnown=(g_accountRisk.Scan(postFill) && postFill.exposureKnown);
+   bool centralWithinCap=true;
+   bool settlementOk=true;
+   string settlementError="";
+   if(postFillKnown && reservationActive)
+     {
+      settlementOk=g_distributedRiskCoordinator.Settle(reservationId,instanceId,postFill,
+                                                         centralWithinCap,settlementError);
+      if(settlementOk) reservationActive=false;
+      else
+        {
+         g_accountRiskIntegrityLock=true;
+         PrintFormat("FLIPDEMON PYRAMID: confirmed fill but central settlement failed (%s).",settlementError);
+        }
+     }
+   if(!postFillKnown ||
+      (postFillKnown && (postFill.existingRiskMoney>postFill.hardRiskBudgetMoney+0.01 ||
+                         !centralWithinCap)))
+     {
+      g_accountRiskIntegrityLock=true;
+      PrintFormat("FLIPDEMON PYRAMID RISK UNKNOWN/BREACH: add %.8f at %.8f; entries locked.",
+                  actualAddLots,fillPrice);
+     }
+   if(!settlementOk) g_accountRiskIntegrityLock=true;
+   if(!g_accountRiskCoordinator.Release())
+     {
+      g_accountRiskIntegrityLock=true;
+      Print("FLIPDEMON PYRAMID: mutex release failed after confirmed add; entries locked.");
+     }
+   PrintFormat("FLIPDEMON PYRAMID ADD CONFIRMED: tier=%d addLots=%.8f totalLots=%.8f fill=%.8f order=%I64u positionId=%I64u. Awaiting campaign reconciliation.",
+               campaign.tierCount+1,actualAddLots,g_posState.lots,fillPrice,orderTicket,newPositionId);
+   return(true);
+  }
+
+
 //--- self-tuning: nudges the entry confidence bar from trailing live performance, bounded so ---
 //--- it can never widen or narrow the gate beyond the configured min/max multiplier. This is  ---
 //--- the only thing adaptive tuning touches - never position size, never risk limits. ---
@@ -2122,12 +2360,16 @@ void OnTick(void)
                if(g_accountRisk.Evaluate(_Symbol,campaign.dir,candidateLots,stop,
                                          InpDeviationPoints,g_risk.RiskPercent(),
                                          pyramidRiskDecision,pyramidRiskReason))
-                  PrintFormat("FLIPDEMON PYRAMID CANDIDATE: tier=%d/%d direction=%s addLots=%.8f basketPnl=%.2f lastTierFill=%.8f requiredGap=%.8f aggregateRiskAfterAdd=%.2f%%. DECISION ONLY, NO ORDER SENT.",
+                 {
+                  PrintFormat("FLIPDEMON PYRAMID CANDIDATE: tier=%d/%d direction=%s addLots=%.8f basketPnl=%.2f lastTierFill=%.8f requiredGap=%.8f projectedAggregateRisk=%.2f%%.",
                               campaign.tierCount+1,InpPyramidMaxTiers,
                               campaign.dir==AX_DIR_BUY?"BUY":"SELL",candidateLots,
                               basketProfit,campaign.lastTierFillPrice,requiredGap,
                               (pyramidRiskDecision.existingRiskMoney+pyramidRiskDecision.proposedRiskMoney)/
                               pyramidRiskDecision.equity*100.0);
+                  if(InpEnablePyramidExecution)
+                     AxAttemptPyramidNettingAdd(campaign,candidateLots,pyramidClosedBar);
+                 }
                else if(InpVerboseLogging)
                   PrintFormat("FLIPDEMON PYRAMID CANDIDATE BLOCKED: %s",pyramidRiskReason);
               }
