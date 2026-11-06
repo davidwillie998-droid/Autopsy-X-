@@ -43,6 +43,7 @@
 #include <AutopsyX/TradeReconciliation.mqh>
 #include <AutopsyX/RestartRecovery.mqh>
 #include <AutopsyX/VirtualExitRegistry.mqh>
+#include <AutopsyX/PyramidEngine.mqh>
 #include <AutopsyX/Dashboard.mqh>
 
 //====================================================================
@@ -244,6 +245,7 @@ CDashboard            g_dash;
 CTradeReconciler       g_tradeReconciler;
 CRestartRecovery       g_restartRecovery;
 CVirtualExitRegistry   g_virtualExitRegistry;
+CPyramidEngine         g_pyramidEngine; // calculation engine; campaign execution remains disabled until lifecycle integration
 bool                   g_virtualExitInitialized = false;
 bool                   g_virtualExitReady = false; // persistence and broker-state reconciliation must both be verified
 bool                   g_recoveryInitialized = false;
