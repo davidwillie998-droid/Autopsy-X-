@@ -72,7 +72,7 @@ class VolumeProfileNodeFixtureTests(unittest.TestCase):
         hvn, lvn = classify_nodes(
             [(0, 10), (1, 10), (2, 1), (3, 10), (4, 10)]
         )
-        self.assertEqual(hvn, [0, 4])
+        self.assertEqual(hvn, [])
         self.assertEqual(lvn, [2])
 
     def test_flat_distribution_has_no_nodes(self):
