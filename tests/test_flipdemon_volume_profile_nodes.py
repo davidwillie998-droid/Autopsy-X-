@@ -66,7 +66,7 @@ class VolumeProfileNodeFixtureTests(unittest.TestCase):
             [(0, 1), (1, 1), (2, 10), (3, 1), (4, 1)]
         )
         self.assertEqual(hvn, [2])
-        self.assertEqual(lvn, [])
+        self.assertEqual(lvn, [1, 3])
 
     def test_single_interior_low_volume_node(self):
         hvn, lvn = classify_nodes(
