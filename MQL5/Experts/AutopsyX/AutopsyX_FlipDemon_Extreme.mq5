@@ -597,7 +597,7 @@ void AxExecutePartialClose(const double volumeToClose)
      }
    string partErr;
    bool outcomeUncertain=false;
-   if(!g_exec.ClosePartial(_Symbol,g_posState.ticket,volumeToClose,partErr,outcomeUncertain))
+   if(!g_exec.ClosePartial(_Symbol,g_posState.ticket,g_positionIdentifier,InpMagicNumber,volumeToClose,partErr,outcomeUncertain))
      {
       if(outcomeUncertain)
         {
