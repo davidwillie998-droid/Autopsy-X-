@@ -408,6 +408,102 @@ public:
       return(true);
      }
 
+   // Ticket-specific stop modification for hedging lifecycle management.
+   // Both the transient ticket and stable POSITION_IDENTIFIER are checked before
+   // and after the broker call. Never fall back to symbol-based selection.
+   bool              ModifyStopsByTicket(const string symbol,const ulong positionTicket,
+                                          const ulong expectedPositionId,const ulong expectedMagic,
+                                          const double slPrice,const double tpPrice,
+                                          string &errorReason)
+     {
+      if(positionTicket==0 || expectedPositionId==0 || expectedMagic==0 ||
+         !PositionSelectByTicket(positionTicket))
+        { errorReason="Tracked position ticket is unavailable"; return(false); }
+      if(PositionGetString(POSITION_SYMBOL)!=symbol ||
+         (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=expectedPositionId ||
+         (ulong)PositionGetInteger(POSITION_MAGIC)!=expectedMagic)
+        { errorReason="Tracked position identity changed before stop modification"; return(false); }
+
+      bool ok=m_trade.PositionModify(positionTicket,slPrice,tpPrice);
+      uint retcode=m_trade.ResultRetcode();
+      if(!ok || retcode!=TRADE_RETCODE_DONE)
+        {
+         errorReason=StringFormat("Ticket stop modification failed: %u %s",
+                                  retcode,m_trade.ResultRetcodeDescription());
+         return(false);
+        }
+
+      if(!PositionSelectByTicket(positionTicket) ||
+         PositionGetString(POSITION_SYMBOL)!=symbol ||
+         (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=expectedPositionId ||
+         (ulong)PositionGetInteger(POSITION_MAGIC)!=expectedMagic)
+        {
+         errorReason="Stop modification was accepted but the tracked position identity could not be reconfirmed";
+         return(false);
+        }
+
+      double actualSl=PositionGetDouble(POSITION_SL);
+      double actualTp=PositionGetDouble(POSITION_TP);
+      double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+      double tolerance=MathMax(tickSize*0.51,0.00000001);
+      if(tickSize<=0.0 || MathAbs(actualSl-slPrice)>tolerance ||
+         MathAbs(actualTp-tpPrice)>tolerance)
+        {
+         errorReason="Broker accepted stop modification but confirmed levels differ from requested levels";
+         return(false);
+        }
+      errorReason="";
+      return(true);
+     }
+
+   // Ticket-specific full close. An uncertain server response is never retried,
+   // and another same-symbol position can never be selected as a substitute.
+   bool              ClosePositionByTicket(const string symbol,const ulong positionTicket,
+                                            const ulong expectedPositionId,const ulong expectedMagic,
+                                            string &errorReason,bool &outcomeUncertain)
+     {
+      outcomeUncertain=false;
+      if(positionTicket==0 || expectedPositionId==0 || expectedMagic==0 ||
+         !PositionSelectByTicket(positionTicket))
+        { errorReason="Tracked position ticket is unavailable"; return(false); }
+      if(PositionGetString(POSITION_SYMBOL)!=symbol ||
+         (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=expectedPositionId ||
+         (ulong)PositionGetInteger(POSITION_MAGIC)!=expectedMagic)
+        { errorReason="Tracked position identity changed before close"; return(false); }
+
+      bool ok=m_trade.PositionClose(positionTicket);
+      uint retcode=m_trade.ResultRetcode();
+      bool accepted=(retcode==TRADE_RETCODE_DONE || retcode==TRADE_RETCODE_DONE_PARTIAL);
+      if(!ok || !accepted)
+        {
+         if(retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION)
+           {
+            outcomeUncertain=true;
+            errorReason="Ticket close outcome uncertain; broker reconciliation required";
+            return(false);
+           }
+         errorReason=StringFormat("Ticket close failed: %u %s",
+                                  retcode,m_trade.ResultRetcodeDescription());
+         return(false);
+        }
+
+      if(PositionSelectByTicket(positionTicket))
+        {
+         if((ulong)PositionGetInteger(POSITION_IDENTIFIER)!=expectedPositionId ||
+            PositionGetString(POSITION_SYMBOL)!=symbol ||
+            (ulong)PositionGetInteger(POSITION_MAGIC)!=expectedMagic)
+           {
+            errorReason="Original ticket remains selectable but its identity changed";
+            return(false);
+           }
+         errorReason="Broker accepted ticket close but the tracked position remains open";
+         return(false);
+        }
+
+      errorReason="";
+      return(true);
+     }
+
    //--- pending stop entry (spec section 19: "OPTIONAL BUY STOP / OPTIONAL SELL STOP"). Confirms   ---
    //--- the order genuinely exists in the terminal's order list afterward via OrderSelect - a       ---
    //--- successful CTrade send() result alone is never trusted, same discipline as OpenMarket. ---
