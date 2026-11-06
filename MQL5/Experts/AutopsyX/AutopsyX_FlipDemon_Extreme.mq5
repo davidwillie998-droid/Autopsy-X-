@@ -704,13 +704,19 @@ bool AxSaveVirtualExitState(const bool allowEmergencyUpdate=false,const bool isN
    bool breakEvenDone=false;
    if(found)
      {
-      if(existing.ticket!=ticket || existing.symbol!=_Symbol || existing.dir!=dir ||
+      // POSITION_IDENTIFIER is the stable broker identity. POSITION_TICKET can
+      // change after broker service operations, so a ticket-only change is not
+      // a different trade and must not discard its original-risk/exit history.
+      if(existing.symbol!=_Symbol || existing.dir!=dir ||
          (!allowEmergencyUpdate && MathAbs(existing.emergencySlPrice-brokerSl)>tickSize*0.5))
         {
          g_virtualExitReady=false;
-         PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: persisted state mismatches broker position ticket=%I64u identifier=%I64u; new entries blocked.",ticket,positionId);
+         PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: persisted state identity or emergency stop mismatches broker position ticket=%I64u identifier=%I64u; new entries blocked.",ticket,positionId);
          return(false);
         }
+      if(existing.ticket!=ticket)
+         PrintFormat("FLIPDEMON VIRTUAL EXIT: broker ticket refreshed from %I64u to %I64u using stable position identifier=%I64u.",
+                     existing.ticket,ticket,positionId);
       initialSl=existing.initialSlPrice;
       riskDistance=existing.originalRiskDistance;
       breakEvenDone=(existing.breakEvenDone || g_posState.breakEvenDone);
