@@ -319,6 +319,78 @@ public:
       return(false);
      }
 
+   // Persist an action lock before any broker-side lifecycle request is sent.
+   // A pre-existing lock is never overwritten by a second action.
+   bool BeginAction(const ulong positionIdentifier,const int actionCode)
+     {
+      if(positionIdentifier==0 || actionCode<=0) return(false);
+      SAxVirtualExitRecord record;
+      if(!Find(positionIdentifier,record) || record.actionLocked) return(false);
+      record.actionLocked=true;
+      record.actionCode=actionCode;
+      record.actionStartedAt=TimeCurrent();
+      return(Save(record) && IsPersisting());
+     }
+
+   // Clear only the exact action that owns the lock. An old callback cannot
+   // release a newer action's lock.
+   bool ResolveAction(const ulong positionIdentifier,const int expectedActionCode)
+     {
+      if(positionIdentifier==0 || expectedActionCode<=0) return(false);
+      SAxVirtualExitRecord record;
+      if(!Find(positionIdentifier,record) || !record.actionLocked ||
+         record.actionCode!=expectedActionCode) return(false);
+      record.actionLocked=false;
+      record.actionCode=0;
+      record.actionStartedAt=0;
+      return(Save(record) && IsPersisting());
+     }
+
+   // Called only after broker deal history and the resulting live volume have
+   // been reconciled. Repeated delivery of the same final deal is idempotent.
+   bool RecordPartialClose(const ulong positionIdentifier,const double volumeClosed,
+                           const ulong dealTicket)
+     {
+      if(positionIdentifier==0 || volumeClosed<=0.0 || dealTicket==0) return(false);
+      SAxVirtualExitRecord record;
+      if(!Find(positionIdentifier,record)) return(false);
+      if(record.partialLastDealTicket==dealTicket) return(true);
+      record.partialCloseCount++;
+      record.partialClosedVolume+=volumeClosed;
+      record.partialLastDealTicket=dealTicket;
+      return(Save(record) && IsPersisting());
+     }
+
+   // Record a trailing stop only after the broker confirms the exact ticket's
+   // new stop. Stop progression is monotonic in the position's favorable side.
+   bool RecordTrailingStop(const ulong positionIdentifier,const double confirmedStop)
+     {
+      if(positionIdentifier==0 || confirmedStop<=0.0) return(false);
+      SAxVirtualExitRecord record;
+      if(!Find(positionIdentifier,record)) return(false);
+      if(record.trailingActive)
+        {
+         if(record.dir==AX_DIR_BUY && confirmedStop<record.trailingStopPrice) return(false);
+         if(record.dir==AX_DIR_SELL && confirmedStop>record.trailingStopPrice) return(false);
+        }
+      record.trailingActive=true;
+      record.trailingStopPrice=confirmedStop;
+      record.emergencySlPrice=confirmedStop;
+      record.virtualSlPrice=confirmedStop;
+      return(Save(record) && IsPersisting());
+     }
+
+   bool RecordBreakEven(const ulong positionIdentifier,const double confirmedStop)
+     {
+      if(positionIdentifier==0 || confirmedStop<=0.0) return(false);
+      SAxVirtualExitRecord record;
+      if(!Find(positionIdentifier,record)) return(false);
+      record.breakEvenDone=true;
+      record.emergencySlPrice=confirmedStop;
+      record.virtualSlPrice=confirmedStop;
+      return(Save(record) && IsPersisting());
+     }
+
    int Count(void) const { return(m_count); }
    bool IsPersisting(void) const { return(m_persistOk); }
   };
