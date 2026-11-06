@@ -3,7 +3,8 @@
 The Volume Profile engine now classifies local high-volume and low-volume nodes from its existing rolling bar-volume histogram.
 
 - High-volume nodes require at least 1.5 times the profile's mean bin volume and must be a local maximum.
-- Low-volume nodes require positive volume no greater than 0.5 times the profile mean and must be a local minimum.
+- Low-volume nodes require positive volume no greater than 0.5 times the profile mean and must be a local minimum with occupied adjacent bins on both sides.
+- Node comparisons only treat occupied bins as neighbors when their price separation is within 1.5 profile bins. Sparse gaps are not treated as continuous price structure.
 - New read-only APIs return the nearest qualifying node and its distance in profile bins.
 - Thresholds are relative to the current profile, not fixed futures contract counts or raw broker volume.
 
