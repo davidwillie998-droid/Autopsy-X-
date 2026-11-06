@@ -256,6 +256,7 @@ bool                   g_recoveryReady = false; // false means new entries are b
 bool                   g_nettingReversalQuarantined = false; // broker reversed the net position; stale campaign state must never manage the new side
 bool                   g_accountRiskIntegrityLock = false; // post-fill breach/unknown exposure; cleared only by a clean broker rescan
 bool                   g_accountRiskReconciliationPending = false; // any broker transaction dirties the account-wide exposure snapshot
+bool                   g_pyramidReady = false; // broker history and durable campaign registry must reconcile before any future scale-in path
 
 SAxPositionState      g_posState;
 bool                  g_haveOpenPosition = false;
@@ -1753,6 +1754,38 @@ int OnInit(void)
          g_virtualExitReady=true;
      }
 
+   // Recover campaign tiers only from broker-confirmed position deals. This
+   // prepares the durable ledger; scale-in execution remains separately gated.
+   bool pyramidRegistryReady=g_pyramidCampaignRegistry.Init("FlipDemon_Extreme_HFT",_Symbol,InpMagicNumber);
+   bool pyramidEngineReady=g_pyramidEngine.Init(_Symbol,PERIOD_H1,MODE_EMA,100);
+   int pyramidPositions=0,pyramidRecovered=0,pyramidUnresolved=0;
+   if(pyramidRegistryReady && pyramidEngineReady)
+     {
+      for(int p=0;p<PositionsTotal();p++)
+        {
+         ulong positionTicket=PositionGetTicket(p);
+         if(positionTicket==0) continue;
+         if(PositionGetString(POSITION_SYMBOL)!=_Symbol ||
+            (ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber)
+            continue;
+         pyramidPositions++;
+         bool recovered=false;
+         if(g_pyramidCampaignRegistry.ReconcileLivePosition(positionTicket,recovered) && recovered)
+            pyramidRecovered++;
+         else
+           {
+            pyramidUnresolved++;
+            PrintFormat("FLIPDEMON PYRAMID: position ticket=%I64u could not be reconstructed from broker deal history; scale-ins remain blocked.",
+                        positionTicket);
+           }
+        }
+     }
+   g_pyramidReady=(pyramidRegistryReady && pyramidEngineReady && pyramidUnresolved==0);
+   PrintFormat("FLIPDEMON PYRAMID RECOVERY: registry=%s engine=%s live=%d recovered=%d unresolved=%d scale_in_state=%s",
+               pyramidRegistryReady?"OK":"FAILED",pyramidEngineReady?"OK":"FAILED",
+               pyramidPositions,pyramidRecovered,pyramidUnresolved,
+               g_pyramidReady?"READY":"BLOCKED");
+
    if(InpShowDashboard)
      {
       g_dash.Init(_Symbol);
@@ -1778,6 +1811,8 @@ void OnDeinit(const int reason)
    g_regime.Deinit();
    g_regimeHtf.Deinit();
    g_heatmap.Deinit();
+   g_pyramidEngine.Release();
+   g_pyramidCampaignRegistry.Deinit();
   }
 
 //====================================================================
