@@ -137,6 +137,158 @@ public:
       return(false);
      }
 
+   //--- add to an existing NETTING position without using OpenMarket's fresh-entry
+   //--- confirmation rule. This path never retries: a timeout/connection result can
+   //--- represent a broker-accepted deal, so the caller must reconcile before any resend.
+   bool              AddToNettingPosition(const string symbol,const ENUM_AX_DIR dir,
+                                          const ulong expectedTicket,const ulong expectedPositionId,
+                                          const double requestedLots,const ulong expectedMagic,
+                                          const string comment,ulong &positionTicketOut,
+                                          ulong &positionIdOut,ulong &orderTicketOut,
+                                          double &actualAddLotsOut,double &fillPriceOut,
+                                          bool &outcomeUncertain,string &errorReason)
+     {
+      positionTicketOut=0;
+      positionIdOut=0;
+      orderTicketOut=0;
+      actualAddLotsOut=0.0;
+      fillPriceOut=0.0;
+      outcomeUncertain=false;
+      errorReason="";
+
+      if(dir!=AX_DIR_BUY && dir!=AX_DIR_SELL)
+        { errorReason="Invalid pyramid direction"; return(false); }
+      if(requestedLots<=0.0 || !MathIsValidNumber(requestedLots))
+        { errorReason="Invalid pyramid volume"; return(false); }
+      if(!PositionSelect(symbol))
+        { errorReason="Existing netting position is missing"; return(false); }
+
+      ulong beforeTicket=(ulong)PositionGetInteger(POSITION_TICKET);
+      ulong beforeId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      long beforeType=PositionGetInteger(POSITION_TYPE);
+      ENUM_AX_DIR beforeDir=(beforeType==POSITION_TYPE_BUY)?AX_DIR_BUY:AX_DIR_SELL;
+      double beforeVolume=PositionGetDouble(POSITION_VOLUME);
+      double beforeSl=PositionGetDouble(POSITION_SL);
+      double beforeTp=PositionGetDouble(POSITION_TP);
+      ulong beforeMagic=(ulong)PositionGetInteger(POSITION_MAGIC);
+      double volumeStep=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+      double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+      double tolerance=MathMax(volumeStep*0.51,0.00000001);
+      double priceTolerance=MathMax(tickSize*0.51,0.00000001);
+
+      if(beforeTicket==0 || beforeId==0 || beforeTicket!=expectedTicket ||
+         beforeId!=expectedPositionId || beforeMagic!=expectedMagic ||
+         beforeDir!=dir || beforeVolume<=0.0 ||
+         beforeSl<=0.0 || volumeStep<=0.0 || tickSize<=0.0)
+        { errorReason="Existing position identity, direction, volume or protection changed"; return(false); }
+
+      MqlTick tick;
+      if(!SymbolInfoTick(symbol,tick) || tick.bid<=0.0 || tick.ask<=0.0 || tick.ask<tick.bid)
+        { errorReason="Pyramid quote unavailable"; return(false); }
+      if((dir==AX_DIR_BUY && beforeSl>=tick.bid) ||
+         (dir==AX_DIR_SELL && beforeSl<=tick.ask))
+        { errorReason="Existing protective stop is crossed or invalid"; return(false); }
+
+      // One submission only. Even a failed return can be ambiguous at the transport layer.
+      bool sent=(dir==AX_DIR_BUY)
+                ?m_trade.Buy(requestedLots,symbol,0.0,beforeSl,beforeTp,comment)
+                :m_trade.Sell(requestedLots,symbol,0.0,beforeSl,beforeTp,comment);
+      uint retcode=m_trade.ResultRetcode();
+      orderTicketOut=m_trade.ResultOrder();
+
+      if(!sent)
+        {
+         outcomeUncertain=(retcode==TRADE_RETCODE_TIMEOUT ||
+                           retcode==TRADE_RETCODE_CONNECTION ||
+                           retcode==TRADE_RETCODE_PLACED);
+         errorReason=StringFormat("Pyramid add send failed: %u %s",
+                                  retcode,m_trade.ResultRetcodeDescription());
+         if(PositionSelect(symbol))
+           {
+            ulong currentId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+            double currentVolume=PositionGetDouble(POSITION_VOLUME);
+            if(currentId==beforeId && currentVolume>beforeVolume+tolerance)
+               outcomeUncertain=true;
+           }
+         return(false);
+        }
+
+      // A true CTrade return is not fill evidence. Reconcile the exact order's entry
+      // deals against the stable position identifier and the broker's current volume.
+      if(orderTicketOut==0 || !HistorySelectByPosition((long)beforeId))
+        {
+         outcomeUncertain=true;
+         errorReason="Pyramid add accepted but order/history confirmation is not available";
+         return(false);
+        }
+
+      double dealVolume=0.0;
+      double dealPriceValue=0.0;
+      int historyDeals=HistoryDealsTotal();
+      for(int i=0;i<historyDeals;i++)
+        {
+         ulong deal=HistoryDealGetTicket(i);
+         if(deal==0 || (ulong)HistoryDealGetInteger(deal,DEAL_ORDER)!=orderTicketOut)
+            continue;
+         if(HistoryDealGetInteger(deal,DEAL_ENTRY)!=DEAL_ENTRY_IN ||
+            HistoryDealGetString(deal,DEAL_SYMBOL)!=symbol ||
+            (ulong)HistoryDealGetInteger(deal,DEAL_MAGIC)!=expectedMagic ||
+            (ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID)!=beforeId)
+            continue;
+         long dealType=HistoryDealGetInteger(deal,DEAL_TYPE);
+         if((dir==AX_DIR_BUY && dealType!=DEAL_TYPE_BUY) ||
+            (dir==AX_DIR_SELL && dealType!=DEAL_TYPE_SELL))
+            continue;
+         double volume=HistoryDealGetDouble(deal,DEAL_VOLUME);
+         double price=HistoryDealGetDouble(deal,DEAL_PRICE);
+         if(volume<=0.0 || price<=0.0 ||
+            !MathIsValidNumber(volume) || !MathIsValidNumber(price))
+           {
+            outcomeUncertain=true;
+            errorReason="Pyramid add deal contains invalid broker data";
+            return(false);
+           }
+         dealVolume+=volume;
+         dealPriceValue+=volume*price;
+        }
+
+      if(dealVolume<=0.0 || !PositionSelect(symbol))
+        {
+         outcomeUncertain=true;
+         errorReason="Pyramid add has no confirmed entry deal or live position";
+         return(false);
+        }
+
+      ulong afterTicket=(ulong)PositionGetInteger(POSITION_TICKET);
+      ulong afterId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      long afterType=PositionGetInteger(POSITION_TYPE);
+      double afterVolume=PositionGetDouble(POSITION_VOLUME);
+      double afterSl=PositionGetDouble(POSITION_SL);
+      double afterTp=PositionGetDouble(POSITION_TP);
+      double volumeIncrease=afterVolume-beforeVolume;
+      bool sameDirection=((dir==AX_DIR_BUY && afterType==POSITION_TYPE_BUY) ||
+                          (dir==AX_DIR_SELL && afterType==POSITION_TYPE_SELL));
+      bool stopsPreserved=(MathAbs(afterSl-beforeSl)<=priceTolerance &&
+                           MathAbs(afterTp-beforeTp)<=priceTolerance);
+      bool fillMatchesPosition=(MathAbs(volumeIncrease-dealVolume)<=tolerance);
+      if(afterId!=beforeId || !sameDirection || afterVolume<=beforeVolume ||
+         volumeIncrease>requestedLots+tolerance || !fillMatchesPosition || !stopsPreserved)
+        {
+         outcomeUncertain=true;
+         errorReason=StringFormat("Pyramid add broker state mismatch id=%s direction=%s volumeDelta=%.8f dealVolume=%.8f stopsPreserved=%s",
+                                  afterId==beforeId?"same":"changed",
+                                  sameDirection?"same":"changed",
+                                  volumeIncrease,dealVolume,stopsPreserved?"true":"false");
+         return(false);
+        }
+
+      positionTicketOut=afterTicket;
+      positionIdOut=afterId;
+      actualAddLotsOut=dealVolume;
+      fillPriceOut=dealPriceValue/dealVolume;
+      return(true);
+     }
+
    //--- close whatever is open on symbol, confirm flat afterward ---
    bool              ClosePosition(const string symbol,string &errorReason)
      {
