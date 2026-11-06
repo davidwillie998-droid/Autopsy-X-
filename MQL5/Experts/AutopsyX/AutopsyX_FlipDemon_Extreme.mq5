@@ -1469,16 +1469,17 @@ bool AxAttemptPyramidNettingAdd(SAxPyramidCampaignRecord &campaign,
    ENUM_ORDER_TYPE orderType=(campaign.dir==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
    double orderPrice=(campaign.dir==AX_DIR_BUY)?quote.ask:quote.bid;
    double requiredMargin=0.0;
+   bool marginCalcOk=OrderCalcMargin(orderType,_Symbol,requestedLots,orderPrice,requiredMargin);
    double freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
    double equity=AccountInfoDouble(ACCOUNT_EQUITY);
    double usedMargin=AccountInfoDouble(ACCOUNT_MARGIN);
    double projectedMarginUsage=(equity>0.0)?(usedMargin+requiredMargin)/equity*100.0:1000000.0;
    double projectedMarginLevel=(usedMargin+requiredMargin>0.0)?
                                equity/(usedMargin+requiredMargin)*100.0:1000000.0;
-   if(!OrderCalcMargin(orderType,_Symbol,requestedLots,orderPrice,requiredMargin) ||
-      !MathIsValidNumber(requiredMargin) || requiredMargin<=0.0 ||
+   if(!marginCalcOk || !MathIsValidNumber(requiredMargin) || requiredMargin<=0.0 ||
       !MathIsValidNumber(freeMargin) || requiredMargin>freeMargin ||
       !MathIsValidNumber(equity) || equity<=0.0 ||
+      !MathIsValidNumber(usedMargin) || usedMargin<0.0 ||
       projectedMarginUsage>InpMaxMarginUsagePercent ||
       projectedMarginLevel<InpMinFreeMarginPercent)
      {
