@@ -396,6 +396,9 @@ require("virtual execution remains disabled in this phase" in ea
 
 # Pyramid calculation module: no order submission here. Campaign execution is a
 # separate integration phase and must retain the account-wide risk coordinator.
+require('#include <AutopsyX/PyramidEngine.mqh>' in ea
+        and "CPyramidEngine         g_pyramidEngine;" in ea,
+        "pyramid calculation engine is compiled as part of the existing FlipDemon EA")
 require("enum ENUM_AX_PYRAMID_TRIGGER" in pyramid
         and "AX_PYRAMID_FIXED_GAP" in pyramid
         and "AX_PYRAMID_ATR_GAP" in pyramid
