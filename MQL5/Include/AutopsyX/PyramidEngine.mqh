@@ -6,6 +6,7 @@
 #property strict
 #ifndef AX_PYRAMIDENGINE_MQH
 #define AX_PYRAMIDENGINE_MQH
+#include "Defs.mqh"
 
 enum ENUM_AX_PYRAMID_TRIGGER
   {
@@ -30,6 +31,11 @@ private:
    int             m_period;
    int             m_maHandle;
    bool            m_ready;
+
+   double ClampShrink(const double value) const
+     {
+      return(MathMax(0.0,MathMin(90.0,value)));
+     }
 
    double PipSize(const string symbol) const
      {
@@ -178,7 +184,7 @@ public:
       else
          gap=fallbackGapPips*PipSize(symbol);
       if(gap<=0.0 || !MathIsValidNumber(gap)) return(0.0);
-      double shrink=AxClampD(shrinkPercent,0.0,90.0)/100.0;
+      double shrink=ClampShrink(shrinkPercent)/100.0;
       if(tier>1 && shrink>0.0)
          gap*=MathPow(1.0-shrink,tier-1);
       return(gap);
@@ -195,7 +201,7 @@ public:
          if(atr<=0.0 || atrMultiple<=0.0) return(0.0);
          double gap=atr*atrMultiple;
          if(tier>1)
-            gap*=MathPow(1.0-AxClampD(shrinkPercent,0.0,90.0)/100.0,tier-1);
+            gap*=MathPow(1.0-ClampShrink(shrinkPercent)/100.0,tier-1);
          return(gap);
         }
       if(trigger==AX_PYRAMID_FIXED_GAP)
