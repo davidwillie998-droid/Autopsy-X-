@@ -365,18 +365,42 @@ public:
          bool serverAccepted=(retcode==TRADE_RETCODE_DONE || retcode==TRADE_RETCODE_DONE_PARTIAL);
          if(ok && serverAccepted)
            {
-            if(!PositionSelectByTicket(positionTicket) ||
-               PositionGetString(POSITION_SYMBOL)!=symbol ||
+            // A server-accepted partial fill is not automatically the requested
+            // volume. Reconcile any short fill or disappearance from deal history
+            // before another scale-out can be attempted.
+            if(!PositionSelectByTicket(positionTicket))
+              {
+               outcomeUncertain=true;
+               errorReason="Partial close accepted but tracked position disappeared; broker/history reconciliation required";
+               return(false);
+              }
+            if(PositionGetString(POSITION_SYMBOL)!=symbol ||
                (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=expectedPositionId ||
                (ulong)PositionGetInteger(POSITION_MAGIC)!=expectedMagic)
               {
-               errorReason="Partial close changed or removed the tracked position identity";
+               outcomeUncertain=true;
+               errorReason="Partial close accepted but tracked position identity changed; broker/history reconciliation required";
                return(false);
               }
             double after=PositionGetDouble(POSITION_VOLUME);
-            if(after<before-0.0000001 && after>0.0) { errorReason=""; return(true); }
-            errorReason="Partial close did not leave the tracked position reduced";
-            return(false);
+            double actualClosed=before-after;
+            double volumeStep=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+            double volumeTolerance=MathMax(volumeStep*0.5,0.0000001);
+            if(actualClosed<=volumeTolerance || after<=0.0)
+              {
+               outcomeUncertain=true;
+               errorReason="Partial close accepted but resulting volume is not safely reconcilable";
+               return(false);
+              }
+            if(MathAbs(actualClosed-volumeToClose)>volumeTolerance)
+              {
+               outcomeUncertain=true;
+               errorReason=StringFormat("Partial fill differs from requested volume (requested=%.8f confirmed=%.8f); broker/history reconciliation required",
+                                        volumeToClose,actualClosed);
+               return(false);
+              }
+            errorReason="";
+            return(true);
            }
 
          errorReason=StringFormat("Partial close failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
