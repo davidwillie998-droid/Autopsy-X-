@@ -515,15 +515,15 @@ for source_path, source in source_text.items():
     relative = source_path.relative_to(ROOT)
     if source_path.suffix.lower() == ".mqh":
         guard = re.search(
-            r"^\\s*#ifndef\\s+([A-Za-z_]\\w*)\\s*$[\\s\\S]*?"
-            r"^\\s*#define\\s+\\1\\s*$",
+            r"^\s*#ifndef\s+([A-Za-z_]\w*)\s*$[\s\S]*?"
+            r"^\s*#define\s+\1\s*$",
             source, flags=re.M
         )
         require(guard is not None,
                 f"include guard exists and matches: {relative}")
 
     for match in re.finditer(
-            r'^\\s*#include\\s+([<"])([^>"]+)[>"]',
+            r'^\s*#include\s+([<"])([^>"]+)[>"]',
             source, flags=re.M):
         delimiter, include_name = match.groups()
         if delimiter == '"':
@@ -535,9 +535,9 @@ for source_path, source in source_text.items():
             require(target in source_text or target.is_file(),
                     f"project angle include resolves: {relative} -> {include_name}")
 
-    iMA_calls = len(re.findall(r"\\biMA\\s*\\(", source))
+    iMA_calls = len(re.findall(r"\biMA\s*\(", source))
     if iMA_calls:
-        require(re.search(r"=\\s*iMA\\s*\\(", source) is not None,
+        require(re.search(r"=\s*iMA\s*\(", source) is not None,
                 f"iMA calls are assigned to indicator handles: {relative}")
         require("CopyBuffer(" in source,
                 f"iMA handle is read through CopyBuffer: {relative}")
