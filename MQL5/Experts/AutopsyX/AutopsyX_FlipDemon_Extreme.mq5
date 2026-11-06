@@ -2243,6 +2243,7 @@ void OnTick(void)
                      g_hedgingPositionManager.FailureReason());
       return;
      }
+   if(!AxReconcileVirtualExitTickets(false)) return;
    if(g_hedgingPositionManager.HasMultiplePositions())
      {
       g_hedgingLifecycleLock=true;
