@@ -239,6 +239,133 @@ public:
       return(RewriteFile());
      }
 
+   // Rebuild one live campaign from broker deal history. Entry deals are grouped by
+   // DEAL_ORDER so partial fills of one request remain one tier. Any reversal,
+   // foreign entry, missing order link, or volume mismatch fails closed.
+   bool ReconcileLivePosition(const ulong ticket,bool &recoveredOut)
+     {
+      recoveredOut=false;
+      if(ticket==0 || !PositionSelectByTicket(ticket)) return(false);
+      if(PositionGetString(POSITION_SYMBOL)!=m_symbol ||
+         (ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+         return(false);
+
+      ulong positionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      long liveType=PositionGetInteger(POSITION_TYPE);
+      ENUM_AX_DIR liveDir=(liveType==POSITION_TYPE_BUY)?AX_DIR_BUY:AX_DIR_SELL;
+      double liveVolume=PositionGetDouble(POSITION_VOLUME);
+      double volumeStep=SymbolInfoDouble(m_symbol,SYMBOL_VOLUME_STEP);
+      double tolerance=MathMax(volumeStep*0.51,0.00000001);
+      if(positionId==0 || liveVolume<=0.0 || volumeStep<=0.0 ||
+         (liveDir!=AX_DIR_BUY && liveDir!=AX_DIR_SELL))
+         return(false);
+      if(!HistorySelectByPosition((long)positionId)) return(false);
+
+      ulong orderIds[AX_PYRAMID_CAMPAIGN_MAX_TIERS];
+      double orderVolumes[AX_PYRAMID_CAMPAIGN_MAX_TIERS];
+      double orderPriceValues[AX_PYRAMID_CAMPAIGN_MAX_TIERS];
+      ArrayInitialize(orderIds,0);
+      ArrayInitialize(orderVolumes,0.0);
+      ArrayInitialize(orderPriceValues,0.0);
+      int tierCount=0;
+      int lastOrderIndex=-1;
+      ulong lastDealTicket=0;
+      datetime campaignStart=0;
+      double expectedRemaining=0.0;
+
+      int deals=HistoryDealsTotal();
+      for(int i=0;i<deals;i++)
+        {
+         ulong deal=HistoryDealGetTicket(i);
+         if(deal==0) return(false);
+         if(HistoryDealGetString(deal,DEAL_SYMBOL)!=m_symbol) return(false);
+         long entry=HistoryDealGetInteger(deal,DEAL_ENTRY);
+         double volume=HistoryDealGetDouble(deal,DEAL_VOLUME);
+         if(volume<=0.0 || !MathIsValidNumber(volume)) return(false);
+
+         if(entry==DEAL_ENTRY_INOUT)
+           {
+            // Netting reversal destroys the old campaign's direction identity.
+            return(false);
+           }
+         if(entry==DEAL_ENTRY_IN)
+           {
+            if((ulong)HistoryDealGetInteger(deal,DEAL_MAGIC)!=m_magic)
+               return(false);
+            long dealType=HistoryDealGetInteger(deal,DEAL_TYPE);
+            if((liveDir==AX_DIR_BUY && dealType!=DEAL_TYPE_BUY) ||
+               (liveDir==AX_DIR_SELL && dealType!=DEAL_TYPE_SELL))
+               return(false);
+            ulong order=(ulong)HistoryDealGetInteger(deal,DEAL_ORDER);
+            double price=HistoryDealGetDouble(deal,DEAL_PRICE);
+            datetime dealTime=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
+            if(order==0 || price<=0.0 || dealTime<=0 ||
+               !MathIsValidNumber(price))
+               return(false);
+
+            int orderIndex=-1;
+            for(int j=0;j<tierCount;j++)
+               if(orderIds[j]==order) { orderIndex=j; break; }
+            if(orderIndex<0)
+              {
+               if(tierCount>=AX_PYRAMID_CAMPAIGN_MAX_TIERS) return(false);
+               orderIndex=tierCount;
+               orderIds[orderIndex]=order;
+               tierCount++;
+              }
+            orderVolumes[orderIndex]+=volume;
+            orderPriceValues[orderIndex]+=price*volume;
+            expectedRemaining+=volume;
+            if(campaignStart==0 || dealTime<campaignStart) campaignStart=dealTime;
+            if(deal>lastDealTicket)
+              {
+               lastDealTicket=deal;
+               lastOrderIndex=orderIndex;
+              }
+           }
+         else if(entry==DEAL_ENTRY_OUT || entry==DEAL_ENTRY_OUT_BY)
+           {
+            expectedRemaining-=volume;
+            if(expectedRemaining < -tolerance) return(false);
+           }
+        }
+
+      if(tierCount<1 || lastOrderIndex<0 || lastDealTicket==0 ||
+         MathAbs(expectedRemaining-liveVolume)>tolerance)
+         return(false);
+
+      SAxPyramidCampaignRecord record;
+      bool existed=Find(positionId,record);
+      if(existed)
+        {
+         if(!record.active || record.symbol!=m_symbol || record.dir!=liveDir ||
+            record.lastTierDealTicket>lastDealTicket)
+            return(false);
+        }
+      else
+        {
+         ZeroMemory(record);
+         record.peakBasketPnl=0.0;
+         record.basketTrailStopPnl=0.0;
+         record.lastTriggerBarTime=0;
+        }
+
+      record.ticket=ticket;
+      record.positionIdentifier=positionId;
+      record.lastTierDealTicket=lastDealTicket;
+      record.symbol=m_symbol;
+      record.dir=liveDir;
+      record.tierCount=tierCount;
+      record.baseTierLots=orderVolumes[0];
+      record.lastTierFillPrice=orderPriceValues[lastOrderIndex]/orderVolumes[lastOrderIndex];
+      record.lastTierFilledLots=orderVolumes[lastOrderIndex];
+      record.campaignStartTime=campaignStart;
+      record.active=true;
+      if(!Save(record)) return(false);
+      recoveredOut=true;
+      return(true);
+     }
+
    void Deinit(void) {}
    bool IsPersisting(void) const { return(m_persistOk); }
    int Count(void) const { return(m_count); }
