@@ -42,6 +42,7 @@
 #include <AutopsyX/EmergencyControls.mqh>
 #include <AutopsyX/TradeReconciliation.mqh>
 #include <AutopsyX/RestartRecovery.mqh>
+#include <AutopsyX/VirtualExitRegistry.mqh>
 #include <AutopsyX/Dashboard.mqh>
 
 //====================================================================
@@ -242,6 +243,9 @@ CAccuracyEngine       g_accuracy;
 CDashboard            g_dash;
 CTradeReconciler       g_tradeReconciler;
 CRestartRecovery       g_restartRecovery;
+CVirtualExitRegistry   g_virtualExitRegistry;
+bool                   g_virtualExitInitialized = false;
+bool                   g_virtualExitReady = false; // persistence and broker-state reconciliation must both be verified
 bool                   g_recoveryInitialized = false;
 bool                   g_recoveryReady = false; // false means new entries are blocked; existing positions remain managed
 bool                   g_accountRiskIntegrityLock = false; // post-fill breach/unknown exposure; cleared only by a clean broker rescan
@@ -434,6 +438,12 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
       g_recoveryReady = false;
       Print("FLIPDEMON RECOVERY ERROR: close completed but registry removal was not persisted; new entries remain blocked.");
      }
+   if(g_virtualExitInitialized &&
+      (!g_virtualExitRegistry.Remove(g_positionIdentifier) || !g_virtualExitRegistry.IsPersisting()))
+     {
+      g_virtualExitReady=false;
+      Print("FLIPDEMON VIRTUAL EXIT ERROR: position closed but state removal failed; new entries remain blocked.");
+     }
    // Do not re-enable entries from an exit callback. Recovery may have been blocked because
    // startup reconciliation found an untracked/mismatched live position, not merely a failed write.
    // A fresh successful reconciliation is required to clear that safety latch.
@@ -596,6 +606,83 @@ void AxRetryPendingPartialClose(void)
    AxRecordPartialClose(actualClosed,pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket);
    g_partialClosePending=false;
    g_pendingPartialCloseVolume=0.0;
+  }
+
+
+bool AxSaveVirtualExitState(void)
+  {
+   if(!PositionSelect(_Symbol)) return(false);
+   if((ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber) return(false);
+
+   ulong ticket=(ulong)PositionGetInteger(POSITION_TICKET);
+   ulong positionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+   long type=PositionGetInteger(POSITION_TYPE);
+   ENUM_AX_DIR dir=(type==POSITION_TYPE_BUY) ? AX_DIR_BUY : AX_DIR_SELL;
+   double entry=PositionGetDouble(POSITION_PRICE_OPEN);
+   double brokerSl=PositionGetDouble(POSITION_SL);
+   double brokerTp=PositionGetDouble(POSITION_TP);
+   double tickSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+   if(ticket==0 || positionId==0 || entry<=0.0 || brokerSl<=0.0 ||
+      tickSize<=0.0 || !MathIsValidNumber(entry) || !MathIsValidNumber(brokerSl))
+     {
+      g_virtualExitReady=false;
+      Print("FLIPDEMON VIRTUAL EXIT: broker position identity or emergency SL invalid; new entries blocked.");
+      return(false);
+     }
+
+   SAxVirtualExitRecord record,existing;
+   bool found=g_virtualExitRegistry.Find(positionId,existing);
+   double riskDistance=MathAbs(entry-brokerSl);
+   double initialSl=brokerSl;
+   bool breakEvenDone=false;
+   if(found)
+     {
+      if(existing.ticket!=ticket || existing.symbol!=_Symbol || existing.dir!=dir ||
+         MathAbs(existing.emergencySlPrice-brokerSl)>tickSize*0.5)
+        {
+         g_virtualExitReady=false;
+         PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: persisted state mismatches broker position ticket=%I64u identifier=%I64u; new entries blocked.",ticket,positionId);
+         return(false);
+        }
+      initialSl=existing.initialSlPrice;
+      riskDistance=existing.originalRiskDistance;
+      breakEvenDone=existing.breakEvenDone;
+     }
+   else
+     {
+      // A position predating this registry has no trustworthy original-stop history.
+      // Do not reconstruct an original R denominator from a possibly trailed stop.
+      bool stopOnLossSide=(dir==AX_DIR_BUY) ? (brokerSl<entry-tickSize*0.5)
+                                            : (brokerSl>entry+tickSize*0.5);
+      if(!stopOnLossSide)
+        {
+         g_virtualExitReady=false;
+         PrintFormat("FLIPDEMON VIRTUAL EXIT: untracked position %I64u has no recoverable original risk; broker protection retained, new entries blocked.",ticket);
+         return(false);
+        }
+     }
+
+   record.ticket=ticket;
+   record.positionIdentifier=positionId;
+   record.symbol=_Symbol;
+   record.dir=dir;
+   record.initialSlPrice=initialSl;
+   record.emergencySlPrice=brokerSl;
+   record.virtualSlPrice=brokerSl;
+   record.virtualTpPrice=brokerTp;
+   record.originalRiskDistance=riskDistance;
+   record.breakEvenDone=breakEvenDone;
+   record.entryTime=(datetime)PositionGetInteger(POSITION_TIME);
+   record.updatedAt=TimeCurrent();
+
+   if(!g_virtualExitRegistry.Save(record) || !g_virtualExitRegistry.IsPersisting())
+     {
+      g_virtualExitReady=false;
+      PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: state save failed for position %I64u; broker protection retained, new entries blocked.",ticket);
+      return(false);
+     }
+   g_virtualExitReady=true;
+   return(true);
   }
 
 void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double lots,const double fillPrice,
@@ -816,6 +903,11 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    if(!g_recoveryReady)
      {
       if(InpVerboseLogging) Print("FLIPDEMON RECOVERY: new entry blocked; registry is not verified and persisted.");
+      return(false);
+     }
+   if(!g_virtualExitReady || !g_virtualExitRegistry.IsPersisting())
+     {
+      if(InpVerboseLogging) Print("FLIPDEMON VIRTUAL EXIT: new entry blocked; persisted position state is not verified.");
       return(false);
      }
    string gateReason;
@@ -1148,6 +1240,8 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       g_recoveryReady = false;
       PrintFormat("FLIPDEMON RECOVERY ERROR: live position ticket %I64u is open but its setup registry could not be verified; managing existing position and blocking new entries.",newTicket);
      }
+   if(!AxSaveVirtualExitState())
+      Print("FLIPDEMON VIRTUAL EXIT: filled position remains under broker protection; new entries are locked.");
 
    // AFE's readings at the moment of this entry, carried through to the closed-trade autopsy record
    g_posState.afeCapitalState   = g_afe.State();
@@ -1564,8 +1658,32 @@ int OnInit(void)
       Print("FLIPDEMON RECOVERY ERROR: registry initialization failed. Existing positions will still be managed; new entries are blocked.");
      }
 
+   g_virtualExitInitialized=g_virtualExitRegistry.Init("FlipDemon_Extreme_HFT",_Symbol,InpMagicNumber);
+   if(!g_virtualExitInitialized || !g_virtualExitRegistry.IsPersisting())
+     {
+      g_virtualExitReady=false;
+      Print("FLIPDEMON VIRTUAL EXIT ERROR: persistent state registry unavailable; existing broker positions remain managed, new entries blocked.");
+     }
+   else
+     {
+      g_virtualExitReady=true;
+      PrintFormat("FLIPDEMON VIRTUAL EXIT: registry loaded (%d records); virtual execution remains disabled in this phase.",g_virtualExitRegistry.Count());
+     }
+
    g_risk.OnTickHousekeeping();
    AxReconcileExistingPosition();
+   if(g_virtualExitInitialized && g_virtualExitRegistry.IsPersisting())
+     {
+      if(g_haveOpenPosition)
+         AxSaveVirtualExitState();
+      else if(g_virtualExitRegistry.Count()>0)
+        {
+         g_virtualExitReady=false;
+         Print("FLIPDEMON VIRTUAL EXIT: stale persisted records found without a matching open position; new entries blocked pending reconciliation.");
+        }
+      else
+         g_virtualExitReady=true;
+     }
 
    if(InpShowDashboard)
      {
@@ -1841,6 +1959,11 @@ void OnTick(void)
                   g_posState.initialSlPrice = newSl;
                   if(isBreakEvenMove) g_posState.breakEvenDone = true;
                   g_posState.modifyFailCount = 0;
+                  if(!AxSaveVirtualExitState())
+                    {
+                     g_virtualExitReady=false;
+                     Print("FLIPDEMON VIRTUAL EXIT ERROR: broker stop changed but registry update failed; new entries blocked.");
+                    }
                  }
                else
                  {
