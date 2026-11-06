@@ -504,4 +504,45 @@ require("NearestHighVolumeNode" in volume_profile
         and "return(NearestNode(refPrice,false,nodePrice,distanceBins));" in volume_profile,
         "nearest HVN/LVN APIs share the validated node lookup path")
 
+# Repository-wide MQL5 include and indicator-handle checks. These are source
+# contracts only; MetaEditor remains the authority on compiler diagnostics.
+MQL5_ROOT = ROOT / "MQL5"
+mql_sources = list(MQL5_ROOT.rglob("*.mq5")) + list(MQL5_ROOT.rglob("*.mqh"))
+source_text = {p.resolve(): p.read_text(encoding="utf-8") for p in mql_sources}
+require(bool(mql_sources), "MQL5 source tree is present for repository-wide checks")
+
+for source_path, source in source_text.items():
+    relative = source_path.relative_to(ROOT)
+    if source_path.suffix.lower() == ".mqh":
+        guard = re.search(
+            r"^\\s*#ifndef\\s+([A-Za-z_]\\w*)\\s*$[\\s\\S]*?"
+            r"^\\s*#define\\s+\\1\\s*$",
+            source, flags=re.M
+        )
+        require(guard is not None,
+                f"include guard exists and matches: {relative}")
+
+    for match in re.finditer(
+            r'^\\s*#include\\s+([<"])([^>"]+)[>"]',
+            source, flags=re.M):
+        delimiter, include_name = match.groups()
+        if delimiter == '"':
+            target = (source_path.parent / include_name).resolve()
+            require(target in source_text or target.is_file(),
+                    f"quoted include resolves: {relative} -> {include_name}")
+        elif include_name.startswith("AutopsyX/"):
+            target = (MQL5_ROOT / "Include" / include_name).resolve()
+            require(target in source_text or target.is_file(),
+                    f"project angle include resolves: {relative} -> {include_name}")
+
+    iMA_calls = len(re.findall(r"\\biMA\\s*\\(", source))
+    if iMA_calls:
+        require(re.search(r"=\\s*iMA\\s*\\(", source) is not None,
+                f"iMA calls are assigned to indicator handles: {relative}")
+        require("CopyBuffer(" in source,
+                f"iMA handle is read through CopyBuffer: {relative}")
+        require("IndicatorRelease(" in source,
+                f"iMA handle has an IndicatorRelease lifecycle: {relative}")
+
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
+
