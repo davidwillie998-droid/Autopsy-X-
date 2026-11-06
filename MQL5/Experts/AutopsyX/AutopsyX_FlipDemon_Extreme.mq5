@@ -618,9 +618,9 @@ void AxExecutePartialClose(const double volumeToClose)
 void AxRetryPendingPartialClose(void)
   {
    if(!g_partialClosePending || !g_posState.active) return;
-   if(!g_exec.HasOpenPosition(_Symbol))
+   if(!PositionSelectByTicket(g_posState.ticket))
      {
-      // The final-close history query will consume all unaccounted exit deals.
+      // The tracked ticket is gone. The final-close history query will consume all unaccounted exit deals.
       g_partialClosePending=false;
       g_pendingPartialCloseVolume=0.0;
       return;
@@ -1823,7 +1823,7 @@ void OnTick(void)
     // Resolve delayed scale-out accounting before processing the next signal.
     AxRetryPendingPartialClose();
 
-   if(g_haveOpenPosition && !g_exec.HasOpenPosition(_Symbol))
+   if(g_haveOpenPosition && !PositionSelectByTicket(g_posState.ticket))
       AxRecordExternalClose();
 
    //--- SCAN: cheap per-tick microstructure/momentum update ---
@@ -2270,7 +2270,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
         {
          long dealEntry=HistoryDealGetInteger(trans.deal,DEAL_ENTRY);
          bool isExit=(dealEntry==DEAL_ENTRY_OUT || dealEntry==DEAL_ENTRY_OUT_BY);
-         if(isExit && !g_exec.HasOpenPosition(_Symbol))
+         if(isExit && !PositionSelectByTicket(g_posState.ticket))
            {
             double closePrice=0,grossProfit=0,commission=0,swap=0;
             datetime closeTime=0;
