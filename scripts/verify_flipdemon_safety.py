@@ -356,7 +356,8 @@ require('#include <AutopsyX/VirtualExitRegistry.mqh>' in ea
         and "CVirtualExitRegistry   g_virtualExitRegistry;" in ea,
         "virtual-exit registry is included and instantiated by the EA")
 require("AX_VIRTUAL_EXIT_FIELD_COUNT 12" in virtual_exit
-        and "POSITION_IDENTIFIER" not in virtual_exit,
+        and "positionIdentifier" in virtual_exit
+        and "FindIndex(record.positionIdentifier)" in virtual_exit,
         "virtual-exit persistence uses the dedicated 12-field position-identity record")
 require("FileMove(tempName,0,m_fileName,FILE_REWRITE)" in virtual_exit
         and "written!=expected" in virtual_exit
