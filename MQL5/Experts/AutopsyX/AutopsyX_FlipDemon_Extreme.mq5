@@ -1396,7 +1396,11 @@ bool AxAttemptPyramidNettingAdd(SAxPyramidCampaignRecord &campaign,
       if(InpVerboseLogging) PrintFormat("FLIPDEMON PYRAMID BLOCKED: %s",gateReason);
       return(false);
      }
-   if(!InpEnablePyramidExecution || !g_pyramidReady || g_pyramidReconcilePending ||
+   // This function submits a real broker order. ANALYSIS_ONLY and PAPER_EXECUTION
+   // must never reach CTrade, even if the pyramid opt-in is accidentally enabled.
+   // Demo-account validation uses LIVE execution mode on a broker demo account.
+   if(InpExecutionMode!=AX_EXEC_LIVE || !InpEnablePyramidExecution ||
+      !g_pyramidReady || g_pyramidReconcilePending ||
       g_accountRiskIntegrityLock || g_accountRiskReconciliationPending ||
       g_nettingReversalQuarantined || !g_recoveryReady ||
       !g_virtualExitReady || !g_virtualExitRegistry.IsPersisting())
