@@ -318,33 +318,47 @@ double AxRiskPercentForMode(void)
 //--- second - deal tickets are strictly increasing in chronological order regardless.              ---
 bool AxFetchCloseFinancials(const ulong posTicket,const ulong sinceTicketExclusive,double &closePrice,
                              double &grossProfit,double &commission,double &swap,datetime &closeTime,
-                             ulong &lastDealTicketOut)
+                             ulong &lastDealTicketOut,double &closedVolumeOut)
   {
-   closePrice=0; grossProfit=0; commission=0; swap=0; closeTime=0; lastDealTicketOut=sinceTicketExclusive;
+   closePrice=0; grossProfit=0; commission=0; swap=0; closeTime=0;
+   lastDealTicketOut=sinceTicketExclusive; closedVolumeOut=0.0;
    // HistorySelectByPosition requires POSITION_IDENTIFIER, not POSITION_TICKET.
-   // Preserve the identifier captured while live because the position may be gone at close time.
+   // Prefer the campaign's retained identifier; fallback must select the exact ticket,
+   // never an arbitrary same-symbol position on a hedging account.
    ulong positionId=(g_posState.ticket==posTicket)?g_positionIdentifier:0;
-   if(positionId==0 && PositionSelect(_Symbol) &&
+   if(positionId==0 && PositionSelectByTicket(posTicket) &&
       (ulong)PositionGetInteger(POSITION_TICKET)==posTicket)
       positionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
    if(positionId==0 || !HistorySelectByPosition((long)positionId)) return(false);
-   int total = HistoryDealsTotal();
+   int total=HistoryDealsTotal();
+   double weightedCloseValue=0.0;
    bool found=false;
    for(int i=0;i<total;i++)
      {
-      ulong dealTicket = HistoryDealGetTicket(i);
+      ulong dealTicket=HistoryDealGetTicket(i);
       if(dealTicket==0 || dealTicket<=sinceTicketExclusive) continue;
-      long entryType = HistoryDealGetInteger(dealTicket,DEAL_ENTRY);
+      long entryType=HistoryDealGetInteger(dealTicket,DEAL_ENTRY);
       if(entryType!=DEAL_ENTRY_OUT && entryType!=DEAL_ENTRY_OUT_BY) continue;
-      grossProfit += HistoryDealGetDouble(dealTicket,DEAL_PROFIT);
-      commission  += HistoryDealGetDouble(dealTicket,DEAL_COMMISSION);
-      swap        += HistoryDealGetDouble(dealTicket,DEAL_SWAP);
-      closePrice   = HistoryDealGetDouble(dealTicket,DEAL_PRICE);
-      closeTime    = (datetime)HistoryDealGetInteger(dealTicket,DEAL_TIME);
-      if(dealTicket>lastDealTicketOut) lastDealTicketOut=dealTicket;
+      double dealVolume=HistoryDealGetDouble(dealTicket,DEAL_VOLUME);
+      double dealPrice=HistoryDealGetDouble(dealTicket,DEAL_PRICE);
+      if(!MathIsValidNumber(dealVolume) || dealVolume<=0.0 ||
+         !MathIsValidNumber(dealPrice) || dealPrice<=0.0)
+         return(false);
+      grossProfit+=HistoryDealGetDouble(dealTicket,DEAL_PROFIT);
+      commission+=HistoryDealGetDouble(dealTicket,DEAL_COMMISSION);
+      swap+=HistoryDealGetDouble(dealTicket,DEAL_SWAP);
+      closedVolumeOut+=dealVolume;
+      weightedCloseValue+=dealPrice*dealVolume;
+      if(dealTicket>lastDealTicketOut)
+        {
+         lastDealTicketOut=dealTicket;
+         closeTime=(datetime)HistoryDealGetInteger(dealTicket,DEAL_TIME);
+        }
       found=true;
      }
-   return(found);
+   if(!found || closedVolumeOut<=0.0) return(false);
+   closePrice=weightedCloseValue/closedVolumeOut;
+   return(MathIsValidNumber(closePrice) && closePrice>0.0);
   }
 
 string AxBuildEntryReason(const SAxScore &score,const ENUM_AX_DIR dir)
@@ -482,8 +496,8 @@ bool AxCloseAndRecord(const ENUM_AX_EXIT_REASON reason)
      }
    g_consecutiveExecFailures = 0;
 
-   double closePrice=0,grossProfit=0,commission=0,swap=0; datetime closeTime=0; ulong lastTicket=0;
-   if(!AxFetchCloseFinancials(ticket,g_posState.lastAccountedDealTicket,closePrice,grossProfit,commission,swap,closeTime,lastTicket))
+   double closePrice=0,grossProfit=0,commission=0,swap=0; datetime closeTime=0; ulong lastTicket=0; double closedVolume=0.0;
+   if(!AxFetchCloseFinancials(ticket,g_posState.lastAccountedDealTicket,closePrice,grossProfit,commission,swap,closeTime,lastTicket,closedVolume))
      {
       // Broker close succeeded, but history may lag. Preserve campaign state and defer
       // finalization; returning false prevents immediate flip-entry on incomplete evidence.
@@ -496,9 +510,9 @@ bool AxCloseAndRecord(const ENUM_AX_EXIT_REASON reason)
 
 void AxRecordExternalClose(void)
   {
-   double closePrice=0,grossProfit=0,commission=0,swap=0; datetime closeTime=0; ulong lastTicket=0;
+   double closePrice=0,grossProfit=0,commission=0,swap=0; datetime closeTime=0; ulong lastTicket=0; double closedVolume=0.0;
    ENUM_AX_EXIT_REASON reason = AX_EXIT_SL;
-   if(!AxFetchCloseFinancials(g_posState.ticket,g_posState.lastAccountedDealTicket,closePrice,grossProfit,commission,swap,closeTime,lastTicket))
+   if(!AxFetchCloseFinancials(g_posState.ticket,g_posState.lastAccountedDealTicket,closePrice,grossProfit,commission,swap,closeTime,lastTicket,closedVolume))
      {
       // Never fabricate a zero-PnL outcome when the broker history cache lags.
       // Keep campaign state active so OnTick can retry this reconciliation.
@@ -550,7 +564,7 @@ void AxExecutePartialClose(const double volumeToClose)
      }
    string partErr;
    bool outcomeUncertain=false;
-   if(!g_exec.ClosePartial(_Symbol,volumeToClose,partErr,outcomeUncertain))
+   if(!g_exec.ClosePartial(_Symbol,g_posState.ticket,volumeToClose,partErr,outcomeUncertain))
      {
       if(outcomeUncertain)
         {
@@ -569,11 +583,11 @@ void AxExecutePartialClose(const double volumeToClose)
      }
 
    // Do not fabricate a partial-close result if the broker history cache lags.
-   double pClosePrice=0,pGross=0,pComm=0,pSwap=0;
+   double pClosePrice=0,pGross=0,pComm=0,pSwap=0,closedVolume=0.0;
    datetime pTime=0;
    ulong pLastTicket=g_posState.lastAccountedDealTicket;
    if(!AxFetchCloseFinancials(g_posState.ticket,g_posState.lastAccountedDealTicket,
-                              pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket))
+                              pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket,closedVolume))
      {
       g_partialClosePending=true;
       g_pendingPartialCloseVolume=volumeToClose;
@@ -581,7 +595,7 @@ void AxExecutePartialClose(const double volumeToClose)
       return;
      }
 
-   if(!PositionSelect(_Symbol))
+   if(!PositionSelectByTicket(g_posState.ticket))
      {
       g_partialClosePending=true;
       g_pendingPartialCloseVolume=volumeToClose;
@@ -589,7 +603,8 @@ void AxExecutePartialClose(const double volumeToClose)
       return;
      }
    double actualClosed=g_posState.lots-PositionGetDouble(POSITION_VOLUME);
-   if(actualClosed<=0.0)
+   double volumeTolerance=MathMax(SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP)*0.5,0.0000001);
+   if(actualClosed<=0.0 || MathAbs(actualClosed-closedVolume)>volumeTolerance)
      {
       g_partialClosePending=true;
       g_pendingPartialCloseVolume=volumeToClose;
@@ -611,15 +626,16 @@ void AxRetryPendingPartialClose(void)
       return;
      }
 
-   double pClosePrice=0,pGross=0,pComm=0,pSwap=0;
+   double pClosePrice=0,pGross=0,pComm=0,pSwap=0,closedVolume=0.0;
    datetime pTime=0;
    ulong pLastTicket=g_posState.lastAccountedDealTicket;
    if(!AxFetchCloseFinancials(g_posState.ticket,g_posState.lastAccountedDealTicket,
-                              pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket))
+                              pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket,closedVolume))
       return;
-   if(!PositionSelect(_Symbol)) return;
+   if(!PositionSelectByTicket(g_posState.ticket)) return;
    double actualClosed=g_posState.lots-PositionGetDouble(POSITION_VOLUME);
-   if(actualClosed<=0.0) return;
+   double volumeTolerance=MathMax(SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP)*0.5,0.0000001);
+   if(actualClosed<=0.0 || MathAbs(actualClosed-closedVolume)>volumeTolerance) return;
 
    AxRecordPartialClose(actualClosed,pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket);
    g_partialClosePending=false;
@@ -1419,8 +1435,8 @@ void AxReconcileExistingPosition(void)
    // started (e.g. a partial close from before a restart), so they are never re-reported -
    // and if any such deal exists, a partial must already have fired (the position is still
    // open, so a full close would have left PositionSelect() false above) - never re-arm it
-   double rClosePrice=0,rGross=0,rComm=0,rSwap=0; datetime rTime=0; ulong rLastTicket=0;
-   bool priorDealFound = AxFetchCloseFinancials(g_posState.ticket,0,rClosePrice,rGross,rComm,rSwap,rTime,rLastTicket);
+   double rClosePrice=0,rGross=0,rComm=0,rSwap=0,closedVolume=0.0; datetime rTime=0; ulong rLastTicket=0;
+   bool priorDealFound = AxFetchCloseFinancials(g_posState.ticket,0,rClosePrice,rGross,rComm,rSwap,rTime,rLastTicket,closedVolume);
    // A history high-water mark is NOT proof that earlier exit deals were durably journaled.
    // This build has no persistent deal-by-deal accounting ledger, so silently baselining those
    // deals can hide partial-close PnL after a restart. Keep the known boundary to avoid double
@@ -2259,11 +2275,12 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
             double closePrice=0,grossProfit=0,commission=0,swap=0;
             datetime closeTime=0;
             ulong lastDealTicket=0;
+            double closedVolume=0.0;
             // Do not finalize on a transient history-cache miss: that would record a
             // zero-PnL fallback as a real result. Let OnTick retry the established
             // external-close path when complete close-deal history is available.
             if(AxFetchCloseFinancials(g_posState.ticket,g_posState.lastAccountedDealTicket,
-                                      closePrice,grossProfit,commission,swap,closeTime,lastDealTicket))
+                                      closePrice,grossProfit,commission,swap,closeTime,lastDealTicket,closedVolume))
               {
                double distToSl=MathAbs(closePrice-g_posState.initialSlPrice);
                double distToTp=MathAbs(closePrice-g_posState.initialTpPrice);
