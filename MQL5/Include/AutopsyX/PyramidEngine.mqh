@@ -30,6 +30,7 @@ private:
    ENUM_MA_METHOD  m_maMethod;
    int             m_period;
    int             m_maHandle;
+   int             m_atrHandle;
    bool            m_ready;
 
    double ClampShrink(const double value) const
@@ -82,6 +83,7 @@ public:
       m_maMethod=MODE_EMA;
       m_period=100;
       m_maHandle=INVALID_HANDLE;
+      m_atrHandle=INVALID_HANDLE;
       m_ready=false;
      }
 
@@ -107,6 +109,15 @@ public:
                      symbol,GetLastError());
          return(false);
         }
+      ResetLastError();
+      m_atrHandle=iATR(symbol,timeframe,14);
+      if(m_atrHandle==INVALID_HANDLE)
+        {
+         PrintFormat("FLIPDEMON PYRAMID: ATR handle creation failed symbol=%s timeframe=%d error=%d",
+                     symbol,(int)timeframe,GetLastError());
+         Release();
+         return(false);
+        }
       m_ready=true;
       return(true);
      }
@@ -115,11 +126,31 @@ public:
      {
       if(m_maHandle!=INVALID_HANDLE)
          IndicatorRelease(m_maHandle);
+      if(m_atrHandle!=INVALID_HANDLE)
+         IndicatorRelease(m_atrHandle);
       m_maHandle=INVALID_HANDLE;
+      m_atrHandle=INVALID_HANDLE;
       m_ready=false;
      }
 
-   bool              Ready(void) const { return(m_ready && m_maHandle!=INVALID_HANDLE); }
+   bool              Ready(void) const
+     {
+      return(m_ready && m_maHandle!=INVALID_HANDLE && m_atrHandle!=INVALID_HANDLE);
+     }
+
+   // ATR is read from the last completed bar on the same timeframe as the
+   // campaign trend filter. Never mix the M1 regime ATR with the H1 trend.
+   bool              ReadClosedAtr(double &atrOut) const
+     {
+      atrOut=0.0;
+      if(!Ready()) return(false);
+      double values[];
+      ArraySetAsSeries(values,true);
+      if(CopyBuffer(m_atrHandle,0,1,1,values)!=1) return(false);
+      if(!MathIsValidNumber(values[0]) || values[0]<=0.0) return(false);
+      atrOut=values[0];
+      return(true);
+     }
 
    // Uses completed bars only. Index 0 is shift 3, index 1 is shift 2,
    // and index 2 is shift 1 after CopyBuffer(start=1,count=3).
