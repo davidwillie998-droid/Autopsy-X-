@@ -647,6 +647,8 @@ bool AxSaveVirtualExitState(const bool allowEmergencyUpdate=false,const bool isN
       initialSl=existing.initialSlPrice;
       riskDistance=existing.originalRiskDistance;
       breakEvenDone=(existing.breakEvenDone || g_posState.breakEvenDone);
+      g_posState.originalSlPrice=existing.initialSlPrice;
+      g_posState.breakEvenDone=breakEvenDone;
      }
    else
      {
@@ -662,6 +664,11 @@ bool AxSaveVirtualExitState(const bool allowEmergencyUpdate=false,const bool isN
          return(false);
         }
      }
+
+   g_posState.originalSlPrice=initialSl;
+   g_posState.initialSlPrice=brokerSl;
+   g_posState.initialTpPrice=brokerTp;
+   g_posState.breakEvenDone=breakEvenDone;
 
    record.ticket=ticket;
    record.positionIdentifier=positionId;
