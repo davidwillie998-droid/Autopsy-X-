@@ -321,14 +321,19 @@ public:
    //--- existing position with an opposite market deal for the exact requested volume.
    //--- close part of one broker-identified position. Ticket selection is mandatory on
    //--- hedging accounts, where symbol selection can target a different same-symbol position.
-   bool              ClosePartial(const string symbol,const ulong positionTicket,const double volumeToClose,
-                                  string &errorReason,bool &outcomeUncertain)
+   bool              ClosePartial(const string symbol,const ulong positionTicket,
+                                  const ulong expectedPositionId,const ulong expectedMagic,
+                                  const double volumeToClose,string &errorReason,
+                                  bool &outcomeUncertain)
      {
       outcomeUncertain=false;
-      if(positionTicket==0 || !PositionSelectByTicket(positionTicket))
+      if(positionTicket==0 || expectedPositionId==0 || expectedMagic==0 ||
+         !PositionSelectByTicket(positionTicket))
         { errorReason="Tracked position ticket is not open"; return(false); }
-      if(PositionGetString(POSITION_SYMBOL)!=symbol)
-        { errorReason="Tracked position ticket belongs to a different symbol"; return(false); }
+      if(PositionGetString(POSITION_SYMBOL)!=symbol ||
+         (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=expectedPositionId ||
+         (ulong)PositionGetInteger(POSITION_MAGIC)!=expectedMagic)
+        { errorReason="Tracked position identity/magic mismatch before partial close"; return(false); }
       double before=PositionGetDouble(POSITION_VOLUME);
       if(volumeToClose<=0.0 || volumeToClose>=before)
         { errorReason="Invalid partial close volume"; return(false); }
@@ -341,8 +346,10 @@ public:
          if(attempt>0) Sleep(m_retryDelayMs);
          if(!PositionSelectByTicket(positionTicket))
            { errorReason="Tracked position closed before partial could execute"; return(false); }
-         if(PositionGetString(POSITION_SYMBOL)!=symbol)
-           { errorReason="Tracked position identity changed before partial close"; return(false); }
+         if(PositionGetString(POSITION_SYMBOL)!=symbol ||
+            (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=expectedPositionId ||
+            (ulong)PositionGetInteger(POSITION_MAGIC)!=expectedMagic)
+           { errorReason="Tracked position identity/magic changed before partial close"; return(false); }
 
          if(isHedging)
             ok=m_trade.PositionClosePartial(positionTicket,volumeToClose);
@@ -358,9 +365,12 @@ public:
          bool serverAccepted=(retcode==TRADE_RETCODE_DONE || retcode==TRADE_RETCODE_DONE_PARTIAL);
          if(ok && serverAccepted)
            {
-            if(!PositionSelectByTicket(positionTicket))
+            if(!PositionSelectByTicket(positionTicket) ||
+               PositionGetString(POSITION_SYMBOL)!=symbol ||
+               (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=expectedPositionId ||
+               (ulong)PositionGetInteger(POSITION_MAGIC)!=expectedMagic)
               {
-               errorReason="Partial close removed the tracked position unexpectedly";
+               errorReason="Partial close changed or removed the tracked position identity";
                return(false);
               }
             double after=PositionGetDouble(POSITION_VOLUME);
