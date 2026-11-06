@@ -646,7 +646,7 @@ bool AxSaveVirtualExitState(const bool allowEmergencyUpdate=false,const bool isN
         }
       initialSl=existing.initialSlPrice;
       riskDistance=existing.originalRiskDistance;
-      breakEvenDone=existing.breakEvenDone;
+      breakEvenDone=(existing.breakEvenDone || g_posState.breakEvenDone);
      }
    else
      {
@@ -1679,8 +1679,16 @@ int OnInit(void)
          AxSaveVirtualExitState();
       else if(g_virtualExitRegistry.Count()>0)
         {
-         g_virtualExitReady=false;
-         Print("FLIPDEMON VIRTUAL EXIT: stale persisted records found without a matching open position; new entries blocked pending reconciliation.");
+         if(g_virtualExitRegistry.Clear() && g_virtualExitRegistry.IsPersisting())
+           {
+            g_virtualExitReady=true;
+            Print("FLIPDEMON VIRTUAL EXIT: stale records cleared because no matching EA position exists on this symbol.");
+           }
+         else
+           {
+            g_virtualExitReady=false;
+            Print("FLIPDEMON VIRTUAL EXIT ERROR: stale records could not be cleared; new entries blocked.");
+           }
         }
       else
          g_virtualExitReady=true;
