@@ -253,6 +253,7 @@ bool                   g_virtualExitInitialized = false;
 bool                   g_virtualExitReady = false; // persistence and broker-state reconciliation must both be verified
 bool                   g_recoveryInitialized = false;
 bool                   g_recoveryReady = false; // false means new entries are blocked; existing positions remain managed
+bool                   g_nettingReversalQuarantined = false; // broker reversed the net position; stale campaign state must never manage the new side
 bool                   g_accountRiskIntegrityLock = false; // post-fill breach/unknown exposure; cleared only by a clean broker rescan
 bool                   g_accountRiskReconciliationPending = false; // any broker transaction dirties the account-wide exposure snapshot
 
@@ -344,8 +345,9 @@ bool AxFetchCloseFinancials(const ulong posTicket,const ulong sinceTicketExclusi
       if(entryType==DEAL_ENTRY_INOUT)
         {
          g_recoveryReady=false;
+         g_nettingReversalQuarantined=true;
          g_accountRiskReconciliationPending=true;
-         PrintFormat("FLIPDEMON RECONCILIATION ERROR: netting reversal deal %I64u requires explicit close/open allocation; new entries blocked.",dealTicket);
+         PrintFormat("FLIPDEMON RECONCILIATION ERROR: netting reversal deal %I64u requires explicit close/open allocation; campaign management and new entries blocked until restart reconciliation.",dealTicket);
          return(false);
         }
       if(entryType!=DEAL_ENTRY_OUT && entryType!=DEAL_ENTRY_OUT_BY) continue;
@@ -1836,9 +1838,20 @@ void OnTick(void)
    datetime today = TimeCurrent()-(dtNow.hour*3600+dtNow.min*60+dtNow.sec);
    if(today!=g_lastStatsDay) { g_lastStatsDay=today; g_poorFillsToday=0; }
 
+   // A netting reversal preserves POSITION_IDENTIFIER but replaces POSITION_TICKET.
+   // Until close/open allocation and campaign reassignment are implemented, the new broker
+   // position is deliberately left untouched. In particular, never run old-side flip/exit
+   // logic against the residual opposite position. Account-wide risk reconciliation above
+   // continues to observe the broker's actual position and new entries remain locked.
+   if(g_nettingReversalQuarantined)
+     {
+      g_engineState=AX_ENGINE_PAUSED;
+      return;
+     }
+
    //--- position may have closed externally (SL/TP hit, manual intervention) ---
-    // Resolve delayed scale-out accounting before processing the next signal.
-    AxRetryPendingPartialClose();
+   // Resolve delayed scale-out accounting before processing the next signal.
+   AxRetryPendingPartialClose();
 
    if(g_haveOpenPosition && !PositionSelectByTicket(g_posState.ticket))
       AxRecordExternalClose();
@@ -2291,10 +2304,14 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
          if(dealEntry==DEAL_ENTRY_INOUT)
            {
             g_recoveryReady=false;
+            g_nettingReversalQuarantined=true;
             g_accountRiskReconciliationPending=true;
-            PrintFormat("FLIPDEMON RECONCILIATION ERROR: broker reported netting reversal deal %I64u; campaign close/open allocation is not yet supported.",trans.deal);
+            PrintFormat("FLIPDEMON RECONCILIATION ERROR: broker reported netting reversal deal %I64u; old campaign and residual opposite exposure are quarantined. No stale-side management will run.",trans.deal);
            }
-         if(isExit && !PositionSelectByTicket(g_posState.ticket))
+         // INOUT changes the broker's net position ticket while preserving its
+         // POSITION_IDENTIFIER. It is not a flat-position event. Keep the old campaign
+         // quarantined instead of sending its deal history through ordinary close logic.
+         if(isExit && dealEntry!=DEAL_ENTRY_INOUT && !PositionSelectByTicket(g_posState.ticket))
            {
             double closePrice=0,grossProfit=0,commission=0,swap=0;
             datetime closeTime=0;
