@@ -183,6 +183,23 @@ class Mql5SourceHygieneTests(unittest.TestCase):
         self.assertIn("dealEntry==DEAL_ENTRY_INOUT", tx)
         self.assertIn("dealEntry==DEAL_ENTRY_OUT || dealEntry==DEAL_ENTRY_OUT_BY ||", tx)
 
+    def test_netting_reversal_quarantines_new_position_from_stale_campaign_management(self):
+        main = self.text[MQL_ROOT / "Experts" / "AutopsyX" / "AutopsyX_FlipDemon_Extreme.mq5"]
+        self.assertIn("g_nettingReversalQuarantined=true;", main)
+        tx_start = main.find("void OnTradeTransaction(")
+        tx_end = main.find("\\nvoid OnChartEvent", tx_start)
+        tx = main[tx_start:tx_end]
+        self.assertIn("dealEntry!=DEAL_ENTRY_INOUT && !PositionSelectByTicket(g_posState.ticket)", tx)
+        tick_start = main.find("// A netting reversal preserves POSITION_IDENTIFIER")
+        tick_end = main.find("//--- position may have closed externally", tick_start)
+        quarantine = main[tick_start:tick_end]
+        self.assertIn("if(g_nettingReversalQuarantined)", quarantine)
+        self.assertIn("g_engineState=AX_ENGINE_PAUSED;", quarantine)
+        self.assertIn("return;", quarantine)
+        manage_start = main.find("//--- MANAGE / FLIP / EXIT ---")
+        self.assertGreater(manage_start, tick_end)
+        self.assertIn("g_nettingReversalQuarantined", main[:manage_start])
+
     def test_copybuffer_results_are_checked_for_exact_or_minimum_count(self):
         failures = []
         for path, source in self.text.items():
