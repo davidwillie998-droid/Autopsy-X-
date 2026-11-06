@@ -106,6 +106,25 @@ class Mql5SourceHygieneTests(unittest.TestCase):
         self.assertIn("return(volumeToCloseOut>0.0);", body)
         self.assertNotIn("if(step<=0) step=0.01;", body)
 
+    def test_partial_close_ambiguous_transport_outcomes_are_not_retried(self):
+        execution = self.text[MQL_ROOT / "Include" / "AutopsyX" / "ExecutionEngine.mqh"]
+        start = execution.find("ClosePartial(const string symbol")
+        end = execution.find("//--- flip = close", start)
+        self.assertGreaterEqual(start, 0, "ClosePartial implementation not found")
+        self.assertGreater(end, start, "ClosePartial end boundary not found")
+        body = execution[start:end]
+        self.assertIn("bool &outcomeUncertain", body)
+        self.assertIn("outcomeUncertain=false;", body)
+        self.assertIn("retcode==TRADE_RETCODE_TIMEOUT", body)
+        self.assertIn("retcode==TRADE_RETCODE_CONNECTION", body)
+        self.assertIn("outcomeUncertain=true;", body)
+        self.assertIn("return(false);", body)
+
+        main = self.text[MQL_ROOT / "Experts" / "AutopsyX" / "AutopsyX_FlipDemon_Extreme.mq5"]
+        self.assertIn("ClosePartial(_Symbol,volumeToClose,partErr,outcomeUncertain)", main)
+        self.assertIn("g_partialClosePending=true;", main)
+        self.assertIn("g_pendingPartialCloseVolume=volumeToClose;", main)
+
     def test_copybuffer_results_are_checked_for_exact_or_minimum_count(self):
         failures = []
         for path, source in self.text.items():
