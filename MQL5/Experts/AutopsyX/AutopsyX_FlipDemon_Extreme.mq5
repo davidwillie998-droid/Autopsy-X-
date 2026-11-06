@@ -338,6 +338,16 @@ bool AxFetchCloseFinancials(const ulong posTicket,const ulong sinceTicketExclusi
       ulong dealTicket=HistoryDealGetTicket(i);
       if(dealTicket==0 || dealTicket<=sinceTicketExclusive) continue;
       long entryType=HistoryDealGetInteger(dealTicket,DEAL_ENTRY);
+      // DEAL_ENTRY_INOUT reverses a netting position: one deal closes the old exposure
+      // and opens residual exposure in the opposite direction. Its full DEAL_VOLUME is
+      // not the old campaign's closed volume. Do not misattribute it as an ordinary exit.
+      if(entryType==DEAL_ENTRY_INOUT)
+        {
+         g_recoveryReady=false;
+         g_accountRiskReconciliationPending=true;
+         PrintFormat("FLIPDEMON RECONCILIATION ERROR: netting reversal deal %I64u requires explicit close/open allocation; new entries blocked.",dealTicket);
+         return(false);
+        }
       if(entryType!=DEAL_ENTRY_OUT && entryType!=DEAL_ENTRY_OUT_BY) continue;
       double dealVolume=HistoryDealGetDouble(dealTicket,DEAL_VOLUME);
       double dealPrice=HistoryDealGetDouble(dealTicket,DEAL_PRICE);
@@ -445,8 +455,15 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
                       const double swap,const datetime closeTime,const ENUM_AX_EXIT_REASON reason,const ulong lastDealTicket)
   {
    SAxTradeRecord rec = AxBuildTradeRecord(closePrice,grossProfit,commission,swap,closeTime,reason,g_posState.lots,false);
+   rec.dealIdOut=lastDealTicket;
+   rec.positionIdentifier=g_positionIdentifier;
 
    g_autopsy.RecordTrade(rec);
+   if(lastDealTicket>0 && g_autopsy.LastAccountedDealTicket(g_positionIdentifier)<lastDealTicket)
+     {
+      g_recoveryReady=false;
+      Print("FLIPDEMON JOURNAL ERROR: final exit was not confirmed in the durable journal; new entries blocked.");
+     }
    // Persist the exit-side registry update before clearing in-memory campaign state. A failed
    // removal does not undo the broker close, but it blocks future entries until recovery is sound.
    bool recoveryRemovalOk = true;
@@ -522,7 +539,7 @@ void AxRecordExternalClose(void)
    double distToSl = MathAbs(closePrice-g_posState.initialSlPrice);
    double distToTp = MathAbs(closePrice-g_posState.initialTpPrice);
    reason = (distToTp<distToSl) ? AX_EXIT_TP : AX_EXIT_SL;
-   AxFinalizeTrade(closePrice,grossProfit,commission,swap,closeTime,reason);
+   AxFinalizeTrade(closePrice,grossProfit,commission,swap,closeTime,reason,lastTicket);
   }
 
 //--- records the banked slice of a scale-out partial close without touching g_haveOpenPosition; ---
@@ -2269,7 +2286,14 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
       if(relevant && g_haveOpenPosition && g_posState.active)
         {
          long dealEntry=HistoryDealGetInteger(trans.deal,DEAL_ENTRY);
-         bool isExit=(dealEntry==DEAL_ENTRY_OUT || dealEntry==DEAL_ENTRY_OUT_BY);
+         bool isExit=(dealEntry==DEAL_ENTRY_OUT || dealEntry==DEAL_ENTRY_OUT_BY ||
+                      dealEntry==DEAL_ENTRY_INOUT);
+         if(dealEntry==DEAL_ENTRY_INOUT)
+           {
+            g_recoveryReady=false;
+            g_accountRiskReconciliationPending=true;
+            PrintFormat("FLIPDEMON RECONCILIATION ERROR: broker reported netting reversal deal %I64u; campaign close/open allocation is not yet supported.",trans.deal);
+           }
          if(isExit && !PositionSelectByTicket(g_posState.ticket))
            {
             double closePrice=0,grossProfit=0,commission=0,swap=0;
