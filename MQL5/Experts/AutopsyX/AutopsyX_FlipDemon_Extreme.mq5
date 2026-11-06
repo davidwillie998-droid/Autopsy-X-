@@ -860,6 +860,107 @@ bool AxReconcileVirtualExitTickets(const bool removeStaleRecords)
    return(true);
   }
 
+// Reconcile each durable pyramid campaign against the complete broker snapshot.
+// Missing rows are reconstructed only from HistorySelectByPosition deal evidence.
+bool AxReconcilePyramidCampaignTickets(const bool removeStaleRecords)
+  {
+   if(!g_hedgingPositionManager.IsComplete() ||
+      !g_pyramidCampaignRegistry.IsPersisting())
+     {
+      g_pyramidReady=false;
+      return(false);
+     }
+
+   int liveCount=g_hedgingPositionManager.Count();
+   for(int i=0;i<liveCount;i++)
+     {
+      SAxManagedPosition live;
+      if(!g_hedgingPositionManager.GetAt(i,live))
+        {
+         g_pyramidReady=false;
+         PrintFormat("FLIPDEMON PYRAMID ERROR: broker snapshot row %d could not be read.",i);
+         return(false);
+        }
+
+      SAxPyramidCampaignRecord campaign;
+      if(!g_pyramidCampaignRegistry.Find(live.positionIdentifier,campaign))
+        {
+         bool recovered=false;
+         if(!g_pyramidCampaignRegistry.ReconcileLivePosition(live.ticket,recovered) ||
+            !recovered ||
+            !g_pyramidCampaignRegistry.Find(live.positionIdentifier,campaign))
+           {
+            g_pyramidReady=false;
+            PrintFormat("FLIPDEMON PYRAMID ERROR: no campaign record for live ticket=%I64u identifier=%I64u and broker deal-history reconstruction failed; scale-ins blocked.",
+                        live.ticket,live.positionIdentifier);
+            return(false);
+           }
+         PrintFormat("FLIPDEMON PYRAMID: reconstructed missing campaign from broker deal history, ticket=%I64u identifier=%I64u tiers=%d.",
+                     live.ticket,live.positionIdentifier,campaign.tierCount);
+        }
+
+      if(!campaign.active || campaign.positionIdentifier!=live.positionIdentifier ||
+         campaign.symbol!=live.symbol || campaign.dir!=live.direction ||
+         campaign.tierCount<1 || campaign.tierCount>AX_PYRAMID_CAMPAIGN_MAX_TIERS ||
+         campaign.lastTierDealTicket==0 || campaign.lastTierFillPrice<=0.0 ||
+         campaign.lastTierFilledLots<=0.0 || campaign.campaignStartTime<=0)
+        {
+         g_pyramidReady=false;
+         PrintFormat("FLIPDEMON PYRAMID ERROR: campaign identity or tier state conflicts with broker ticket=%I64u identifier=%I64u; scale-ins blocked.",
+                     live.ticket,live.positionIdentifier);
+         return(false);
+        }
+
+      if(campaign.ticket!=live.ticket)
+        {
+         ulong previousTicket=campaign.ticket;
+         campaign.ticket=live.ticket;
+         if(!g_pyramidCampaignRegistry.Save(campaign) ||
+            !g_pyramidCampaignRegistry.IsPersisting())
+           {
+            g_pyramidReady=false;
+            PrintFormat("FLIPDEMON PYRAMID ERROR: could not persist refreshed broker ticket=%I64u (previous=%I64u identifier=%I64u).",
+                        live.ticket,previousTicket,live.positionIdentifier);
+            return(false);
+           }
+         PrintFormat("FLIPDEMON PYRAMID: refreshed broker ticket %I64u -> %I64u using stable identifier=%I64u.",
+                     previousTicket,live.ticket,live.positionIdentifier);
+        }
+     }
+
+   // Stale campaign rows are removed only after a complete position snapshot.
+   if(removeStaleRecords)
+     {
+      for(int index=g_pyramidCampaignRegistry.Count()-1;index>=0;index--)
+        {
+         SAxPyramidCampaignRecord campaign;
+         if(!g_pyramidCampaignRegistry.GetAt(index,campaign))
+           {
+            g_pyramidReady=false;
+            PrintFormat("FLIPDEMON PYRAMID ERROR: registry row %d could not be read.",index);
+            return(false);
+           }
+         SAxManagedPosition live;
+         if(!g_hedgingPositionManager.FindByIdentifier(campaign.positionIdentifier,live))
+           {
+            if(!g_pyramidCampaignRegistry.Remove(campaign.positionIdentifier) ||
+               !g_pyramidCampaignRegistry.IsPersisting())
+              {
+               g_pyramidReady=false;
+               PrintFormat("FLIPDEMON PYRAMID ERROR: stale campaign for closed identifier=%I64u could not be removed.",
+                           campaign.positionIdentifier);
+               return(false);
+              }
+            PrintFormat("FLIPDEMON PYRAMID: removed stale closed-position campaign identifier=%I64u.",
+                        campaign.positionIdentifier);
+           }
+        }
+     }
+
+   g_pyramidReady=true;
+   return(true);
+  }
+
 void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double lots,const double fillPrice,
                           const double slPrice,const double tpPrice,const SAxScore &score,
                           const string entryReason,const int flipSeq,const double intendedPrice)
@@ -2190,6 +2291,8 @@ int OnInit(void)
         }
      }
    g_pyramidReady=(pyramidRegistryReady && pyramidEngineReady && pyramidUnresolved==0);
+   if(g_pyramidReady && !AxReconcilePyramidCampaignTickets(true))
+      g_pyramidReady=false;
    PrintFormat("FLIPDEMON PYRAMID RECOVERY: registry=%s engine=%s live=%d recovered=%d unresolved=%d scale_in_state=%s",
                pyramidRegistryReady?"OK":"FAILED",pyramidEngineReady?"OK":"FAILED",
                pyramidPositions,pyramidRecovered,pyramidUnresolved,
