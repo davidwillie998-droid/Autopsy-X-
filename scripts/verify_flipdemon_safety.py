@@ -465,9 +465,6 @@ require("CTrade" not in pyramid_campaign
         and "Sell(" not in pyramid_campaign,
         "campaign registry cannot submit orders or bypass execution and risk gates")
 
-print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
-
-
 # Stable restart identity guardrails: broker position identifiers survive ticket changes.
 require("AX_RECOVERY_FIELD_COUNT 6" in recovery,
         "restart registry schema includes stable position identity")
@@ -484,7 +481,7 @@ VOLUME_PROFILE = ROOT / "MQL5/Include/AutopsyX/VolumeProfile.mqh"
 require(VOLUME_PROFILE.is_file(), "volume profile source exists")
 volume_profile = VOLUME_PROFILE.read_text(encoding="utf-8")
 # Strip comments and quoted strings before checking delimiter balance.
-vp_code = re.sub(r'/\\*.*?\\*/|//[^\\n]*|"(?:\\\\.|[^"\\\\])*"', '',
+vp_code = re.sub(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"', '',
                  volume_profile, flags=re.S)
 depth = 0
 for char in vp_code:
@@ -506,3 +503,5 @@ require("NearestHighVolumeNode" in volume_profile
         and "return(NearestNode(refPrice,true,nodePrice,distanceBins));" in volume_profile
         and "return(NearestNode(refPrice,false,nodePrice,distanceBins));" in volume_profile,
         "nearest HVN/LVN APIs share the validated node lookup path")
+
+print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
