@@ -257,6 +257,7 @@ bool                   g_nettingReversalQuarantined = false; // broker reversed 
 bool                   g_accountRiskIntegrityLock = false; // post-fill breach/unknown exposure; cleared only by a clean broker rescan
 bool                   g_accountRiskReconciliationPending = false; // any broker transaction dirties the account-wide exposure snapshot
 bool                   g_pyramidReady = false; // broker history and durable campaign registry must reconcile before any future scale-in path
+bool                   g_pyramidReconcilePending = false; // a confirmed entry deal waits for live-position and protective-stop reconciliation
 
 SAxPositionState      g_posState;
 bool                  g_haveOpenPosition = false;
@@ -1868,6 +1869,62 @@ void OnTick(void)
         }
      }
 
+   // A confirmed entry deal only schedules reconciliation. The next tick reads the
+   // broker's actual net position, not request/result volume, and records the campaign
+   // only when its protective stop is present on the correct side of the market.
+   if(g_pyramidReconcilePending)
+     {
+      bool foundCampaignPosition=false;
+      for(int p=0;p<PositionsTotal();p++)
+        {
+         ulong positionTicket=PositionGetTicket(p);
+         if(positionTicket==0) continue;
+         if(PositionGetString(POSITION_SYMBOL)!=_Symbol ||
+            (ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber)
+            continue;
+
+         foundCampaignPosition=true;
+         double positionOpen=PositionGetDouble(POSITION_PRICE_OPEN);
+         double positionSl=PositionGetDouble(POSITION_SL);
+         long positionType=PositionGetInteger(POSITION_TYPE);
+         bool protectedPosition=(positionSl>0.0 &&
+            ((positionType==POSITION_TYPE_BUY && positionSl<positionOpen) ||
+             (positionType==POSITION_TYPE_SELL && positionSl>positionOpen)));
+         if(!protectedPosition)
+           {
+            g_pyramidReady=false;
+            if(InpVerboseLogging)
+               PrintFormat("FLIPDEMON PYRAMID: confirmed fill awaits a valid protective stop; ticket=%I64u. Scale-ins blocked.",
+                           positionTicket);
+            break;
+           }
+
+         bool reconciled=false;
+         if(g_pyramidCampaignRegistry.IsPersisting() &&
+            g_pyramidEngine.Ready() &&
+            g_pyramidCampaignRegistry.ReconcileLivePosition(positionTicket,reconciled) &&
+            reconciled)
+           {
+            g_pyramidReady=true;
+            g_pyramidReconcilePending=false;
+            PrintFormat("FLIPDEMON PYRAMID: broker-confirmed campaign reconciled; ticket=%I64u volume=%.8f SL=%.8f. No tier is inferred from request acceptance.",
+                        positionTicket,PositionGetDouble(POSITION_VOLUME),positionSl);
+           }
+         else
+           {
+            g_pyramidReady=false;
+            if(InpVerboseLogging)
+               PrintFormat("FLIPDEMON PYRAMID: broker history/registry reconciliation incomplete for ticket=%I64u; retrying and keeping scale-ins blocked.",
+                           positionTicket);
+           }
+         break;
+        }
+      // No matching position yet can mean the transaction callback arrived before the
+      // terminal's position snapshot caught up. Retain the pending flag and retry next tick.
+      if(!foundCampaignPosition)
+         g_pyramidReady=false;
+     }
+
    //--- roll the "poor fills today" counter at broker midnight, same day boundary RiskEngine uses ---
    MqlDateTime dtNow; TimeToStruct(TimeCurrent(),dtNow);
    datetime today = TimeCurrent()-(dtNow.hour*3600+dtNow.min*60+dtNow.sec);
@@ -2325,6 +2382,14 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
       symbol=HistoryDealGetString(trans.deal,DEAL_SYMBOL);
       magic=(ulong)HistoryDealGetInteger(trans.deal,DEAL_MAGIC);
       relevant=(symbol==_Symbol && magic==InpMagicNumber);
+
+      // Entry deals dirty the campaign ledger. Do not register from request/result data:
+      // defer until OnTick can read the actual broker position and validate its protective SL.
+      if(relevant && HistoryDealGetInteger(trans.deal,DEAL_ENTRY)==DEAL_ENTRY_IN)
+        {
+         g_pyramidReady=false;
+         g_pyramidReconcilePending=true;
+        }
 
       // A DEAL_ADD is a broker-confirmed fill, but MT5 may deliver several deal/order
       // transactions for one request and their order is not guaranteed. Only finalize
