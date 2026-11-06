@@ -45,6 +45,7 @@
 #include <AutopsyX/VirtualExitRegistry.mqh>
 #include <AutopsyX/PyramidEngine.mqh>
 #include <AutopsyX/PyramidCampaignRegistry.mqh>
+#include <AutopsyX/HedgingPositionManager.mqh>
 #include <AutopsyX/Dashboard.mqh>
 
 //====================================================================
@@ -257,6 +258,8 @@ CRestartRecovery       g_restartRecovery;
 CVirtualExitRegistry   g_virtualExitRegistry;
 CPyramidEngine         g_pyramidEngine; // calculation engine; campaign execution remains disabled until lifecycle integration
 CPyramidCampaignRegistry g_pyramidCampaignRegistry; // durable campaign state; execution integration is not active yet
+CHedgingPositionManager g_hedgingPositionManager;
+bool g_hedgingLifecycleLock=false; // sticky fail-closed lock after multiple live legs are detected
 bool                   g_virtualExitInitialized = false;
 bool                   g_virtualExitReady = false; // persistence and broker-state reconciliation must both be verified
 bool                   g_recoveryInitialized = false;
@@ -2035,6 +2038,27 @@ int OnInit(void)
 
    g_risk.OnTickHousekeeping();
    AxReconcileExistingPosition();
+
+   // Establish the complete broker-owned position set before trusting single-position state.
+   // Multiple hedging legs remain quarantined until ticket-specific exits and recovery ship.
+   if(!g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber))
+     {
+      g_hedgingLifecycleLock=true;
+      g_pyramidReady=false;
+      g_recoveryReady=false;
+      PrintFormat("FLIPDEMON POSITION SNAPSHOT ERROR: %s; new execution remains blocked.",
+                  g_hedgingPositionManager.FailureReason());
+     }
+   else if(g_hedgingPositionManager.HasMultiplePositions())
+     {
+      g_hedgingLifecycleLock=true;
+      g_pyramidReady=false;
+      PrintFormat("FLIPDEMON HEDGING QUARANTINE: %d EA-owned positions detected. Ticket-specific lifecycle management is not yet active; no further execution will be permitted.",
+                  g_hedgingPositionManager.Count());
+      if(!g_hedgingPositionManager.AllProtected())
+         PrintFormat("FLIPDEMON HEDGING WARNING: at least one live leg lacks a valid broker-side stop (%s).",
+                     g_hedgingPositionManager.FailureReason());
+     }
    if(g_virtualExitInitialized && g_virtualExitRegistry.IsPersisting())
      {
       if(g_haveOpenPosition)
@@ -2125,6 +2149,32 @@ void OnTick(void)
    if(!g_md.OnTickUpdate()) return;
    g_risk.OnTickHousekeeping();
    g_afe.OnTickHousekeeping();
+
+   // Refresh broker tickets each valid tick. Never run the legacy single-position
+   // exit manager against an arbitrary leg in a multi-position hedging campaign.
+   if(!g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber))
+     {
+      g_pyramidReady=false;
+      if(InpVerboseLogging)
+         PrintFormat("FLIPDEMON POSITION SNAPSHOT: incomplete (%s); execution remains blocked.",
+                     g_hedgingPositionManager.FailureReason());
+      return;
+     }
+   if(g_hedgingPositionManager.HasMultiplePositions())
+     {
+      g_hedgingLifecycleLock=true;
+      g_pyramidReady=false;
+      g_engineState=AX_ENGINE_PAUSED;
+      if(InpVerboseLogging)
+         PrintFormat("FLIPDEMON HEDGING QUARANTINE: %d live legs. Legacy single-position exits are bypassed; broker SL/TP remain the only active per-leg protection until ticket lifecycle support is complete.",
+                     g_hedgingPositionManager.Count());
+      return;
+     }
+   if(g_hedgingLifecycleLock)
+     {
+      g_engineState=AX_ENGINE_PAUSED;
+      return;
+     }
 
    // Broker transactions can arrive in several callbacks and in an order that differs
    // from the original request. Re-scan the actual account snapshot on the next valid tick.
