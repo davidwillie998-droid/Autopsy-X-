@@ -121,9 +121,30 @@ class Mql5SourceHygieneTests(unittest.TestCase):
         self.assertIn("return(false);", body)
 
         main = self.text[MQL_ROOT / "Experts" / "AutopsyX" / "AutopsyX_FlipDemon_Extreme.mq5"]
-        self.assertIn("ClosePartial(_Symbol,volumeToClose,partErr,outcomeUncertain)", main)
+        self.assertIn("ClosePartial(_Symbol,g_posState.ticket,volumeToClose,partErr,outcomeUncertain)", main)
         self.assertIn("g_partialClosePending=true;", main)
         self.assertIn("g_pendingPartialCloseVolume=volumeToClose;", main)
+
+
+    def test_partial_close_targets_exact_position_and_reconciles_all_exit_deal_volume(self):
+        execution = self.text[MQL_ROOT / "Include" / "AutopsyX" / "ExecutionEngine.mqh"]
+        start = execution.find("ClosePartial(const string symbol")
+        end = execution.find("//--- flip = close", start)
+        body = execution[start:end]
+        self.assertIn("const ulong positionTicket", body)
+        self.assertIn("PositionSelectByTicket(positionTicket)", body)
+        self.assertIn("PositionClosePartial(positionTicket,volumeToClose)", body)
+        self.assertNotIn("PositionSelect(symbol)", body)
+
+        main = self.text[MQL_ROOT / "Experts" / "AutopsyX" / "AutopsyX_FlipDemon_Extreme.mq5"]
+        start = main.find("bool AxFetchCloseFinancials(")
+        end = main.find("\nstring AxBuildEntryReason", start)
+        body = main[start:end]
+        self.assertIn("double &closedVolumeOut", body)
+        self.assertIn("HistoryDealGetDouble(dealTicket,DEAL_VOLUME)", body)
+        self.assertIn("weightedCloseValue+=dealPrice*dealVolume", body)
+        self.assertIn("PositionSelectByTicket(posTicket)", body)
+        self.assertIn("MathAbs(actualClosed-closedVolume)>volumeTolerance", main)
 
     def test_copybuffer_results_are_checked_for_exact_or_minimum_count(self):
         failures = []
