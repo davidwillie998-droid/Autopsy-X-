@@ -439,6 +439,14 @@ public:
       return(false);
      }
 
+   // Indexed access lets the lifecycle reconciler audit every persisted campaign.
+   bool GetAt(const int index,SAxPyramidCampaignRecord &recordOut) const
+     {
+      if(index<0 || index>=m_count) return(false);
+      recordOut=m_records[index];
+      return(true);
+     }
+
    bool Remove(const ulong positionIdentifier)
      {
       int index=FindIndex(positionIdentifier);
