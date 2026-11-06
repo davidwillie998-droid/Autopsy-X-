@@ -2347,6 +2347,7 @@ void OnTick(void)
       return;
      }
    if(!AxReconcileVirtualExitTickets(false)) return;
+   if(!AxReconcilePyramidCampaignTickets(false)) return;
    if(g_hedgingPositionManager.HasMultiplePositions())
      {
       g_hedgingLifecycleLock=true;
