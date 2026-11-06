@@ -2089,8 +2089,9 @@ void OnTick(void)
             ENUM_AX_DIR closedTrend=AX_DIR_NONE;
             bool trendCrossed=false;
             bool trendRead=g_pyramidEngine.ReadClosedTrend(_Symbol,closedTrend,trendCrossed);
-            double atr=g_regime.CurrentAtr();
-            double requiredGap=atr*InpPyramidAtrGapMultiplier;
+            double atr=0.0;
+            bool atrRead=g_pyramidEngine.ReadClosedAtr(atr);
+            double requiredGap=atrRead?atr*InpPyramidAtrGapMultiplier:0.0;
             double candidateLots=g_pyramidEngine.CalculateTierVolume(
                campaign.baseTierLots,campaign.tierCount+1,AX_PYRAMID_MULTIPLIER,
                InpPyramidLotMultiplier,0.0,"");
@@ -2108,7 +2109,7 @@ void OnTick(void)
             bool trigger=(quoteOk && g_pyramidEngine.TierTriggerReached(
                campaign.dir,AX_PYRAMID_ATR_GAP,campaign.lastTierFillPrice,
                pyramidTick.bid,pyramidTick.ask,requiredGap,closedH1));
-            bool eligible=(trendRead && closedTrend==campaign.dir &&
+            bool eligible=(trendRead && atrRead && closedTrend==campaign.dir &&
                            basketProfit>=InpPyramidMinProfitMoney &&
                            candidateLots>=volMin && candidateLots>campaign.lastTierFilledLots+volStep*0.25 &&
                            candidateLots<=volMax && trigger &&
