@@ -8,7 +8,8 @@
 #include "Defs.mqh"
 
 #define AX_VIRTUAL_EXIT_MAX_RECORDS 64
-#define AX_VIRTUAL_EXIT_FIELD_COUNT 12
+#define AX_VIRTUAL_EXIT_LEGACY_FIELD_COUNT 12
+#define AX_VIRTUAL_EXIT_FIELD_COUNT 20
 
 struct SAxVirtualExitRecord
   {
@@ -22,6 +23,14 @@ struct SAxVirtualExitRecord
    double      virtualTpPrice;
    double      originalRiskDistance;
    bool        breakEvenDone;
+   bool        trailingActive;
+   double      trailingStopPrice;
+   int         partialCloseCount;
+   double      partialClosedVolume;
+   ulong       partialLastDealTicket;
+   bool        actionLocked;
+   int         actionCode;
+   datetime    actionStartedAt;
    datetime    entryTime;
    datetime    updatedAt;
   };
@@ -60,6 +69,10 @@ private:
                         Number(r.initialSlPrice),Number(r.emergencySlPrice),
                         Number(r.virtualSlPrice),Number(r.virtualTpPrice),
                         Number(r.originalRiskDistance),r.breakEvenDone?1:0,
+                        r.trailingActive?1:0,Number(r.trailingStopPrice),
+                        r.partialCloseCount,Number(r.partialClosedVolume),
+                        r.partialLastDealTicket,r.actionLocked?1:0,r.actionCode,
+                        TimeToString(r.actionStartedAt,TIME_DATE|TIME_SECONDS),
                         TimeToString(r.entryTime,TIME_DATE|TIME_SECONDS),
                         TimeToString(r.updatedAt,TIME_DATE|TIME_SECONDS));
          string payload=line+"\r\n";
@@ -133,7 +146,9 @@ public:
            }
 
          string f[];
-         if(StringSplit(line,'|',f)!=AX_VIRTUAL_EXIT_FIELD_COUNT)
+         int fieldCount=StringSplit(line,'|',f);
+         if(fieldCount!=AX_VIRTUAL_EXIT_LEGACY_FIELD_COUNT &&
+            fieldCount!=AX_VIRTUAL_EXIT_FIELD_COUNT)
            {
             valid=false;
             Print("FLIPDEMON VIRTUAL EXIT ERROR: malformed state row; recovery refused.");
@@ -144,8 +159,19 @@ public:
          long positionId=StringToInteger(f[1]);
          long dir=StringToInteger(f[3]);
          long be=StringToInteger(f[9]);
-         datetime entry=StringToTime(f[10]);
-         datetime updated=StringToTime(f[11]);
+         bool legacyFormat=(fieldCount==AX_VIRTUAL_EXIT_LEGACY_FIELD_COUNT);
+         int trailing=legacyFormat ? 0 : (int)StringToInteger(f[10]);
+         double trailingStop=legacyFormat ? 0.0 : StringToDouble(f[11]);
+         int partialCount=legacyFormat ? 0 : (int)StringToInteger(f[12]);
+         double partialVolume=legacyFormat ? 0.0 : StringToDouble(f[13]);
+         long partialDeal=legacyFormat ? 0 : StringToInteger(f[14]);
+         int actionLock=legacyFormat ? 0 : (int)StringToInteger(f[15]);
+         int actionCode=legacyFormat ? 0 : (int)StringToInteger(f[16]);
+         datetime actionStarted=legacyFormat ? 0 : StringToTime(f[17]);
+         int entryIndex=legacyFormat ? 10 : 18;
+         int updatedIndex=legacyFormat ? 11 : 19;
+         datetime entry=StringToTime(f[entryIndex]);
+         datetime updated=StringToTime(f[updatedIndex]);
          double initialSl=StringToDouble(f[4]);
          double emergencySl=StringToDouble(f[5]);
          double virtualSl=StringToDouble(f[6]);
@@ -153,9 +179,14 @@ public:
          double riskDistance=StringToDouble(f[8]);
          if(ticket<=0 || positionId<=0 || StringLen(f[2])==0 ||
             (dir!=(long)AX_DIR_BUY && dir!=(long)AX_DIR_SELL) ||
-            (be!=0 && be!=1) || entry<=0 || updated<=0 ||
-            initialSl<=0 || emergencySl<=0 || virtualSl<=0 ||
-            riskDistance<=0 || virtualTp<0)
+            (be!=0 && be!=1) || (trailing!=0 && trailing!=1) ||
+            (actionLock!=0 && actionLock!=1) || partialCount<0 || partialVolume<0.0 ||
+            partialDeal<0 || actionCode<0 || trailingStop<0.0 ||
+            (trailing==1 && trailingStop<=0.0) ||
+            (actionLock==0 && (actionCode!=0 || actionStarted>0)) ||
+            (actionLock==1 && (actionCode<=0 || actionStarted<=0)) ||
+            entry<=0 || updated<=0 || initialSl<=0 || emergencySl<=0 ||
+            virtualSl<=0 || riskDistance<=0 || virtualTp<0)
            {
             valid=false;
             Print("FLIPDEMON VIRTUAL EXIT ERROR: invalid persisted levels; recovery refused.");
@@ -179,6 +210,14 @@ public:
          r.virtualTpPrice=virtualTp;
          r.originalRiskDistance=riskDistance;
          r.breakEvenDone=(be==1);
+         r.trailingActive=(trailing==1);
+         r.trailingStopPrice=trailingStop;
+         r.partialCloseCount=partialCount;
+         r.partialClosedVolume=partialVolume;
+         r.partialLastDealTicket=(ulong)partialDeal;
+         r.actionLocked=(actionLock==1);
+         r.actionCode=actionCode;
+         r.actionStartedAt=actionStarted;
          r.entryTime=entry;
          r.updatedAt=updated;
          m_records[m_count]=r;
@@ -202,7 +241,12 @@ public:
          (record.dir!=AX_DIR_BUY && record.dir!=AX_DIR_SELL) ||
          record.initialSlPrice<=0 || record.emergencySlPrice<=0 ||
          record.virtualSlPrice<=0 || record.originalRiskDistance<=0 ||
-         record.virtualTpPrice<0 || record.entryTime<=0)
+         record.virtualTpPrice<0 || record.trailingStopPrice<0 ||
+         (record.trailingActive && record.trailingStopPrice<=0) ||
+         record.partialCloseCount<0 || record.partialClosedVolume<0 ||
+         (record.actionLocked && (record.actionCode<=0 || record.actionStartedAt<=0)) ||
+         (!record.actionLocked && (record.actionCode!=0 || record.actionStartedAt>0)) ||
+         record.entryTime<=0)
         {
          Print("FLIPDEMON VIRTUAL EXIT ERROR: invalid record rejected.");
          return(false);
