@@ -2362,11 +2362,12 @@ void OnTick(void)
      {
       g_engineState = AX_ENGINE_MANAGING;
 
-      // Decision-only pyramid preflight. This deliberately does not send an order.
-      // A candidate must be profitable, directionally valid on completed H1 bars,
-      // beyond the last broker-confirmed tier by an ATR gap, and inside the fresh
-      // account-wide 2% stop-risk budget. Execution is a separate acceptance-gated step.
-      datetime pyramidClosedBar=iTime(_Symbol,PERIOD_H1,1);
+      // Pyramid candidate preflight. ANALYSIS_ONLY and PAPER_EXECUTION only log the
+       // candidate; broker submission is separately opt-in and guarded by AX_EXEC_LIVE.
+       // A candidate must be profitable, directionally valid on completed H1 bars,
+       // beyond the last broker-confirmed tier by an ATR gap, and inside the fresh
+       // account-wide 2% stop-risk budget.
+       datetime pyramidClosedBar=iTime(_Symbol,PERIOD_H1,1);
       if(InpEnablePyramidDecision && g_pyramidReady && !g_pyramidReconcilePending &&
          !g_accountRiskIntegrityLock && !g_nettingReversalQuarantined &&
          pyramidClosedBar>0 && pyramidClosedBar!=g_lastPyramidDecisionBar)
