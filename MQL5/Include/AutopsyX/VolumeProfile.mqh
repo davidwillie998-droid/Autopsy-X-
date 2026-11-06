@@ -214,13 +214,21 @@ private:
         {
          int idx=order[pos];
          double vol=m_binVolume[idx];
-         double below=(pos>0) ? m_binVolume[order[pos-1]] : -1.0;
-         double above=(pos<m_binCount-1) ? m_binVolume[order[pos+1]] : -1.0;
-         bool localHigh=(vol>=highThreshold && vol>=below && vol>=above &&
-                         (vol>below || vol>above));
-         bool localLow=(vol>0 && vol<=lowThreshold &&
-                        (below<0 || vol<=below) && (above<0 || vol<=above) &&
-                        (below<0 || vol<below || above<0 || vol<above));
+         // Only compare bins that are genuinely adjacent in price. Sparse
+         // profiles can contain large gaps between occupied bins.
+         bool hasBelow=(pos>0 &&
+                        MathAbs(m_binPrice[idx]-m_binPrice[order[pos-1]])<=m_binSize*1.5);
+         bool hasAbove=(pos<m_binCount-1 &&
+                        MathAbs(m_binPrice[idx]-m_binPrice[order[pos+1]])<=m_binSize*1.5);
+         double below=hasBelow ? m_binVolume[order[pos-1]] : 0.0;
+         double above=hasAbove ? m_binVolume[order[pos+1]] : 0.0;
+         bool localHigh=(vol>=highThreshold &&
+                         (!hasBelow || vol>=below) && (!hasAbove || vol>=above) &&
+                         ((hasBelow && vol>below) || (hasAbove && vol>above)));
+         // An LVN needs occupied neighbors on both sides. Treating a missing
+         // bin as zero would incorrectly label the edge of a sparse gap as a node.
+         bool localLow=(hasBelow && hasAbove && vol>0 && vol<=lowThreshold &&
+                        vol<=below && vol<=above && (vol<below || vol<above));
          if(localHigh && m_hvnCount<AX_VP_MAX_BINS)
             m_hvnPrice[m_hvnCount++]=m_binPrice[idx];
          if(localLow && m_lvnCount<AX_VP_MAX_BINS)
@@ -246,7 +254,6 @@ private:
       nodePrice=highVolume ? m_hvnPrice[bestIdx] : m_lvnPrice[bestIdx];
       distanceBins=best;
       return(true);
-     }
      }
   };
 //+------------------------------------------------------------------+
