@@ -37,11 +37,16 @@ private:
    double            m_vah;
    double            m_val;
    bool              m_valid;
+   double            m_hvnPrice[AX_VP_MAX_BINS];
+   double            m_lvnPrice[AX_VP_MAX_BINS];
+   int               m_hvnCount;
+   int               m_lvnCount;
 
 public:
                      CVolumeProfileEngine(void)
      {
       m_binCount=0; m_poc=0; m_vah=0; m_val=0; m_valid=false;
+      m_hvnCount=0; m_lvnCount=0;
       m_lookbackBars=120; m_binSize=0;
      }
 
@@ -62,6 +67,7 @@ public:
    void              Refresh(void)
      {
       m_valid=false;
+      m_hvnCount=0; m_lvnCount=0;
       if(m_binSize<=0) return;
 
       MqlRates rates[];
@@ -95,6 +101,16 @@ public:
    double            Poc(void)     const { return(m_poc); }
    double            Vah(void)     const { return(m_vah); }
    double            Val(void)     const { return(m_val); }
+
+   //--- nearest local high/low-volume nodes. Return false when no defensible node exists.
+   bool              NearestHighVolumeNode(const double refPrice,double &nodePrice,double &distanceBins) const
+     {
+      return(NearestNode(refPrice,true,nodePrice,distanceBins));
+     }
+   bool              NearestLowVolumeNode(const double refPrice,double &nodePrice,double &distanceBins) const
+     {
+      return(NearestNode(refPrice,false,nodePrice,distanceBins));
+     }
 
    //--- where does refPrice sit relative to the value area? +1 above VAH, -1 below VAL, 0 inside ---
    int               Position(const double refPrice) const
@@ -151,6 +167,7 @@ private:
    void              ComputeValueArea(void)
      {
       m_poc=0; m_vah=0; m_val=0;
+      m_hvnCount=0; m_lvnCount=0;
       if(m_binCount<=0) return;
 
       int pocIdx=0; double best=-1; double total=0;
@@ -187,6 +204,49 @@ private:
         }
       m_val = m_binPrice[order[lo]];
       m_vah = m_binPrice[order[hi]];
+
+      //--- classify local nodes against this profile's own mean bin volume. This avoids fixed
+      //--- contract/lot thresholds and adapts to each symbol, broker feed and lookback.
+      double meanVolume=total/m_binCount;
+      double highThreshold=meanVolume*1.50;
+      double lowThreshold=meanVolume*0.50;
+      for(int pos=0;pos<m_binCount;pos++)
+        {
+         int idx=order[pos];
+         double vol=m_binVolume[idx];
+         double below=(pos>0) ? m_binVolume[order[pos-1]] : -1.0;
+         double above=(pos<m_binCount-1) ? m_binVolume[order[pos+1]] : -1.0;
+         bool localHigh=(vol>=highThreshold && vol>=below && vol>=above &&
+                         (vol>below || vol>above));
+         bool localLow=(vol>0 && vol<=lowThreshold &&
+                        (below<0 || vol<=below) && (above<0 || vol<=above) &&
+                        (below<0 || vol<below || above<0 || vol<above));
+         if(localHigh && m_hvnCount<AX_VP_MAX_BINS)
+            m_hvnPrice[m_hvnCount++]=m_binPrice[idx];
+         if(localLow && m_lvnCount<AX_VP_MAX_BINS)
+            m_lvnPrice[m_lvnCount++]=m_binPrice[idx];
+        }
+     }
+
+   bool              NearestNode(const double refPrice,const bool highVolume,
+                                  double &nodePrice,double &distanceBins) const
+     {
+      nodePrice=0; distanceBins=DBL_MAX;
+      if(!m_valid || m_binSize<=0) return(false);
+      int count=highVolume ? m_hvnCount : m_lvnCount;
+      if(count<=0) return(false);
+      double best=DBL_MAX; int bestIdx=-1;
+      for(int i=0;i<count;i++)
+        {
+         double candidate=highVolume ? m_hvnPrice[i] : m_lvnPrice[i];
+         double d=MathAbs(candidate-refPrice)/m_binSize;
+         if(d<best) { best=d; bestIdx=i; }
+        }
+      if(bestIdx<0) return(false);
+      nodePrice=highVolume ? m_hvnPrice[bestIdx] : m_lvnPrice[bestIdx];
+      distanceBins=best;
+      return(true);
+     }
      }
   };
 //+------------------------------------------------------------------+
