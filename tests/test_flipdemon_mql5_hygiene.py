@@ -66,7 +66,7 @@ class Mql5SourceHygieneTests(unittest.TestCase):
                 platform_headers = {"Trade/Trade.mqh"}
                 if (
                     not any(candidate.is_file() for candidate in candidates)
-                    and target.replace("\\\\", "/") not in platform_headers
+                    and target_path.as_posix() not in platform_headers
                 ):
                     unresolved.append(
                         f"{source_path.relative_to(ROOT)}: {match.group(0).strip()}"
@@ -90,6 +90,22 @@ class Mql5SourceHygieneTests(unittest.TestCase):
                 failures.append(f"{rel}: indicator handle has no IndicatorRelease call")
         self.assertGreater(owners, 0, "No indicator handle owners discovered")
         self.assertEqual([], failures, "Indicator lifecycle issue(s):\n" + "\n".join(failures))
+
+    def test_partial_close_fails_closed_on_invalid_broker_volume_metadata(self):
+        source = self.text[MQL_ROOT / "Include" / "AutopsyX" / "ExitEngine.mqh"]
+        match = re.search(
+            r"bool\\s+CheckPartialTakeProfit\\s*\\([\\s\\S]*?\\n\\s*}\\n",
+            source
+        )
+        self.assertIsNotNone(match, "CheckPartialTakeProfit implementation not found")
+        body = match.group(0)
+        self.assertIn("volumeToCloseOut=0.0;", body)
+        self.assertIn("double step = md.VolumeStep();", body)
+        self.assertIn("double minVol = md.VolumeMin();", body)
+        self.assertIn("step<=0.0 || minVol<=0.0", body)
+        self.assertIn("double vol = md.NormalizeVolume(rawVol);", body)
+        self.assertIn("return(volumeToCloseOut>0.0);", body)
+        self.assertNotIn("if(step<=0) step=0.01;", body)
 
     def test_copybuffer_results_are_checked_for_exact_or_minimum_count(self):
         failures = []
