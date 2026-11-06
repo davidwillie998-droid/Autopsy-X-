@@ -477,3 +477,32 @@ require("POSITION_IDENTIFIER" in recovery and "OpenSetups_v2.csv" in recovery,
         "versioned registry avoids misreading the previous ticket-only schema")
 require("RecordOpenSetup(newTicket,g_positionIdentifier,recoverySetupId" in ea,
         "confirmed fills persist the broker position identifier with the setup mapping")
+
+
+# Volume Profile node classification: source-level regression checks only.
+VOLUME_PROFILE = ROOT / "MQL5/Include/AutopsyX/VolumeProfile.mqh"
+require(VOLUME_PROFILE.is_file(), "volume profile source exists")
+volume_profile = VOLUME_PROFILE.read_text(encoding="utf-8")
+# Strip comments and quoted strings before checking delimiter balance.
+vp_code = re.sub(r'/\\*.*?\\*/|//[^\\n]*|"(?:\\\\.|[^"\\\\])*"', '',
+                 volume_profile, flags=re.S)
+depth = 0
+for char in vp_code:
+    if char == "{":
+        depth += 1
+    elif char == "}":
+        depth -= 1
+        require(depth >= 0, "volume profile braces never close before opening")
+require(depth == 0, "volume profile class and method braces are balanced")
+require("MathAbs(m_binPrice[idx]-m_binPrice[order[pos-1]])<=m_binSize*1.5" in volume_profile
+        and "MathAbs(m_binPrice[idx]-m_binPrice[order[pos+1]])<=m_binSize*1.5" in volume_profile,
+        "HVN/LVN comparisons require genuinely adjacent occupied price bins")
+require("bool localLow=(hasBelow && hasAbove" in volume_profile,
+        "LVN classification requires occupied neighbors on both sides")
+require("((hasBelow && vol>below) || (hasAbove && vol>above))" in volume_profile,
+        "HVN classification requires a strict local maximum against at least one adjacent bin")
+require("NearestHighVolumeNode" in volume_profile
+        and "NearestLowVolumeNode" in volume_profile
+        and "return(NearestNode(refPrice,true,nodePrice,distanceBins));" in volume_profile
+        and "return(NearestNode(refPrice,false,nodePrice,distanceBins));" in volume_profile,
+        "nearest HVN/LVN APIs share the validated node lookup path")
