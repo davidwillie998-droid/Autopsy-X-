@@ -167,57 +167,63 @@ public:
    //--- close part of an open position (scale-out). This EA runs on NETTING accounts, where
    //--- CTrade::PositionClosePartial() is a hedging-only helper. On netting we reduce the
    //--- existing position with an opposite market deal for the exact requested volume.
-   bool              ClosePartial(const string symbol,const double volumeToClose,string &errorReason,
-                                      bool &outcomeUncertain)
+   //--- close part of one broker-identified position. Ticket selection is mandatory on
+   //--- hedging accounts, where symbol selection can target a different same-symbol position.
+   bool              ClosePartial(const string symbol,const ulong positionTicket,const double volumeToClose,
+                                  string &errorReason,bool &outcomeUncertain)
      {
       outcomeUncertain=false;
-      if(!PositionSelect(symbol)) { errorReason="No position to partially close"; return(false); }
-      double before = PositionGetDouble(POSITION_VOLUME);
-      if(volumeToClose<=0 || volumeToClose>=before) { errorReason="Invalid partial close volume"; return(false); }
+      if(positionTicket==0 || !PositionSelectByTicket(positionTicket))
+        { errorReason="Tracked position ticket is not open"; return(false); }
+      if(PositionGetString(POSITION_SYMBOL)!=symbol)
+        { errorReason="Tracked position ticket belongs to a different symbol"; return(false); }
+      double before=PositionGetDouble(POSITION_VOLUME);
+      if(volumeToClose<=0.0 || volumeToClose>=before)
+        { errorReason="Invalid partial close volume"; return(false); }
 
-      long marginMode = AccountInfoInteger(ACCOUNT_MARGIN_MODE);
-      bool isHedging = (marginMode==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING);
+      long marginMode=AccountInfoInteger(ACCOUNT_MARGIN_MODE);
+      bool isHedging=(marginMode==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING);
       bool ok=false;
-      for(int attempt=0; attempt<=m_maxRetries; attempt++)
+      for(int attempt=0;attempt<=m_maxRetries;attempt++)
         {
          if(attempt>0) Sleep(m_retryDelayMs);
-         if(!PositionSelect(symbol)) { errorReason="Position closed before partial could execute"; return(false); }
+         if(!PositionSelectByTicket(positionTicket))
+           { errorReason="Tracked position closed before partial could execute"; return(false); }
+         if(PositionGetString(POSITION_SYMBOL)!=symbol)
+           { errorReason="Tracked position identity changed before partial close"; return(false); }
 
          if(isHedging)
-           ok = m_trade.PositionClosePartial((ulong)PositionGetInteger(POSITION_TICKET),volumeToClose);
+            ok=m_trade.PositionClosePartial(positionTicket,volumeToClose);
          else
            {
-            long type = PositionGetInteger(POSITION_TYPE);
-            // Netting reduction: an opposite deal decreases the one existing position.
-            if(type==POSITION_TYPE_BUY) ok = m_trade.Sell(volumeToClose,symbol,0.0,0.0,0.0,"AXFDX|PARTIAL");
-            else if(type==POSITION_TYPE_SELL) ok = m_trade.Buy(volumeToClose,symbol,0.0,0.0,0.0,"AXFDX|PARTIAL");
+            long type=PositionGetInteger(POSITION_TYPE);
+            if(type==POSITION_TYPE_BUY) ok=m_trade.Sell(volumeToClose,symbol,0.0,0.0,0.0,"AXFDX|PARTIAL");
+            else if(type==POSITION_TYPE_SELL) ok=m_trade.Buy(volumeToClose,symbol,0.0,0.0,0.0,"AXFDX|PARTIAL");
             else { errorReason="Unknown position type"; return(false); }
            }
 
-         uint retcode = m_trade.ResultRetcode();
-         bool serverAccepted = (retcode==TRADE_RETCODE_DONE || retcode==TRADE_RETCODE_DONE_PARTIAL);
+         uint retcode=m_trade.ResultRetcode();
+         bool serverAccepted=(retcode==TRADE_RETCODE_DONE || retcode==TRADE_RETCODE_DONE_PARTIAL);
          if(ok && serverAccepted)
            {
-            if(!PositionSelect(symbol))
+            if(!PositionSelectByTicket(positionTicket))
               {
-               errorReason="Partial close left the position fully closed unexpectedly";
+               errorReason="Partial close removed the tracked position unexpectedly";
                return(false);
               }
-            double after = PositionGetDouble(POSITION_VOLUME);
-            if(after < before-0.0000001 && after>0.0) { errorReason=""; return(true); }
-            errorReason="Partial close did not leave the expected reduced open position";
+            double after=PositionGetDouble(POSITION_VOLUME);
+            if(after<before-0.0000001 && after>0.0) { errorReason=""; return(true); }
+            errorReason="Partial close did not leave the tracked position reduced";
             return(false);
            }
 
-         errorReason = StringFormat("Partial close failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
-         // A timeout or lost connection does not prove rejection. The broker may
-         // have executed the close while its confirmation was lost. Never resend
-         // the same reduction blindly; the caller must reconcile deals and volume.
+         errorReason=StringFormat("Partial close failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         // A timeout or lost connection does not prove rejection. Never resend blindly.
          if(retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION)
            {
             outcomeUncertain=true;
-            errorReason = "Partial close outcome uncertain; broker reconciliation required: " +
-                          m_trade.ResultRetcodeDescription();
+            errorReason="Partial close outcome uncertain; broker reconciliation required: "+
+                        m_trade.ResultRetcodeDescription();
             return(false);
            }
          if(!RetryableRetcode(retcode)) return(false);
