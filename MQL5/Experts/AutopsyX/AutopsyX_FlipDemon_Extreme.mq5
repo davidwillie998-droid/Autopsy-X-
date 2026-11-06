@@ -765,6 +765,101 @@ bool AxSaveVirtualExitState(const bool allowEmergencyUpdate=false,const bool isN
    return(true);
   }
 
+// Reconcile every persisted virtual-exit row against a complete broker snapshot.
+// POSITION_IDENTIFIER is authoritative; tickets are refreshed, never used as primary keys.
+// Missing state for a live leg is not fabricated from a possibly-trailing broker stop.
+bool AxReconcileVirtualExitTickets(const bool removeStaleRecords)
+  {
+   if(!g_hedgingPositionManager.IsComplete() ||
+      !g_virtualExitInitialized || !g_virtualExitRegistry.IsPersisting())
+     {
+      g_virtualExitReady=false;
+      return(false);
+     }
+
+   int liveCount=g_hedgingPositionManager.Count();
+   for(int i=0;i<liveCount;i++)
+     {
+      SAxManagedPosition live;
+      if(!g_hedgingPositionManager.GetAt(i,live))
+        {
+         g_virtualExitReady=false;
+         PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: broker snapshot row %d could not be read.",i);
+         return(false);
+        }
+
+      SAxVirtualExitRecord saved;
+      if(!g_virtualExitRegistry.Find(live.positionIdentifier,saved))
+        {
+         g_virtualExitReady=false;
+         PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: live ticket=%I64u identifier=%I64u has no persisted per-position exit state; broker SL/TP retained and new entries blocked.",
+                     live.ticket,live.positionIdentifier);
+         return(false);
+        }
+
+      double tickSize=SymbolInfoDouble(live.symbol,SYMBOL_TRADE_TICK_SIZE);
+      if(tickSize<=0.0 || saved.symbol!=live.symbol ||
+         saved.dir!=live.direction || !live.hasValidBrokerStop ||
+         MathAbs(saved.emergencySlPrice-live.stopLoss)>tickSize*0.5 ||
+         saved.initialSlPrice<=0.0 || saved.originalRiskDistance<=0.0 ||
+         saved.virtualSlPrice<=0.0 || saved.entryTime<=0)
+        {
+         g_virtualExitReady=false;
+         PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: persisted state does not match broker-confirmed stop/identity for ticket=%I64u identifier=%I64u; new entries blocked.",
+                     live.ticket,live.positionIdentifier);
+         return(false);
+        }
+
+      if(saved.ticket!=live.ticket)
+        {
+         ulong oldTicket=saved.ticket;
+         saved.ticket=live.ticket;
+         if(!g_virtualExitRegistry.Save(saved) || !g_virtualExitRegistry.IsPersisting())
+           {
+            g_virtualExitReady=false;
+            PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: could not persist refreshed ticket %I64u (previous=%I64u identifier=%I64u).",
+                        live.ticket,oldTicket,live.positionIdentifier);
+            return(false);
+           }
+         PrintFormat("FLIPDEMON VIRTUAL EXIT: refreshed broker ticket %I64u -> %I64u using stable identifier=%I64u.",
+                     oldTicket,live.ticket,live.positionIdentifier);
+        }
+     }
+
+   // Remove a stale row only after a complete broker snapshot proves its
+   // stable identifier is no longer open for this EA and symbol.
+   if(removeStaleRecords)
+     {
+      for(int index=g_virtualExitRegistry.Count()-1;index>=0;index--)
+        {
+         SAxVirtualExitRecord saved;
+         if(!g_virtualExitRegistry.GetAt(index,saved))
+           {
+            g_virtualExitReady=false;
+            PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: registry row %d could not be read.",index);
+            return(false);
+           }
+         SAxManagedPosition live;
+         if(!g_hedgingPositionManager.FindByIdentifier(saved.positionIdentifier,live))
+           {
+            if(!g_virtualExitRegistry.Remove(saved.positionIdentifier) ||
+               !g_virtualExitRegistry.IsPersisting())
+              {
+               g_virtualExitReady=false;
+               PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: stale closed-position row %I64u could not be removed.",
+                           saved.positionIdentifier);
+               return(false);
+              }
+            PrintFormat("FLIPDEMON VIRTUAL EXIT: removed stale closed-position state identifier=%I64u.",
+                        saved.positionIdentifier);
+           }
+        }
+     }
+
+   g_virtualExitReady=true;
+   return(true);
+  }
+
 void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double lots,const double fillPrice,
                           const double slPrice,const double tpPrice,const SAxScore &score,
                           const string entryReason,const int flipSeq,const double intendedPrice)
@@ -2066,25 +2161,7 @@ int OnInit(void)
                      g_hedgingPositionManager.FailureReason());
      }
    if(g_virtualExitInitialized && g_virtualExitRegistry.IsPersisting())
-     {
-      if(g_haveOpenPosition)
-         AxSaveVirtualExitState();
-      else if(g_virtualExitRegistry.Count()>0)
-        {
-         if(g_virtualExitRegistry.Clear() && g_virtualExitRegistry.IsPersisting())
-           {
-            g_virtualExitReady=true;
-            Print("FLIPDEMON VIRTUAL EXIT: stale records cleared because no matching EA position exists on this symbol.");
-           }
-         else
-           {
-            g_virtualExitReady=false;
-            Print("FLIPDEMON VIRTUAL EXIT ERROR: stale records could not be cleared; new entries blocked.");
-           }
-        }
-      else
-         g_virtualExitReady=true;
-     }
+      AxReconcileVirtualExitTickets(true);
 
    // Recover campaign tiers only from broker-confirmed position deals. This
    // prepares the durable ledger; scale-in execution remains separately gated.
