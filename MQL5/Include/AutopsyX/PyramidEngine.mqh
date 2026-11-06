@@ -239,12 +239,12 @@ public:
       if(firstTierLots<=0.0 || tier<1) return(0.0);
       if(mode==AX_PYRAMID_MULTIPLIER)
         {
-         if(multiplier<1.0 || multiplier>5.0) return(0.0);
+         if(multiplier<=1.0 || multiplier>5.0) return(0.0);
          return(firstTierLots*MathPow(multiplier,tier-1));
         }
       if(mode==AX_PYRAMID_INCREMENT)
         {
-         if(incrementLots<0.0) return(0.0);
+         if(incrementLots<=0.0) return(0.0);
          return(firstTierLots+incrementLots*(tier-1));
         }
       if(mode==AX_PYRAMID_CUSTOM)
@@ -255,6 +255,11 @@ public:
          if(count<=0 || tier>count) return(0.0);
          double factor=StringToDouble(values[tier-1]);
          if(factor<=0.0 || factor>100.0) return(0.0);
+         if(tier>1)
+           {
+            double previous=StringToDouble(values[tier-2]);
+            if(previous<=0.0 || factor<=previous) return(0.0);
+           }
          return(firstTierLots*factor);
         }
       return(0.0);
