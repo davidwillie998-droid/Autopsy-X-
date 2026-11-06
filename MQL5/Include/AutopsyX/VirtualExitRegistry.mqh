@@ -64,7 +64,7 @@ private:
       for(int i=0;i<m_count;i++)
         {
          SAxVirtualExitRecord r=m_records[i];
-         string line=StringFormat("%I64u|%I64u|%s|%d|%s|%s|%s|%s|%s|%d|%s|%s",
+         string line=StringFormat("%I64u|%I64u|%s|%d|%s|%s|%s|%s|%s|%d|%d|%s|%d|%s|%I64u|%d|%d|%s|%s|%s",
                         r.ticket,r.positionIdentifier,r.symbol,(int)r.dir,
                         Number(r.initialSlPrice),Number(r.emergencySlPrice),
                         Number(r.virtualSlPrice),Number(r.virtualTpPrice),
