@@ -752,6 +752,30 @@ bool AxSaveVirtualExitState(const bool allowEmergencyUpdate=false,const bool isN
    record.virtualTpPrice=brokerTp;
    record.originalRiskDistance=riskDistance;
    record.breakEvenDone=breakEvenDone;
+   // Preserve lifecycle evidence when the current broker snapshot refreshes
+   // ordinary position fields. Never clear an unresolved action lock on restart.
+   if(found)
+     {
+      record.trailingActive=existing.trailingActive;
+      record.trailingStopPrice=existing.trailingStopPrice;
+      record.partialCloseCount=existing.partialCloseCount;
+      record.partialClosedVolume=existing.partialClosedVolume;
+      record.partialLastDealTicket=existing.partialLastDealTicket;
+      record.actionLocked=existing.actionLocked;
+      record.actionCode=existing.actionCode;
+      record.actionStartedAt=existing.actionStartedAt;
+     }
+   else
+     {
+      record.trailingActive=false;
+      record.trailingStopPrice=0.0;
+      record.partialCloseCount=0;
+      record.partialClosedVolume=0.0;
+      record.partialLastDealTicket=0;
+      record.actionLocked=false;
+      record.actionCode=0;
+      record.actionStartedAt=0;
+     }
    record.entryTime=(datetime)PositionGetInteger(POSITION_TIME);
    record.updatedAt=TimeCurrent();
 
