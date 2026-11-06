@@ -15,6 +15,7 @@ EXEC = ROOT / "MQL5/Include/AutopsyX/ExecutionEngine.mqh"
 RECOVERY = ROOT / "MQL5/Include/AutopsyX/RestartRecovery.mqh"
 VIRTUAL_EXIT = ROOT / "MQL5/Include/AutopsyX/VirtualExitRegistry.mqh"
 PYRAMID = ROOT / "MQL5/Include/AutopsyX/PyramidEngine.mqh"
+PYRAMID_CAMPAIGN = ROOT / "MQL5/Include/AutopsyX/PyramidCampaignRegistry.mqh"
 DISTRIBUTED = ROOT / "MQL5/Include/AutopsyX/DistributedRiskCoordinator.mqh"
 REGIME = ROOT / "MQL5/Include/AutopsyX/Regime.mqh"
 README = ROOT / "MQL5/README.md"
@@ -25,7 +26,7 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
     print(f"PASS: {message}")
 
-for path in (EA, RISK, EXEC, RECOVERY, VIRTUAL_EXIT, PYRAMID, DISTRIBUTED, REGIME, README):
+for path in (EA, RISK, EXEC, RECOVERY, VIRTUAL_EXIT, PYRAMID, PYRAMID_CAMPAIGN, DISTRIBUTED, REGIME, README):
     require(path.is_file(), f"required source exists: {path.relative_to(ROOT)}")
 
 ea = EA.read_text(encoding="utf-8")
@@ -34,6 +35,7 @@ execution = EXEC.read_text(encoding="utf-8")
 recovery = RECOVERY.read_text(encoding="utf-8")
 virtual_exit = VIRTUAL_EXIT.read_text(encoding="utf-8")
 pyramid = PYRAMID.read_text(encoding="utf-8")
+pyramid_campaign = PYRAMID_CAMPAIGN.read_text(encoding="utf-8")
 distributed = DISTRIBUTED.read_text(encoding="utf-8")
 regime = REGIME.read_text(encoding="utf-8")
 readme = README.read_text(encoding="utf-8")
@@ -427,6 +429,41 @@ require("TierTriggerReached" in pyramid
 require("CTrade" not in pyramid and "PositionOpen" not in pyramid
         and "Buy(" not in pyramid and "Sell(" not in pyramid,
         "pyramid calculation module cannot bypass FlipDemon execution and risk controls")
+
+# Persistent pyramid campaign state is groundwork only. Broker deal history remains
+# the source of truth for tier fills; this registry stores stable campaign checkpoints.
+require('#include <AutopsyX/PyramidCampaignRegistry.mqh>' in ea
+        and "CPyramidCampaignRegistry g_pyramidCampaignRegistry;" in ea,
+        "persistent campaign registry is compiled into the EA but not yet activated")
+require("AX_PYRAMID_CAMPAIGN_MAX_TIERS 10" in pyramid_campaign
+        and "AX_PYRAMID_CAMPAIGN_FIELD_COUNT 17" in pyramid_campaign,
+        "campaign persistence has a bounded ten-tier schema with an explicit versioned field count")
+require("positionIdentifier" in pyramid_campaign
+        and "FindIndex(const ulong positionIdentifier)" in pyramid_campaign
+        and "ACCOUNT_LOGIN" in pyramid_campaign
+        and "m_magic" in pyramid_campaign,
+        "campaign records are scoped to account, magic and stable broker position identity")
+require("lastTierDealTicket" in pyramid_campaign
+        and "lastTierFillPrice" in pyramid_campaign
+        and "lastTierFilledLots" in pyramid_campaign
+        and "lastTriggerBarTime" in pyramid_campaign,
+        "campaign checkpoints retain broker-confirmed fill and duplicate-trigger boundaries")
+require("FileMove(tempName,0,m_fileName,FILE_REWRITE)" in pyramid_campaign
+        and "written!=expected" in pyramid_campaign
+        and "FileFlush(handle)" in pyramid_campaign,
+        "campaign registry uses staged writes, flush verification and replacement")
+require("refusing to overwrite it" in pyramid_campaign
+        and "malformed or mismatched campaign registry row" in pyramid_campaign
+        and "duplicate position identifier" in pyramid_campaign,
+        "corrupt, mismatched or duplicate campaign state fails closed instead of being silently reset")
+require("record.tierCount<previous.tierCount" in pyramid_campaign
+        and "record.lastTierDealTicket<previous.lastTierDealTicket" in pyramid_campaign,
+        "campaign updates reject tier-count or confirmed-deal sequence regression")
+require("CTrade" not in pyramid_campaign
+        and "PositionOpen" not in pyramid_campaign
+        and "Buy(" not in pyramid_campaign
+        and "Sell(" not in pyramid_campaign,
+        "campaign registry cannot submit orders or bypass execution and risk gates")
 
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
 
