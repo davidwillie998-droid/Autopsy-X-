@@ -75,10 +75,13 @@ public:
       for(int i=0;i<total;i++)
         {
          ulong ticket=PositionGetTicket(i);
-         if(ticket==0) continue;
+         if(ticket==0)
+           {
+            m_failureReason="BROKER_POSITION_ENUMERATION_FAILED";
+            return(false);
+           }
          if(!PositionSelectByTicket(ticket))
            {
-            m_complete=false;
             m_failureReason="BROKER_POSITION_REFRESH_FAILED";
             return(false);
            }
