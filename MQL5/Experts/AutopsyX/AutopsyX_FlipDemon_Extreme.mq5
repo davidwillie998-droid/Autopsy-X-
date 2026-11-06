@@ -609,7 +609,7 @@ void AxRetryPendingPartialClose(void)
   }
 
 
-bool AxSaveVirtualExitState(void)
+bool AxSaveVirtualExitState(const bool allowEmergencyUpdate=false,const bool isNewFill=false)
   {
    if(!PositionSelect(_Symbol)) return(false);
    if((ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber) return(false);
@@ -638,7 +638,7 @@ bool AxSaveVirtualExitState(void)
    if(found)
      {
       if(existing.ticket!=ticket || existing.symbol!=_Symbol || existing.dir!=dir ||
-         MathAbs(existing.emergencySlPrice-brokerSl)>tickSize*0.5)
+         (!allowEmergencyUpdate && MathAbs(existing.emergencySlPrice-brokerSl)>tickSize*0.5))
         {
          g_virtualExitReady=false;
          PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: persisted state mismatches broker position ticket=%I64u identifier=%I64u; new entries blocked.",ticket,positionId);
@@ -650,14 +650,15 @@ bool AxSaveVirtualExitState(void)
      }
    else
      {
-      // A position predating this registry has no trustworthy original-stop history.
-      // Do not reconstruct an original R denominator from a possibly trailed stop.
+      // Only a just-confirmed fill may seed a new record from the original broker stop.
+      // A pre-existing position may already have a trailed/breakeven stop, so its original
+      // risk cannot be reconstructed safely from the current broker snapshot.
       bool stopOnLossSide=(dir==AX_DIR_BUY) ? (brokerSl<entry-tickSize*0.5)
                                             : (brokerSl>entry+tickSize*0.5);
-      if(!stopOnLossSide)
+      if(!isNewFill || !stopOnLossSide || riskDistance<=tickSize*0.5)
         {
          g_virtualExitReady=false;
-         PrintFormat("FLIPDEMON VIRTUAL EXIT: untracked position %I64u has no recoverable original risk; broker protection retained, new entries blocked.",ticket);
+         PrintFormat("FLIPDEMON VIRTUAL EXIT: untracked position %I64u has no verified original risk record; broker protection retained, new entries blocked.",ticket);
          return(false);
         }
      }
@@ -1240,7 +1241,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       g_recoveryReady = false;
       PrintFormat("FLIPDEMON RECOVERY ERROR: live position ticket %I64u is open but its setup registry could not be verified; managing existing position and blocking new entries.",newTicket);
      }
-   if(!AxSaveVirtualExitState())
+   if(!AxSaveVirtualExitState(false,true))
       Print("FLIPDEMON VIRTUAL EXIT: filled position remains under broker protection; new entries are locked.");
 
    // AFE's readings at the moment of this entry, carried through to the closed-trade autopsy record
@@ -1959,7 +1960,7 @@ void OnTick(void)
                   g_posState.initialSlPrice = newSl;
                   if(isBreakEvenMove) g_posState.breakEvenDone = true;
                   g_posState.modifyFailCount = 0;
-                  if(!AxSaveVirtualExitState())
+                  if(!AxSaveVirtualExitState(true,false))
                     {
                      g_virtualExitReady=false;
                      Print("FLIPDEMON VIRTUAL EXIT ERROR: broker stop changed but registry update failed; new entries blocked.");
