@@ -278,8 +278,11 @@ public:
         {
          ulong deal=HistoryDealGetTicket(i);
          if(deal==0) return(false);
-         if(HistoryDealGetString(deal,DEAL_SYMBOL)!=m_symbol) return(false);
          long entry=HistoryDealGetInteger(deal,DEAL_ENTRY);
+         if(entry!=DEAL_ENTRY_IN && entry!=DEAL_ENTRY_OUT &&
+            entry!=DEAL_ENTRY_OUT_BY && entry!=DEAL_ENTRY_INOUT)
+            continue;
+         if(HistoryDealGetString(deal,DEAL_SYMBOL)!=m_symbol) return(false);
          double volume=HistoryDealGetDouble(deal,DEAL_VOLUME);
          if(volume<=0.0 || !MathIsValidNumber(volume)) return(false);
 
@@ -344,10 +347,20 @@ public:
         }
       else
         {
-         ZeroMemory(record);
+         record.ticket=0;
+         record.positionIdentifier=0;
+         record.lastTierDealTicket=0;
+         record.symbol=m_symbol;
+         record.dir=liveDir;
+         record.tierCount=0;
+         record.baseTierLots=0.0;
+         record.lastTierFillPrice=0.0;
+         record.lastTierFilledLots=0.0;
          record.peakBasketPnl=0.0;
          record.basketTrailStopPnl=0.0;
+         record.campaignStartTime=0;
          record.lastTriggerBarTime=0;
+         record.active=false;
         }
 
       record.ticket=ticket;
