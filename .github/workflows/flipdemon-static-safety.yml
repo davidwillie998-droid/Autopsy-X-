@@ -14,6 +14,7 @@ on:
       - 'tests/test_flipdemon_adaptive_sizing_spec.py'
       - 'tests/test_flipdemon_account_risk.py'
       - 'tests/test_flipdemon_volume_profile_nodes.py'
+      - 'tests/test_flipdemon_mql5_hygiene.py'
       - '.github/workflows/flipdemon-static-safety.yml'
   pull_request:
     paths:
@@ -23,6 +24,7 @@ on:
       - 'tests/test_flipdemon_adaptive_sizing_spec.py'
       - 'tests/test_flipdemon_account_risk.py'
       - 'tests/test_flipdemon_volume_profile_nodes.py'
+      - 'tests/test_flipdemon_mql5_hygiene.py'
       - '.github/workflows/flipdemon-static-safety.yml'
 
 permissions:
