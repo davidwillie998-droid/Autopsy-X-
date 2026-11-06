@@ -61,7 +61,13 @@ class Mql5SourceHygieneTests(unittest.TestCase):
                     if delimiter == '"'
                     else [INCLUDE_ROOT / target_path]
                 )
-                if not any(candidate.is_file() for candidate in candidates):
+                # MetaTrader ships standard-library headers with the terminal.
+                # They are intentionally not vendored into this repository.
+                platform_headers = {"Trade/Trade.mqh"}
+                if (
+                    not any(candidate.is_file() for candidate in candidates)
+                    and target.replace("\\\\", "/") not in platform_headers
+                ):
                     unresolved.append(
                         f"{source_path.relative_to(ROOT)}: {match.group(0).strip()}"
                     )
