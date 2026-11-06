@@ -14,6 +14,7 @@ RISK = ROOT / "MQL5/Include/AutopsyX/RiskEngine.mqh"
 EXEC = ROOT / "MQL5/Include/AutopsyX/ExecutionEngine.mqh"
 RECOVERY = ROOT / "MQL5/Include/AutopsyX/RestartRecovery.mqh"
 VIRTUAL_EXIT = ROOT / "MQL5/Include/AutopsyX/VirtualExitRegistry.mqh"
+PYRAMID = ROOT / "MQL5/Include/AutopsyX/PyramidEngine.mqh"
 DISTRIBUTED = ROOT / "MQL5/Include/AutopsyX/DistributedRiskCoordinator.mqh"
 REGIME = ROOT / "MQL5/Include/AutopsyX/Regime.mqh"
 README = ROOT / "MQL5/README.md"
@@ -24,7 +25,7 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
     print(f"PASS: {message}")
 
-for path in (EA, RISK, EXEC, RECOVERY, VIRTUAL_EXIT, DISTRIBUTED, REGIME, README):
+for path in (EA, RISK, EXEC, RECOVERY, VIRTUAL_EXIT, PYRAMID, DISTRIBUTED, REGIME, README):
     require(path.is_file(), f"required source exists: {path.relative_to(ROOT)}")
 
 ea = EA.read_text(encoding="utf-8")
@@ -32,6 +33,7 @@ risk = RISK.read_text(encoding="utf-8")
 execution = EXEC.read_text(encoding="utf-8")
 recovery = RECOVERY.read_text(encoding="utf-8")
 virtual_exit = VIRTUAL_EXIT.read_text(encoding="utf-8")
+pyramid = PYRAMID.read_text(encoding="utf-8")
 distributed = DISTRIBUTED.read_text(encoding="utf-8")
 regime = REGIME.read_text(encoding="utf-8")
 readme = README.read_text(encoding="utf-8")
@@ -390,6 +392,38 @@ require("g_virtualExitRegistry.Init(" in ea
 require("virtual execution remains disabled in this phase" in ea
         and "g_exec.ModifyStops(_Symbol,newSl,g_posState.initialTpPrice,modErr)" in ea,
         "this commit retains broker-side emergency SL/TP and does not activate virtual execution")
+
+
+# Pyramid calculation module: no order submission here. Campaign execution is a
+# separate integration phase and must retain the account-wide risk coordinator.
+require("enum ENUM_AX_PYRAMID_TRIGGER" in pyramid
+        and "AX_PYRAMID_FIXED_GAP" in pyramid
+        and "AX_PYRAMID_ATR_GAP" in pyramid
+        and "AX_PYRAMID_CLOSED_BAR" in pyramid,
+        "pyramid engine exposes fixed-gap, ATR and completed-bar tier triggers")
+require("iMA(symbol,timeframe,period,0,method,PRICE_CLOSE)" in pyramid
+        and "close2<=ma[1] && close1>ma[2] && slopeUp" in pyramid
+        and "close2>=ma[1] && close1<ma[2] && slopeDown" in pyramid,
+        "first-tier MA cross requires completed-bar price crossing and aligned MA slope")
+require("SYMBOL:PIPS:MIN:MAX" in pyramid
+        and "PipSize(symbol)" in pyramid
+        and "priceUnits?1.0:PipSize(symbol)" in pyramid,
+        "per-symbol gap presets are input-parsed with explicit pips versus price units")
+require("MathPow(1.0-shrink,tier-1)" in pyramid
+        and "ClampShrink(shrinkPercent)" in pyramid,
+        "tier spacing can shrink by a bounded percentage without negative gaps")
+require("CalculateTierVolume" in pyramid
+        and "AX_PYRAMID_MULTIPLIER" in pyramid
+        and "AX_PYRAMID_INCREMENT" in pyramid
+        and "AX_PYRAMID_CUSTOM" in pyramid,
+        "pyramid engine calculates multiplier, fixed-increment and custom tier volumes")
+require("TierTriggerReached" in pyramid
+        and "lastClosedBarClose>lastTierEntry" in pyramid
+        and "lastClosedBarClose<lastTierEntry" in pyramid,
+        "closed-bar continuation trigger compares against the last tier fill price")
+require("CTrade" not in pyramid and "PositionOpen" not in pyramid
+        and "Buy(" not in pyramid and "Sell(" not in pyramid,
+        "pyramid calculation module cannot bypass FlipDemon execution and risk controls")
 
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
 
