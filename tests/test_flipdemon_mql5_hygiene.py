@@ -146,6 +146,17 @@ class Mql5SourceHygieneTests(unittest.TestCase):
         self.assertIn("PositionSelectByTicket(posTicket)", body)
         self.assertIn("MathAbs(actualClosed-closedVolume)>volumeTolerance", main)
 
+
+    def test_pending_partial_and_external_close_detection_use_tracked_ticket(self):
+        main = self.text[MQL_ROOT / "Experts" / "AutopsyX" / "AutopsyX_FlipDemon_Extreme.mq5"]
+        retry_start = main.find("void AxRetryPendingPartialClose(")
+        retry_end = main.find("\nbool AxSaveVirtualExitState", retry_start)
+        retry = main[retry_start:retry_end]
+        self.assertIn("PositionSelectByTicket(g_posState.ticket)", retry)
+        self.assertNotIn("HasOpenPosition(_Symbol)", retry)
+        self.assertIn("if(g_haveOpenPosition && !PositionSelectByTicket(g_posState.ticket))", main)
+        self.assertIn("if(isExit && !PositionSelectByTicket(g_posState.ticket))", main)
+
     def test_copybuffer_results_are_checked_for_exact_or_minimum_count(self):
         failures = []
         for path, source in self.text.items():
