@@ -157,27 +157,42 @@ public:
                                              const double currentPrice,const double triggerRR,
                                              const double closePercent,double &volumeToCloseOut) const
      {
+      volumeToCloseOut=0.0;
       if(st.partialTaken) return(false);
+      if(st.dir!=AX_DIR_BUY && st.dir!=AX_DIR_SELL) return(false);
+      if(!MathIsValidNumber(st.lots) || st.lots<=0.0 ||
+         !MathIsValidNumber(closePercent) || closePercent<=0.0 || closePercent>100.0 ||
+         !MathIsValidNumber(triggerRR) || triggerRR<=0.0 ||
+         !MathIsValidNumber(currentPrice) || currentPrice<=0.0)
+         return(false);
+
       double slDist = MathAbs(st.entryPrice-st.originalSlPrice);
-      if(slDist<=0) return(false);
+      if(!MathIsValidNumber(slDist) || slDist<=0.0) return(false);
 
       double favorable = (st.dir==AX_DIR_BUY) ? (currentPrice-st.entryPrice) : (st.entryPrice-currentPrice);
       if(favorable < slDist*triggerRR) return(false);
 
-      // floor to a valid volume step WITHOUT letting NormalizeVolume's own clamp-up-to-minimum
-      // silently inflate a too-small request into closing a disproportionate share of the
-      // position (e.g. 20% of a 0.03-lot position floors to 0 lots, not "round up to 0.01")
+      // Broker volume metadata must be known. Never invent a 0.01 step when the
+      // symbol's actual volume constraints are unavailable or inconsistent.
       double step = md.VolumeStep();
-      if(step<=0) step=0.01;
       double minVol = md.VolumeMin();
+      if(!MathIsValidNumber(step) || !MathIsValidNumber(minVol) ||
+         step<=0.0 || minVol<=0.0)
+         return(false);
+
       double rawVol = st.lots*(closePercent/100.0);
-      double vol = MathFloor(rawVol/step)*step;
-      if(vol<minVol) return(false); // requested percentage is too small to express as a valid partial
-      // never close so much that the remainder drops below the broker's minimum lot
+      if(!MathIsValidNumber(rawVol) || rawVol<=0.0) return(false);
+
+      // NormalizeVolume rounds down to the broker's actual step and rejects requests
+      // below the broker minimum. A failed normalization is a rejected partial, not success.
+      double vol = md.NormalizeVolume(rawVol);
+      if(!MathIsValidNumber(vol) || vol<minVol || vol<=0.0) return(false);
+
+      // Never close so much that the remainder drops below the broker's minimum lot.
       if((st.lots-vol)<minVol) return(false);
 
-      volumeToCloseOut = md.NormalizeVolume(vol); // vol already >= minVol, this only rounds digits
-      return(true);
+      volumeToCloseOut=vol;
+      return(volumeToCloseOut>0.0);
      }
 
    //--- fast defensive exits: profit-management stage 4 + spec section 9 ---
