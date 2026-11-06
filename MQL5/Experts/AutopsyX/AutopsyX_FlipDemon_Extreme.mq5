@@ -657,8 +657,7 @@ bool AxSaveVirtualExitState(const bool allowEmergencyUpdate=false,const bool isN
    else
      {
       // Only a just-confirmed fill may seed a new record from the original broker stop.
-      // A pre-existing position may already have a trailed/breakeven stop, so its original
-      // risk cannot be reconstructed safely from the current broker snapshot.
+      // A pre-existing position may already have a trailed/breakeven stop, so its original risk cannot be reconstructed safely from the current broker snapshot.
       bool stopOnLossSide=(dir==AX_DIR_BUY) ? (brokerSl<entry-tickSize*0.5)
                                             : (brokerSl>entry+tickSize*0.5);
       if(!isNewFill || !stopOnLossSide || riskDistance<=tickSize*0.5)
