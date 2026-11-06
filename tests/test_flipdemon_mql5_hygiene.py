@@ -157,6 +157,32 @@ class Mql5SourceHygieneTests(unittest.TestCase):
         self.assertIn("if(g_haveOpenPosition && !PositionSelectByTicket(g_posState.ticket))", main)
         self.assertIn("if(isExit && !PositionSelectByTicket(g_posState.ticket))", main)
 
+
+    def test_final_close_persists_deal_identity_and_checks_journal_boundary(self):
+        main = self.text[MQL_ROOT / "Experts" / "AutopsyX" / "AutopsyX_FlipDemon_Extreme.mq5"]
+        start = main.find("void AxFinalizeTrade(")
+        end = main.find("\nbool AxCloseAndRecord", start)
+        body = main[start:end]
+        self.assertIn("rec.dealIdOut=lastDealTicket;", body)
+        self.assertIn("rec.positionIdentifier=g_positionIdentifier;", body)
+        self.assertIn("LastAccountedDealTicket(g_positionIdentifier)<lastDealTicket", body)
+        self.assertIn("AxFinalizeTrade(closePrice,grossProfit,commission,swap,closeTime,reason,lastTicket);", main)
+
+    def test_netting_reversal_deals_fail_closed_instead_of_being_miscounted(self):
+        main = self.text[MQL_ROOT / "Experts" / "AutopsyX" / "AutopsyX_FlipDemon_Extreme.mq5"]
+        start = main.find("bool AxFetchCloseFinancials(")
+        end = main.find("\nstring AxBuildEntryReason", start)
+        body = main[start:end]
+        self.assertIn("entryType==DEAL_ENTRY_INOUT", body)
+        self.assertIn("g_recoveryReady=false;", body)
+        self.assertIn("g_accountRiskReconciliationPending=true;", body)
+        self.assertIn("return(false);", body)
+        tx_start = main.find("void OnTradeTransaction(")
+        tx_end = main.find("\nvoid OnChartEvent", tx_start)
+        tx = main[tx_start:tx_end]
+        self.assertIn("dealEntry==DEAL_ENTRY_INOUT", tx)
+        self.assertIn("dealEntry==DEAL_ENTRY_OUT || dealEntry==DEAL_ENTRY_OUT_BY ||", tx)
+
     def test_copybuffer_results_are_checked_for_exact_or_minimum_count(self):
         failures = []
         for path, source in self.text.items():
