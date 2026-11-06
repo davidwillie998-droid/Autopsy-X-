@@ -65,6 +65,7 @@ input double          InpSniperStructureBufferPts = 10;    // Buffer placed beyo
 
 input group "=== ORDER FLOW / VOLUME PROFILE / FOOTPRINT / HEATMAP / PULSE ===";
 input bool            InpUseOrderFlow             = true;  // Blend order-flow/footprint/volume-profile into the score (advisory, not a hard gate)
+input bool            InpUseCvdDivergence         = true;  // Include normalized two-window CVD divergence as an advisory order-flow score component
 input double          InpOrderFlowScoreWeight     = 15.0;  // Max points each of order flow / footprint / volume profile can add to a side's score
 input int             InpVolumeProfileBars        = 120;   // Rolling lookback for the volume profile, bars
 input double          InpVolumeProfileBinPoints   = 5.0;    // Volume profile bin width, points
@@ -771,10 +772,10 @@ void AxApplyOrderFlowBonus(SAxScore &score)
    double w = InpOrderFlowScoreWeight;
    double refPrice = g_md.CurrentMid();
 
-   double buyBonus  = (g_orderFlow.BullishScoreComponent()/100.0)*w
+   double buyBonus  = (g_orderFlow.BullishScoreComponent(InpUseCvdDivergence)/100.0)*w
                      + (g_footprint.BullishScoreComponent()/100.0)*w
                      + (g_volProfile.BullishScoreComponent(refPrice)/100.0)*w;
-   double sellBonus = (g_orderFlow.BearishScoreComponent()/100.0)*w
+   double sellBonus = (g_orderFlow.BearishScoreComponent(InpUseCvdDivergence)/100.0)*w
                      + (g_footprint.BearishScoreComponent()/100.0)*w
                      + (g_volProfile.BearishScoreComponent(refPrice)/100.0)*w;
 
