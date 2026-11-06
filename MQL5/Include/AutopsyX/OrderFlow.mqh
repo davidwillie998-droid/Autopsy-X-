@@ -143,8 +143,7 @@ public:
             double oldRatio=oldDelta/oldVolume;
             double newRatio=newDelta/newVolume;
             double minExtensionPts=MathMax(md.CurrentSpreadPts()*1.5,2.0);
-            double extension=(hi-lo); // retain the already-validated full-window price span
-            if(point>0 && extension>=0)
+            if(point>0)
               {
                bool lowerLow=(newLow<oldLow-minExtensionPts*point);
                bool higherHigh=(newHigh>oldHigh+minExtensionPts*point);
