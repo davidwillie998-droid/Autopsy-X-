@@ -242,6 +242,14 @@ public:
       return(true);
      }
 
+   // Indexed access supports deterministic reconciliation of every persisted position.
+   bool GetAt(const int index,SAxVirtualExitRecord &out) const
+     {
+      if(index<0 || index>=m_count) return(false);
+      out=m_records[index];
+      return(true);
+     }
+
    bool Remove(const ulong positionIdentifier)
      {
       int index=FindIndex(positionIdentifier);
