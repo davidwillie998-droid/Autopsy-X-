@@ -256,6 +256,18 @@ public:
       return(false);
      }
 
+   bool Clear(void)
+     {
+      int previousCount=m_count;
+      SAxVirtualExitRecord previous[AX_VIRTUAL_EXIT_MAX_RECORDS];
+      for(int i=0;i<previousCount;i++) previous[i]=m_records[i];
+      m_count=0;
+      if(RewriteFile()) return(true);
+      m_count=previousCount;
+      for(int i=0;i<previousCount;i++) m_records[i]=previous[i];
+      return(false);
+     }
+
    int Count(void) const { return(m_count); }
    bool IsPersisting(void) const { return(m_persistOk); }
   };
