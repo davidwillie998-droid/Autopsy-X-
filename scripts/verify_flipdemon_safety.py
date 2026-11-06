@@ -13,6 +13,7 @@ EA = ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5"
 RISK = ROOT / "MQL5/Include/AutopsyX/RiskEngine.mqh"
 EXEC = ROOT / "MQL5/Include/AutopsyX/ExecutionEngine.mqh"
 RECOVERY = ROOT / "MQL5/Include/AutopsyX/RestartRecovery.mqh"
+VIRTUAL_EXIT = ROOT / "MQL5/Include/AutopsyX/VirtualExitRegistry.mqh"
 DISTRIBUTED = ROOT / "MQL5/Include/AutopsyX/DistributedRiskCoordinator.mqh"
 REGIME = ROOT / "MQL5/Include/AutopsyX/Regime.mqh"
 README = ROOT / "MQL5/README.md"
@@ -23,13 +24,14 @@ def require(condition: bool, message: str) -> None:
         raise AssertionError(message)
     print(f"PASS: {message}")
 
-for path in (EA, RISK, EXEC, RECOVERY, DISTRIBUTED, REGIME, README):
+for path in (EA, RISK, EXEC, RECOVERY, VIRTUAL_EXIT, DISTRIBUTED, REGIME, README):
     require(path.is_file(), f"required source exists: {path.relative_to(ROOT)}")
 
 ea = EA.read_text(encoding="utf-8")
 risk = RISK.read_text(encoding="utf-8")
 execution = EXEC.read_text(encoding="utf-8")
 recovery = RECOVERY.read_text(encoding="utf-8")
+virtual_exit = VIRTUAL_EXIT.read_text(encoding="utf-8")
 distributed = DISTRIBUTED.read_text(encoding="utf-8")
 regime = REGIME.read_text(encoding="utf-8")
 readme = README.read_text(encoding="utf-8")
@@ -346,6 +348,47 @@ require("InpExecutionMode = AX_EXEC_ANALYSIS_ONLY" in ea,
 require("g_accountRiskReconciliationPending=false" in ea
         and "exposure unknown; entries locked" in ea,
         "unknown transaction snapshots retain the retry flag and fail closed")
+
+
+# Persistent virtual-exit state is deliberately a preparation phase. Broker emergency
+# stops remain active; no virtual exit is allowed to replace broker protection yet.
+require('#include <AutopsyX/VirtualExitRegistry.mqh>' in ea
+        and "CVirtualExitRegistry   g_virtualExitRegistry;" in ea,
+        "virtual-exit registry is included and instantiated by the EA")
+require("AX_VIRTUAL_EXIT_FIELD_COUNT 12" in virtual_exit
+        and "POSITION_IDENTIFIER" not in virtual_exit,
+        "virtual-exit persistence uses the dedicated 12-field position-identity record")
+require("FileMove(tempName,0,m_fileName,FILE_REWRITE)" in virtual_exit
+        and "written!=expected" in virtual_exit
+        and "m_persistOk=false" in virtual_exit,
+        "virtual-exit persistence detects short writes and failed staged-file replacement")
+require("bool AxSaveVirtualExitState(const bool allowEmergencyUpdate=false,const bool isNewFill=false)" in ea
+        and "POSITION_IDENTIFIER" in ea
+        and "POSITION_MAGIC" in ea,
+        "EA state persistence binds the record to broker ticket, position identifier and magic")
+require("!isNewFill || !stopOnLossSide" in ea
+        and "original risk cannot be reconstructed safely" in ea,
+        "untracked pre-existing positions cannot receive an invented original-risk denominator")
+require("existing.initialSlPrice" in ea
+        and "existing.originalRiskDistance" in ea
+        and "g_posState.originalSlPrice=existing.initialSlPrice" in ea,
+        "restart restores the original stop and original risk distance instead of substituting a trailed stop")
+require("AxSaveVirtualExitState(false,true)" in ea
+        and "AxSaveVirtualExitState(true,false)" in ea,
+        "confirmed fills create state and later broker stop changes update the emergency-stop snapshot")
+require("g_virtualExitRegistry.Remove(g_positionIdentifier)" in ea
+        and "position closed but state removal failed" in ea,
+        "virtual-exit state is removed only after the broker position has been finalized")
+require("if(!g_virtualExitReady || !g_virtualExitRegistry.IsPersisting())" in ea
+        and "if(!g_recoveryReady)" in ea,
+        "unverified virtual-exit persistence blocks new entries without disabling existing-position management")
+require("g_virtualExitRegistry.Init(" in ea
+        and ea.index("g_virtualExitRegistry.Init(") < ea.index("AxReconcileExistingPosition();")
+        and "g_virtualExitRegistry.Clear()" in ea,
+        "virtual-exit state is loaded before broker reconciliation and stale records clear only when no EA position exists")
+require("virtual execution remains disabled in this phase" in ea
+        and "g_exec.ModifyStops(_Symbol,newSl,g_posState.initialTpPrice,modErr)" in ea,
+        "this commit retains broker-side emergency SL/TP and does not activate virtual execution")
 
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
 
