@@ -93,12 +93,11 @@ class Mql5SourceHygieneTests(unittest.TestCase):
 
     def test_partial_close_fails_closed_on_invalid_broker_volume_metadata(self):
         source = self.text[MQL_ROOT / "Include" / "AutopsyX" / "ExitEngine.mqh"]
-        match = re.search(
-            r"bool\\s+CheckPartialTakeProfit\\s*\\([\\s\\S]*?\\n\\s*}\\n",
-            source
-        )
-        self.assertIsNotNone(match, "CheckPartialTakeProfit implementation not found")
-        body = match.group(0)
+        start = source.find("bool              CheckPartialTakeProfit(")
+        end = source.find("SAxExitDecision   Evaluate(", start)
+        self.assertGreaterEqual(start, 0, "CheckPartialTakeProfit implementation not found")
+        self.assertGreater(end, start, "CheckPartialTakeProfit end boundary not found")
+        body = source[start:end]
         self.assertIn("volumeToCloseOut=0.0;", body)
         self.assertIn("double step = md.VolumeStep();", body)
         self.assertIn("double minVol = md.VolumeMin();", body)
