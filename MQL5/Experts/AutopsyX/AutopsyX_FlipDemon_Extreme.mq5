@@ -1470,12 +1470,20 @@ bool AxAttemptPyramidNettingAdd(SAxPyramidCampaignRecord &campaign,
    double orderPrice=(campaign.dir==AX_DIR_BUY)?quote.ask:quote.bid;
    double requiredMargin=0.0;
    double freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+   double usedMargin=AccountInfoDouble(ACCOUNT_MARGIN);
+   double projectedMarginUsage=(equity>0.0)?(usedMargin+requiredMargin)/equity*100.0:1000000.0;
+   double projectedMarginLevel=(usedMargin+requiredMargin>0.0)?
+                               equity/(usedMargin+requiredMargin)*100.0:1000000.0;
    if(!OrderCalcMargin(orderType,_Symbol,requestedLots,orderPrice,requiredMargin) ||
       !MathIsValidNumber(requiredMargin) || requiredMargin<=0.0 ||
-      !MathIsValidNumber(freeMargin) || requiredMargin>freeMargin)
+      !MathIsValidNumber(freeMargin) || requiredMargin>freeMargin ||
+      !MathIsValidNumber(equity) || equity<=0.0 ||
+      projectedMarginUsage>InpMaxMarginUsagePercent ||
+      projectedMarginLevel<InpMinFreeMarginPercent)
      {
-      PrintFormat("FLIPDEMON PYRAMID BLOCKED: margin preflight failed; required=%.2f free=%.2f.",
-                  requiredMargin,freeMargin);
+      PrintFormat("FLIPDEMON PYRAMID BLOCKED: margin preflight failed; required=%.2f free=%.2f usageAfter=%.2f%% levelAfter=%.2f%%.",
+                  requiredMargin,freeMargin,projectedMarginUsage,projectedMarginLevel);
       return(false);
      }
 
@@ -1483,6 +1491,48 @@ bool AxAttemptPyramidNettingAdd(SAxPyramidCampaignRecord &campaign,
                                  MathRound(g_md.CurrentSpreadPts()*InpDeviationSpreadMultiplier));
    g_exec.SetDeviationPoints(deviationPts);
    if(!g_accountRiskCoordinator.TryAcquire()) return(false);
+
+   // Revalidate the campaign trigger and profit after taking the account mutex.
+   // This prevents a stale preflight from becoming a market order after a pullback.
+   if(!PositionSelectByTicket(campaign.ticket) ||
+      (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=campaign.positionIdentifier ||
+      PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP)<InpPyramidMinProfitMoney ||
+      campaign.lastTriggerBarTime==triggerBar)
+     {
+      if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
+      return(false);
+     }
+   ENUM_AX_DIR lockedTrend=AX_DIR_NONE;
+   bool lockedCross=false;
+   double lockedAtr=0.0;
+   MqlTick lockedQuote;
+   double lockedGap=0.0;
+   bool lockedTrigger=(g_pyramidEngine.ReadClosedTrend(_Symbol,lockedTrend,lockedCross) &&
+                       g_pyramidEngine.ReadClosedAtr(lockedAtr) &&
+                       SymbolInfoTick(_Symbol,lockedQuote) &&
+                       lockedQuote.bid>0.0 && lockedQuote.ask>=lockedQuote.bid);
+   if(lockedTrigger)
+     {
+      lockedGap=lockedAtr*InpPyramidAtrGapMultiplier;
+      lockedTrigger=(lockedTrend==campaign.dir &&
+         g_pyramidEngine.TierTriggerReached(campaign.dir,AX_PYRAMID_ATR_GAP,
+            campaign.lastTierFillPrice,lockedQuote.bid,lockedQuote.ask,
+            lockedGap,iClose(_Symbol,PERIOD_H1,1)));
+     }
+   if(!lockedTrigger)
+     {
+      if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
+      return(false);
+     }
+   stop=PositionGetDouble(POSITION_SL);
+   if(stop<=0.0 ||
+      (campaign.dir==AX_DIR_BUY && stop>=lockedQuote.bid) ||
+      (campaign.dir==AX_DIR_SELL && stop<=lockedQuote.ask))
+     {
+      g_pyramidReady=false;
+      if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
+      return(false);
+     }
 
    SAxAccountRiskDecision riskDecision;
    string riskReason="";
