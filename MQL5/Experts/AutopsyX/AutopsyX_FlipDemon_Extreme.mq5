@@ -54,6 +54,13 @@ input group "=== MODE ===";
 input ENUM_AX_MODE   InpMode                    = AX_MODE_AGGRESSIVE; // Aggression mode
 input double         InpExtremeRiskPercent      = 2.0;                // EXTREME mode risk % per trade (hard-capped at 2.0)
 
+input group "=== PYRAMID CAMPAIGN (DECISION LAYER) ===";
+input bool            InpEnablePyramidDecision    = true;   // Evaluate profitable continuation adds; order execution remains separately gated
+input int             InpPyramidMaxTiers          = 5;      // Includes the initial position
+input double          InpPyramidLotMultiplier     = 1.5;    // Each tier must exceed the prior tier; anti-martingale only
+input double          InpPyramidAtrGapMultiplier  = 0.75;   // Minimum favorable continuation distance from the last confirmed tier fill
+input double          InpPyramidMinProfitMoney    = 0.01;   // Require positive broker-reported floating P/L plus swap before considering an add
+
 input group "=== SNIPER ENTRY (PRECISION TIMING) ===";
 input bool            InpUseSniperEntry           = true; // Wait for a precise pullback-then-resume before entering, instead of firing immediately
 input double          InpSniperPullbackPoints     = 15;   // Pullback required from the local extreme to arm the resume-watch, points
@@ -258,6 +265,7 @@ bool                   g_accountRiskIntegrityLock = false; // post-fill breach/u
 bool                   g_accountRiskReconciliationPending = false; // any broker transaction dirties the account-wide exposure snapshot
 bool                   g_pyramidReady = false; // broker history and durable campaign registry must reconcile before any future scale-in path
 bool                   g_pyramidReconcilePending = false; // a confirmed entry deal waits for live-position and protective-stop reconciliation
+datetime               g_lastPyramidDecisionBar = 0; // one evaluation per completed H1 bar, never one per tick
 
 SAxPositionState      g_posState;
 bool                  g_haveOpenPosition = false;
@@ -2060,6 +2068,71 @@ void OnTick(void)
    if(g_haveOpenPosition)
      {
       g_engineState = AX_ENGINE_MANAGING;
+
+      // Decision-only pyramid preflight. This deliberately does not send an order.
+      // A candidate must be profitable, directionally valid on completed H1 bars,
+      // beyond the last broker-confirmed tier by an ATR gap, and inside the fresh
+      // account-wide 2% stop-risk budget. Execution is a separate acceptance-gated step.
+      datetime pyramidClosedBar=iTime(_Symbol,PERIOD_H1,1);
+      if(InpEnablePyramidDecision && g_pyramidReady && !g_pyramidReconcilePending &&
+         !g_accountRiskIntegrityLock && !g_nettingReversalQuarantined &&
+         pyramidClosedBar>0 && pyramidClosedBar!=g_lastPyramidDecisionBar)
+        {
+         g_lastPyramidDecisionBar=pyramidClosedBar;
+         SAxPyramidCampaignRecord campaign;
+         if(g_pyramidCampaignRegistry.Find(g_positionIdentifier,campaign) &&
+            campaign.active && campaign.tierCount<InpPyramidMaxTiers &&
+            campaign.tierCount<AX_PYRAMID_CAMPAIGN_MAX_TIERS &&
+            PositionSelectByTicket(g_posState.ticket))
+           {
+            double basketProfit=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
+            ENUM_AX_DIR closedTrend=AX_DIR_NONE;
+            bool trendCrossed=false;
+            bool trendRead=g_pyramidEngine.ReadClosedTrend(_Symbol,closedTrend,trendCrossed);
+            double atr=g_regime.CurrentAtr();
+            double requiredGap=atr*InpPyramidAtrGapMultiplier;
+            double candidateLots=g_pyramidEngine.CalculateTierVolume(
+               campaign.baseTierLots,campaign.tierCount+1,AX_PYRAMID_MULTIPLIER,
+               InpPyramidLotMultiplier,0.0,"");
+            double volStep=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
+            double volMin=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
+            double volMax=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
+            if(volStep>0.0 && candidateLots>0.0)
+               candidateLots=MathFloor((candidateLots+1e-10)/volStep)*volStep;
+            candidateLots=MathMin(candidateLots,volMax);
+            candidateLots=NormalizeDouble(candidateLots,8);
+            MqlTick pyramidTick;
+            bool quoteOk=SymbolInfoTick(_Symbol,pyramidTick) &&
+                         pyramidTick.bid>0.0 && pyramidTick.ask>=pyramidTick.bid;
+            double closedH1=iClose(_Symbol,PERIOD_H1,1);
+            bool trigger=(quoteOk && g_pyramidEngine.TierTriggerReached(
+               campaign.dir,AX_PYRAMID_ATR_GAP,campaign.lastTierFillPrice,
+               pyramidTick.bid,pyramidTick.ask,requiredGap,closedH1));
+            bool eligible=(trendRead && closedTrend==campaign.dir &&
+                           basketProfit>=InpPyramidMinProfitMoney &&
+                           candidateLots>=volMin && candidateLots>campaign.lastTierFilledLots+volStep*0.25 &&
+                           candidateLots<=volMax && trigger &&
+                           campaign.lastTriggerBarTime!=pyramidClosedBar);
+            if(eligible)
+              {
+               double stop=PositionGetDouble(POSITION_SL);
+               SAxAccountRiskDecision pyramidRiskDecision;
+               string pyramidRiskReason="";
+               if(g_accountRisk.Evaluate(_Symbol,campaign.dir,candidateLots,stop,
+                                         InpDeviationPoints,g_risk.RiskPercent(),
+                                         pyramidRiskDecision,pyramidRiskReason))
+                  PrintFormat("FLIPDEMON PYRAMID CANDIDATE: tier=%d/%d direction=%s addLots=%.8f basketPnl=%.2f lastTierFill=%.8f requiredGap=%.8f aggregateRiskAfterAdd=%.2f%%. DECISION ONLY, NO ORDER SENT.",
+                              campaign.tierCount+1,InpPyramidMaxTiers,
+                              campaign.dir==AX_DIR_BUY?"BUY":"SELL",candidateLots,
+                              basketProfit,campaign.lastTierFillPrice,requiredGap,
+                              (pyramidRiskDecision.existingRiskMoney+pyramidRiskDecision.proposedRiskMoney)/
+                              pyramidRiskDecision.equity*100.0);
+               else if(InpVerboseLogging)
+                  PrintFormat("FLIPDEMON PYRAMID CANDIDATE BLOCKED: %s",pyramidRiskReason);
+              }
+           }
+        }
+
       bool spreadOk = g_micro.SpreadAcceptable(InpMaxSpreadPoints);
 
       bool flipTriggered = g_flip.Evaluate(g_posState.dir,score,g_mom,g_micro,spreadOk);
