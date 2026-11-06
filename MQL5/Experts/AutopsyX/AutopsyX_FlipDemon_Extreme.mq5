@@ -549,9 +549,22 @@ void AxExecutePartialClose(const double volumeToClose)
       return;
      }
    string partErr;
-   if(!g_exec.ClosePartial(_Symbol,volumeToClose,partErr))
+   bool outcomeUncertain=false;
+   if(!g_exec.ClosePartial(_Symbol,volumeToClose,partErr,outcomeUncertain))
      {
-      if(InpVerboseLogging) PrintFormat("AUTOPSY X: partial close failed (%s)",partErr);
+      if(outcomeUncertain)
+        {
+         // The request may have reached the broker. Lock out another scale-out
+         // and let the existing history/volume reconciliation path determine
+         // what actually happened. Never resend an ambiguous close.
+         g_partialClosePending=true;
+         g_pendingPartialCloseVolume=volumeToClose;
+         g_accountRiskReconciliationPending=true;
+         if(InpVerboseLogging)
+            PrintFormat("FLIPDEMON: partial close outcome uncertain; retry blocked pending broker reconciliation (%s)",partErr);
+        }
+      else if(InpVerboseLogging)
+         PrintFormat("AUTOPSY X: partial close failed (%s)",partErr);
       return;
      }
 
