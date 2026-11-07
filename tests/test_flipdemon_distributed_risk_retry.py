@@ -142,5 +142,67 @@ class DistributedRiskRestartJournalTests(unittest.TestCase):
         self.assertIn("Post(\"/risk/reserve\",body,response,error)", recovery)
         self.assertIn('StringFind(error,"IDEMPOTENCY_KEY_ALREADY_USED")>=0', recovery)
 
+
+class BrokerExecutionReservationContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        root = Path(__file__).resolve().parents[1]
+        cls.execution = (root / "MQL5/Include/AutopsyX/ExecutionEngine.mqh").read_text()
+        cls.coordinator = (root / "MQL5/Include/AutopsyX/DistributedRiskCoordinator.mqh").read_text()
+        cls.expert = (root / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text()
+
+    def test_ambiguous_market_retcode_is_not_retried(self):
+        retry = self.execution[
+            self.execution.index("bool              RetryableRetcode"):
+            self.execution.index("bool              AmbiguousRetcode")
+        ]
+        self.assertNotIn("TRADE_RETCODE_TIMEOUT", retry)
+        self.assertNotIn("TRADE_RETCODE_CONNECTION", retry)
+        self.assertIn("if(AmbiguousRetcode(retcode))", self.execution)
+        self.assertIn("outcomeUncertain=true;", self.execution)
+
+    def test_fresh_entry_arms_uncertainty_before_broker_submission(self):
+        entry = self.expert[
+            self.expert.index("string distributedReservationId="):
+            self.expert.index("g_consecutiveExecFailures = 0;", self.expert.index("string distributedReservationId="))
+        ]
+        self.assertLess(entry.index("MarkExecutionUncertain"), entry.index("g_exec.OpenMarket"))
+        self.assertIn("entryOutcomeUncertain", entry)
+        self.assertIn("g_distributedRecoveryPending=true", entry)
+
+    def test_ambiguous_entry_keeps_reservation_and_locks_new_entries(self):
+        entry = self.expert[
+            self.expert.index("if(!g_exec.OpenMarket"):
+            self.expert.index("g_consecutiveExecFailures = 0;", self.expert.index("if(!g_exec.OpenMarket"))
+        ]
+        ambiguous = entry[entry.index("if(distributedReservationActive && entryOutcomeUncertain)"):
+                          entry.index("else if(distributedReservationActive)")]
+        self.assertIn("g_accountRiskIntegrityLock=true", ambiguous)
+        self.assertIn("g_distributedRecoveryPending=true", ambiguous)
+        self.assertNotIn("Release(", ambiguous)
+
+    def test_restart_recovery_does_not_release_flat_snapshot_after_ambiguous_send(self):
+        recovery = self.coordinator[
+            self.coordinator.index("bool RecoverPending("):
+            self.coordinator.index("bool Reconcile(", self.coordinator.index("bool RecoverPending("))
+        ]
+        self.assertIn("if(m_pendingExecutionUncertain)", recovery)
+        self.assertIn("DISTRIBUTED_RISK_EXECUTION_OUTCOME_UNCONFIRMED_RESERVATION_RETAINED", recovery)
+        self.assertLess(recovery.index("if(m_pendingExecutionUncertain)"),
+                        recovery.index("if(!Release(reservationId"))
+
+    def test_uncertain_execution_marker_survives_restart_and_legacy_journals_fail_closed(self):
+        save = self.coordinator[
+            self.coordinator.index("bool SavePendingJournal"):
+            self.coordinator.index("bool LoadPendingJournal")
+        ]
+        load = self.coordinator[
+            self.coordinator.index("bool LoadPendingJournal"):
+            self.coordinator.index("bool ClearPendingJournal")
+        ]
+        self.assertIn('m_pendingExecutionUncertain?"1":"0"', save)
+        self.assertIn("count==7 || fields[7]==\"1\"", load)
+        self.assertIn("MarkExecutionUncertain", self.coordinator)
+
 if __name__ == "__main__":
     unittest.main()
