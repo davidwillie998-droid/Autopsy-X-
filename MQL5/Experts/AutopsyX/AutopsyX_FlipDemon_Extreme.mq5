@@ -1127,10 +1127,9 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
   }
 
 // Recover an interrupted partial-close request from its persisted pre-request volume.
-// A live-position partial is committed only when the exact POSITION_IDENTIFIER history
-// volume equals the broker-confirmed reduction. A missing position is classified as a
-// full close only when exit deals equal the entire persisted baseline; journal finalization
-// remains deferred because a closed campaign's full in-memory thesis must be reconstructed.
+// A live-position partial is committed only when exact POSITION_IDENTIFIER exit deals
+// equal the broker-confirmed reduction. If the position is absent, final-close journal
+// reconstruction uses broker entry/exit facts and explicitly marks unavailable thesis data.
 bool AxRecoverLockedPartialCloseActions(void)
   {
    if(!g_virtualExitInitialized || !g_virtualExitRegistry.IsPersisting() ||
