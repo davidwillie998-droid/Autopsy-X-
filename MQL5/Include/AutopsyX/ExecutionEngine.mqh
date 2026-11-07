@@ -280,6 +280,8 @@ public:
       if((dir==AX_DIR_BUY && beforeSl>=tick.bid) ||
          (dir==AX_DIR_SELL && beforeSl<=tick.ask))
         { errorReason="Existing protective stop is crossed or invalid"; return(false); }
+      if(!PrepareProtectionPrices(symbol,dir,beforeSl,beforeTp,false,0.0,0.0,errorReason))
+         return(false);
 
       // One submission only. Even a failed return can be ambiguous at the transport layer.
       bool sent=(dir==AX_DIR_BUY)
