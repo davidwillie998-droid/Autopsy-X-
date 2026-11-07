@@ -293,11 +293,11 @@ public:
         }
 
       bool withinCap=false;
-      if(!Reconcile(snapshot,withinCap,error) || !withinCap)
-        {
-         if(error=="") error="DISTRIBUTED_RISK_RECOVERY_RECONCILIATION_OVER_CAP";
+      // Reconcile first, but do not abandon an active reservation merely because
+      // the broker snapshot is currently over budget. The exact idempotent replay
+      // below determines whether the claim is still active or already terminal.
+      if(!Reconcile(snapshot,withinCap,error))
          return(false);
-        }
 
       string body="{"+AccountFields()+","+
                   "\"instanceId\":\""+JsonEscape(m_pendingInstance)+"\","+
@@ -322,12 +322,18 @@ public:
          return(false);
         }
 
-      // If the broker's current stop-risk is above the pre-reservation baseline,
-      // the order may have filled. Never release that reservation on inference.
+      // Increased broker stop-risk means the submitted order may have filled.
+      // Settle against the fresh account-wide broker snapshot instead of leaving
+      // a permanent reservation lock. Settlement records actual exposure and
+      // reports an over-budget result without pretending the account is safe.
       if(snapshot.existingRiskMoney>m_pendingBaselineRisk+0.01)
         {
-         error="DISTRIBUTED_RISK_RECOVERY_OUTCOME_AMBIGUOUS_BROKER_EXPOSURE_INCREASED";
-         return(false);
+         bool settledWithinCap=false;
+         if(!Settle(reservationId,m_pendingInstance,snapshot,settledWithinCap,error))
+            return(false);
+         if(!settledWithinCap)
+            error="DISTRIBUTED_RISK_RECOVERY_SETTLED_ACCOUNT_OVER_CAP";
+         return(true);
         }
 
       if(!Release(reservationId,m_pendingInstance,snapshot,error)) return(false);
