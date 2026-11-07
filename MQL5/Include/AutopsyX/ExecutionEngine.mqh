@@ -37,6 +37,58 @@ private:
              code==TRADE_RETCODE_DONE_PARTIAL);
      }
 
+   bool              PrepareProtectionPrices(const string symbol,const ENUM_AX_DIR dir,
+                                              double &sl,double &tp,const bool modifying,
+                                              const double oldSl,const double oldTp,
+                                              string &reason) const
+     {
+      reason="";
+      if(dir!=AX_DIR_BUY && dir!=AX_DIR_SELL)
+        { reason="INVALID_PROTECTION_DIRECTION"; return(false); }
+      double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+      double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+      long digits=SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+      long stopsLevel=SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL);
+      long freezeLevel=SymbolInfoInteger(symbol,SYMBOL_TRADE_FREEZE_LEVEL);
+      if(point<=0.0 || tickSize<=0.0 || digits<0 || stopsLevel<0 || freezeLevel<0)
+        { reason="BROKER_PROTECTION_METADATA_INVALID"; return(false); }
+      MqlTick quote;
+      if(!SymbolInfoTick(symbol,quote) || quote.bid<=0.0 || quote.ask<=0.0 || quote.ask<quote.bid)
+        { reason="BROKER_PROTECTION_QUOTE_INVALID"; return(false); }
+      bool roundUp=(dir==AX_DIR_BUY);
+      if(sl>0.0)
+         sl=NormalizeDouble((roundUp ? MathCeil(sl/tickSize-1e-10) : MathFloor(sl/tickSize+1e-10))*tickSize,(int)digits);
+      if(tp>0.0)
+         tp=NormalizeDouble((roundUp ? MathCeil(tp/tickSize-1e-10) : MathFloor(tp/tickSize+1e-10))*tickSize,(int)digits);
+      double reference=(dir==AX_DIR_BUY)?quote.bid:quote.ask;
+      double stopDistance=(double)stopsLevel*point;
+      double freezeDistance=(double)freezeLevel*point;
+      if(dir==AX_DIR_BUY)
+        {
+         if(sl>0.0 && (sl>=quote.bid || quote.bid-sl+tickSize*1e-8<stopDistance))
+           { reason="BUY_STOP_INSIDE_BROKER_STOPS_LEVEL"; return(false); }
+         if(tp>0.0 && (tp<=quote.bid || tp-quote.bid+tickSize*1e-8<stopDistance))
+           { reason="BUY_TP_INSIDE_BROKER_STOPS_LEVEL"; return(false); }
+        }
+      else
+        {
+         if(sl>0.0 && (sl<=quote.ask || sl-quote.ask+tickSize*1e-8<stopDistance))
+           { reason="SELL_STOP_INSIDE_BROKER_STOPS_LEVEL"; return(false); }
+         if(tp>0.0 && (tp>=quote.ask || quote.ask-tp+tickSize*1e-8<stopDistance))
+           { reason="SELL_TP_INSIDE_BROKER_STOPS_LEVEL"; return(false); }
+        }
+      if(modifying && freezeDistance>0.0)
+        {
+         bool slChanged=(sl>0.0 && MathAbs(sl-oldSl)>tickSize*0.5) || (sl<=0.0 && oldSl>0.0);
+         bool tpChanged=(tp>0.0 && MathAbs(tp-oldTp)>tickSize*0.5) || (tp<=0.0 && oldTp>0.0);
+         if(slChanged && sl>0.0 && MathAbs(reference-sl)<=freezeDistance)
+           { reason="STOP_MODIFICATION_INSIDE_BROKER_FREEZE_LEVEL"; return(false); }
+         if(tpChanged && tp>0.0 && MathAbs(reference-tp)<=freezeDistance)
+           { reason="TP_MODIFICATION_INSIDE_BROKER_FREEZE_LEVEL"; return(false); }
+        }
+      return(true);
+     }
+
    //--- brokers differ on supported order-filling modes (spec section 14) - never hard-code one ---
    ENUM_ORDER_TYPE_FILLING DetectFillingMode(const string symbol) const
      {
@@ -122,11 +174,13 @@ public:
          double freshBid = SymbolInfoDouble(symbol,SYMBOL_BID);
          double freshAsk = SymbolInfoDouble(symbol,SYMBOL_ASK);
          if(freshBid<=0 || freshAsk<=0) { errorReason="Invalid quote on retry"; continue; }
-
+         double alignedSl=slPrice,alignedTp=tpPrice;
+         if(!PrepareProtectionPrices(symbol,dir,alignedSl,alignedTp,false,0.0,0.0,errorReason))
+            return(false);
          if(dir==AX_DIR_BUY)
-            ok = m_trade.Buy(lots,symbol,0.0,slPrice,tpPrice,comment);
+            ok = m_trade.Buy(lots,symbol,0.0,alignedSl,alignedTp,comment);
          else
-            ok = m_trade.Sell(lots,symbol,0.0,slPrice,tpPrice,comment);
+            ok = m_trade.Sell(lots,symbol,0.0,alignedSl,alignedTp,comment);
 
          if(ok)
            {
@@ -478,7 +532,13 @@ public:
          (ulong)PositionGetInteger(POSITION_MAGIC)!=expectedMagic)
         { errorReason="Tracked position identity changed before stop modification"; return(false); }
 
-      bool ok=m_trade.PositionModify(positionTicket,slPrice,tpPrice);
+      long type=PositionGetInteger(POSITION_TYPE);
+      ENUM_AX_DIR dir=(type==POSITION_TYPE_BUY)?AX_DIR_BUY:AX_DIR_SELL;
+      double oldSl=PositionGetDouble(POSITION_SL),oldTp=PositionGetDouble(POSITION_TP);
+      double alignedSl=slPrice,alignedTp=tpPrice;
+      if(!PrepareProtectionPrices(symbol,dir,alignedSl,alignedTp,true,oldSl,oldTp,errorReason))
+         return(false);
+      bool ok=m_trade.PositionModify(positionTicket,alignedSl,alignedTp);
       uint retcode=m_trade.ResultRetcode();
       if(!ok || retcode!=TRADE_RETCODE_DONE)
         {
@@ -500,8 +560,8 @@ public:
       double actualTp=PositionGetDouble(POSITION_TP);
       double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
       double tolerance=MathMax(tickSize*0.51,0.00000001);
-      if(tickSize<=0.0 || MathAbs(actualSl-slPrice)>tolerance ||
-         MathAbs(actualTp-tpPrice)>tolerance)
+      if(tickSize<=0.0 || MathAbs(actualSl-alignedSl)>tolerance ||
+         MathAbs(actualTp-alignedTp)>tolerance)
         {
          errorReason="Broker accepted stop modification but confirmed levels differ from requested levels";
          return(false);
