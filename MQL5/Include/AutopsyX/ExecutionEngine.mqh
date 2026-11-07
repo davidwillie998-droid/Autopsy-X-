@@ -599,7 +599,9 @@ public:
       if(!ClosePosition(symbol,errorReason)) return(false);
       int latencyMs;
       double actualLots;
-      return(OpenMarket(symbol,newDir,lots,slPrice,tpPrice,comment,ticketOut,fillPriceOut,errorReason,latencyMs,actualLots));
+      bool outcomeUncertain=false;
+      return(OpenMarket(symbol,newDir,lots,slPrice,tpPrice,comment,ticketOut,fillPriceOut,
+                        errorReason,latencyMs,actualLots,outcomeUncertain));
      }
 
    bool              ModifyStops(const string symbol,const double slPrice,const double tpPrice,string &errorReason)
