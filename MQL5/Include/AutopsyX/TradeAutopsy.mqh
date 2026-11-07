@@ -60,6 +60,15 @@ private:
       return(value);
      }
 
+   bool              ParseCsvBoolean(const string value) const
+     {
+      string normalized=value;
+      StringToLower(normalized);
+      StringTrimLeft(normalized);
+      StringTrimRight(normalized);
+      return(normalized=="1" || normalized=="true" || normalized=="yes");
+     }
+
    ulong             LastAccountedDealTicketInFile(const string sourceFile,
                                                        const ulong positionIdentifier) const
      {
@@ -103,7 +112,7 @@ private:
          if(deal<=dealTicket) continue;
          dealTicket=deal;
          lots=StringToDouble(ParseCsvField(line,9));
-         isPartial=(StringToInteger(ParseCsvField(line,28))!=0);
+         isPartial=ParseCsvBoolean(ParseCsvField(line,28));
         }
       FileClose(handle);
       // The journal historically rounded Lots to two decimals. A valid broker
