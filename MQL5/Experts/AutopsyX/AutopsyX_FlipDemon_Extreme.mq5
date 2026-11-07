@@ -523,6 +523,23 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
       g_recoveryReady=false;
       Print("FLIPDEMON JOURNAL ERROR: final exit was not confirmed in the durable journal; new entries blocked.");
      }
+   // A campaign can contain several banked partial exits. Risk streaks must
+   // use the complete broker-confirmed campaign result, not only its final slice.
+   double campaignNetProfit=0.0;
+   ulong campaignLastExitDeal=0;
+   if(!AxGetCampaignNetProfit(g_positionIdentifier,_Symbol,InpMagicNumber,
+                              campaignNetProfit,campaignLastExitDeal) ||
+      campaignLastExitDeal!=lastDealTicket)
+     {
+      g_recoveryReady=false;
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_engineState=AX_ENGINE_PAUSED;
+      PrintFormat("FLIPDEMON RISK ACCOUNTING ERROR: full campaign result is not confirmed for identifier=%I64u; durable recovery records retained.",
+                  g_positionIdentifier);
+      return;
+     }
+
    // Persist the exit-side registry update before clearing in-memory campaign state. A failed
    // removal does not undo the broker close, but it blocks future entries until recovery is sound.
    bool recoveryRemovalOk = true;
@@ -538,21 +555,6 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
      {
       g_virtualExitReady=false;
       Print("FLIPDEMON VIRTUAL EXIT ERROR: position closed but state removal failed; new entries remain blocked.");
-     }
-   // A campaign can contain several banked partial exits. Risk streaks must
-   // use the complete broker-confirmed campaign result, not only its final slice.
-   double campaignNetProfit=0.0;
-   ulong campaignLastExitDeal=0;
-   if(!AxGetCampaignNetProfit(g_positionIdentifier,_Symbol,InpMagicNumber,
-                              campaignNetProfit,campaignLastExitDeal) ||
-      campaignLastExitDeal!=lastDealTicket)
-     {
-      g_recoveryReady=false;
-      g_virtualExitReady=false;
-      g_hedgingLifecycleLock=true;
-      g_engineState=AX_ENGINE_PAUSED;
-      PrintFormat("FLIPDEMON RISK ACCOUNTING ERROR: full campaign result is not confirmed for identifier=%I64u; new entries blocked.",
-                  g_positionIdentifier);
      }
    // Do not re-enable entries from an exit callback. Recovery may have been blocked because
    // startup reconciliation found an untracked/mismatched live position, not merely a failed write.
