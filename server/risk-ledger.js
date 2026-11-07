@@ -251,8 +251,8 @@ export function openRiskLedger(path, {
         fail(403, 'RESERVATION_OWNER_MISMATCH', 'Only the originating terminal instance may settle this reservation.');
       }
       const snapshot = storeSnapshot(identity, input, now);
-      if (snapshot.duplicate) {
-        fail(409, 'POST_FILL_SNAPSHOT_NOT_NEW', 'Settlement requires a new broker snapshot captured after the order outcome.');
+      if (snapshot.duplicate || snapshot.snapshotAtMs <= reservation.created_at_ms) {
+        fail(409, 'POST_FILL_SNAPSHOT_NOT_NEW', 'Settlement requires a new broker snapshot captured after the reservation and order outcome.');
       }
       db.prepare(`UPDATE risk_reservations SET status='settled',updated_at_ms=?
         WHERE reservation_id=? AND status='active'`).run(now, reservationId);
