@@ -24,6 +24,7 @@ private:
    double m_pendingRiskMoney;
    double m_pendingBaselineRisk;
    bool   m_journalPending;
+   bool   m_pendingExecutionUncertain;
    int    m_journalLockHandle;
 
    bool SavePendingJournal(void)
@@ -67,7 +68,7 @@ private:
       FileClose(handle);
       string fields[];
       int count=StringSplit(line,'|',fields);
-      if(count!=7 ||
+      if((count!=7 && count!=8) ||
          fields[0]!=(string)AccountInfoInteger(ACCOUNT_LOGIN) ||
          fields[1]!=AccountInfoString(ACCOUNT_SERVER) ||
          StringLen(fields[2])==0 || StringLen(fields[3])<8 ||
@@ -81,6 +82,7 @@ private:
       m_pendingRiskMoney=StringToDouble(fields[4]);
       m_pendingBaselineRisk=StringToDouble(fields[5]);
       m_pendingReservationId=fields[6];
+      m_pendingExecutionUncertain=(count>=8 && fields[7]=="1");
       m_journalPending=true;
       return(true);
      }
@@ -98,6 +100,7 @@ private:
       m_pendingReservationId="";
       m_pendingRiskMoney=0.0;
       m_pendingBaselineRisk=0.0;
+      m_pendingExecutionUncertain=false;
       m_journalPending=false;
       return(true);
      }
@@ -241,6 +244,7 @@ public:
       m_pendingRiskMoney=0.0;
       m_pendingBaselineRisk=0.0;
       m_journalPending=false;
+      m_pendingExecutionUncertain=false;
       m_journalLockHandle=INVALID_HANDLE;
      }
 
