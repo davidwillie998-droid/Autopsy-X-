@@ -480,7 +480,7 @@ class NettingPyramidFillReconciliationTests(unittest.TestCase):
 
     def test_netting_add_reconciles_only_exact_order_entry_deals(self):
         start = self.execution.index("bool              AddToNettingPosition(")
-        end = self.execution.index("//--- close one exact broker position", start)
+        end = self.execution.index("//--- flip = close, confirm flat", start)
         method = self.execution[start:end]
         for token in (
             "orderTicketOut=m_trade.ResultOrder()",
