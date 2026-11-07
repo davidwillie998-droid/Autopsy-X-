@@ -350,6 +350,31 @@ test('crash after commit but before response replays the same active reservation
   } finally { f.close(); }
 });
 
+test('crash after broker submission with no fill releases only after expiry and fresh empty snapshot', () => {
+  const f = fixture({ reservationTtlMs: 5000 });
+  try {
+    f.ledger.reconcile(f.base);
+    const request = { ...f.base, instanceId: 'terminal-a',
+      idempotencyKey: 'entry-after-submit-0001', riskMoney: 100 };
+    const committed = f.ledger.reserve(request);
+    f.setNow(f.base.snapshotAtMs + 6000);
+    const reconciled = f.ledger.reconcile({
+      ...f.base, snapshotAtMs: f.base.snapshotAtMs + 6000,
+      snapshotId: 'snapshot-no-fill-0002', existingRiskMoney: 0,
+    });
+    assert.equal(reconciled.brokerRiskMoney, 0);
+    expectCode(() => f.ledger.reserve(request), 'IDEMPOTENCY_KEY_ALREADY_USED');
+    const next = f.ledger.reserve({ ...f.base,
+      snapshotAtMs: f.base.snapshotAtMs + 6000,
+      snapshotId: 'snapshot-no-fill-0002',
+      instanceId: 'terminal-b', idempotencyKey: 'entry-after-recovery-0001',
+      riskMoney: 190,
+    });
+    assert.equal(next.ok, true);
+    assert.ok(committed.reservationId);
+  } finally { f.close(); }
+});
+
 test('crash after fill is reconciled into broker exposure before reservation is consumed', () => {
   const f = fixture({ reservationTtlMs: 5000 });
   try {
