@@ -174,6 +174,24 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         self.assertIn("snapshot.hardRiskBudgetMoney+0.01", method)
         self.assertIn("PROPOSED_ORDER_EXCEEDS_ACCOUNT_WIDE_2_PERCENT_CAP", method)
 
+    def test_margin_utilisation_profiles_are_separate_from_stop_loss_risk(self):
+        helper_start = self.expert.index("double AxMarginUsageLimitForMode(void)")
+        helper_end = self.expert.index("\n  }", helper_start) + len("\n  }")
+        helper = self.expert[helper_start:helper_end]
+        self.assertIn("if(InpMode==AX_MODE_NORMAL)      return(5.0);", helper)
+        self.assertIn("if(InpMode==AX_MODE_AGGRESSIVE)  return(20.0);", helper)
+        self.assertIn("AxClampD(InpExtremeMaxMarginUsagePercent,1.0,100.0)", helper)
+        self.assertIn("InpExtremeMaxMarginUsagePercent = 100.0", self.expert)
+        self.assertIn("AxMarginUsageLimitForMode()", self.expert)
+        risk_helper = self.expert[
+            self.expert.index("double AxRiskPercentForMode(void)"):
+            self.expert.index("double AxMarginUsageLimitForMode(void)")
+        ]
+        self.assertIn("return(0.5);", risk_helper)
+        self.assertIn("return(1.0);", risk_helper)
+        self.assertIn("AxClampD(InpExtremeRiskPercent,0.05,2.0)", risk_helper)
+        self.assertIn("projectedMarginLevel<InpMinFreeMarginPercent", self.expert)
+
     def test_pyramid_add_arms_uncertainty_before_broker_submission(self):
         start = self.expert.index("bool AxAttemptPyramidNettingAdd(")
         end = self.expert.index('g_exec.AddToNettingPosition', start)
