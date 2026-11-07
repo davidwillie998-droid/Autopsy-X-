@@ -266,6 +266,7 @@ bool                   g_recoveryInitialized = false;
 bool                   g_recoveryReady = false; // false means new entries are blocked; existing positions remain managed
 bool                   g_nettingReversalQuarantined = false; // broker reversed the net position; stale campaign state must never manage the new side
 bool                   g_accountRiskIntegrityLock = false; // post-fill breach/unknown exposure; cleared only by a clean broker rescan
+bool                   g_distributedRecoveryPending = false; // unresolved terminal reservation or startup snapshot; timer retries while all new entries stay blocked
 bool                   g_accountRiskReconciliationPending = false; // any broker transaction dirties the account-wide exposure snapshot
 bool                   g_pyramidReady = false; // broker history and durable campaign registry must reconcile before any future scale-in path
 bool                   g_pyramidReconcilePending = false; // a confirmed entry deal waits for live-position and protective-stop reconciliation
@@ -1809,6 +1810,14 @@ void AxCountAccountExposure(int &positionsOut,double &grossLotsOut)
 bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSeq,const string tag)
   {
    // A post-fill exposure breach latches entries until a fresh broker scan proves
+   // A distributed reservation left by a prior terminal session is unresolved.
+   // Existing positions continue to be managed, but no fresh entry or pyramid add is allowed.
+   if(InpExecutionMode==AX_EXEC_LIVE && g_distributedRecoveryPending)
+     {
+      if(InpVerboseLogging) Print("FLIPDEMON DISTRIBUTED RISK: new entry blocked; terminal reservation recovery is still pending.");
+      return(false);
+     }
+
    // that all live positions and pending orders are known and back inside the cap.
    if(g_accountRiskIntegrityLock)
      {
@@ -2757,28 +2766,44 @@ int OnInit(void)
         }
       SAxAccountRiskSnapshot startupRisk;
       bool startupWithinCap=false;
-      if(!g_accountRisk.Scan(startupRisk) || !startupRisk.exposureKnown)
+      bool startupSnapshotKnown=(g_accountRisk.Scan(startupRisk) && startupRisk.exposureKnown);
+      if(!startupSnapshotKnown)
         {
-         PrintFormat("FLIPDEMON DISTRIBUTED RISK: startup broker snapshot unavailable; LIVE mode refused (%s).",
+         g_distributedRecoveryPending=true;
+         g_accountRiskIntegrityLock=true;
+         PrintFormat("FLIPDEMON DISTRIBUTED RISK: startup snapshot unavailable; EA remains attached in LOCKED RECOVERY MODE (%s).",
                      startupRisk.failureReason);
-         return(INIT_FAILED);
         }
-      // A prior terminal session may have stopped after the server committed a
-      // reservation. Recover its exact idempotency key before accepting new risk.
-      if(!g_distributedRiskCoordinator.RecoverPending(startupRisk,coordinatorInitError))
+      else
         {
-         PrintFormat("FLIPDEMON DISTRIBUTED RISK: unresolved prior reservation; LIVE mode refused (%s).",
-                     coordinatorInitError);
-         return(INIT_FAILED);
+         // A prior terminal session may have stopped after the server committed a
+         // reservation. Keep the EA attached and retry from OnTimer if recovery is
+         // temporarily unavailable. Entry checks remain hard-blocked meanwhile.
+         if(!g_distributedRiskCoordinator.RecoverPending(startupRisk,coordinatorInitError))
+           {
+            g_distributedRecoveryPending=true;
+            g_accountRiskIntegrityLock=true;
+            PrintFormat("FLIPDEMON DISTRIBUTED RISK: unresolved prior reservation; LOCKED RECOVERY MODE, retrying broker reconciliation (%s).",
+                        coordinatorInitError);
+           }
+         if(!g_distributedRecoveryPending)
+           {
+            if(!g_distributedRiskCoordinator.Reconcile(startupRisk,startupWithinCap,coordinatorInitError))
+              {
+               g_distributedRecoveryPending=true;
+               g_accountRiskIntegrityLock=true;
+               PrintFormat("FLIPDEMON DISTRIBUTED RISK: startup central reconciliation unavailable; LOCKED RECOVERY MODE (%s).",
+                           coordinatorInitError);
+              }
+            else if(!startupWithinCap)
+              {
+               g_accountRiskIntegrityLock=true;
+               Print("FLIPDEMON DISTRIBUTED RISK: broker exposure is above the account risk budget; existing positions remain managed, new entries locked.");
+              }
+            else
+               Print("FLIPDEMON DISTRIBUTED RISK: authenticated broker snapshot reconciled; LIVE entries may request reservations.");
+           }
         }
-      if(!g_distributedRiskCoordinator.Reconcile(startupRisk,startupWithinCap,coordinatorInitError) ||
-         !startupWithinCap)
-        {
-         PrintFormat("FLIPDEMON DISTRIBUTED RISK: startup reconciliation failed; LIVE mode refused (%s).",
-                     coordinatorInitError);
-         return(INIT_FAILED);
-        }
-      Print("FLIPDEMON DISTRIBUTED RISK: authenticated broker snapshot reconciled; LIVE entries may request reservations.");
      }
 
    // demo execution is typically near-instant with near-zero slippage - it will not surface the
@@ -2970,10 +2995,10 @@ int OnInit(void)
                g_pyramidReady?"READY":"BLOCKED");
 
    if(InpShowDashboard)
-     {
       g_dash.Init(_Symbol);
+   // Recovery must keep running even when the optional dashboard is disabled.
+   if(InpShowDashboard || g_distributedRecoveryPending)
       EventSetTimer(1);
-     }
 
    g_engineState = AX_ENGINE_ACTIVE;
    PrintFormat("AUTOPSY X FLIPDEMON EXTREME initialized on %s | mode=%d | risk=%.2f%%",
@@ -3588,6 +3613,53 @@ void OnTick(void)
 //====================================================================
 void OnTimer(void)
   {
+   // This recovery clock is independent of dashboard visibility. It never sends
+   // orders; it only reconciles broker truth and resolves the persisted reservation.
+   if(InpExecutionMode==AX_EXEC_LIVE && g_distributedRecoveryPending)
+     {
+      SAxAccountRiskSnapshot recoverySnapshot;
+      string recoveryError="";
+      if(!g_accountRisk.Scan(recoverySnapshot) || !recoverySnapshot.exposureKnown)
+        {
+         g_accountRiskIntegrityLock=true;
+         if(InpVerboseLogging)
+            PrintFormat("FLIPDEMON DISTRIBUTED RISK: recovery retry deferred; broker exposure is unknown (%s).",
+                        recoverySnapshot.failureReason);
+        }
+      else if(!g_distributedRiskCoordinator.RecoverPending(recoverySnapshot,recoveryError))
+        {
+         g_accountRiskIntegrityLock=true;
+         if(InpVerboseLogging)
+            PrintFormat("FLIPDEMON DISTRIBUTED RISK: recovery remains locked; next timer retry will reconcile again (%s).",
+                        recoveryError);
+        }
+      else
+        {
+         bool recoveryWithinCap=false;
+         if(!g_distributedRiskCoordinator.Reconcile(recoverySnapshot,recoveryWithinCap,recoveryError))
+           {
+            g_accountRiskIntegrityLock=true;
+            if(InpVerboseLogging)
+               PrintFormat("FLIPDEMON DISTRIBUTED RISK: reservation resolved but fresh central reconciliation failed; entries remain locked (%s).",
+                           recoveryError);
+           }
+         else
+           {
+            g_distributedRecoveryPending=false;
+            if(!recoveryWithinCap ||
+               recoverySnapshot.existingRiskMoney>recoverySnapshot.hardRiskBudgetMoney+0.01)
+              {
+               g_accountRiskIntegrityLock=true;
+               Print("FLIPDEMON DISTRIBUTED RISK: reservation recovery completed, but account exposure remains above budget. New entries stay locked.");
+              }
+            else
+               Print("FLIPDEMON DISTRIBUTED RISK: terminal reservation recovered and broker exposure reconciled.");
+            if(!InpShowDashboard)
+               EventKillTimer();
+           }
+        }
+     }
+
    if(!InpShowDashboard) return;
 
    // DOM refresh is heavier than a tick read and doesn't need tick-rate freshness to stay useful -
