@@ -726,9 +726,18 @@ public:
             return(true);
            }
 
+         if(serverAccepted || retcode==TRADE_RETCODE_PLACED)
+           {
+            outcomeUncertain=true;
+            errorReason=StringFormat("Partial close server response is accepted/placed but CTrade did not confirm completion: %u %s; no retry sent",
+                                     retcode,m_trade.ResultRetcodeDescription());
+            return(false);
+           }
+
          errorReason=StringFormat("Partial close failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
          // A timeout or lost connection does not prove rejection. Never resend blindly.
-         if(retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION)
+         if(retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION ||
+            retcode==TRADE_RETCODE_PLACED)
            {
             outcomeUncertain=true;
             errorReason="Partial close outcome uncertain; broker reconciliation required: "+
