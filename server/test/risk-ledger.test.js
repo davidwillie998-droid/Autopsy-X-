@@ -212,6 +212,38 @@ test('expired reservations block new risk until a newer broker reconciliation re
   } finally { f.close(); }
 });
 
+test('unknown expired order outcome is reconciled as broker exposure before new risk is allowed', () => {
+  const f = fixture({ reservationTtlMs: 5000 });
+  try {
+    f.ledger.reconcile(f.base);
+    const reservation = f.ledger.reserve({ ...f.base, instanceId: 'terminal-a',
+      idempotencyKey: 'entry-unknown-0001', riskMoney: 150 });
+    f.setNow(f.base.snapshotAtMs + 6000);
+
+    // The terminal did not receive a conclusive order response. The broker scan
+    // now finds the position, so reconciliation must transfer its risk into
+    // broker exposure before consuming the expired reservation.
+    const reconciled = f.ledger.reconcile({
+      ...f.base, snapshotAtMs: f.base.snapshotAtMs + 6000,
+      snapshotId: 'snapshot-after-unknown-fill', existingRiskMoney: 150,
+    });
+    assert.equal(reconciled.ok, true);
+    assert.equal(reconciled.brokerRiskMoney, 150);
+
+    expectCode(() => f.ledger.reserve({ ...f.base,
+      snapshotAtMs: f.base.snapshotAtMs + 6000,
+      snapshotId: 'snapshot-after-unknown-fill',
+      instanceId: 'terminal-b', idempotencyKey: 'entry-new-0001', riskMoney: 60,
+    }), 'ACCOUNT_RISK_BUDGET_EXCEEDED');
+    expectCode(() => f.ledger.reserve({ ...f.base,
+      snapshotAtMs: f.base.snapshotAtMs + 6000,
+      snapshotId: 'snapshot-after-unknown-fill',
+      instanceId: 'terminal-a', idempotencyKey: 'entry-unknown-0001', riskMoney: 150,
+    }), 'IDEMPOTENCY_KEY_ALREADY_USED');
+    assert.ok(reservation.reservationId);
+  } finally { f.close(); }
+});
+
 test('a client cannot raise the server-calculated cap by supplying extra fields', () => {
   const f = fixture();
   try {
