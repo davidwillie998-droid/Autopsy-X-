@@ -66,8 +66,9 @@ require("SYMBOL_VOLUME_MIN" in ea and "SYMBOL_VOLUME_MAX" in ea and "SYMBOL_VOLU
         and "SYMBOL_TRADE_STOPS_LEVEL" in ea and "SYMBOL_TRADE_FREEZE_LEVEL" in ea
         and "SYMBOL_TRADE_EXEMODE" in ea and "SYMBOL_FILLING_MODE" in ea,
         "broker volume, stop/freeze, execution and filling constraints are logged")
-require("critical symbol metadata is invalid" in ea and "trade-disabled by the broker" in ea,
-        "invalid or disabled broker symbols fail closed instead of guessing specifications")
+require("critical symbol metadata is invalid" in ea and "SYMBOL_TRADE_MODE_DISABLED" in ea
+        and "SYMBOL_TRADE_MODE_CLOSEONLY" in ea and "does not permit new positions" in ea,
+        "invalid, disabled or close-only broker symbols fail closed instead of guessing specifications")
 require("broker-name allowlist" in ea and "broker names" in ea,
         "broker compatibility is metadata-driven rather than restricted to named providers")
 require("OrderCalcMargin(marginOrderType,_Symbol,lots,marginPrice,requiredMargin)" in ea,
