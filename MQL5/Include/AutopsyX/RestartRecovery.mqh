@@ -301,6 +301,19 @@ public:
       return(false);
      }
 
+   // Stable-identity removal is required when a broker has refreshed POSITION_TICKET
+   // while the position was open. A recovered final close must not depend on the old ticket.
+   bool               RemoveOpenSetupByPositionIdentifier(const ulong positionIdentifier)
+     {
+      if(positionIdentifier==0) return(false);
+      int found=-1;
+      for(int i=0;i<m_count;i++)
+         if(m_records[i].positionIdentifier==positionIdentifier) { found=i; break; }
+      if(found<0) return(true);
+      ulong ticket=m_records[found].ticket;
+      return(RemoveOpenSetup(ticket));
+     }
+
    int                RegistryCount(void) const { return(m_count); }
    bool               GetRecord(const int i,SAxOpenSetupRecord &out) const
      {
