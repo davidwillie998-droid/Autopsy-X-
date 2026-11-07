@@ -2494,7 +2494,9 @@ int OnInit(void)
    g_recoveryInitialized = g_restartRecovery.Init("FlipDemon_Extreme_HFT",_Symbol,InpMagicNumber);
    if(g_recoveryInitialized)
      {
-      g_restartRecovery.Reconcile(_Symbol,InpMagicNumber,recoveryMatched,recoveryUntracked,recoveryStale);
+      // Keep stale setup rows until the virtual-exit ledger has reconciled any
+      // closed-while-offline position against its exact broker deal history.
+      g_restartRecovery.Reconcile(_Symbol,InpMagicNumber,recoveryMatched,recoveryUntracked,recoveryStale,false);
       g_recoveryReady = g_restartRecovery.IsPersisting() && recoveryUntracked==0;
       PrintFormat("FLIPDEMON RECOVERY: matched=%d untracked=%d stale_removed=%d persistence=%s entries=%s",
                   recoveryMatched,recoveryUntracked,recoveryStale,
