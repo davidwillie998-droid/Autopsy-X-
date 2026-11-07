@@ -44,6 +44,7 @@ class DistributedRiskRestartJournalTests(unittest.TestCase):
     def setUpClass(cls):
         root = Path(__file__).resolve().parents[1]
         cls.coordinator = (root / "MQL5/Include/AutopsyX/DistributedRiskCoordinator.mqh").read_text()
+        cls.account_risk = (root / "MQL5/Include/AutopsyX/AccountRiskCalculator.mqh").read_text()
         cls.expert = (root / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text()
 
     def test_pending_reservation_is_written_before_network_request(self):
@@ -163,8 +164,8 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         self.assertIn("g_distributedRiskCoordinator.Reserve(riskDecision,reserveSnapshot,instanceId,", method)
 
     def test_account_risk_calculator_adds_existing_and_proposed_campaign_risk(self):
-        start = self.coordinator.index("bool              Evaluate(")
-        method = self.coordinator[start:]
+        start = self.account_risk.index("bool              Evaluate(")
+        method = self.account_risk[start:]
         self.assertIn("if(!Scan(snapshot))", method)
         self.assertIn("snapshot.existingRiskMoney= snapshot.existingRiskMoney", method) if False else None
         self.assertIn("decision.proposedRiskMoney", method)
