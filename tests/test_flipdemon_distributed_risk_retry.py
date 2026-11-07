@@ -150,6 +150,7 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         cls.execution = (root / "MQL5/Include/AutopsyX/ExecutionEngine.mqh").read_text()
         cls.coordinator = (root / "MQL5/Include/AutopsyX/DistributedRiskCoordinator.mqh").read_text()
+        cls.account_risk = (root / "MQL5/Include/AutopsyX/AccountRiskCalculator.mqh").read_text()
         cls.expert = (root / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text()
 
     def test_pyramid_add_uses_campaign_stop_and_account_wide_risk_budget(self):
