@@ -655,10 +655,25 @@ bool AxCloseAndRecord(const ENUM_AX_EXIT_REASON reason)
   {
    ulong ticket = g_posState.ticket;
    string errReason;
-   if(!g_exec.ClosePosition(_Symbol,errReason))
+   bool closeOutcomeUncertain=false;
+   if(!g_exec.ClosePosition(_Symbol,ticket,g_positionIdentifier,InpMagicNumber,
+                            errReason,closeOutcomeUncertain))
      {
       g_consecutiveExecFailures++;
-      if(InpVerboseLogging) PrintFormat("AUTOPSY X: close failed (%s)",errReason);
+      if(closeOutcomeUncertain)
+        {
+         // The close may have reached the broker. Stop all new actions and let
+         // transaction/history reconciliation establish the actual residual state.
+         g_recoveryReady=false;
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         g_accountRiskReconciliationPending=true;
+         PrintFormat("FLIPDEMON FULL CLOSE UNCERTAIN: ticket=%I64u positionId=%I64u; no resend, campaign quarantined (%s)",
+                     ticket,g_positionIdentifier,errReason);
+        }
+      else if(InpVerboseLogging)
+         PrintFormat("AUTOPSY X: close rejected (%s)",errReason);
       return(false);
      }
    g_consecutiveExecFailures = 0;
