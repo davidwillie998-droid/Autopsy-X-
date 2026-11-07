@@ -181,6 +181,19 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         self.assertIn("g_distributedRecoveryPending=true", ambiguous)
         self.assertNotIn("Release(", ambiguous)
 
+    def test_definitive_rejection_is_persisted_before_release_retry(self):
+        entry = self.expert[
+            self.expert.index("else if(distributedReservationActive)"):
+            self.expert.index("if(!g_accountRiskCoordinator.Release())", self.expert.index("else if(distributedReservationActive)"))
+        ]
+        self.assertLess(entry.index("MarkExecutionRejected"), entry.index("g_distributedRiskCoordinator.Release"))
+        rejected = self.coordinator[
+            self.coordinator.index("bool MarkExecutionRejected"):
+            self.coordinator.index("string InstanceId")
+        ]
+        self.assertIn("m_pendingExecutionUncertain=false", rejected)
+        self.assertIn("SavePendingJournal()", rejected)
+
     def test_restart_recovery_does_not_release_flat_snapshot_after_ambiguous_send(self):
         recovery = self.coordinator[
             self.coordinator.index("bool RecoverPending("):
