@@ -132,6 +132,7 @@ input double         InpWeeklyLossLimitPercent  = 15.0;    // Weekly loss limit 
 input int            InpMaxPositionsPerSymbol   = 1;       // Max simultaneously open positions on this symbol specifically
 input double         InpMaxDirectionalExposureLots = 1.0;  // Max exposure lots in one direction (BUY or SELL) at once
 input double         InpExtremeMaxMarginUsagePercent = 100.0; // EXTREME ceiling for ACCOUNT_MARGIN / ACCOUNT_EQUITY; Normal=5%, Aggressive=20%
+input double         InpBrokerStopOutBufferPercent = 100.0; // Keep projected margin level this many percentage points above broker call/stop-out thresholds
 input int            InpMaxExecutionFailures    = 5;        // Max consecutive order-send failures before blocking new entries
 
 input group "=== EXECUTION MODE & EMERGENCY CONTROLS ===";
@@ -336,6 +337,66 @@ double AxMarginUsageLimitForMode(void)
    if(InpMode==AX_MODE_NORMAL)      return(5.0);
    if(InpMode==AX_MODE_AGGRESSIVE)  return(20.0);
    return(AxClampD(InpExtremeMaxMarginUsagePercent,1.0,100.0));
+  }
+
+ // Uses broker-reported stop-out settings, not a guessed universal threshold.
+ // Money-based stop-out modes are rejected because their thresholds are not
+ // directly comparable with a projected margin-level percentage.
+bool AxBrokerMarginPreflight(const double requiredMargin,
+                             double &projectedUsage,
+                             double &projectedLevel,
+                             string &reason)
+  {
+   projectedUsage=1000000.0;
+   projectedLevel=0.0;
+   reason="";
+   double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+   double usedMargin=AccountInfoDouble(ACCOUNT_MARGIN);
+   double freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   if(!MathIsValidNumber(requiredMargin) || requiredMargin<=0.0 ||
+      !MathIsValidNumber(equity) || equity<=0.0 ||
+      !MathIsValidNumber(usedMargin) || usedMargin<0.0 ||
+      !MathIsValidNumber(freeMargin) || freeMargin<0.0)
+     {
+      reason="BROKER_MARGIN_ACCOUNT_VALUES_INVALID";
+      return(false);
+     }
+   if(requiredMargin>freeMargin)
+     {
+      reason="BROKER_FREE_MARGIN_INSUFFICIENT";
+      return(false);
+     }
+   ENUM_ACCOUNT_STOPOUT_MODE stopoutMode=(ENUM_ACCOUNT_STOPOUT_MODE)AccountInfoInteger(ACCOUNT_MARGIN_SO_MODE);
+   if(stopoutMode!=ACCOUNT_STOPOUT_MODE_PERCENT)
+     {
+      reason="BROKER_MONEY_BASED_STOPOUT_UNSUPPORTED_FAIL_CLOSED";
+      return(false);
+     }
+   double marginCall=AccountInfoDouble(ACCOUNT_MARGIN_SO_CALL);
+   double stopout=AccountInfoDouble(ACCOUNT_MARGIN_SO_SO);
+   if(!MathIsValidNumber(marginCall) || !MathIsValidNumber(stopout) ||
+      marginCall<0.0 || stopout<0.0 ||
+      !MathIsValidNumber(InpBrokerStopOutBufferPercent) || InpBrokerStopOutBufferPercent<0.0)
+     {
+      reason="BROKER_STOPOUT_THRESHOLDS_INVALID";
+      return(false);
+     }
+   double projectedMargin=usedMargin+requiredMargin;
+   projectedUsage=projectedMargin/equity*100.0;
+   projectedLevel=(projectedMargin>0.0)?equity/projectedMargin*100.0:1000000.0;
+   double brokerFloor=MathMax(marginCall,stopout)+InpBrokerStopOutBufferPercent;
+   double requiredLevel=MathMax(InpMinFreeMarginPercent,brokerFloor);
+   if(projectedUsage>AxMarginUsageLimitForMode())
+     {
+      reason="MODE_MARGIN_UTILISATION_LIMIT_EXCEEDED";
+      return(false);
+     }
+   if(projectedLevel<requiredLevel)
+     {
+      reason="BROKER_MARGIN_LEVEL_BUFFER_NOT_MET";
+      return(false);
+     }
+   return(true);
   }
 
 //--- sums only OUT deals with a ticket strictly greater than sinceTicketExclusive - lets partial ---
@@ -2076,16 +2137,17 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
                   _Symbol,lots,marginPrice,GetLastError());
       return(false);
      }
-   double freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
-   if(!MathIsValidNumber(freeMargin) || freeMargin<=0.0 || requiredMargin>freeMargin)
+   double projectedUsage=0.0,projectedLevel=0.0;
+   string marginReason="";
+   if(!AxBrokerMarginPreflight(requiredMargin,projectedUsage,projectedLevel,marginReason))
      {
-      PrintFormat("FLIPDEMON MARGIN BLOCK: symbol=%s lots=%.8f estimated_required=%.2f free_margin=%.2f currency=%s",
-                  _Symbol,lots,requiredMargin,freeMargin,AccountInfoString(ACCOUNT_CURRENCY));
+      PrintFormat("FLIPDEMON MARGIN BLOCK: symbol=%s lots=%.8f required=%.2f usageAfter=%.2f%% levelAfter=%.2f%% reason=%s",
+                  _Symbol,lots,requiredMargin,projectedUsage,projectedLevel,marginReason);
       return(false);
      }
    if(InpVerboseLogging)
-      PrintFormat("FLIPDEMON MARGIN OK: symbol=%s lots=%.8f estimated_required=%.2f free_margin=%.2f currency=%s",
-                  _Symbol,lots,requiredMargin,freeMargin,AccountInfoString(ACCOUNT_CURRENCY));
+      PrintFormat("FLIPDEMON MARGIN OK: symbol=%s lots=%.8f required=%.2f usageAfter=%.2f%% levelAfter=%.2f%%",
+                  _Symbol,lots,requiredMargin,projectedUsage,projectedLevel);
 
    // live spread can widen well past anything a demo feed shows - scale the allowed deviation to
    // it (floored at the configured minimum) so normal spread widening doesn't spuriously reject
@@ -2379,21 +2441,14 @@ bool AxAttemptPyramidNettingAdd(SAxPyramidCampaignRecord &campaign,
    double orderPrice=(campaign.dir==AX_DIR_BUY)?quote.ask:quote.bid;
    double requiredMargin=0.0;
    bool marginCalcOk=OrderCalcMargin(orderType,_Symbol,requestedLots,orderPrice,requiredMargin);
-   double freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
-   double equity=AccountInfoDouble(ACCOUNT_EQUITY);
-   double usedMargin=AccountInfoDouble(ACCOUNT_MARGIN);
-   double projectedMarginUsage=(equity>0.0)?(usedMargin+requiredMargin)/equity*100.0:1000000.0;
-   double projectedMarginLevel=(usedMargin+requiredMargin>0.0)?
-                               equity/(usedMargin+requiredMargin)*100.0:1000000.0;
-   if(!marginCalcOk || !MathIsValidNumber(requiredMargin) || requiredMargin<=0.0 ||
-      !MathIsValidNumber(freeMargin) || requiredMargin>freeMargin ||
-      !MathIsValidNumber(equity) || equity<=0.0 ||
-      !MathIsValidNumber(usedMargin) || usedMargin<0.0 ||
-      projectedMarginUsage>AxMarginUsageLimitForMode() ||
-      projectedMarginLevel<InpMinFreeMarginPercent)
+   double projectedMarginUsage=0.0,projectedMarginLevel=0.0;
+   string marginReason="";
+   if(!marginCalcOk ||
+      !AxBrokerMarginPreflight(requiredMargin,projectedMarginUsage,projectedMarginLevel,marginReason))
      {
-      PrintFormat("FLIPDEMON PYRAMID BLOCKED: margin preflight failed; required=%.2f free=%.2f usageAfter=%.2f%% levelAfter=%.2f%%.",
-                  requiredMargin,freeMargin,projectedMarginUsage,projectedMarginLevel);
+      PrintFormat("FLIPDEMON PYRAMID BLOCKED: margin preflight failed; required=%.2f usageAfter=%.2f%% levelAfter=%.2f%% reason=%s.",
+                  requiredMargin,projectedMarginUsage,projectedMarginLevel,
+                  marginCalcOk?marginReason:"ORDER_CALC_MARGIN_FAILED");
       return(false);
      }
 
