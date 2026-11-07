@@ -16,6 +16,7 @@ on:
       - 'tests/test_flipdemon_volume_profile_nodes.py'
       - 'tests/test_flipdemon_mql5_hygiene.py'
       - 'tests/test_flipdemon_partial_recovery.py'
+      - 'tests/test_flipdemon_distributed_risk_retry.py'
       - '.github/workflows/flipdemon-static-safety.yml'
   pull_request:
     paths:
@@ -27,6 +28,7 @@ on:
       - 'tests/test_flipdemon_volume_profile_nodes.py'
       - 'tests/test_flipdemon_mql5_hygiene.py'
       - 'tests/test_flipdemon_partial_recovery.py'
+      - 'tests/test_flipdemon_distributed_risk_retry.py'
       - '.github/workflows/flipdemon-static-safety.yml'
 
 permissions:
