@@ -34,14 +34,50 @@ def test_no_ctrade_or_order_placement_symbol_anywhere_in_phase3c():
             assert b not in src, (p.name, b)
 
 
-def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
-    """Diff from the reviewed PR base touches only explicitly allowed research-scope paths.
+PHASE3C_SCOPE_PATHS = (
+    "docs/PHASE3C_*",
+    "intel/autopsyx/research/phase3c_*",
+    "intel/tests/test_phase3c_*",
+    "intel/datasets/phase3c/*",
+    "research/phase3c/*",
+    ".github/workflows/phase3c-acquire.yml",
+)
 
-    Frozen Phase 2/3A/3B implementation files are checked separately below, so
-    unrelated changes already present on the PR base are not misattributed to this branch.
+
+def phase3c_scope_commits():
+    """Return commits that actually participate in the Phase 3C workstream.
+
+    This repository branch also carries independent FlipDemon EA development.
+    Comparing the entire PR-base-to-HEAD tree incorrectly attributes those
+    EA-only commits to Phase 3C. Select commits through Phase 3C anchor paths,
+    then inspect each selected commit's complete file set so a mixed-scope
+    commit still fails the allowlist below.
     """
-    # Compare the PR branch against its reviewed base, not Phase 3B: the base contains later unrelated changes.
-    changed = git("diff", "--name-only", UI_BASELINE_COMMIT, "HEAD").splitlines()
+    output = git(
+        "log", "--format=%H", f"{PHASE3B_COMMIT}..HEAD",
+        "--", *PHASE3C_SCOPE_PATHS,
+    )
+    return output.splitlines() if output else []
+
+
+def phase3c_scope_changed_paths():
+    changed = set()
+    for commit in phase3c_scope_commits():
+        paths = git(
+            "diff-tree", "--no-commit-id", "--name-only", "-r", "-m", commit,
+        )
+        changed.update(paths.splitlines())
+    return sorted(changed)
+
+
+def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
+    """Only commits participating in Phase 3C are subject to its file-scope contract.
+
+    The full file set of every selected commit is checked, so an unauthorized
+    file changed alongside a Phase 3C anchor is still rejected. Independent
+    EA-only commits are not misattributed to this research phase.
+    """
+    changed = phase3c_scope_changed_paths()
     # Necessary Phase 3C acquisition/test infrastructure may change workflow files; existing production/research modules remain frozen.
     # a request file and a workflow mirroring phase3a-acquire.yml's own procedure exactly
     # (checked bit-for-bit against it below), so new archives can be independently acquired.
@@ -58,6 +94,30 @@ def test_phase2_phase3a_phase3b_implementation_files_unchanged_since_phase3b():
                   or f in infra_allowed or f.startswith("intel/datasets/phase3c/runs/"))
         assert allowed, f"Phase 3C touched a file outside its namespace: {f}"
 
+
+
+
+def test_scope_audit_does_not_attribute_ea_only_commits_to_phase3c():
+    """A standalone FlipDemon EA commit must not enter the Phase 3C scope set."""
+    ea_commit = git(
+        "log", "-1", "--format=%H", "HEAD", "--",
+        "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5",
+    )
+    if not ea_commit:
+        return
+    ea_paths = git(
+        "diff-tree", "--no-commit-id", "--name-only", "-r", "-m", ea_commit,
+    ).splitlines()
+    if not any(
+        path.startswith("docs/PHASE3C_")
+        or path.startswith("intel/autopsyx/research/phase3c_")
+        or path.startswith("intel/tests/test_phase3c_")
+        or path.startswith("intel/datasets/phase3c/")
+        or path.startswith("research/phase3c/")
+        or path == ".github/workflows/phase3c-acquire.yml"
+        for path in ea_paths
+    ):
+        assert ea_commit not in phase3c_scope_commits()
 
 def test_dashboard_index_is_unchanged_from_reviewed_pr_base():
     """The scope allowlist must not mask unrelated dashboard edits."""
