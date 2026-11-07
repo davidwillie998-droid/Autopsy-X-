@@ -117,6 +117,16 @@ require("ConfirmMarketOrder(symbol,dir,lots,orderTicket,ticketOut" in execution
         "market entries require exact broker order-deal and live-position confirmation")
 require("retcode!=TRADE_RETCODE_DONE" in execution,
         "stop modifications require an accepted server retcode")
+require("m_trade.PositionClose(positionTicket)" in execution
+        and "HistoryDealGetInteger(resultDeal,DEAL_ORDER)!=orderTicket" in execution
+        and "DEAL_ENTRY_OUT_BY" in execution
+        and "closedVolume+tolerance<beforeVolume" in execution,
+        "full closes require exact broker position, order-deal and closed-volume reconciliation")
+require("g_exec.ClosePosition(_Symbol,ticket,g_positionIdentifier,InpMagicNumber" in ea
+        and "closeOutcomeUncertain" in ea
+        and "g_recoveryReady=false;" in ea
+        and "g_accountRiskReconciliationPending=true;" in ea,
+        "ambiguous full closes quarantine the campaign and request account-risk reconciliation")
 require("ModifyStopsByTicket(" in ea
         and "action lock retained, no retry" in ea
         and "g_hedgingLifecycleLock=true;" in ea
