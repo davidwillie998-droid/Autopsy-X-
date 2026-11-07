@@ -1151,10 +1151,26 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
          return(false);
         }
 
+      ulong journalCursor=saved.partialLastDealTicket;
+      bool journalRowPartial=false;
+      double journalRowLots=0.0;
+      bool journalRowFound=g_autopsy.LastAccountedRecord(saved.positionIdentifier,
+                                                          journalCursor,journalRowPartial,
+                                                          journalRowLots);
+      if(journalRowFound && journalCursor<saved.partialLastDealTicket)
+         return(false);
+      if(!journalRowFound)
+         journalCursor=saved.partialLastDealTicket;
+
       if(!HistorySelectByPosition((long)saved.positionIdentifier))
          return(false);
-      double historyExitVolume=0.0;
-      ulong lastExitDeal= saved.partialLastDealTicket;
+      double historyExitVolume=0.0,journalExitVolume=0.0,unaccountedExitVolume=0.0;
+      double allWeightedClose=0.0,allGross=0.0,allCommission=0.0,allSwap=0.0;
+      double pendingWeightedClose=0.0,pendingGross=0.0,pendingCommission=0.0,pendingSwap=0.0;
+      datetime allCloseTime=0,pendingCloseTime=0;
+      ulong lastExitDeal=saved.partialLastDealTicket;
+      ulong lastJournalExitDeal=saved.partialLastDealTicket;
+      ulong lastUnaccountedExitDeal=journalCursor;
       bool historyValid=true;
       for(int d=0;d<HistoryDealsTotal();d++)
         {
@@ -1175,20 +1191,67 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
            }
          if(entry!=DEAL_ENTRY_OUT && entry!=DEAL_ENTRY_OUT_BY) continue;
          double volume=HistoryDealGetDouble(deal,DEAL_VOLUME);
-         if(!MathIsValidNumber(volume) || volume<=0.0)
+         double price=HistoryDealGetDouble(deal,DEAL_PRICE);
+         if(!MathIsValidNumber(volume) || volume<=0.0 ||
+            !MathIsValidNumber(price) || price<=0.0)
            {
             historyValid=false;
             break;
            }
+         double profit=HistoryDealGetDouble(deal,DEAL_PROFIT);
+         double dealCommission=HistoryDealGetDouble(deal,DEAL_COMMISSION);
+         double dealSwap=HistoryDealGetDouble(deal,DEAL_SWAP);
+         datetime dealTime=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
          historyExitVolume+=volume;
-         if(deal>lastExitDeal) lastExitDeal=deal;
+         allWeightedClose+=price*volume;
+         allGross+=profit;
+         allCommission+=dealCommission;
+         allSwap+=dealSwap;
+         if(deal>lastExitDeal)
+           {
+            lastExitDeal=deal;
+            allCloseTime=dealTime;
+           }
+         if(deal<=journalCursor)
+           {
+            journalExitVolume+=volume;
+            if(deal>lastJournalExitDeal) lastJournalExitDeal=deal;
+           }
+         else
+           {
+            unaccountedExitVolume+=volume;
+            pendingWeightedClose+=price*volume;
+            pendingGross+=profit;
+            pendingCommission+=dealCommission;
+            pendingSwap+=dealSwap;
+            if(deal>lastUnaccountedExitDeal)
+              {
+               lastUnaccountedExitDeal=deal;
+               pendingCloseTime=dealTime;
+              }
+           }
         }
       if(!historyValid)
         {
          g_virtualExitReady=false;
          g_hedgingLifecycleLock=true;
-         PrintFormat("FLIPDEMON PARTIAL RECOVERY QUARANTINE: invalid or reversal deal history for identifier=%I64u.",
+         g_recoveryReady=false;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON PARTIAL RECOVERY QUARANTINE: invalid, foreign-magic or reversal deal history for identifier=%I64u.",
                      saved.positionIdentifier);
+         return(false);
+        }
+
+      bool journalAdvanced=(journalCursor>saved.partialLastDealTicket);
+      if(journalAdvanced &&
+         (!journalRowFound || lastJournalExitDeal!=journalCursor || journalExitVolume<=0.0))
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_recoveryReady=false;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON PARTIAL RECOVERY QUARANTINE: journal cursor %I64u does not match exact exit-deal history for identifier=%I64u.",
+                     journalCursor,saved.positionIdentifier);
          return(false);
         }
 
@@ -1196,60 +1259,58 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
       bool positionStillOpen=g_hedgingPositionManager.FindByIdentifier(saved.positionIdentifier,live);
       double step=SymbolInfoDouble(saved.symbol,SYMBOL_VOLUME_STEP);
       double tolerance=MathMax(step*0.5,0.0000001);
-      if(step<=0.0)
-         return(false);
+      if(step<=0.0) return(false);
 
       if(!positionStillOpen)
         {
-         if(MathAbs(historyExitVolume-saved.actionBaselineVolume)<=tolerance &&
-            historyExitVolume>0.0)
+         if(MathAbs(historyExitVolume-saved.actionBaselineVolume)>tolerance ||
+            historyExitVolume<=0.0 || allWeightedClose<=0.0)
            {
-            double closePrice=0.0,grossProfit=0.0,commission=0.0,swap=0.0;
-            double weightedClose=0.0,confirmedExitVolume=0.0;
-            datetime closeTime=0;
-            ulong finalDeal= saved.partialLastDealTicket;
-            if(!HistorySelectByPosition((long)saved.positionIdentifier))
+            g_virtualExitReady=false;
+            g_hedgingLifecycleLock=true;
+            g_recoveryReady=false;
+            g_engineState=AX_ENGINE_PAUSED;
+            PrintFormat("FLIPDEMON PARTIAL RECOVERY QUARANTINE: closed identifier=%I64u exit volume %.8f does not reconcile to action baseline %.8f.",
+                        saved.positionIdentifier,historyExitVolume,saved.actionBaselineVolume);
+            return(false);
+           }
+
+         // A durable non-partial row at the final exit ticket means the close
+         // was journalled before the crash. Re-run cleanup only, never append it again.
+         if(journalAdvanced && !journalRowPartial)
+           {
+            if(journalCursor!=lastExitDeal)
                return(false);
-            for(int d=0;d<HistoryDealsTotal();d++)
-              {
-               ulong deal=HistoryDealGetTicket(d);
-               if(deal==0 || deal<=saved.partialLastDealTicket) continue;
-               long entry=HistoryDealGetInteger(deal,DEAL_ENTRY);
-               if(entry!=DEAL_ENTRY_OUT && entry!=DEAL_ENTRY_OUT_BY) continue;
-               double volume=HistoryDealGetDouble(deal,DEAL_VOLUME);
-               double price=HistoryDealGetDouble(deal,DEAL_PRICE);
-               if(volume<=0.0 || price<=0.0) return(false);
-               confirmedExitVolume+=volume;
-               weightedClose+=volume*price;
-               grossProfit+=HistoryDealGetDouble(deal,DEAL_PROFIT);
-               commission+=HistoryDealGetDouble(deal,DEAL_COMMISSION);
-               swap+=HistoryDealGetDouble(deal,DEAL_SWAP);
-               if(deal>finalDeal)
-                 {
-                  finalDeal=deal;
-                  closeTime=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
-                 }
-              }
-            if(MathAbs(confirmedExitVolume-saved.actionBaselineVolume)>tolerance ||
-               MathAbs(confirmedExitVolume-historyExitVolume)>tolerance ||
-               weightedClose<=0.0)
+            if(!AxRecoverFullyClosedPosition(saved,historyExitVolume,
+                                             allWeightedClose/historyExitVolume,
+                                             allGross,allCommission,allSwap,allCloseTime,
+                                             journalCursor,lastExitDeal))
                return(false);
-            closePrice=weightedClose/confirmedExitVolume;
-            if(!AxRecoverFullyClosedPosition(saved,confirmedExitVolume,closePrice,
-                                              grossProfit,commission,swap,closeTime,finalDeal))
-               return(false);
-            // Registry removal shifts later rows left; revisit this index instead
-            // of skipping the next locked position during the same startup pass.
-            i--;
             continue;
            }
-         g_virtualExitReady=false;
-         g_hedgingLifecycleLock=true;
-         g_recoveryReady=false;
-         g_engineState=AX_ENGINE_PAUSED;
-         PrintFormat("FLIPDEMON PARTIAL RECOVERY QUARANTINE: identifier=%I64u is absent but exit volume %.8f does not reconcile to baseline %.8f; state lock preserved.",
-                     saved.positionIdentifier,historyExitVolume,saved.actionBaselineVolume);
-         return(false);
+
+         double expectedFinalVolume=saved.actionBaselineVolume-journalExitVolume;
+         if(journalAdvanced && !journalRowPartial)
+            return(false);
+         if(MathAbs(unaccountedExitVolume-expectedFinalVolume)>tolerance ||
+            unaccountedExitVolume<=0.0 || pendingWeightedClose<=0.0 ||
+            lastUnaccountedExitDeal<=journalCursor)
+           {
+            g_virtualExitReady=false;
+            g_hedgingLifecycleLock=true;
+            g_recoveryReady=false;
+            g_engineState=AX_ENGINE_PAUSED;
+            PrintFormat("FLIPDEMON FULL-CLOSE RECOVERY QUARANTINE: identifier=%I64u remaining expected=%.8f unaccounted exit volume=%.8f journal cursor=%I64u.",
+                        saved.positionIdentifier,expectedFinalVolume,
+                        unaccountedExitVolume,journalCursor);
+            return(false);
+           }
+         if(!AxRecoverFullyClosedPosition(saved,unaccountedExitVolume,
+                                          pendingWeightedClose/unaccountedExitVolume,
+                                          pendingGross,pendingCommission,pendingSwap,
+                                          pendingCloseTime,journalCursor,lastUnaccountedExitDeal))
+            return(false);
+         continue;
         }
 
       if(live.symbol!=saved.symbol || live.magic!=InpMagicNumber ||
@@ -1269,7 +1330,16 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
                      expectedReduction,historyExitVolume);
          return(false);
         }
-
+      if(journalAdvanced && !journalRowPartial)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_recoveryReady=false;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON PARTIAL RECOVERY QUARANTINE: full-close journal row exists while position %I64u remains open.",
+                     saved.positionIdentifier);
+         return(false);
+        }
       if(!g_posState.active || g_positionIdentifier!=saved.positionIdentifier)
         {
          g_virtualExitReady=false;
@@ -1281,30 +1351,56 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
          return(false);
         }
 
-      double closePrice=0.0,grossProfit=0.0,commission=0.0,swap=0.0,closedVolume=0.0;
-      datetime closeTime=0;
-      ulong lastDeal= saved.partialLastDealTicket;
-      if(!AxFetchCloseFinancials(live.ticket,saved.partialLastDealTicket,
-                                 closePrice,grossProfit,commission,swap,closeTime,lastDeal,closedVolume) ||
-         MathAbs(closedVolume-expectedReduction)>tolerance ||
-         MathAbs(closedVolume-historyExitVolume)>tolerance)
-         return(false);
+      if(journalAdvanced)
+        {
+         if(!g_virtualExitRegistry.RecordPartialClose(saved.positionIdentifier,
+                                                       journalExitVolume,journalCursor) ||
+            !g_virtualExitRegistry.IsPersisting())
+           {
+            g_virtualExitReady=false;
+            g_hedgingLifecycleLock=true;
+            g_engineState=AX_ENGINE_PAUSED;
+            return(false);
+           }
+        }
+      g_posState.lots=saved.actionBaselineVolume-journalExitVolume;
+      g_posState.lastAccountedDealTicket=journalCursor;
+      if(journalExitVolume>tolerance)
+         g_posState.partialTaken=true;
 
-      // AxRecordPartialClose subtracts the closed slice from this baseline.
-      // Restore the persisted pre-request volume before committing the journal row.
-      g_posState.lots=saved.actionBaselineVolume;
-      if(!AxCommitPartialClose(expectedReduction,closePrice,grossProfit,commission,
-                               swap,closeTime,lastDeal))
-         return(false);
-      PrintFormat("FLIPDEMON PARTIAL RECOVERY: identifier=%I64u reconciled partial volume=%.8f remaining=%.8f lastDeal=%I64u.",
-                  saved.positionIdentifier,expectedReduction,currentVolume,lastDeal);
+      if(unaccountedExitVolume>tolerance)
+        {
+         double closePrice=0.0,grossProfit=0.0,commission=0.0,swap=0.0,closedVolume=0.0;
+         datetime closeTime=0;
+         ulong lastDeal=journalCursor;
+         if(!AxFetchCloseFinancials(live.ticket,journalCursor,
+                                    closePrice,grossProfit,commission,swap,closeTime,lastDeal,closedVolume) ||
+            MathAbs(closedVolume-unaccountedExitVolume)>tolerance)
+            return(false);
+         if(!AxCommitPartialClose(unaccountedExitVolume,closePrice,grossProfit,commission,
+                                  swap,closeTime,lastDeal))
+            return(false);
+         PrintFormat("FLIPDEMON PARTIAL RECOVERY: identifier=%I64u reconciled new partial volume=%.8f remaining=%.8f lastDeal=%I64u.",
+                     saved.positionIdentifier,unaccountedExitVolume,currentVolume,lastDeal);
+        }
+      else
+        {
+         if(!g_virtualExitRegistry.ResolveAction(saved.positionIdentifier,3) ||
+            !g_virtualExitRegistry.IsPersisting())
+           {
+            g_virtualExitReady=false;
+            g_hedgingLifecycleLock=true;
+            g_engineState=AX_ENGINE_PAUSED;
+            return(false);
+           }
+         PrintFormat("FLIPDEMON PARTIAL RECOVERY: identifier=%I64u recovered journal-first partial volume=%.8f remaining=%.8f; action lock cleared.",
+                     saved.positionIdentifier,journalExitVolume,currentVolume);
+        }
      }
    return(true);
   }
 
-// Reconcile each durable pyramid campaign against the complete broker snapshot.
-// Missing rows are reconstructed only from HistorySelectByPosition deal evidence.
-bool AxReconcilePyramidCampaignTickets(const bool removeStaleRecords)
+//bool AxReconcilePyramidCampaignTickets(const bool removeStaleRecords)
   {
    if(!g_hedgingPositionManager.IsComplete() ||
       !g_pyramidCampaignRegistry.IsPersisting())
