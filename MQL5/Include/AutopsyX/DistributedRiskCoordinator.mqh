@@ -38,7 +38,8 @@ private:
                   m_pendingInstance+"|"+m_pendingKey+"|"+
                   DoubleToString(m_pendingRiskMoney,8)+"|"+
                   DoubleToString(m_pendingBaselineRisk,8)+"|"+
-                  m_pendingReservationId+"\r\n";
+                  m_pendingReservationId+"|"+
+                  (m_pendingExecutionUncertain?"1":"0")+"\r\n";
       uint expected=(uint)StringLen(line);
       uint written=FileWriteString(handle,line);
       FileFlush(handle);
@@ -366,9 +367,36 @@ public:
          return(true);
         }
 
+      if(m_pendingExecutionUncertain)
+        {
+         // A flat-looking snapshot does not prove that a timed-out market request
+         // was rejected. Keep the reservation active until broker order/deal history
+         // provides a definitive terminal outcome.
+         error="DISTRIBUTED_RISK_EXECUTION_OUTCOME_UNCONFIRMED_RESERVATION_RETAINED";
+         return(false);
+        }
+
       if(!Release(reservationId,m_pendingInstance,snapshot,error)) return(false);
       return(true);
      }
+
+   bool MarkExecutionUncertain(string &error)
+     {
+      if(!m_journalPending || StringLen(m_pendingReservationId)==0)
+        {
+         error="DISTRIBUTED_RISK_UNCERTAIN_EXECUTION_WITHOUT_ACTIVE_JOURNAL";
+         return(false);
+        }
+      m_pendingExecutionUncertain=true;
+      if(!SavePendingJournal())
+        {
+         error="DISTRIBUTED_RISK_UNCERTAIN_EXECUTION_JOURNAL_WRITE_FAILED";
+         return(false);
+        }
+      error="";
+      return(true);
+     }
+
    string InstanceId(void) const { return(m_instanceId); }
 
    bool Reconcile(const SAxAccountRiskSnapshot &snapshot,bool &withinCap,string &error)
