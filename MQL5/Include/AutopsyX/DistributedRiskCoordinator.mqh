@@ -306,7 +306,7 @@ public:
       string response,reservationId;
       if(!Post("/risk/reserve",body,response,error))
         {
-         if(StringFind(error,"IDEMPOTENCY_KEY_REUSED")>=0)
+         if(StringFind(error,"IDEMPOTENCY_KEY_ALREADY_USED")>=0)
             return(ClearPendingJournal());
          return(false);
         }
