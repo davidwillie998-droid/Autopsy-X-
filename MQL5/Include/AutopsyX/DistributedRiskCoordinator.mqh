@@ -212,7 +212,26 @@ public:
                   "\"instanceId\":\""+JsonEscape(instanceId)+"\","+
                   "\"idempotencyKey\":\""+idempotencyKey+"\","+
                   "\"riskMoney\":"+DoubleToString(decision.proposedRiskMoney,8)+"}";
-      if(!Post("/risk/reserve",body,response,error)) return(false);
+      // A transport timeout is ambiguous: the server may have committed the
+      // reservation before the terminal lost its response. Retry the exact same
+      // payload and idempotency key once. The ledger then returns the original
+      // reservation instead of creating a second risk claim.
+      if(!Post("/risk/reserve",body,response,error))
+        {
+         if(StringFind(error,"DISTRIBUTED_RISK_WEBREQUEST_FAILED")!=0)
+            return(false);
+
+         string firstAttemptError=error;
+         response="";
+         error="";
+         if(!Post("/risk/reserve",body,response,error))
+           {
+            string retryError=error;
+            error="DISTRIBUTED_RISK_RESERVATION_OUTCOME_UNCONFIRMED first_attempt="+
+                  firstAttemptError+" retry="+retryError;
+            return(false);
+           }
+        }
       if(!JsonTrue(response,"ok") || !JsonString(response,"reservationId",reservationId))
         {
          error="DISTRIBUTED_RISK_RESERVATION_REJECTED "+response;
