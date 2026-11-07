@@ -395,7 +395,15 @@ public:
       if(!Post("/risk/reserve",body,response,error))
         {
          if(StringFind(error,"DISTRIBUTED_RISK_WEBREQUEST_FAILED")!=0)
+           {
+            // A definitive client rejection did not create this reservation.
+            // Keep only the expired-reservation case, which may refer to an
+            // earlier committed request and must be resolved by startup recovery.
+            if(StringFind(error,"DISTRIBUTED_RISK_HTTP_4")==0 &&
+               StringFind(error,"EXPIRED_RESERVATION_REQUIRES_RECONCILIATION")<0)
+               ClearPendingJournal();
             return(false);
+           }
 
          string firstAttemptError=error;
          response="";
@@ -403,6 +411,9 @@ public:
          if(!Post("/risk/reserve",body,response,error))
            {
             string retryError=error;
+            if(StringFind(retryError,"DISTRIBUTED_RISK_HTTP_4")==0 &&
+               StringFind(retryError,"EXPIRED_RESERVATION_REQUIRES_RECONCILIATION")<0)
+               ClearPendingJournal();
             error="DISTRIBUTED_RISK_RESERVATION_OUTCOME_UNCONFIRMED first_attempt="+
                   firstAttemptError+" retry="+retryError;
             return(false);
