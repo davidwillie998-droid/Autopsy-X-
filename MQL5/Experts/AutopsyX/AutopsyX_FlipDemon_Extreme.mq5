@@ -1183,7 +1183,8 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
                                                           journalRowLots,journalRowNetProfit);
       ulong journalHighWater=g_autopsy.LastAccountedDealTicket(saved.positionIdentifier);
       if(saved.partialLastDealTicket>journalHighWater ||
-         (journalRowFound && journalCursor<saved.partialLastDealTicket))
+         (journalRowFound && (journalCursor<saved.partialLastDealTicket ||
+                              !MathIsValidNumber(journalRowNetProfit))))
         {
          g_virtualExitReady=false;
          g_hedgingLifecycleLock=true;
