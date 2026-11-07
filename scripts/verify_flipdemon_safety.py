@@ -419,8 +419,9 @@ require("existing.initialSlPrice" in ea
         and "g_posState.originalSlPrice=existing.initialSlPrice" in ea,
         "restart restores the original stop and original risk distance instead of substituting a trailed stop")
 require("AxSaveVirtualExitState(false,true)" in ea
-        and "AxSaveVirtualExitState(true,false)" in ea,
-        "confirmed fills create state and later broker stop changes update the emergency-stop snapshot")
+        and "RecordBreakEven(g_positionIdentifier,newSl)" in ea
+        and "RecordTrailingStop(g_positionIdentifier,newSl)" in ea,
+        "confirmed fills persist initial state and broker-confirmed break-even/trailing stops update the registry")
 require("g_virtualExitRegistry.Remove(g_positionIdentifier)" in ea
         and "position closed but state removal failed" in ea,
         "virtual-exit state is removed only after the broker position has been finalized")
