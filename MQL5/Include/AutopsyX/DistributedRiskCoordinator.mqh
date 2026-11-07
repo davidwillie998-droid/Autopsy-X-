@@ -417,6 +417,32 @@ public:
       return(true);
      }
 
+   // A delayed request callback can prove rejection after the original OrderSend
+   // returned an ambiguous result. Release only when a fresh account-wide snapshot
+   // shows no additional stop-risk versus the reservation baseline. If exposure has
+   // changed, retain the reservation for broker-history reconciliation.
+   bool ResolveDefinitiveRejection(const SAxAccountRiskSnapshot &snapshot,string &error)
+     {
+      if(!m_journalPending || StringLen(m_pendingReservationId)==0)
+        {
+         error="DISTRIBUTED_RISK_REJECTION_CALLBACK_WITHOUT_PENDING_RESERVATION";
+         return(false);
+        }
+      if(!snapshot.exposureKnown || snapshot.equity<=0.0 ||
+         !MathIsValidNumber(snapshot.existingRiskMoney))
+        {
+         error="DISTRIBUTED_RISK_REJECTION_CALLBACK_SNAPSHOT_UNKNOWN";
+         return(false);
+        }
+      if(snapshot.existingRiskMoney>m_pendingBaselineRisk+0.01)
+        {
+         error="DISTRIBUTED_RISK_REJECTION_CALLBACK_EXPOSURE_CHANGED_RESERVATION_RETAINED";
+         return(false);
+        }
+      if(!MarkExecutionRejected(error)) return(false);
+      return(Release(m_pendingReservationId,m_pendingInstance,snapshot,error));
+     }
+
    string InstanceId(void) const { return(m_instanceId); }
 
    bool Reconcile(const SAxAccountRiskSnapshot &snapshot,bool &withinCap,string &error)
