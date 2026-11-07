@@ -328,9 +328,10 @@ require("PositionRisk(const ulong ticket" in account_risk
 require("POSITION_STOP_CROSSED_OR_INVALID" in account_risk
         and "stop>=tick.bid" in account_risk and "stop<=tick.ask" in account_risk,
         "removed, crossed or invalid live stops make account exposure unknown and block new entries")
-require("g_exec.ModifyStops(_Symbol,newSl,g_posState.initialTpPrice,modErr)" in ea
-        and "g_accountRiskReconciliationPending=true" in ea,
-        "stop modification requests trigger broker-state reconciliation rather than trusting requested stop values")
+require("g_exec.ModifyStopsByTicket(_Symbol,managed.ticket,managed.positionIdentifier" in ea
+        and "g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber)" in ea
+        and "AxReconcileVirtualExitTickets(false)" in ea,
+        "stop modifications target the stable broker position and require a fresh post-modification snapshot")
 require("double actualClosed=g_posState.lots-PositionGetDouble(POSITION_VOLUME)" in ea,
         "partial-close accounting reads broker-confirmed remaining position volume")
 
