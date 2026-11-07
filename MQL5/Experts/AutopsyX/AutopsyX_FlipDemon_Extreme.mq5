@@ -266,7 +266,8 @@ bool                   g_recoveryInitialized = false;
 bool                   g_recoveryReady = false; // false means new entries are blocked; existing positions remain managed
 bool                   g_nettingReversalQuarantined = false; // broker reversed the net position; stale campaign state must never manage the new side
 bool                   g_accountRiskIntegrityLock = false; // post-fill breach/unknown exposure; cleared only by a clean broker rescan
-bool                   g_distributedRecoveryPending = false; // unresolved terminal reservation or startup snapshot; timer retries while all new entries stay blocked
+bool                   g_distributedRecoveryPending = false;
+bool                   g_distributedRejectedCallbackPending = false; // matching definitive request rejection waits for timer-side broker snapshot // unresolved terminal reservation or startup snapshot; timer retries while all new entries stay blocked
 bool                   g_accountRiskReconciliationPending = false; // any broker transaction dirties the account-wide exposure snapshot
 bool                   g_pyramidReady = false; // broker history and durable campaign registry must reconcile before any future scale-in path
 bool                   g_pyramidReconcilePending = false; // a confirmed entry deal waits for live-position and protective-stop reconciliation
@@ -3654,16 +3655,32 @@ void OnTimer(void)
             PrintFormat("FLIPDEMON DISTRIBUTED RISK: recovery retry deferred; broker exposure is unknown (%s).",
                         recoverySnapshot.failureReason);
         }
-      else if(!g_distributedRiskCoordinator.RecoverPending(recoverySnapshot,recoveryError))
-        {
-         g_accountRiskIntegrityLock=true;
-         if(InpVerboseLogging)
-            PrintFormat("FLIPDEMON DISTRIBUTED RISK: recovery remains locked; next timer retry will reconcile again (%s).",
-                        recoveryError);
-        }
       else
         {
-         bool recoveryWithinCap=false;
+         bool recoveredPending=false;
+         if(g_distributedRejectedCallbackPending)
+           {
+            // The transaction callback only records evidence. Network I/O and
+            // reservation release happen here, after a fresh full-account scan.
+            recoveredPending=g_distributedRiskCoordinator.ResolveDefinitiveRejection(
+                               recoverySnapshot,recoveryError);
+            if(recoveredPending)
+               g_distributedRejectedCallbackPending=false;
+           }
+         else
+            recoveredPending=g_distributedRiskCoordinator.RecoverPending(
+                               recoverySnapshot,recoveryError);
+
+         if(!recoveredPending)
+           {
+            g_accountRiskIntegrityLock=true;
+            if(InpVerboseLogging)
+               PrintFormat("FLIPDEMON DISTRIBUTED RISK: recovery remains locked; next timer retry will reconcile again (%s).",
+                           recoveryError);
+           }
+         else
+           {
+            bool recoveryWithinCap=false;
          if(!g_distributedRiskCoordinator.Reconcile(recoverySnapshot,recoveryWithinCap,recoveryError))
            {
             g_accountRiskIntegrityLock=true;
@@ -3685,6 +3702,7 @@ void OnTimer(void)
             if(!InpShowDashboard)
                EventKillTimer();
            }
+          }
         }
      }
 
@@ -3882,6 +3900,28 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
       symbol=HistoryOrderGetString(trans.order,ORDER_SYMBOL);
       magic=(ulong)HistoryOrderGetInteger(trans.order,ORDER_MAGIC);
       relevant=(symbol==_Symbol && magic==InpMagicNumber);
+     }
+
+   // Only a definitive response to this EA's own fresh market-deal request
+   // can resolve an ambiguous reservation. Accepted/partial/placed and transport-
+   // ambiguous responses are deliberately excluded. No HTTP or file I/O occurs
+   // inside this callback; OnTimer performs the fresh snapshot and release.
+   if(trans.type==TRADE_TRANSACTION_REQUEST && relevant &&
+      request.action==TRADE_ACTION_DEAL && request.comment=="AXFDX" &&
+      g_distributedRecoveryPending && g_distributedRiskCoordinator.HasPendingJournal())
+     {
+      bool accepted=(result.retcode==TRADE_RETCODE_DONE ||
+                     result.retcode==TRADE_RETCODE_DONE_PARTIAL ||
+                     result.retcode==TRADE_RETCODE_PLACED);
+      bool ambiguous=(result.retcode==TRADE_RETCODE_TIMEOUT ||
+                      result.retcode==TRADE_RETCODE_CONNECTION ||
+                      result.retcode==0);
+      if(!accepted && !ambiguous)
+        {
+         g_distributedRejectedCallbackPending=true;
+         PrintFormat("FLIPDEMON DISTRIBUTED RISK: definitive broker rejection callback received (retcode=%u); deferred snapshot reconciliation queued.",
+                     result.retcode);
+        }
      }
 
    if(!relevant) return;
