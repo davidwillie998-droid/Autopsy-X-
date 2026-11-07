@@ -224,6 +224,32 @@ require("rec.dealIdOut=lastDealTicket;" in ea and "rec.positionIdentifier = g_po
         and "NEW ENTRIES BLOCKED pending accounting reconciliation" in ea,
         "restart compares broker exit history with journal boundary and blocks entries on an accounting gap")
 
+require("LastAccountedRecord(const ulong positionIdentifier" in autopsy
+        and "ParseCsvField(line,28)" in autopsy
+        and "ParseCsvField(line,9)" in autopsy,
+        "journal exposes the last durable row's partial/full status for restart recovery")
+require("DoubleToString(rec.lots,8)" in autopsy,
+        "trade journal preserves broker micro-lot precision instead of rounding lots to two decimals")
+partial_recovery_start = ea.index("bool AxRecoverLockedPartialCloseActions(void)")
+partial_recovery_end = ea.index("bool AxReconcilePyramidCampaignTickets", partial_recovery_start)
+partial_recovery = ea[partial_recovery_start:partial_recovery_end]
+require("g_autopsy.LastAccountedRecord(saved.positionIdentifier" in partial_recovery
+        and "saved.partialLastDealTicket>journalHighWater" in partial_recovery,
+        "partial-close restart recovery reconciles registry and durable journal deal cursors")
+require("journalExitVolume+=volume" in partial_recovery
+        and "unaccountedExitVolume+=volume" in partial_recovery
+        and "AxRecoverFullyClosedPosition(saved,unaccountedExitVolume" in partial_recovery,
+        "full-close recovery excludes exit deals already accounted by the partial journal")
+require("journalAdvanced && !journalRowPartial" in partial_recovery
+        and "AxRecoverFullyClosedPosition(saved,historyExitVolume" in partial_recovery,
+        "already-journalled full closes perform cleanup without writing a duplicate trade")
+require("ResolveAction(saved.positionIdentifier,3)" in partial_recovery
+        and "AxFetchCloseFinancials(live.ticket,journalCursor" in partial_recovery,
+        "partial action lock clears only after exact broker history and journal reconciliation")
+require("ClosePartial(" not in partial_recovery
+        and "ClosePosition(" not in partial_recovery,
+        "restart recovery never resends a broker close request")
+
 require("struct SAxRiskSizingDecision" in risk
         and "rejectionReason" in risk and "projectedRiskPercent" in risk,
         "risk engine exposes an auditable sizing decision and explicit rejection reason")
@@ -359,10 +385,21 @@ require("g_accountRiskReconciliationPending=false" in ea
 require('#include <AutopsyX/VirtualExitRegistry.mqh>' in ea
         and "CVirtualExitRegistry   g_virtualExitRegistry;" in ea,
         "virtual-exit registry is included and instantiated by the EA")
-require("AX_VIRTUAL_EXIT_FIELD_COUNT 12" in virtual_exit
+require("AX_VIRTUAL_EXIT_FIELD_COUNT 21" in virtual_exit
+        and "AX_VIRTUAL_EXIT_LEGACY_FIELD_COUNT 12" in virtual_exit
+        and "fieldCount!=20" in virtual_exit
         and "positionIdentifier" in virtual_exit
         and "FindIndex(record.positionIdentifier)" in virtual_exit,
-        "virtual-exit persistence uses the dedicated 12-field position-identity record")
+        "virtual-exit persistence reads legacy 12/20-field rows and writes the 21-field identity record")
+virtual_format = re.search(r'string line=StringFormat\\("([^"]+)"', virtual_exit)
+require(virtual_format is not None
+        and len(re.findall(r"%I64u|%d|%s", virtual_format.group(1))) == 21
+        and "Number(r.actionBaselineVolume)" in virtual_exit,
+        "21-field virtual-exit serializer persists the pre-action broker volume baseline")
+require("BeginPartialCloseAction" in virtual_exit
+        and "record.actionBaselineVolume=baselineVolume" in virtual_exit
+        and "record.actionBaselineVolume=0.0" in virtual_exit,
+        "partial-close action baseline is durably captured and cleared only with its action lock")
 require("FileMove(tempName,0,m_fileName,FILE_REWRITE)" in virtual_exit
         and "written!=expected" in virtual_exit
         and "m_persistOk=false" in virtual_exit,
