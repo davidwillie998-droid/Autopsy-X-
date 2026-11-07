@@ -20,12 +20,21 @@ private:
 
    bool              RetryableRetcode(const uint code) const
      {
+      // Retry only broker-declared price/quote rejections. TIMEOUT and CONNECTION
+      // are ambiguous: the server may have accepted the request before the reply
+      // was lost. Those outcomes must never trigger a second market submission.
       return(code==TRADE_RETCODE_REQUOTE ||
              code==TRADE_RETCODE_PRICE_CHANGED ||
-             code==TRADE_RETCODE_TIMEOUT ||
-             code==TRADE_RETCODE_CONNECTION ||
              code==TRADE_RETCODE_PRICE_OFF ||
              code==TRADE_RETCODE_REJECT);
+     }
+
+   bool              AmbiguousRetcode(const uint code) const
+     {
+      return(code==TRADE_RETCODE_TIMEOUT ||
+             code==TRADE_RETCODE_CONNECTION ||
+             code==TRADE_RETCODE_PLACED ||
+             code==TRADE_RETCODE_DONE_PARTIAL);
      }
 
    //--- brokers differ on supported order-filling modes (spec section 14) - never hard-code one ---
@@ -96,11 +105,13 @@ public:
    bool              OpenMarket(const string symbol,const ENUM_AX_DIR dir,const double lots,
                                  const double slPrice,const double tpPrice,const string comment,
                                  ulong &ticketOut,double &fillPriceOut,string &errorReason,
-                                 int &latencyMsOut,double &actualLotsOut)
+                                 int &latencyMsOut,double &actualLotsOut,
+                                 bool &outcomeUncertain)
      {
       uint startTick = GetTickCount();
       latencyMsOut = 0;
       actualLotsOut = 0.0;
+      outcomeUncertain = false;
       if(dir==AX_DIR_NONE || lots<=0) { errorReason="Invalid direction/lots"; return(false); }
 
       bool ok=false;
@@ -125,12 +136,21 @@ public:
                errorReason="";
                return(true);
               }
+            // The broker accepted the request, but the terminal cannot yet prove
+            // the resulting position. Preserve the risk reservation and reconcile.
+            outcomeUncertain=true;
             errorReason="Send reported success but position state did not confirm";
             return(false);
            }
 
          uint retcode = m_trade.ResultRetcode();
          errorReason = StringFormat("OrderSend failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         if(AmbiguousRetcode(retcode))
+           {
+            outcomeUncertain=true;
+            latencyMsOut=(int)(GetTickCount()-startTick);
+            return(false);
+           }
          if(!RetryableRetcode(retcode)) { latencyMsOut=(int)(GetTickCount()-startTick); return(false); }
         }
       latencyMsOut = (int)(GetTickCount()-startTick);
