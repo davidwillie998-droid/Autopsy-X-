@@ -140,12 +140,10 @@ export function openRiskLedger(path, {
     const identity = accountIdentity(input);
     return transaction(db, () => {
       const snapshot = storeSnapshot(identity, input, now);
-      // An expired reservation is only released after a newer broker snapshot
-      // has been accepted. That snapshot must include all live positions and
-      // pending orders, so any fill is now represented in brokerRiskMoney.
-      db.prepare(`UPDATE risk_reservations SET status='settled',updated_at_ms=?
-        WHERE account_key=? AND status='active' AND expires_at_ms<=?`)
-        .run(now, identity.accountKey, snapshot.snapshotAtMs);
+      // Reconciliation records broker exposure but never consumes an active
+      // reservation. A delayed or accepted-but-not-yet-visible order can outlive
+      // the lease; only explicit owner release or broker-confirmed settlement may
+      // transfer/remove that reservation.
       return {
         ok: true, accountKey: identity.accountKey, snapshotId: snapshot.snapshotId,
         equity: snapshot.equity, brokerRiskMoney: snapshot.brokerRiskMoney,
@@ -168,12 +166,6 @@ export function openRiskLedger(path, {
     }
 
     return transaction(db, () => {
-      const expired = db.prepare(`SELECT reservation_id FROM risk_reservations
-        WHERE account_key=? AND status='active' AND expires_at_ms<=? LIMIT 1`)
-        .get(identity.accountKey, now);
-      if (expired) fail(409, 'EXPIRED_RESERVATION_REQUIRES_RECONCILIATION',
-        'An expired reservation may represent an order with an unknown outcome. Publish a fresh broker snapshot covering positions and pending orders before new risk is reserved.');
-
       const snapshot = getSnapshot.get(identity.accountKey);
       if (!snapshot) fail(409, 'NO_BROKER_SNAPSHOT', 'No broker exposure snapshot exists for this account.');
       if (now - snapshot.snapshot_at_ms > maxSnapshotAgeMs || snapshot.snapshot_at_ms > now + 5000) {
@@ -188,7 +180,10 @@ export function openRiskLedger(path, {
           fail(409, 'IDEMPOTENCY_KEY_CONFLICT',
             'This idempotency key is already bound to a different terminal instance or risk amount.');
         }
-        if (prior.status === 'active' && prior.expires_at_ms > now) {
+        // Expiry prevents new keys from being admitted, but it does not destroy
+        // an unresolved reservation. The owner must recover the same identity,
+        // then explicitly release or settle it against a fresh broker snapshot.
+        if (prior.status === 'active') {
           return { ok: true, duplicate: true, reservationId: prior.reservation_id,
             expiresAtMs: prior.expires_at_ms, reservedRiskMoney: prior.risk_money };
         }
@@ -196,9 +191,15 @@ export function openRiskLedger(path, {
           'This exact reservation request has already reached a terminal state.');
       }
 
+      const expired = db.prepare(`SELECT reservation_id FROM risk_reservations
+        WHERE account_key=? AND status='active' AND expires_at_ms<=? LIMIT 1`)
+        .get(identity.accountKey, now);
+      if (expired) fail(409, 'EXPIRED_RESERVATION_REQUIRES_RECONCILIATION',
+        'An expired reservation may represent an order with an unknown outcome. Recover its original identity and resolve it against broker positions and pending orders before new risk is reserved.');
+
       const pending = db.prepare(`SELECT COALESCE(SUM(risk_money),0) AS total
-        FROM risk_reservations WHERE account_key=? AND status='active' AND expires_at_ms>?`)
-        .get(identity.accountKey, now).total;
+        FROM risk_reservations WHERE account_key=? AND status='active'`)
+        .get(identity.accountKey).total;
       const totalAfterReservation = snapshot.broker_risk_money + pending + riskMoney;
       if (snapshot.broker_risk_money > snapshot.hard_cap_money + 0.01 ||
           totalAfterReservation > snapshot.hard_cap_money + 0.01) {
