@@ -82,7 +82,8 @@ def reconcile_partial_action(
     if journal_advanced and journal_row_partial is False:
         return RecoveryDecision("QUARANTINE_FINAL_ROW_WITH_LIVE_POSITION")
     if unaccounted_volume > tolerance:
-        return RecoveryDecision("COMMIT_UNACCOUNTED_PARTIAL", unaccounted_volume)
+        state = "COMMIT_UNACCOUNTED_PARTIAL" if journal_advanced else "COMMIT_UNJOURNALED_PARTIAL"
+        return RecoveryDecision(state, unaccounted_volume)
     if journal_advanced and journal_row_partial is True:
         return RecoveryDecision("REPLAY_JOURNAL_FIRST_PARTIAL")
     return RecoveryDecision("COMMIT_UNJOURNALED_PARTIAL", total_volume)
