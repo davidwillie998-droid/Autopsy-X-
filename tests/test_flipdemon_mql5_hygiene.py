@@ -121,7 +121,7 @@ class Mql5SourceHygieneTests(unittest.TestCase):
         self.assertIn("return(false);", body)
 
         main = self.text[MQL_ROOT / "Experts" / "AutopsyX" / "AutopsyX_FlipDemon_Extreme.mq5"]
-        self.assertIn("ClosePartial(_Symbol,g_posState.ticket,volumeToClose,partErr,outcomeUncertain)", main)
+        self.assertIn("ClosePartial(_Symbol,g_posState.ticket,g_positionIdentifier,InpMagicNumber,volumeToClose,partErr,outcomeUncertain)", main)
         self.assertIn("g_partialClosePending=true;", main)
         self.assertIn("g_pendingPartialCloseVolume=volumeToClose;", main)
 
@@ -155,7 +155,7 @@ class Mql5SourceHygieneTests(unittest.TestCase):
         self.assertIn("PositionSelectByTicket(g_posState.ticket)", retry)
         self.assertNotIn("HasOpenPosition(_Symbol)", retry)
         self.assertIn("if(g_haveOpenPosition && !PositionSelectByTicket(g_posState.ticket))", main)
-        self.assertIn("if(isExit && !PositionSelectByTicket(g_posState.ticket))", main)
+        self.assertIn("if(isExit && dealEntry!=DEAL_ENTRY_INOUT && !PositionSelectByTicket(g_posState.ticket))", main)
 
 
     def test_final_close_persists_deal_identity_and_checks_journal_boundary(self):
