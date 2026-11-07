@@ -82,7 +82,9 @@ private:
       m_pendingRiskMoney=StringToDouble(fields[4]);
       m_pendingBaselineRisk=StringToDouble(fields[5]);
       m_pendingReservationId=fields[6];
-      m_pendingExecutionUncertain=(count>=8 && fields[7]=="1");
+      // Legacy seven-field journals predate the execution-state marker. Treat
+      // them as ambiguous rather than risking release of an in-flight order.
+      m_pendingExecutionUncertain=(count==7 || fields[7]=="1");
       m_journalPending=true;
       return(true);
      }
