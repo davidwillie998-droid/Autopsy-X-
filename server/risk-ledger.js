@@ -250,8 +250,8 @@ export function openRiskLedger(path, {
     return transaction(db, () => {
       const reservation = db.prepare('SELECT * FROM risk_reservations WHERE reservation_id=? AND account_key=?')
         .get(reservationId, identity.accountKey);
-      if (!reservation || reservation.status !== 'active' || reservation.expires_at_ms <= now) {
-        fail(409, 'RESERVATION_NOT_ACTIVE', 'Only an active, unexpired reservation can be settled.');
+      if (!reservation || reservation.status !== 'active') {
+        fail(409, 'RESERVATION_NOT_ACTIVE', 'Only an active reservation can be settled. Expiry alone does not prove an order outcome.');
       }
       if (String(input?.instanceId ?? '').trim() !== reservation.instance_id) {
         fail(403, 'RESERVATION_OWNER_MISMATCH', 'Only the originating terminal instance may settle this reservation.');
