@@ -106,7 +106,10 @@ private:
          isPartial=(StringToInteger(ParseCsvField(line,28))!=0);
         }
       FileClose(handle);
-      return(dealTicket>0 && lots>0.0 && MathIsValidNumber(lots));
+      // The journal historically rounded Lots to two decimals. A valid broker
+      // micro-volume can therefore be persisted as 0.00; the deal ticket, not
+      // the rounded display volume, establishes whether the row exists.
+      return(dealTicket>0 && MathIsValidNumber(lots));
      }
 
    void              AddRiskHistory(const double netProfit,const double rMultiple,
@@ -270,7 +273,7 @@ public:
                    TimeToString(rec.entryTime,TIME_DATE|TIME_SECONDS),
                    TimeToString(rec.exitTime,TIME_DATE|TIME_SECONDS),AxDirToString(rec.direction),
                    DoubleToString(rec.entryPrice,m_digits),DoubleToString(rec.exitPrice,m_digits),
-                   DoubleToString(rec.lots,2),DoubleToString(rec.spreadAtEntry,1),
+                   DoubleToString(rec.lots,8),DoubleToString(rec.spreadAtEntry,1),
                    DoubleToString(rec.slippagePts,1),rec.holdSeconds,
                    DoubleToString(rec.buyScore,1),DoubleToString(rec.sellScore,1),
                    DoubleToString(rec.confidence,1),AxRegimeToString(rec.regime),rec.entryReason,
