@@ -122,6 +122,10 @@ require("m_trade.PositionClose(positionTicket)" in execution
         and "DEAL_ENTRY_OUT_BY" in execution
         and "closedVolume+tolerance<beforeVolume" in execution,
         "full closes require exact broker position, order-deal and closed-volume reconciliation")
+require("bool              ClosePartial(" in execution
+        and "MathAbs(exactOrderClosed-actualClosed)" in execution
+        and "HistoryDealGetInteger(resultDeal,DEAL_ORDER)!=orderTicket" in execution,
+        "partial closes require exact broker exit-order deal volume to match the position reduction")
 require("g_exec.ClosePosition(_Symbol,ticket,g_positionIdentifier,InpMagicNumber" in ea
         and "closeOutcomeUncertain" in ea
         and "g_recoveryReady=false;" in ea
