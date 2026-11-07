@@ -151,6 +151,21 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         cls.coordinator = (root / "MQL5/Include/AutopsyX/DistributedRiskCoordinator.mqh").read_text()
         cls.expert = (root / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text()
 
+    def test_pyramid_add_arms_uncertainty_before_broker_submission(self):
+        start = self.expert.index("bool AxAttemptPyramidNettingAdd(")
+        end = self.expert.index('g_exec.AddToNettingPosition', start)
+        method = self.expert[start:end]
+        self.assertIn("g_distributedRiskCoordinator.MarkExecutionUncertain(uncertaintyError)", method)
+        self.assertLess(method.index("MarkExecutionUncertain"), end - start)
+        self.assertLess(method.index("g_pyramidCampaignRegistry.Save(campaign)"),
+                        method.index("MarkExecutionUncertain"))
+        failure = method[method.index("if(reservationActive && !g_distributedRiskCoordinator.MarkExecutionUncertain"):
+                         method.index("ulong newTicket=0,newPositionId=0,orderTicket=0;")]
+        self.assertIn("g_accountRiskIntegrityLock=true", failure)
+        self.assertIn("g_distributedRecoveryPending=true", failure)
+        self.assertIn("EventSetTimer(1)", failure)
+        self.assertIn("return(false);", failure)
+
     def test_ambiguous_market_retcode_is_not_retried(self):
         retry = self.execution[
             self.execution.index("bool              RetryableRetcode"):
