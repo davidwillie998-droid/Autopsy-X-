@@ -1238,6 +1238,9 @@ bool AxRecoverLockedPartialCloseActions(void)
             if(!AxRecoverFullyClosedPosition(saved,confirmedExitVolume,closePrice,
                                               grossProfit,commission,swap,closeTime,finalDeal))
                return(false);
+            // Registry removal shifts later rows left; revisit this index instead
+            // of skipping the next locked position during the same startup pass.
+            i--;
             continue;
            }
          g_virtualExitReady=false;
