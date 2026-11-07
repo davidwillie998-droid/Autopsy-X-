@@ -75,5 +75,11 @@ class DistributedRiskRestartJournalTests(unittest.TestCase):
         self.assertIn("AX_DistributedRisk_%I64d_%s_%I64u.dat", self.coordinator)
         self.assertNotIn("AX_DistributedRisk_%I64d_%I64d.dat", self.coordinator)
 
+    def test_definitive_rejections_clear_new_journal_but_expired_outcomes_do_not(self):
+        reserve = self.coordinator[self.coordinator.index("   bool Reserve("):self.coordinator.index("   bool Release(")]
+        self.assertIn('StringFind(error,"DISTRIBUTED_RISK_HTTP_4")==0', reserve)
+        self.assertIn('StringFind(error,"EXPIRED_RESERVATION_REQUIRES_RECONCILIATION")<0', reserve)
+        self.assertIn("ClearPendingJournal();", reserve)
+
 if __name__ == "__main__":
     unittest.main()
