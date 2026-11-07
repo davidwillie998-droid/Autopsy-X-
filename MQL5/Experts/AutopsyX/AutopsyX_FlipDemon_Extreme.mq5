@@ -1001,13 +1001,13 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
                                   const double exitVolume,const double exitPrice,
                                   const double grossProfit,const double commission,
                                   const double swap,const datetime closeTime,
-                                  const ulong lastExitDeal)
+                                  const ulong journalCursor,const ulong lastExitDeal)
   {
+   double tolerance=MathMax(SymbolInfoDouble(saved.symbol,SYMBOL_VOLUME_STEP)*0.5,0.0000001);
    if(saved.positionIdentifier==0 || saved.actionCode!=3 ||
       saved.actionBaselineVolume<=0.0 || exitVolume<=0.0 ||
-      MathAbs(exitVolume-saved.actionBaselineVolume)>
-         MathMax(SymbolInfoDouble(saved.symbol,SYMBOL_VOLUME_STEP)*0.5,0.0000001) ||
-      exitPrice<=0.0 || lastExitDeal<=saved.partialLastDealTicket)
+      exitVolume>saved.actionBaselineVolume+tolerance ||
+      exitPrice<=0.0 || lastExitDeal<journalCursor)
       return(false);
 
    SAxOpenSetupRecord setup;
@@ -1066,7 +1066,7 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
    rec.direction=saved.dir;
    rec.entryPrice=entryValue/entryVolume;
    rec.exitPrice=exitPrice;
-   rec.lots=saved.actionBaselineVolume;
+   rec.lots=exitVolume;
    rec.holdSeconds=(int)MathMax(0,(long)(rec.exitTime-rec.entryTime));
    rec.entryReason="RESTART_RECOVERED | ENTRY_THESIS_UNAVAILABLE";
    rec.exitReason=AX_EXIT_SL;
@@ -1080,9 +1080,17 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
    rec.flipSeq=0;
    rec.isPartial=false;
    rec.rMultiple=EMPTY_VALUE;
+   double tickSize=SymbolInfoDouble(saved.symbol,SYMBOL_TRADE_TICK_SIZE);
+   double tickValue=SymbolInfoDouble(saved.symbol,SYMBOL_TRADE_TICK_VALUE);
+   if(saved.originalRiskDistance>0.0 && tickSize>0.0 && tickValue>0.0 && exitVolume>0.0)
+     {
+      double originalRiskCurrency=(saved.originalRiskDistance/tickSize)*tickValue*exitVolume;
+      if(originalRiskCurrency>0.0)
+         rec.rMultiple=rec.netProfit/originalRiskCurrency;
+     }
 
-   // RecordTrade is deal-ticket idempotent. If a previous run wrote the row
-   // but failed before removing either registry, this path will not duplicate it.
+   // The journal's deal-ticket boundary makes replay safe. If the final row
+   // already exists, this skips the append and proceeds only with stale-state cleanup.
    bool alreadyJournaled=(g_autopsy.LastAccountedDealTicket(saved.positionIdentifier)>=lastExitDeal);
    if(!alreadyJournaled)
      {
@@ -1100,9 +1108,6 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
       g_risk.RegisterTradeClosed(rec.netProfit);
      }
 
-   // The journal is now the durable source of truth. Remove the setup mapping by
-   // stable identifier, then remove the virtual-exit lock. Any failed write keeps
-   // startup quarantined and the remaining record makes the operation replayable.
    if(g_restartRecovery.FindByPositionIdentifier(saved.positionIdentifier,setup) &&
       (!g_restartRecovery.RemoveOpenSetupByPositionIdentifier(saved.positionIdentifier) ||
        !g_restartRecovery.IsPersisting()))
@@ -1121,16 +1126,12 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
       g_engineState=AX_ENGINE_PAUSED;
       return(false);
      }
-   PrintFormat("FLIPDEMON FULL-CLOSE RECOVERY: identifier=%I64u journalled through deal=%I64u volume=%.8f net=%.2f; stale lifecycle records removed.",
-               saved.positionIdentifier,lastExitDeal,exitVolume,rec.netProfit);
+   PrintFormat("FLIPDEMON FULL-CLOSE RECOVERY: identifier=%I64u journal boundary=%I64u final deal=%I64u recovered volume=%.8f net=%.2f; stale lifecycle records removed.",
+               saved.positionIdentifier,journalCursor,lastExitDeal,exitVolume,rec.netProfit);
    return(true);
   }
 
-// Recover an interrupted partial-close request from its persisted pre-request volume.
-// A live-position partial is committed only when exact POSITION_IDENTIFIER exit deals
-// equal the broker-confirmed reduction. If the position is absent, final-close journal
-// reconstruction uses broker entry/exit facts and explicitly marks unavailable thesis data.
-bool AxRecoverLockedPartialCloseActions(void)
+//bool AxRecoverLockedPartialCloseActions(void)
   {
    if(!g_virtualExitInitialized || !g_virtualExitRegistry.IsPersisting() ||
       !g_hedgingPositionManager.IsComplete())
