@@ -480,7 +480,7 @@ class NettingPyramidFillReconciliationTests(unittest.TestCase):
 
     def test_netting_add_reconciles_only_exact_order_entry_deals(self):
         start = self.execution.index("bool              AddToNettingPosition(")
-        end = self.execution.index("//--- close whatever is open on symbol", start)
+        end = self.execution.index("//--- close one exact broker position", start)
         method = self.execution[start:end]
         for token in (
             "orderTicketOut=m_trade.ResultOrder()",
@@ -500,7 +500,7 @@ class NettingPyramidFillReconciliationTests(unittest.TestCase):
 
     def test_unconfirmed_done_or_partial_netting_add_is_uncertain(self):
         start = self.execution.index("bool              AddToNettingPosition(")
-        end = self.execution.index("//--- close whatever is open on symbol", start)
+        end = self.execution.index("//--- close one exact broker position", start)
         method = self.execution[start:end]
         failed_send = method[method.index("if(!sent)"):method.index("// A true CTrade return")]
         for token in (
@@ -515,7 +515,56 @@ class NettingPyramidFillReconciliationTests(unittest.TestCase):
 
     def test_unconfirmed_netting_add_does_not_retry_market_submission(self):
         start = self.execution.index("bool              AddToNettingPosition(")
-        end = self.execution.index("//--- close whatever is open on symbol", start)
+        end = self.execution.index("//--- close one exact broker position", start)
         method = self.execution[start:end]
         self.assertEqual(method.count("m_trade.Buy(requestedLots"), 1)
         self.assertEqual(method.count("m_trade.Sell(requestedLots"), 1)
+
+
+class FullCloseBrokerReconciliationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        root = Path(__file__).resolve().parents[1]
+        cls.execution = (root / "MQL5/Include/AutopsyX/ExecutionEngine.mqh").read_text()
+        cls.expert = (root / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text()
+
+    def test_full_close_uses_exact_ticket_identity_and_order_exit_deals(self):
+        start = self.execution.index("bool              ClosePosition(const string symbol,const ulong positionTicket")
+        end = self.execution.index("//--- close part of an open position", start)
+        method = self.execution[start:end]
+        for token in (
+            "PositionSelectByTicket(positionTicket)",
+            "POSITION_IDENTIFIER",
+            "POSITION_MAGIC",
+            "m_trade.PositionClose(positionTicket)",
+            "m_trade.ResultOrder()",
+            "m_trade.ResultDeal()",
+            "HistoryDealGetInteger(resultDeal,DEAL_ORDER)!=orderTicket",
+            "DEAL_ENTRY_OUT",
+            "DEAL_ENTRY_OUT_BY",
+            "DEAL_POSITION_ID",
+            "closedVolume+tolerance<beforeVolume",
+        ):
+            self.assertIn(token, method)
+
+    def test_full_close_submits_once_and_never_retries_partial_or_ambiguous_result(self):
+        start = self.execution.index("bool              ClosePosition(const string symbol,const ulong positionTicket")
+        end = self.execution.index("//--- close part of an open position", start)
+        method = self.execution[start:end]
+        self.assertEqual(method.count("m_trade.PositionClose(positionTicket)"), 1)
+        self.assertIn("TRADE_RETCODE_DONE_PARTIAL", method)
+        self.assertIn("TRADE_RETCODE_TIMEOUT", method)
+        self.assertIn("outcomeUncertain=true;", method)
+        self.assertIn("no retry sent", method)
+
+    def test_full_close_uncertainty_quarantines_campaign_and_blocks_new_actions(self):
+        start = self.expert.index("bool AxCloseAndRecord(")
+        end = self.expert.index("void AxRecordExternalClose(", start)
+        method = self.expert[start:end]
+        self.assertIn("g_exec.ClosePosition(_Symbol,ticket,g_positionIdentifier,InpMagicNumber", method)
+        self.assertIn("if(closeOutcomeUncertain)", method)
+        self.assertIn("g_recoveryReady=false;", method)
+        self.assertIn("g_virtualExitReady=false;", method)
+        self.assertIn("g_hedgingLifecycleLock=true;", method)
+        self.assertIn("g_engineState=AX_ENGINE_PAUSED;", method)
+        self.assertIn("g_accountRiskReconciliationPending=true;", method)
