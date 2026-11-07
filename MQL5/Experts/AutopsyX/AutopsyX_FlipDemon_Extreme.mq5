@@ -131,7 +131,7 @@ input double         InpMinFreeMarginPercent    = 150.0;   // Min margin level %
 input double         InpWeeklyLossLimitPercent  = 15.0;    // Weekly loss limit (%), Monday-anchored - stops the week when hit
 input int            InpMaxPositionsPerSymbol   = 1;       // Max simultaneously open positions on this symbol specifically
 input double         InpMaxDirectionalExposureLots = 1.0;  // Max exposure lots in one direction (BUY or SELL) at once
-input double         InpMaxMarginUsagePercent   = 50.0;     // Max ACCOUNT_MARGIN / ACCOUNT_EQUITY, as a percent
+input double         InpExtremeMaxMarginUsagePercent = 100.0; // EXTREME ceiling for ACCOUNT_MARGIN / ACCOUNT_EQUITY; Normal=5%, Aggressive=20%
 input int            InpMaxExecutionFailures    = 5;        // Max consecutive order-send failures before blocking new entries
 
 input group "=== EXECUTION MODE & EMERGENCY CONTROLS ===";
@@ -326,6 +326,16 @@ double AxRiskPercentForMode(void)
    if(InpMode==AX_MODE_NORMAL)      return(0.5);
    if(InpMode==AX_MODE_AGGRESSIVE)  return(1.0);
    return(AxClampD(InpExtremeRiskPercent,0.05,2.0));
+  }
+
+ // Margin utilisation is a separate exposure constraint, never a stop-loss risk
+ // percentage. The 100% Extreme value is only a ceiling; broker margin-level and
+ // free-margin protections remain active and can reject an order much earlier.
+double AxMarginUsageLimitForMode(void)
+  {
+   if(InpMode==AX_MODE_NORMAL)      return(5.0);
+   if(InpMode==AX_MODE_AGGRESSIVE)  return(20.0);
+   return(AxClampD(InpExtremeMaxMarginUsagePercent,1.0,100.0));
   }
 
 //--- sums only OUT deals with a ticket strictly greater than sinceTicketExclusive - lets partial ---
@@ -2379,7 +2389,7 @@ bool AxAttemptPyramidNettingAdd(SAxPyramidCampaignRecord &campaign,
       !MathIsValidNumber(freeMargin) || requiredMargin>freeMargin ||
       !MathIsValidNumber(equity) || equity<=0.0 ||
       !MathIsValidNumber(usedMargin) || usedMargin<0.0 ||
-      projectedMarginUsage>InpMaxMarginUsagePercent ||
+      projectedMarginUsage>AxMarginUsageLimitForMode() ||
       projectedMarginLevel<InpMinFreeMarginPercent)
      {
       PrintFormat("FLIPDEMON PYRAMID BLOCKED: margin preflight failed; required=%.2f free=%.2f usageAfter=%.2f%% levelAfter=%.2f%%.",
@@ -2896,7 +2906,7 @@ int OnInit(void)
                      InpMaxTradesPerRollingPeriod,InpRollingPeriodSeconds,
                      InpMaxSpreadPoints,InpMaxSlippagePoints,InpMinFreeMarginPercent,
                      InpWeeklyLossLimitPercent,InpMaxPositionsPerSymbol,
-                     InpMaxDirectionalExposureLots,InpMaxMarginUsagePercent,InpMaxExecutionFailures);
+                     InpMaxDirectionalExposureLots,AxMarginUsageLimitForMode(),InpMaxExecutionFailures);
    g_emergency.Configure(InpExecutionMode,InpEnableTrading,InpEnableLong,InpEnableShort);
 
    //--- IMMEDIATE and CONFIRMED_CROSS_PLUS_STRUCTURE VWAP exit modes need live-price and structure-
