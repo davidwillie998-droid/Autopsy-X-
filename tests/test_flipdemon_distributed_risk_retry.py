@@ -58,7 +58,8 @@ class DistributedRiskRestartJournalTests(unittest.TestCase):
         self.assertIn("m_pendingKey", recovery)
         self.assertIn("m_pendingRiskMoney", recovery)
         self.assertIn("m_pendingInstance", recovery)
-        self.assertIn("DISTRIBUTED_RISK_RECOVERY_OUTCOME_AMBIGUOUS_BROKER_EXPOSURE_INCREASED", recovery)
+        self.assertIn("Settle(reservationId,m_pendingInstance,snapshot,settledWithinCap,error)", recovery)
+        self.assertIn("DISTRIBUTED_RISK_RECOVERY_SETTLED_ACCOUNT_OVER_CAP", recovery)
 
     def test_unresolved_recovery_keeps_ea_attached_and_locks_entries(self):
         init = self.expert[self.expert.index("int OnInit(void)"):self.expert.index("void OnDeinit")]
