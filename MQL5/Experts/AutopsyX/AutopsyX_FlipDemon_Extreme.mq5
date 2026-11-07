@@ -2160,6 +2160,9 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
         }
       else if(distributedReservationActive)
         {
+         // The immediate definitive-rejection path below owns this outcome.
+         // Clear any callback flag captured during the synchronous OrderSend.
+         g_distributedRejectedCallbackPending=false;
          // Persist the definitive broker rejection before release. If the release
          // response is lost, restart recovery can safely retry it.
          SAxAccountRiskSnapshot failedOrderSnapshot;
@@ -3908,7 +3911,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
    // inside this callback; OnTimer performs the fresh snapshot and release.
    if(trans.type==TRADE_TRANSACTION_REQUEST && relevant &&
       request.action==TRADE_ACTION_DEAL && request.comment=="AXFDX" &&
-      g_distributedRecoveryPending && g_distributedRiskCoordinator.HasPendingJournal())
+      g_distributedRiskCoordinator.HasPendingJournal())
      {
       bool accepted=(result.retcode==TRADE_RETCODE_DONE ||
                      result.retcode==TRADE_RETCODE_DONE_PARTIAL ||
