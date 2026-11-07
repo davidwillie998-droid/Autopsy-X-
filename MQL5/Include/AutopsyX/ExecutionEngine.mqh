@@ -631,9 +631,36 @@ public:
            }
 
          uint retcode=m_trade.ResultRetcode();
+         ulong orderTicket=m_trade.ResultOrder();
+         ulong resultDeal=m_trade.ResultDeal();
          bool serverAccepted=(retcode==TRADE_RETCODE_DONE || retcode==TRADE_RETCODE_DONE_PARTIAL);
          if(ok && serverAccepted)
            {
+            if(orderTicket==0 || resultDeal==0 || !HistoryDealSelect(resultDeal) ||
+               (ulong)HistoryDealGetInteger(resultDeal,DEAL_ORDER)!=orderTicket ||
+               HistoryDealGetString(resultDeal,DEAL_SYMBOL)!=symbol ||
+               (ulong)HistoryDealGetInteger(resultDeal,DEAL_MAGIC)!=expectedMagic ||
+               (ulong)HistoryDealGetInteger(resultDeal,DEAL_POSITION_ID)!=expectedPositionId)
+              {
+               outcomeUncertain=true;
+               errorReason="Partial close accepted but exact result deal identity is unavailable";
+               return(false);
+              }
+            long expectedCloseType=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY)
+                                   ?DEAL_TYPE_SELL:DEAL_TYPE_BUY;
+            if(HistoryDealGetInteger(resultDeal,DEAL_ENTRY)!=DEAL_ENTRY_OUT &&
+               HistoryDealGetInteger(resultDeal,DEAL_ENTRY)!=DEAL_ENTRY_OUT_BY)
+              {
+               outcomeUncertain=true;
+               errorReason="Partial close result is not an exit deal";
+               return(false);
+              }
+            if(HistoryDealGetInteger(resultDeal,DEAL_TYPE)!=expectedCloseType)
+              {
+               outcomeUncertain=true;
+               errorReason="Partial close deal direction does not reduce tracked position";
+               return(false);
+              }
             // A server-accepted partial fill is not automatically the requested
             // volume. Reconcile any short fill or disappearance from deal history
             // before another scale-out can be attempted.
@@ -655,6 +682,33 @@ public:
             double actualClosed=before-after;
             double volumeStep=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
             double volumeTolerance=MathMax(volumeStep*0.5,0.0000001);
+            if(!HistorySelectByPosition((long)expectedPositionId))
+              {
+               outcomeUncertain=true;
+               errorReason="Partial close position history is unavailable";
+               return(false);
+              }
+            double exactOrderClosed=0.0;
+            for(int dealIndex=0;dealIndex<HistoryDealsTotal();dealIndex++)
+              {
+               ulong closeDeal=HistoryDealGetTicket(dealIndex);
+               if(closeDeal==0 || (ulong)HistoryDealGetInteger(closeDeal,DEAL_ORDER)!=orderTicket)
+                  continue;
+               if(HistoryDealGetString(closeDeal,DEAL_SYMBOL)!=symbol ||
+                  (ulong)HistoryDealGetInteger(closeDeal,DEAL_MAGIC)!=expectedMagic ||
+                  (ulong)HistoryDealGetInteger(closeDeal,DEAL_POSITION_ID)!=expectedPositionId)
+                  continue;
+               long closeEntry=HistoryDealGetInteger(closeDeal,DEAL_ENTRY);
+               if(closeEntry!=DEAL_ENTRY_OUT && closeEntry!=DEAL_ENTRY_OUT_BY) continue;
+               exactOrderClosed+=HistoryDealGetDouble(closeDeal,DEAL_VOLUME);
+              }
+            if(MathAbs(exactOrderClosed-actualClosed)>volumeTolerance)
+              {
+               outcomeUncertain=true;
+               errorReason=StringFormat("Partial close deal/position mismatch: order deals %.8f, broker volume reduction %.8f",
+                                        exactOrderClosed,actualClosed);
+               return(false);
+              }
             if(actualClosed<=volumeTolerance || after<=0.0)
               {
                outcomeUncertain=true;
