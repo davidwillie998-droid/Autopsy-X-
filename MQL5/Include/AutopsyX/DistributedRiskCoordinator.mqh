@@ -17,6 +17,89 @@ private:
    long   m_lastSnapshotMs;
    ulong  m_requestCounter;
    bool   m_ready;
+   string m_journalFile;
+   string m_pendingKey;
+   string m_pendingInstance;
+   string m_pendingReservationId;
+   double m_pendingRiskMoney;
+   double m_pendingBaselineRisk;
+   bool   m_journalPending;
+
+   bool SavePendingJournal(void)
+     {
+      if(!m_journalPending) return(true);
+      string tempName=m_journalFile+".tmp";
+      int handle=FileOpen(tempName,FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_SHARE_READ);
+      if(handle==INVALID_HANDLE) return(false);
+      string line=(string)AccountInfoInteger(ACCOUNT_LOGIN)+"|"+
+                  AccountInfoString(ACCOUNT_SERVER)+"|"+
+                  m_pendingInstance+"|"+m_pendingKey+"|"+
+                  DoubleToString(m_pendingRiskMoney,8)+"|"+
+                  DoubleToString(m_pendingBaselineRisk,8)+"|"+
+                  m_pendingReservationId+"\r\n";
+      uint expected=(uint)StringLen(line);
+      uint written=FileWriteString(handle,line);
+      FileFlush(handle);
+      FileClose(handle);
+      if(written!=expected) return(false);
+      ResetLastError();
+      if(!FileMove(tempName,0,m_journalFile,FILE_REWRITE))
+        {
+         PrintFormat("FLIPDEMON DISTRIBUTED RISK: reservation journal replace failed (%s, error=%d).",
+                     m_journalFile,GetLastError());
+         return(false);
+        }
+      return(true);
+     }
+
+   bool LoadPendingJournal(string &error)
+     {
+      m_journalPending=false;
+      if(!FileIsExist(m_journalFile)) return(true);
+      int handle=FileOpen(m_journalFile,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ);
+      if(handle==INVALID_HANDLE)
+        {
+         error="DISTRIBUTED_RISK_JOURNAL_EXISTS_BUT_CANNOT_BE_READ";
+         return(false);
+        }
+      string line=FileReadString(handle);
+      FileClose(handle);
+      string fields[];
+      int count=StringSplit(line,'|',fields);
+      if(count!=7 ||
+         fields[0]!=(string)AccountInfoInteger(ACCOUNT_LOGIN) ||
+         fields[1]!=AccountInfoString(ACCOUNT_SERVER) ||
+         StringLen(fields[2])==0 || StringLen(fields[3])<8 ||
+         StringToDouble(fields[4])<=0.0 || StringToDouble(fields[5])<0.0)
+        {
+         error="DISTRIBUTED_RISK_JOURNAL_INVALID_OR_WRONG_ACCOUNT";
+         return(false);
+        }
+      m_pendingInstance=fields[2];
+      m_pendingKey=fields[3];
+      m_pendingRiskMoney=StringToDouble(fields[4]);
+      m_pendingBaselineRisk=StringToDouble(fields[5]);
+      m_pendingReservationId=fields[6];
+      m_journalPending=true;
+      return(true);
+     }
+
+   bool ClearPendingJournal(void)
+     {
+      if(FileIsExist(m_journalFile) && !FileDelete(m_journalFile))
+        {
+         PrintFormat("FLIPDEMON DISTRIBUTED RISK: could not remove resolved reservation journal (%s, error=%d).",
+                     m_journalFile,GetLastError());
+         return(false);
+        }
+      m_pendingKey="";
+      m_pendingInstance="";
+      m_pendingReservationId="";
+      m_pendingRiskMoney=0.0;
+      m_pendingBaselineRisk=0.0;
+      m_journalPending=false;
+      return(true);
+     }
 
    string BuildInstanceId(void) const
      {
@@ -150,6 +233,13 @@ public:
       m_lastSnapshotMs=0;
       m_requestCounter=0;
       m_ready=false;
+      m_journalFile="";
+      m_pendingKey="";
+      m_pendingInstance="";
+      m_pendingReservationId="";
+      m_pendingRiskMoney=0.0;
+      m_pendingBaselineRisk=0.0;
+      m_journalPending=false;
      }
 
    bool Init(const string baseUrl,const string key,const int timeoutMs,string &error)
@@ -159,6 +249,8 @@ public:
       m_key=key;
       m_instanceId=BuildInstanceId();
       m_timeoutMs=timeoutMs;
+      m_journalFile=StringFormat("AX_DistributedRisk_%I64d_%I64d.dat",
+                                 (long)AccountInfoInteger(ACCOUNT_LOGIN),ChartID());
       if(StringFind(m_baseUrl,"https://")!=0 || StringLen(m_baseUrl)<12 ||
          StringLen(m_key)<32 || m_timeoutMs<500 || m_timeoutMs>10000)
         {
@@ -170,10 +262,74 @@ public:
          m_baseUrl=StringSubstr(m_baseUrl,0,StringLen(m_baseUrl)-1);
       m_ready=true;
       error="";
+      if(!LoadPendingJournal(error))
+        {
+         m_ready=false;
+         return(false);
+        }
       return(true);
      }
 
    bool IsReady(void) const { return(m_ready); }
+   bool HasPendingJournal(void) const { return(m_journalPending); }
+
+   // Resolve a reservation left by a terminal restart before allowing any new
+   // order. The broker snapshot is reconciled first. The exact original key and
+   // amount are then replayed, so the server returns the same reservation rather
+   // than creating a second claim. A terminal idempotency conflict means the
+   // original reservation has already reached a terminal state through expiry
+   // reconciliation, so the fresh broker snapshot is authoritative.
+   bool RecoverPending(const SAxAccountRiskSnapshot &snapshot,string &error)
+     {
+      if(!m_journalPending) return(true);
+      if(!snapshot.exposureKnown || snapshot.equity<=0.0 ||
+         !MathIsValidNumber(snapshot.existingRiskMoney))
+        {
+         error="DISTRIBUTED_RISK_RECOVERY_SNAPSHOT_UNKNOWN";
+         return(false);
+        }
+
+      bool withinCap=false;
+      if(!Reconcile(snapshot,withinCap,error) || !withinCap)
+        {
+         if(error=="") error="DISTRIBUTED_RISK_RECOVERY_RECONCILIATION_OVER_CAP";
+         return(false);
+        }
+
+      string body="{"+AccountFields()+","+
+                  "\"instanceId\":\""+JsonEscape(m_pendingInstance)+"\","+
+                  "\"idempotencyKey\":\""+JsonEscape(m_pendingKey)+"\","+
+                  "\"riskMoney\":"+DoubleToString(m_pendingRiskMoney,8)+"}";
+      string response,reservationId;
+      if(!Post("/risk/reserve",body,response,error))
+        {
+         if(StringFind(error,"IDEMPOTENCY_KEY_REUSED")>=0)
+            return(ClearPendingJournal());
+         return(false);
+        }
+      if(!JsonTrue(response,"ok") || !JsonString(response,"reservationId",reservationId))
+        {
+         error="DISTRIBUTED_RISK_RECOVERY_RESERVATION_REJECTED "+response;
+         return(false);
+        }
+      m_pendingReservationId=reservationId;
+      if(!SavePendingJournal())
+        {
+         error="DISTRIBUTED_RISK_RECOVERY_JOURNAL_WRITE_FAILED";
+         return(false);
+        }
+
+      // If the broker's current stop-risk is above the pre-reservation baseline,
+      // the order may have filled. Never release that reservation on inference.
+      if(snapshot.existingRiskMoney>m_pendingBaselineRisk+0.01)
+        {
+         error="DISTRIBUTED_RISK_RECOVERY_OUTCOME_AMBIGUOUS_BROKER_EXPOSURE_INCREASED";
+         return(false);
+        }
+
+      if(!Release(reservationId,m_pendingInstance,snapshot,error)) return(false);
+      return(true);
+     }
    string InstanceId(void) const { return(m_instanceId); }
 
    bool Reconcile(const SAxAccountRiskSnapshot &snapshot,bool &withinCap,string &error)
@@ -188,6 +344,12 @@ public:
          return(false);
         }
       withinCap=JsonTrue(response,"withinCap");
+      if(m_journalPending && m_pendingReservationId==reservationId &&
+         !ClearPendingJournal())
+        {
+         error="DISTRIBUTED_RISK_SETTLED_BUT_LOCAL_JOURNAL_CLEAR_FAILED";
+         return(false);
+        }
       return(true);
      }
 
@@ -196,6 +358,11 @@ public:
                 const string instanceId,string &reservationId,string &error)
      {
       reservationId="";
+      if(m_journalPending)
+        {
+         error="DISTRIBUTED_RISK_PENDING_JOURNAL_MUST_BE_RECOVERED_BEFORE_NEW_RESERVATION";
+         return(false);
+        }
       string snapshotBody,response;
       if(!SnapshotBody(snapshot,snapshotBody,error)) return(false);
       if(!Post("/risk/reconcile",snapshotBody,response,error)) return(false);
@@ -212,6 +379,18 @@ public:
                   "\"instanceId\":\""+JsonEscape(instanceId)+"\","+
                   "\"idempotencyKey\":\""+idempotencyKey+"\","+
                   "\"riskMoney\":"+DoubleToString(decision.proposedRiskMoney,8)+"}";
+      m_pendingInstance=instanceId;
+      m_pendingKey=idempotencyKey;
+      m_pendingRiskMoney=decision.proposedRiskMoney;
+      m_pendingBaselineRisk=snapshot.existingRiskMoney;
+      m_pendingReservationId="";
+      m_journalPending=true;
+      if(!SavePendingJournal())
+        {
+         m_journalPending=false;
+         error="DISTRIBUTED_RISK_RESERVATION_JOURNAL_WRITE_FAILED";
+         return(false);
+        }
       // A transport timeout is ambiguous: the server may have committed the
       // reservation before the terminal lost its response. Retry the exact same
       // payload and idempotency key once. The ledger then returns the original
@@ -238,6 +417,13 @@ public:
          reservationId="";
          return(false);
         }
+      m_pendingReservationId=reservationId;
+      if(!SavePendingJournal())
+        {
+         error="DISTRIBUTED_RISK_RESERVATION_ID_JOURNAL_WRITE_FAILED";
+         reservationId="";
+         return(false);
+        }
       return(true);
      }
 
@@ -254,6 +440,12 @@ public:
       if(!JsonTrue(response,"released"))
         {
          error="DISTRIBUTED_RISK_RELEASE_REJECTED "+response;
+         return(false);
+        }
+      if(m_journalPending && m_pendingReservationId==reservationId &&
+         !ClearPendingJournal())
+        {
+         error="DISTRIBUTED_RISK_RELEASED_BUT_LOCAL_JOURNAL_CLEAR_FAILED";
          return(false);
         }
       return(true);
