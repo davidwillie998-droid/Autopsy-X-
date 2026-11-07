@@ -174,6 +174,28 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         self.assertIn("snapshot.hardRiskBudgetMoney+0.01", method)
         self.assertIn("PROPOSED_ORDER_EXCEEDS_ACCOUNT_WIDE_2_PERCENT_CAP", method)
 
+    def test_broker_symbol_preflight_enforces_direction_market_and_volume_contract(self):
+        start = self.expert.index("bool AxBrokerSymbolOrderPreflight(")
+        end = self.expert.index("\n  }", start) + len("\n  }")
+        helper = self.expert[start:end]
+        for token in (
+            "SYMBOL_TRADE_MODE_CLOSEONLY",
+            "SYMBOL_TRADE_MODE_SHORTONLY",
+            "SYMBOL_TRADE_MODE_LONGONLY",
+            "SYMBOL_ORDER_MARKET",
+            "SYMBOL_VOLUME_MIN",
+            "SYMBOL_VOLUME_MAX",
+            "SYMBOL_VOLUME_STEP",
+            "SYMBOL_VOLUME_LIMIT",
+            "ORDER_VOLUME_CURRENT",
+            "POSITION_VOLUME",
+        ):
+            self.assertIn(token, helper)
+        self.assertIn("BROKER_SYMBOL_DIRECTIONAL_VOLUME_LIMIT", helper)
+        self.assertEqual(self.expert.count("AxBrokerSymbolOrderPreflight("), 3)
+        self.assertIn("tradeMode==SYMBOL_TRADE_MODE_CLOSEONLY", self.expert)
+        self.assertIn("(orderMode & SYMBOL_ORDER_MARKET)==0", self.expert)
+
     def test_broker_stopout_threshold_and_buffer_guard_entries_and_pyramid_adds(self):
         start = self.expert.index("bool AxBrokerMarginPreflight(")
         end = self.expert.index("\n  }", start) + len("\n  }")
