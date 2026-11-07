@@ -887,6 +887,19 @@ bool AxReconcileVirtualExitTickets(const bool removeStaleRecords)
          return(false);
         }
 
+      // An action lock surviving restart means the broker outcome may be
+      // unresolved. Do not infer success or clear it from a position snapshot.
+      if(saved.actionLocked)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON VIRTUAL EXIT QUARANTINE: unresolved action=%d started=%s identifier=%I64u; manual/history reconciliation required.",
+                     saved.actionCode,TimeToString(saved.actionStartedAt,TIME_DATE|TIME_SECONDS),
+                     live.positionIdentifier);
+         return(false);
+        }
+
       double tickSize=SymbolInfoDouble(live.symbol,SYMBOL_TRADE_TICK_SIZE);
       if(tickSize<=0.0 || saved.symbol!=live.symbol ||
          saved.dir!=live.direction || !live.hasValidBrokerStop ||
