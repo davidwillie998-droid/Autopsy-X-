@@ -2135,8 +2135,20 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
                                           // (spec section 18) - a distinct counter/threshold from
                                           // g_consecutiveExecFailures above, which existed before this
                                           // phase for its own purposes; both now track every failure
-      if(distributedReservationActive)
+      if(distributedReservationActive && entryOutcomeUncertain)
         {
+         // Timeout, connection loss, or accepted-but-not-visible state is not a
+         // rejection. Keep the server reservation and durable journal active.
+         g_accountRiskIntegrityLock=true;
+         g_distributedRecoveryPending=true;
+         EventSetTimer(1);
+         PrintFormat("FLIPDEMON DISTRIBUTED RISK: execution outcome is ambiguous; reservation retained and all new entries locked (%s).",
+                     execErr);
+        }
+      else if(distributedReservationActive)
+        {
+         // Only a definitive broker rejection reaches this branch. Release against
+         // a fresh full-account snapshot, including all positions and pending orders.
          SAxAccountRiskSnapshot failedOrderSnapshot;
          string releaseError;
          if(!g_accountRisk.Scan(failedOrderSnapshot) || !failedOrderSnapshot.exposureKnown ||
@@ -2144,7 +2156,9 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
                                                    failedOrderSnapshot,releaseError))
            {
             g_accountRiskIntegrityLock=true;
-            PrintFormat("FLIPDEMON DISTRIBUTED RISK: order outcome could not be safely reconciled/released; reservation retained (%s).",
+            g_distributedRecoveryPending=true;
+            EventSetTimer(1);
+            PrintFormat("FLIPDEMON DISTRIBUTED RISK: rejected-order reservation could not be safely released; recovery lock retained (%s).",
                         releaseError);
            }
          else
