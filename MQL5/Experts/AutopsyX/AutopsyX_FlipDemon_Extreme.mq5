@@ -560,32 +560,60 @@ void AxRecordExternalClose(void)
 
 //--- records the banked slice of a scale-out partial close without touching g_haveOpenPosition; ---
 //--- the remainder keeps trading under the same ticket with g_posState.lots reduced accordingly ---
-void AxRecordPartialClose(const double volumeClosed,const double closePrice,const double grossProfit,
+bool AxRecordPartialClose(const double volumeClosed,const double closePrice,const double grossProfit,
                            const double commission,const double swap,const datetime closeTime,
                            const ulong lastDealTicket)
   {
+   if(volumeClosed<=0.0 || lastDealTicket==0 || g_positionIdentifier==0)
+      return(false);
    SAxTradeRecord rec = AxBuildTradeRecord(closePrice,grossProfit,commission,swap,closeTime,AX_EXIT_TP,volumeClosed,true);
    rec.dealIdOut=lastDealTicket;
    rec.positionIdentifier=g_positionIdentifier;
    g_autopsy.RecordTrade(rec);
-   if(lastDealTicket>0 && g_autopsy.LastAccountedDealTicket(g_positionIdentifier)<lastDealTicket)
+   if(g_autopsy.LastAccountedDealTicket(g_positionIdentifier)<lastDealTicket)
      {
       g_recoveryReady=false;
-      Print("FLIPDEMON JOURNAL ERROR: partial exit record was not confirmed in the durable journal; new entries blocked.");
+      Print("FLIPDEMON JOURNAL ERROR: partial exit record was not confirmed in the durable journal; action lock retained.");
+      return(false);
      }
-   // deliberately NOT calling g_risk.RegisterTradeClosed / g_chop.RegisterStopOut here - a partial
-   // is a banked partial win, not the thesis's final outcome; consecutive-loss and chop tracking
-   // are driven by the remainder's eventual close, which reflects how the full trade actually ended
+   // A partial is a banked slice, not the campaign's final outcome.
    g_posState.lots -= volumeClosed;
    g_posState.partialTaken = true;
    g_posState.lastAccountedDealTicket = lastDealTicket;
-   // MFE/MAE currency tracking is lot-size-dependent (UpdateExcursion multiplies by st.lots) -
-   // a pre-partial peak measured at the old, larger lot size is no longer comparable to the
-   // remainder's excursion. Reset so exitEfficiencyPct/classification reflect only how the
-   // remaining, reduced position performed from here.
    g_posState.mfeCurrency = 0;
    g_posState.maeCurrency = 0;
-   g_posState.bestFavorablePrice = 0; // 0 signals UpdateExcursion to reinitialize on the next tick
+   g_posState.bestFavorablePrice = 0;
+   return(true);
+  }
+
+// Commit accounting only after broker volume and exact position history agree.
+// Registry recording is idempotent for the last deal, allowing journal recovery
+// without issuing another broker close request.
+bool AxCommitPartialClose(const double volumeClosed,const double closePrice,const double grossProfit,
+                          const double commission,const double swap,const datetime closeTime,
+                          const ulong lastDealTicket)
+  {
+   if(!g_virtualExitRegistry.RecordPartialClose(g_positionIdentifier,volumeClosed,lastDealTicket) ||
+      !g_virtualExitRegistry.IsPersisting())
+     {
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_engineState=AX_ENGINE_PAUSED;
+      Print("FLIPDEMON PARTIAL CLOSE ERROR: durable partial-close state could not be recorded; action lock retained.");
+      return(false);
+     }
+   if(!AxRecordPartialClose(volumeClosed,closePrice,grossProfit,commission,swap,closeTime,lastDealTicket))
+      return(false);
+   if(!g_virtualExitRegistry.ResolveAction(g_positionIdentifier,3) ||
+      !g_virtualExitRegistry.IsPersisting())
+     {
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_engineState=AX_ENGINE_PAUSED;
+      Print("FLIPDEMON PARTIAL CLOSE ERROR: accounting is recorded but the durable action lock could not be cleared.");
+      return(false);
+     }
+   return(true);
   }
 
 void AxExecutePartialClose(const double volumeToClose)
@@ -595,6 +623,26 @@ void AxExecutePartialClose(const double volumeToClose)
       if(InpVerboseLogging) Print("FLIPDEMON: partial close reconciliation pending; refusing another scale-out.");
       return;
      }
+   SAxVirtualExitRecord partialState;
+   if(!g_virtualExitReady || !g_virtualExitRegistry.IsPersisting() ||
+      !g_virtualExitRegistry.Find(g_positionIdentifier,partialState) || partialState.actionLocked)
+     {
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_engineState=AX_ENGINE_PAUSED;
+      Print("FLIPDEMON PARTIAL CLOSE BLOCKED: durable unlocked position state is unavailable.");
+      return;
+     }
+   if(!g_virtualExitRegistry.BeginAction(g_positionIdentifier,3) ||
+      !g_virtualExitRegistry.IsPersisting())
+     {
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_engineState=AX_ENGINE_PAUSED;
+      Print("FLIPDEMON PARTIAL CLOSE BLOCKED: action lock could not be persisted; no broker request sent.");
+      return;
+     }
+
    string partErr;
    bool outcomeUncertain=false;
    if(!g_exec.ClosePartial(_Symbol,g_posState.ticket,g_positionIdentifier,InpMagicNumber,volumeToClose,partErr,outcomeUncertain))
@@ -610,11 +658,25 @@ void AxExecutePartialClose(const double volumeToClose)
          if(InpVerboseLogging)
             PrintFormat("FLIPDEMON: partial close outcome uncertain; retry blocked pending broker reconciliation (%s)",partErr);
         }
-      else if(InpVerboseLogging)
-         PrintFormat("AUTOPSY X: partial close failed (%s)",partErr);
+      else
+        {
+         // A definite rejection is the only failure path that may release the lock.
+         if(!g_virtualExitRegistry.ResolveAction(g_positionIdentifier,3) ||
+            !g_virtualExitRegistry.IsPersisting())
+           {
+            g_virtualExitReady=false;
+            g_hedgingLifecycleLock=true;
+            g_engineState=AX_ENGINE_PAUSED;
+            Print("FLIPDEMON PARTIAL CLOSE ERROR: rejected request lock could not be cleared.");
+           }
+         else if(InpVerboseLogging)
+            PrintFormat("AUTOPSY X: partial close failed (%s)",partErr);
+        }
       return;
      }
 
+   g_partialClosePending=true;
+   g_pendingPartialCloseVolume=volumeToClose;
    // Do not fabricate a partial-close result if the broker history cache lags.
    double pClosePrice=0,pGross=0,pComm=0,pSwap=0,closedVolume=0.0;
    datetime pTime=0;
@@ -644,7 +706,10 @@ void AxExecutePartialClose(const double volumeToClose)
       Print("FLIPDEMON: partial close deal found but broker volume has not reconciled; accounting deferred.");
       return;
      }
-   AxRecordPartialClose(actualClosed,pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket);
+   if(!AxCommitPartialClose(actualClosed,pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket))
+      return;
+   g_partialClosePending=false;
+   g_pendingPartialCloseVolume=0.0;
   }
 
 // Retry accounting only. Never submit a second close order while reconciliation is pending.
@@ -670,7 +735,8 @@ void AxRetryPendingPartialClose(void)
    double volumeTolerance=MathMax(SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP)*0.5,0.0000001);
    if(actualClosed<=0.0 || MathAbs(actualClosed-closedVolume)>volumeTolerance) return;
 
-   AxRecordPartialClose(actualClosed,pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket);
+   if(!AxCommitPartialClose(actualClosed,pClosePrice,pGross,pComm,pSwap,pTime,pLastTicket))
+      return;
    g_partialClosePending=false;
    g_pendingPartialCloseVolume=0.0;
   }
