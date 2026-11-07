@@ -24,6 +24,7 @@ private:
    double m_pendingRiskMoney;
    double m_pendingBaselineRisk;
    bool   m_journalPending;
+   int    m_journalLockHandle;
 
    bool SavePendingJournal(void)
      {
@@ -240,6 +241,7 @@ public:
       m_pendingRiskMoney=0.0;
       m_pendingBaselineRisk=0.0;
       m_journalPending=false;
+      m_journalLockHandle=INVALID_HANDLE;
      }
 
    bool Init(const string baseUrl,const string key,const int timeoutMs,
@@ -254,10 +256,21 @@ public:
       // Chart IDs can change when a terminal/chart is recreated after a restart.
       m_journalFile=StringFormat("AX_DistributedRisk_%I64d_%s_%I64u.dat",
                                  (long)AccountInfoInteger(ACCOUNT_LOGIN),symbol,magic);
+      // One chart instance owns this account/symbol/magic journal for its lifetime.
+      // FileOpen without FILE_SHARE_READ/FILE_SHARE_WRITE is an exclusive terminal-local lock.
+      // Other terminals are coordinated by the server-side SQLite reservation ledger.
+      ResetLastError();
+      m_journalLockHandle=FileOpen(m_journalFile+".lock",FILE_READ|FILE_WRITE|FILE_BIN);
+      if(m_journalLockHandle==INVALID_HANDLE)
+        {
+         error=StringFormat("DISTRIBUTED_RISK_JOURNAL_OWNED_BY_ANOTHER_TERMINAL_INSTANCE error=%d",GetLastError());
+         return(false);
+        }
       if(StringFind(m_baseUrl,"https://")!=0 || StringLen(m_baseUrl)<12 ||
          StringLen(m_key)<32 || m_timeoutMs<500 || m_timeoutMs>10000)
         {
          error="DISTRIBUTED_RISK_REQUIRES_HTTPS_URL_KEY_32_CHARS_AND_TIMEOUT_500_TO_10000MS";
+         Shutdown();
          return(false);
         }
       while(StringLen(m_baseUrl)>0 &&
@@ -268,9 +281,20 @@ public:
       if(!LoadPendingJournal(error))
         {
          m_ready=false;
+         Shutdown();
          return(false);
         }
       return(true);
+     }
+
+   // Release the exclusive local journal owner during EA deinitialization.
+   void Shutdown(void)
+     {
+      if(m_journalLockHandle!=INVALID_HANDLE)
+        {
+         FileClose(m_journalLockHandle);
+         m_journalLockHandle=INVALID_HANDLE;
+        }
      }
 
    bool IsReady(void) const { return(m_ready); }
