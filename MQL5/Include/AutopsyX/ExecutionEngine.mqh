@@ -15,6 +15,7 @@ class CExecutionEngine
 private:
    CTrade            m_trade;
    string            m_symbol;
+   ulong             m_magic;
    int               m_maxRetries;
    int               m_retryDelayMs;
 
@@ -110,7 +111,7 @@ private:
      }
 
 public:
-                     CExecutionEngine(void) { m_maxRetries=2; m_retryDelayMs=200; }
+                     CExecutionEngine(void) { m_magic=0; m_maxRetries=2; m_retryDelayMs=200; }
 
    bool              Init(const string symbol,const ulong magic,const int deviationPts,const int maxRetries=2)
      {
@@ -121,6 +122,7 @@ public:
          return(false);
         }
       m_symbol = symbol;
+      m_magic = magic;
       m_trade.SetExpertMagicNumber(magic);
       m_trade.SetDeviationInPoints(deviationPts);
       m_trade.SetTypeFilling(fillingMode);
@@ -137,23 +139,81 @@ public:
       m_trade.SetDeviationInPoints(deviationPts);
      }
 
-   //--- confirm actual open position matches expectation; never trust the send() return alone ---
-   bool              ConfirmPosition(const string symbol,ENUM_AX_DIR expectedDir,const double expectedLots,
-                                      ulong &ticketOut,double &fillPriceOut,double &actualLotsOut) const
+   //--- confirm a fresh entry from its exact broker order and entry deals.
+   //--- Symbol-level aggregate volume is not fill evidence: it can include another
+   //--- position, a pre-existing net position, or unrelated same-symbol activity.
+   bool              ConfirmMarketOrder(const string symbol,const ENUM_AX_DIR expectedDir,
+                                         const double requestedLots,const ulong orderTicket,
+                                         ulong &ticketOut,double &fillPriceOut,
+                                         double &actualLotsOut) const
      {
+      ticketOut=0;
+      fillPriceOut=0.0;
       actualLotsOut=0.0;
-      if(!PositionSelect(symbol)) return(expectedDir==AX_DIR_NONE);
-      long type = PositionGetInteger(POSITION_TYPE);
-      ENUM_AX_DIR actualDir = (type==POSITION_TYPE_BUY) ? AX_DIR_BUY : AX_DIR_SELL;
-      if(actualDir!=expectedDir) return(false);
-      double vol = PositionGetDouble(POSITION_VOLUME);
-      // A market deal may be partially filled. A smaller confirmed position is safe to
-      // manage and must not be treated as a failed entry. An overfill is never accepted.
-      if(vol<=0.0 || vol>expectedLots+0.0000001) return(false);
-      actualLotsOut = vol;
-      ticketOut    = (ulong)PositionGetInteger(POSITION_TICKET);
-      fillPriceOut = PositionGetDouble(POSITION_PRICE_OPEN);
-      return(true);
+      if(orderTicket==0) return(false);
+
+      ulong resultDeal=m_trade.ResultDeal();
+      if(resultDeal==0 || !HistoryDealSelect(resultDeal)) return(false);
+      ulong positionId=(ulong)HistoryDealGetInteger(resultDeal,DEAL_POSITION_ID);
+      if(positionId==0 || !HistorySelectByPosition((long)positionId)) return(false);
+
+      double dealVolume=0.0;
+      double dealPriceValue=0.0;
+      int dealCount=HistoryDealsTotal();
+      for(int i=0;i<dealCount;i++)
+        {
+         ulong deal=HistoryDealGetTicket(i);
+         if(deal==0 || (ulong)HistoryDealGetInteger(deal,DEAL_ORDER)!=orderTicket)
+            continue;
+         if(HistoryDealGetInteger(deal,DEAL_ENTRY)!=DEAL_ENTRY_IN ||
+            HistoryDealGetString(deal,DEAL_SYMBOL)!=symbol ||
+            (ulong)HistoryDealGetInteger(deal,DEAL_MAGIC)!=m_magic ||
+            (ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID)!=positionId)
+            continue;
+         long dealType=HistoryDealGetInteger(deal,DEAL_TYPE);
+         if((expectedDir==AX_DIR_BUY && dealType!=DEAL_TYPE_BUY) ||
+            (expectedDir==AX_DIR_SELL && dealType!=DEAL_TYPE_SELL))
+            continue;
+         double volume=HistoryDealGetDouble(deal,DEAL_VOLUME);
+         double price=HistoryDealGetDouble(deal,DEAL_PRICE);
+         if(volume<=0.0 || price<=0.0 ||
+            !MathIsValidNumber(volume) || !MathIsValidNumber(price))
+            return(false);
+         dealVolume+=volume;
+         dealPriceValue+=volume*price;
+        }
+
+      double step=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+      double tolerance=MathMax(step*0.51,0.00000001);
+      if(dealVolume<=0.0 || dealVolume>requestedLots+tolerance || step<=0.0)
+         return(false);
+
+      // Locate the exact broker position by stable identifier. This works on both
+      // netting and hedging accounts and never adopts another same-symbol position.
+      for(int index=PositionsTotal()-1;index>=0;index--)
+        {
+         ulong ticket=PositionGetTicket(index);
+         if(ticket==0 || !PositionSelectByTicket(ticket))
+            continue;
+         if((ulong)PositionGetInteger(POSITION_IDENTIFIER)!=positionId ||
+            PositionGetString(POSITION_SYMBOL)!=symbol ||
+            (ulong)PositionGetInteger(POSITION_MAGIC)!=m_magic)
+            continue;
+         long positionType=PositionGetInteger(POSITION_TYPE);
+         bool directionOk=(expectedDir==AX_DIR_BUY && positionType==POSITION_TYPE_BUY) ||
+                          (expectedDir==AX_DIR_SELL && positionType==POSITION_TYPE_SELL);
+         double liveVolume=PositionGetDouble(POSITION_VOLUME);
+         // A fresh entry must account for the complete live position. If another
+         // transaction changed it during confirmation, leave the outcome unresolved.
+         if(!directionOk || liveVolume<=0.0 ||
+            MathAbs(liveVolume-dealVolume)>tolerance)
+            return(false);
+         ticketOut=ticket;
+         actualLotsOut=dealVolume;
+         fillPriceOut=dealPriceValue/dealVolume;
+         return(true);
+        }
+      return(false);
      }
 
    bool              HasOpenPosition(const string symbol) const
@@ -178,54 +238,74 @@ public:
                                  int &latencyMsOut,double &actualLotsOut,
                                  bool &outcomeUncertain)
      {
-      uint startTick = GetTickCount();
-      latencyMsOut = 0;
-      actualLotsOut = 0.0;
-      outcomeUncertain = false;
-      if(dir==AX_DIR_NONE || lots<=0) { errorReason="Invalid direction/lots"; return(false); }
+      uint startTick=GetTickCount();
+      latencyMsOut=0;
+      actualLotsOut=0.0;
+      ticketOut=0;
+      fillPriceOut=0.0;
+      outcomeUncertain=false;
+      if((dir!=AX_DIR_BUY && dir!=AX_DIR_SELL) || lots<=0.0 ||
+         !MathIsValidNumber(lots))
+        { errorReason="Invalid direction/lots"; return(false); }
+      // This is a fresh-entry API. Do not merge into or accidentally adopt an
+      // existing same-symbol position, regardless of account margin mode.
+      if(PositionSelect(symbol))
+        { errorReason="Fresh entry blocked: a same-symbol position already exists"; return(false); }
 
-      bool ok=false;
-      for(int attempt=0; attempt<=m_maxRetries; attempt++)
+      for(int attempt=0;attempt<=m_maxRetries;attempt++)
         {
          if(attempt>0) Sleep(m_retryDelayMs);
-
-         double freshBid = SymbolInfoDouble(symbol,SYMBOL_BID);
-         double freshAsk = SymbolInfoDouble(symbol,SYMBOL_ASK);
-         if(freshBid<=0 || freshAsk<=0) { errorReason="Invalid quote on retry"; continue; }
-         double alignedSl=slPrice,alignedTp=tpPrice;
-         if(!PrepareProtectionPrices(symbol,dir,alignedSl,alignedTp,false,0.0,0.0,errorReason))
-            return(false);
-         if(dir==AX_DIR_BUY)
-            ok = m_trade.Buy(lots,symbol,0.0,alignedSl,alignedTp,comment);
-         else
-            ok = m_trade.Sell(lots,symbol,0.0,alignedSl,alignedTp,comment);
-
-         if(ok)
-           {
-            latencyMsOut = (int)(GetTickCount()-startTick);
-            if(ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut,actualLotsOut))
-              {
-               errorReason="";
-               return(true);
-              }
-            // The broker accepted the request, but the terminal cannot yet prove
-            // the resulting position. Preserve the risk reservation and reconcile.
-            outcomeUncertain=true;
-            errorReason="Send reported success but position state did not confirm";
-            return(false);
-           }
-
-         uint retcode = m_trade.ResultRetcode();
-         errorReason = StringFormat("OrderSend failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
-         if(AmbiguousRetcode(retcode))
+         if(PositionSelect(symbol))
            {
             outcomeUncertain=true;
+            errorReason="Same-symbol position appeared before retry; broker reconciliation required";
             latencyMsOut=(int)(GetTickCount()-startTick);
             return(false);
            }
-         if(!RetryableRetcode(retcode)) { latencyMsOut=(int)(GetTickCount()-startTick); return(false); }
+
+         double freshBid=SymbolInfoDouble(symbol,SYMBOL_BID);
+         double freshAsk=SymbolInfoDouble(symbol,SYMBOL_ASK);
+         if(freshBid<=0.0 || freshAsk<=0.0)
+           { errorReason="Invalid quote on retry"; continue; }
+         double alignedSl=slPrice,alignedTp=tpPrice;
+         if(!PrepareProtectionPrices(symbol,dir,alignedSl,alignedTp,false,0.0,0.0,errorReason))
+            return(false);
+
+         bool sent=(dir==AX_DIR_BUY)
+                   ?m_trade.Buy(lots,symbol,0.0,alignedSl,alignedTp,comment)
+                   :m_trade.Sell(lots,symbol,0.0,alignedSl,alignedTp,comment);
+         uint retcode=m_trade.ResultRetcode();
+         ulong orderTicket=m_trade.ResultOrder();
+         latencyMsOut=(int)(GetTickCount()-startTick);
+
+         // CTrade's bool is only the local request/result-structure status. The
+         // exact order's entry deals and resulting broker position are authoritative.
+         if(ConfirmMarketOrder(symbol,dir,lots,orderTicket,ticketOut,
+                               fillPriceOut,actualLotsOut))
+           {
+            errorReason="";
+            return(true); // actualLotsOut may be a legitimate IOC partial fill
+           }
+
+         bool acceptedOrUnresolved=(sent ||
+             retcode==TRADE_RETCODE_DONE ||
+             retcode==TRADE_RETCODE_DONE_PARTIAL ||
+             retcode==TRADE_RETCODE_PLACED ||
+             AmbiguousRetcode(retcode));
+         if(acceptedOrUnresolved)
+           {
+            outcomeUncertain=true;
+            errorReason=StringFormat("Market order outcome not fully reconciled: order=%I64u retcode=%u %s",
+                                     orderTicket,retcode,m_trade.ResultRetcodeDescription());
+            return(false); // never resend an accepted or ambiguous market request
+           }
+
+         errorReason=StringFormat("OrderSend failed: %u %s",
+                                  retcode,m_trade.ResultRetcodeDescription());
+         if(!RetryableRetcode(retcode))
+            return(false);
         }
-      latencyMsOut = (int)(GetTickCount()-startTick);
+      latencyMsOut=(int)(GetTickCount()-startTick);
       return(false);
      }
 
@@ -525,15 +605,10 @@ public:
    bool              ModifyStops(const string symbol,const double slPrice,const double tpPrice,string &errorReason)
      {
       if(!PositionSelect(symbol)) { errorReason="No position to modify"; return(false); }
-      bool ok = m_trade.PositionModify(symbol,slPrice,tpPrice);
-      uint retcode = m_trade.ResultRetcode();
-      if(!ok || retcode!=TRADE_RETCODE_DONE)
-        {
-         errorReason = StringFormat("Modify failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
-         return(false);
-        }
-      errorReason="";
-      return(true);
+      ulong ticket=(ulong)PositionGetInteger(POSITION_TICKET);
+      ulong positionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      ulong magic=(ulong)PositionGetInteger(POSITION_MAGIC);
+      return(ModifyStopsByTicket(symbol,ticket,positionId,magic,slPrice,tpPrice,errorReason));
      }
 
    // Ticket-specific stop modification for hedging lifecycle management.
