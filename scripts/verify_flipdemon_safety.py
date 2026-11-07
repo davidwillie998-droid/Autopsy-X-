@@ -428,10 +428,15 @@ require("g_virtualExitRegistry.Remove(g_positionIdentifier)" in ea
 require("if(!g_virtualExitReady || !g_virtualExitRegistry.IsPersisting())" in ea
         and "if(!g_recoveryReady)" in ea,
         "unverified virtual-exit persistence blocks new entries without disabling existing-position management")
+virtual_reconcile_start = ea.index("bool AxReconcileVirtualExitTickets(")
+virtual_reconcile_end = ea.index("bool AxRecoverFullyClosedPosition(", virtual_reconcile_start)
+virtual_reconcile = ea[virtual_reconcile_start:virtual_reconcile_end]
 require("g_virtualExitRegistry.Init(" in ea
         and ea.index("g_virtualExitRegistry.Init(") < ea.index("AxReconcileExistingPosition();")
-        and "g_virtualExitRegistry.Clear()" in ea,
-        "virtual-exit state is loaded before broker reconciliation and stale records clear only when no EA position exists")
+        and "AxReconcileVirtualExitTickets(true)" in ea
+        and "g_hedgingPositionManager.IsComplete()" in virtual_reconcile
+        and "if(removeStaleRecords)" in virtual_reconcile,
+        "virtual-exit state loads before broker reconciliation and stale rows clear only after a complete broker snapshot")
 require("virtual execution remains disabled in this phase" in ea
         and "g_exec.ModifyStops(_Symbol,newSl,g_posState.initialTpPrice,modErr)" in ea,
         "this commit retains broker-side emergency SL/TP and does not activate virtual execution")
