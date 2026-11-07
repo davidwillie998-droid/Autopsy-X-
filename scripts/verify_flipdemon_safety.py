@@ -114,9 +114,11 @@ require("ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut,actualLotsOut)" 
         "market entries require broker position confirmation")
 require("retcode!=TRADE_RETCODE_DONE" in execution,
         "stop modifications require an accepted server retcode")
-require("g_posState.modifyFailCount>=InpMaxModifyFailures" in ea
-        and "AxCloseAndRecord(AX_EXIT_EXECUTION_QUALITY)" in ea,
-        "repeated stop-management failures trigger a defensive exit")
+require("ModifyStopsByTicket(" in ea
+        and "action lock retained, no retry" in ea
+        and "g_hedgingLifecycleLock=true;" in ea
+        and "g_engineState=AX_ENGINE_PAUSED;" in ea,
+        "uncertain stop modifications retain their durable action lock and quarantine instead of retrying")
 require("not a martingale" in readme.lower() and "never averages down" in readme.lower(),
         "documentation explicitly prohibits martingale and averaging down")
 
