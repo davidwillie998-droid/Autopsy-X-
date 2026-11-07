@@ -397,6 +397,26 @@ public:
       return(true);
      }
 
+      // A broker-declared rejection is definitive only after the execution engine
+   // classifies the retcode as non-ambiguous. Persist that fact before attempting
+   // release, so a lost release response can be safely retried after restart.
+   bool MarkExecutionRejected(string &error)
+     {
+      if(!m_journalPending || StringLen(m_pendingReservationId)==0)
+        {
+         error="DISTRIBUTED_RISK_REJECTED_EXECUTION_WITHOUT_ACTIVE_JOURNAL";
+         return(false);
+        }
+      m_pendingExecutionUncertain=false;
+      if(!SavePendingJournal())
+        {
+         error="DISTRIBUTED_RISK_REJECTED_EXECUTION_JOURNAL_WRITE_FAILED";
+         return(false);
+        }
+      error="";
+      return(true);
+     }
+
    string InstanceId(void) const { return(m_instanceId); }
 
    bool Reconcile(const SAxAccountRiskSnapshot &snapshot,bool &withinCap,string &error)
