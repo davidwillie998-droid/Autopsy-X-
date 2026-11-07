@@ -2749,7 +2749,8 @@ int OnInit(void)
      {
       string coordinatorInitError;
       if(!g_distributedRiskCoordinator.Init(InpRiskCoordinatorUrl,InpRiskCoordinatorKey,
-                                            InpRiskCoordinatorTimeoutMs,coordinatorInitError))
+                                            InpRiskCoordinatorTimeoutMs,_Symbol,InpMagicNumber,
+                                            coordinatorInitError))
         {
          PrintFormat("FLIPDEMON DISTRIBUTED RISK: LIVE mode refused (%s).",coordinatorInitError);
          return(INIT_FAILED);
