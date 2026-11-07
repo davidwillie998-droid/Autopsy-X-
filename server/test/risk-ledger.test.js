@@ -11,6 +11,7 @@ function fixture(options = {}) {
   let now = 1_800_000_000_000;
   const clock = () => now;
   const ledger = openRiskLedger(path, { clock, ...options });
+  let ledgerClosed = false;
   const base = {
     login: '12345678', server: 'Broker-Live',
     equity: 10000, existingRiskMoney: 0,
@@ -18,7 +19,8 @@ function fixture(options = {}) {
   };
   return {
     ledger, path, base, setNow(value) { now = value; },
-    close() { ledger.close(); rmSync(dir, { recursive: true, force: true }); },
+    closeLedger() { if (!ledgerClosed) { ledger.close(); ledgerClosed = true; } },
+    close() { this.closeLedger(); rmSync(dir, { recursive: true, force: true }); },
   };
 }
 
@@ -264,7 +266,7 @@ test('active reservations survive a ledger process restart and idempotent retry'
     const input = { ...f.base, instanceId: 'terminal-a',
       idempotencyKey: 'entry-00000001', riskMoney: 150 };
     const original = f.ledger.reserve(input);
-    f.ledger.close();
+    f.closeLedger();
     const restarted = openRiskLedger(f.path, { clock: () => f.base.snapshotAtMs });
     try {
       const retry = restarted.reserve(input);
@@ -273,5 +275,5 @@ test('active reservations survive a ledger process restart and idempotent retry'
       expectCode(() => restarted.reserve({ ...f.base, instanceId: 'terminal-b',
         idempotencyKey: 'entry-00000002', riskMoney: 60 }), 'ACCOUNT_RISK_BUDGET_EXCEEDED');
     } finally { restarted.close(); }
-  } finally { rmSync(new URL('.', 'file://' + f.path).pathname, { recursive: true, force: true }); }
+  } finally { f.close(); }
 });
