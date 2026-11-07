@@ -461,3 +461,12 @@ class BrokerExecutionCompatibilityTests(unittest.TestCase):
         self.assertIn("g_virtualExitReady=false;", self.expert)
         self.assertIn("g_hedgingLifecycleLock=true;", self.expert)
         self.assertIn("action lock retained, no retry", self.expert)
+
+
+    def test_flip_wrapper_passes_uncertainty_output_to_market_entry(self):
+        flip = self.execution[
+            self.execution.index("bool              Flip("):
+            self.execution.index("bool              ModifyStops(", self.execution.index("bool              Flip("))
+        ]
+        self.assertIn("bool outcomeUncertain=false;", flip)
+        self.assertIn("latencyMs,actualLots,outcomeUncertain", flip)
