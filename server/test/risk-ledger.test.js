@@ -430,3 +430,56 @@ test('concurrent recovery settlement has exactly one winner across ledger proces
     assert.equal(outcomes.filter(x => !x.ok && x.code === 'RESERVATION_NOT_ACTIVE').length, 1);
   } finally { f.close(); }
 });
+
+
+test('transient reconciliation failure and lost reserve response recover with one reservation', () => {
+  const f = fixture();
+  try {
+    f.ledger.reconcile(f.base);
+    const request = { ...f.base, instanceId: 'terminal-retry-a',
+      idempotencyKey: 'entry-transient-retry-0001', riskMoney: 100 };
+    // Server commits, but model the terminal losing the HTTP response.
+    const committed = f.ledger.reserve(request);
+    assert.ok(committed.reservationId);
+
+    // A transient retry may fail before reserve is reached. The next timer
+    // attempt publishes a newer snapshot and replays the exact original key.
+    f.setNow(f.base.snapshotAtMs + 100);
+    const fresh = { ...f.base, snapshotAtMs: f.base.snapshotAtMs + 100,
+      snapshotId: 'snapshot-transient-retry-0002' };
+    const reconciled = f.ledger.reconcile(fresh);
+    assert.equal(reconciled.ok, true);
+    const retry = f.ledger.reserve({ ...request, ...fresh });
+    assert.equal(retry.duplicate, true);
+    assert.equal(retry.reservationId, committed.reservationId);
+  } finally { f.close(); }
+});
+
+test('lost settlement response is resolved by repeated recovery without duplicate settlement', () => {
+  const f = fixture();
+  try {
+    f.ledger.reconcile(f.base);
+    const request = { ...f.base, instanceId: 'terminal-settle-retry',
+      idempotencyKey: 'entry-settle-retry-0001', riskMoney: 100 };
+    const reservation = f.ledger.reserve(request);
+    f.setNow(f.base.snapshotAtMs + 100);
+    const filledSnapshot = { ...f.base, snapshotAtMs: f.base.snapshotAtMs + 100,
+      snapshotId: 'snapshot-filled-settle-0002', existingRiskMoney: 100 };
+    // Settlement commits, but the terminal loses the response.
+    const settled = f.ledger.settle({ ...filledSnapshot,
+      reservationId: reservation.reservationId, instanceId: request.instanceId });
+    assert.equal(settled.settled, true);
+
+    // On the next recovery timer, replaying the original reservation identity
+    // must identify a terminal reservation, not create another active claim.
+    f.setNow(f.base.snapshotAtMs + 200);
+    const recoverySnapshot = { ...f.base, snapshotAtMs: f.base.snapshotAtMs + 200,
+      snapshotId: 'snapshot-settle-recovery-0003', existingRiskMoney: 100 };
+    f.ledger.reconcile(recoverySnapshot);
+    expectCode(() => f.ledger.reserve({ ...request, ...recoverySnapshot }),
+      'IDEMPOTENCY_KEY_ALREADY_USED');
+    assert.equal(f.ledger.reconcile({ ...recoverySnapshot,
+      snapshotAtMs: recoverySnapshot.snapshotAtMs + 1,
+      snapshotId: 'snapshot-settle-recovery-0004' }).withinCap, true);
+  } finally { f.close(); }
+});
