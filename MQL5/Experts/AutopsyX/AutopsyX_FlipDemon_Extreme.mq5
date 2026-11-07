@@ -2481,6 +2481,21 @@ bool AxAttemptPyramidNettingAdd(SAxPyramidCampaignRecord &campaign,
       return(false);
      }
 
+   // Persist uncertainty after all local pre-send work, immediately before the broker
+   // request. A crash after OrderSend must not release this reservation from a flat
+   // account snapshot alone.
+   string uncertaintyError="";
+   if(reservationActive && !g_distributedRiskCoordinator.MarkExecutionUncertain(uncertaintyError))
+     {
+      g_accountRiskIntegrityLock=true;
+      g_distributedRecoveryPending=true;
+      EventSetTimer(1);
+      PrintFormat("FLIPDEMON PYRAMID BLOCKED: execution journal could not be armed; broker request was not sent and reservation remains under recovery (%s).",
+                  uncertaintyError);
+      if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
+      return(false);
+     }
+
    ulong newTicket=0,newPositionId=0,orderTicket=0;
    double actualAddLots=0.0,fillPrice=0.0;
    bool outcomeUncertain=false;
