@@ -366,3 +366,46 @@ class DelayedBrokerRejectionContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BrokerExecutionCompatibilityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        root = Path(__file__).resolve().parents[1]
+        cls.execution = (root / "MQL5/Include/AutopsyX/ExecutionEngine.mqh").read_text()
+        cls.expert = (root / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text()
+
+    def test_filling_policy_respects_symbol_flags_and_market_execution(self):
+        detect = self.execution[
+            self.execution.index("bool              DetectFillingMode("):
+            self.execution.index("\npublic:", self.execution.index("bool              DetectFillingMode("))
+        ]
+        self.assertIn("SYMBOL_FILLING_IOC", detect)
+        self.assertIn("ORDER_FILLING_IOC", detect)
+        self.assertIn("SYMBOL_FILLING_FOK", detect)
+        self.assertIn("ORDER_FILLING_FOK", detect)
+        self.assertIn("SYMBOL_TRADE_EXECUTION_MARKET", detect)
+        self.assertIn("return(false);", detect)
+        self.assertIn("m_trade.SetTypeFilling(fillingMode)", self.execution)
+        self.assertIn("if(!g_exec.Init(_Symbol,InpMagicNumber", self.expert)
+        self.assertIn("return(INIT_FAILED);", self.expert)
+
+    def test_protective_prices_align_to_tick_and_respect_stop_freeze_levels(self):
+        start = self.execution.index("bool              PrepareProtectionPrices(")
+        end = self.execution.index("\n   //--- brokers differ on supported order-filling modes", start)
+        helper = self.execution[start:end]
+        for token in (
+            "SYMBOL_TRADE_TICK_SIZE",
+            "SYMBOL_TRADE_STOPS_LEVEL",
+            "SYMBOL_TRADE_FREEZE_LEVEL",
+            "MathCeil(sl/tickSize",
+            "MathFloor(sl/tickSize",
+            "BUY_STOP_INSIDE_BROKER_STOPS_LEVEL",
+            "SELL_STOP_INSIDE_BROKER_STOPS_LEVEL",
+            "STOP_MODIFICATION_INSIDE_BROKER_FREEZE_LEVEL",
+        ):
+            self.assertIn(token, helper)
+        self.assertIn("PrepareProtectionPrices(symbol,dir,alignedSl,alignedTp,false", self.execution)
+        self.assertIn("PrepareProtectionPrices(symbol,dir,alignedSl,alignedTp,true", self.execution)
+        self.assertIn("PositionModify(positionTicket,alignedSl,alignedTp)", self.execution)
+        self.assertIn("MathAbs(actualSl-alignedSl)", self.execution)
