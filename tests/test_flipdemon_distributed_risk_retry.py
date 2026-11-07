@@ -587,3 +587,6 @@ class FullCloseBrokerReconciliationTests(unittest.TestCase):
         ):
             self.assertIn(token, method)
         self.assertEqual(method.count("m_trade.PositionClosePartial(positionTicket,volumeToClose)"), 1)
+        self.assertIn("if(serverAccepted || retcode==TRADE_RETCODE_PLACED)", method)
+        self.assertIn("outcomeUncertain=true;", method)
+        self.assertIn("no retry sent", method)
