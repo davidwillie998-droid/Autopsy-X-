@@ -257,7 +257,7 @@ public:
       m_journalFile=StringFormat("AX_DistributedRisk_%I64d_%s_%I64u.dat",
                                  (long)AccountInfoInteger(ACCOUNT_LOGIN),symbol,magic);
       // One chart instance owns this account/symbol/magic journal for its lifetime.
-      // FileOpen without FILE_SHARE_READ/FILE_SHARE_WRITE is an exclusive terminal-local lock.
+      // FileOpen without shared-access flags is an exclusive terminal-local lock.
       // Other terminals are coordinated by the server-side SQLite reservation ledger.
       ResetLastError();
       m_journalLockHandle=FileOpen(m_journalFile+".lock",FILE_READ|FILE_WRITE|FILE_BIN);
