@@ -219,3 +219,59 @@ test('a client cannot raise the server-calculated cap by supplying extra fields'
       'ACCOUNT_RISK_BUDGET_EXCEEDED');
   } finally { f.close(); }
 });
+
+test('simultaneous reservations from separate Node processes cannot oversubscribe the 2% account cap', async () => {
+  const f = fixture();
+  try {
+    f.ledger.reconcile(f.base);
+    const moduleUrl = new URL('../risk-ledger.js', import.meta.url).href;
+    const workerSource = `
+      import { openRiskLedger } from ${JSON.stringify(moduleUrl)};
+      const input = JSON.parse(process.argv[1]);
+      const ledger = openRiskLedger(input.path, { clock: () => input.now });
+      try {
+        const result = ledger.reserve(input.request);
+        process.stdout.write(JSON.stringify({ ok: true, result }));
+      } catch (error) {
+        process.stdout.write(JSON.stringify({ ok: false, code: error.code ?? error.message }));
+      } finally {
+        ledger.close();
+      }
+    `;
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const run = promisify(execFile);
+    const makeRequest = terminal => ({
+      path: f.path,
+      now: f.base.snapshotAtMs,
+      request: { ...f.base, instanceId: terminal,
+        idempotencyKey: terminal + '-entry-0001', riskMoney: 120 },
+    });
+    const outcomes = await Promise.all(['terminal-race-a', 'terminal-race-b'].map(async terminal => {
+      const { stdout } = await run(process.execPath, ['--input-type=module', '-e', workerSource,
+        JSON.stringify(makeRequest(terminal))], { timeout: 10000 });
+      return JSON.parse(stdout);
+    }));
+    assert.equal(outcomes.filter(x => x.ok).length, 1);
+    assert.equal(outcomes.filter(x => !x.ok && x.code === 'ACCOUNT_RISK_BUDGET_EXCEEDED').length, 1);
+  } finally { f.close(); }
+});
+
+test('active reservations survive a ledger process restart and idempotent retry', () => {
+  const f = fixture();
+  try {
+    f.ledger.reconcile(f.base);
+    const input = { ...f.base, instanceId: 'terminal-a',
+      idempotencyKey: 'entry-00000001', riskMoney: 150 };
+    const original = f.ledger.reserve(input);
+    f.ledger.close();
+    const restarted = openRiskLedger(f.path, { clock: () => f.base.snapshotAtMs });
+    try {
+      const retry = restarted.reserve(input);
+      assert.equal(retry.duplicate, true);
+      assert.equal(retry.reservationId, original.reservationId);
+      expectCode(() => restarted.reserve({ ...f.base, instanceId: 'terminal-b',
+        idempotencyKey: 'entry-00000002', riskMoney: 60 }), 'ACCOUNT_RISK_BUDGET_EXCEEDED');
+    } finally { restarted.close(); }
+  } finally { rmSync(new URL('.', 'file://' + f.path).pathname, { recursive: true, force: true }); }
+});
