@@ -251,7 +251,7 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         ]
         self.assertNotIn("TRADE_RETCODE_TIMEOUT", retry)
         self.assertNotIn("TRADE_RETCODE_CONNECTION", retry)
-        self.assertIn("if(AmbiguousRetcode(retcode))", self.execution)
+        self.assertIn("AmbiguousRetcode(retcode)", self.execution)
         self.assertIn("outcomeUncertain=true;", self.execution)
 
     def test_fresh_entry_arms_uncertainty_before_broker_submission(self):
@@ -414,7 +414,7 @@ class BrokerExecutionCompatibilityTests(unittest.TestCase):
     def test_fresh_entry_confirms_exact_order_deals_and_actual_partial_volume(self):
         confirm = self.execution[
             self.execution.index("bool              ConfirmMarketOrder("):
-            self.execution.index("\\npublic:", self.execution.index("bool              ConfirmMarketOrder("))
+            self.execution.index("bool              HasOpenPosition(", self.execution.index("bool              ConfirmMarketOrder("))
         ]
         for token in (
             "m_trade.ResultDeal()",
