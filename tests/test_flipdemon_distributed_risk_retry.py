@@ -107,5 +107,22 @@ class DistributedRiskRestartJournalTests(unittest.TestCase):
         self.assertIn('StringFind(error,"EXPIRED_RESERVATION_REQUIRES_RECONCILIATION")<0', reserve)
         self.assertIn("ClearPendingJournal();", reserve)
 
+
+    def test_journal_is_exclusively_owned_by_one_chart_instance(self):
+        init = self.coordinator[self.coordinator.index("   bool Init("):self.coordinator.index("   // Resolve a reservation")]
+        self.assertIn('m_journalFile+".lock"', init)
+        self.assertIn("FILE_READ|FILE_WRITE|FILE_BIN", init)
+        self.assertNotIn("FILE_SHARE_READ", init)
+        self.assertNotIn("FILE_SHARE_WRITE", init)
+        self.assertLess(init.index('FileOpen(m_journalFile+".lock"'), init.index("LoadPendingJournal(error)"))
+        self.assertIn("DISTRIBUTED_RISK_JOURNAL_OWNED_BY_ANOTHER_TERMINAL_INSTANCE", init)
+
+    def test_exclusive_journal_lock_is_released_on_deinitialization(self):
+        shutdown = self.coordinator[self.coordinator.index("   void Shutdown(void)"):self.coordinator.index("   bool IsReady(void)")]
+        deinit = self.expert[self.expert.index("void OnDeinit(const int reason)"):self.expert.index("//====================================================================\n// MAIN TICK LOOP")]
+        self.assertIn("FileClose(m_journalLockHandle)", shutdown)
+        self.assertIn("m_journalLockHandle=INVALID_HANDLE", shutdown)
+        self.assertIn("g_distributedRiskCoordinator.Shutdown();", deinit)
+
 if __name__ == "__main__":
     unittest.main()
