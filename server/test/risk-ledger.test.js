@@ -130,6 +130,25 @@ test('settlement updates broker exposure and consumes its reservation in one tra
   } finally { f.close(); }
 });
 
+test('settlement rejects a newer broker snapshot that still predates the reservation', () => {
+  const f = fixture();
+  try {
+    f.ledger.reconcile(f.base);
+    f.setNow(f.base.snapshotAtMs + 100);
+    const reservation = f.ledger.reserve({ ...f.base, instanceId: 'terminal-a',
+      idempotencyKey: 'entry-00000001', riskMoney: 100 });
+    expectCode(() => f.ledger.settle({ ...f.base,
+      snapshotAtMs: f.base.snapshotAtMs + 50, snapshotId: 'snapshot-pre-order',
+      reservationId: reservation.reservationId, instanceId: 'terminal-a' }),
+      'POST_FILL_SNAPSHOT_NOT_NEW');
+    // The failed settlement must roll back the attempted snapshot update.
+    const valid = f.ledger.settle({ ...f.base,
+      snapshotAtMs: f.base.snapshotAtMs + 150, snapshotId: 'snapshot-post-order',
+      existingRiskMoney: 100, reservationId: reservation.reservationId, instanceId: 'terminal-a' });
+    assert.equal(valid.settled, true);
+  } finally { f.close(); }
+});
+
 test('settlement refuses to consume a reservation without a new post-fill broker snapshot', () => {
   const f = fixture();
   try {
