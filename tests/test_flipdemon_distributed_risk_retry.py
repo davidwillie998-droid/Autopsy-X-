@@ -500,7 +500,7 @@ class NettingPyramidFillReconciliationTests(unittest.TestCase):
 
     def test_unconfirmed_done_or_partial_netting_add_is_uncertain(self):
         start = self.execution.index("bool              AddToNettingPosition(")
-        end = self.execution.index("//--- close one exact broker position", start)
+        end = self.execution.index("bool              Flip(", start)
         method = self.execution[start:end]
         failed_send = method[method.index("if(!sent)"):method.index("// A true CTrade return")]
         for token in (
