@@ -93,11 +93,12 @@ private:
    bool              LastAccountedRecordInFile(const string sourceFile,
                                                 const ulong positionIdentifier,
                                                 ulong &dealTicket,bool &isPartial,
-                                                double &lots) const
+                                                double &lots,double &netProfit) const
      {
       dealTicket=0;
       isPartial=false;
       lots=0.0;
+      netProfit=0.0;
       if(positionIdentifier==0) return(false);
       int handle=FileOpen(sourceFile,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE);
       if(handle==INVALID_HANDLE) return(false);
@@ -112,13 +113,14 @@ private:
          if(deal<=dealTicket) continue;
          dealTicket=deal;
          lots=StringToDouble(ParseCsvField(line,9));
+         netProfit=StringToDouble(ParseCsvField(line,24));
          isPartial=ParseCsvBoolean(ParseCsvField(line,28));
         }
       FileClose(handle);
       // The journal historically rounded Lots to two decimals. A valid broker
       // micro-volume can therefore be persisted as 0.00; the deal ticket, not
       // the rounded display volume, establishes whether the row exists.
-      return(dealTicket>0 && MathIsValidNumber(lots));
+      return(dealTicket>0 && MathIsValidNumber(lots) && MathIsValidNumber(netProfit));
      }
 
    void              AddRiskHistory(const double netProfit,const double rMultiple,
@@ -317,27 +319,30 @@ public:
    // final close that was already written before a crash.
    bool              LastAccountedRecord(const ulong positionIdentifier,
                                          ulong &dealTicket,bool &isPartial,
-                                         double &lots) const
+                                         double &lots,double &netProfit) const
      {
       ulong currentTicket=0,legacyTicket=0;
       bool currentPartial=false,legacyPartial=false;
       double currentLots=0.0,legacyLots=0.0;
+      double currentNetProfit=0.0,legacyNetProfit=0.0;
       bool currentFound=LastAccountedRecordInFile(m_fileName,positionIdentifier,
-                                                   currentTicket,currentPartial,currentLots);
+                                                   currentTicket,currentPartial,currentLots,currentNetProfit);
       bool legacyFound=LastAccountedRecordInFile(m_legacyFileName,positionIdentifier,
-                                                  legacyTicket,legacyPartial,legacyLots);
+                                                  legacyTicket,legacyPartial,legacyLots,legacyNetProfit);
       if(!currentFound && !legacyFound) return(false);
       if(currentTicket>=legacyTicket)
         {
          dealTicket=currentTicket;
          isPartial=currentPartial;
          lots=currentLots;
+         netProfit=currentNetProfit;
         }
       else
         {
          dealTicket=legacyTicket;
          isPartial=legacyPartial;
          lots=legacyLots;
+         netProfit=legacyNetProfit;
         }
       return(true);
      }
