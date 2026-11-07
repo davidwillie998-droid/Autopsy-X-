@@ -242,15 +242,18 @@ public:
       m_journalPending=false;
      }
 
-   bool Init(const string baseUrl,const string key,const int timeoutMs,string &error)
+   bool Init(const string baseUrl,const string key,const int timeoutMs,
+             const string symbol,const ulong magic,string &error)
      {
       m_ready=false;
       m_baseUrl=baseUrl;
       m_key=key;
       m_instanceId=BuildInstanceId();
       m_timeoutMs=timeoutMs;
-      m_journalFile=StringFormat("AX_DistributedRisk_%I64d_%I64d.dat",
-                                 (long)AccountInfoInteger(ACCOUNT_LOGIN),ChartID());
+      // Use stable EA identity, not ChartID, for the journal filename.
+      // Chart IDs can change when a terminal/chart is recreated after a restart.
+      m_journalFile=StringFormat("AX_DistributedRisk_%I64d_%s_%I64u.dat",
+                                 (long)AccountInfoInteger(ACCOUNT_LOGIN),symbol,magic);
       if(StringFind(m_baseUrl,"https://")!=0 || StringLen(m_baseUrl)<12 ||
          StringLen(m_key)<32 || m_timeoutMs<500 || m_timeoutMs>10000)
         {
