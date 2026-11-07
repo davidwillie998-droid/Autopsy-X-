@@ -1090,8 +1090,11 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
          rec.rMultiple=rec.netProfit/originalRiskCurrency;
      }
 
-   // The journal's deal-ticket boundary makes replay safe. If the final row
-   // already exists, this skips the append and proceeds only with stale-state cleanup.
+   // The trade journal is the durable source of the final slice's financial result.
+   // Risk state is in-memory, so replay it on every startup recovery, including the
+   // crash window where the journal append succeeded but risk registration did not.
+   // Read the exact durable row to avoid substituting whole-position totals for the
+   // final exit slice when earlier partial closes were already journalled.
    bool alreadyJournaled=(g_autopsy.LastAccountedDealTicket(saved.positionIdentifier)>=lastExitDeal);
    if(!alreadyJournaled)
      {
@@ -1106,8 +1109,28 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
                      saved.positionIdentifier);
          return(false);
         }
-      g_risk.RegisterTradeClosed(rec.netProfit);
      }
+
+   ulong durableDealTicket=0;
+   bool durablePartial=false;
+   double durableLots=0.0,durableNetProfit=0.0;
+   if(!g_autopsy.LastAccountedRecord(saved.positionIdentifier,durableDealTicket,
+                                      durablePartial,durableLots,durableNetProfit) ||
+      durableDealTicket!=lastExitDeal || durablePartial || durableLots<=0.0)
+     {
+      g_recoveryReady=false;
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_engineState=AX_ENGINE_PAUSED;
+      PrintFormat("FLIPDEMON FULL-CLOSE RECOVERY: final journal row could not be verified for identifier=%I64u deal=%I64u.",
+                  saved.positionIdentifier,lastExitDeal);
+      return(false);
+     }
+
+   // This function runs during startup reconciliation. The risk engine starts
+   // with fresh in-memory counters, so replaying this one unresolved close is
+   // required even when its journal row predates the restart.
+   g_risk.RegisterTradeClosed(durableNetProfit);
 
    if(g_restartRecovery.FindByPositionIdentifier(saved.positionIdentifier,setup) &&
       (!g_restartRecovery.RemoveOpenSetupByPositionIdentifier(saved.positionIdentifier) ||
