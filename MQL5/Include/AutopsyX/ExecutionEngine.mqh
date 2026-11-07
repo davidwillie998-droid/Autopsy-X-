@@ -81,6 +81,10 @@ private:
         {
          bool slChanged=(sl>0.0 && MathAbs(sl-oldSl)>tickSize*0.5) || (sl<=0.0 && oldSl>0.0);
          bool tpChanged=(tp>0.0 && MathAbs(tp-oldTp)>tickSize*0.5) || (tp<=0.0 && oldTp>0.0);
+         if(slChanged && oldSl>0.0 && MathAbs(reference-oldSl)<=freezeDistance)
+           { reason="STOP_MODIFICATION_INSIDE_BROKER_FREEZE_LEVEL"; return(false); }
+         if(tpChanged && oldTp>0.0 && MathAbs(reference-oldTp)<=freezeDistance)
+           { reason="TP_MODIFICATION_INSIDE_BROKER_FREEZE_LEVEL"; return(false); }
          if(slChanged && sl>0.0 && MathAbs(reference-sl)<=freezeDistance)
            { reason="STOP_MODIFICATION_INSIDE_BROKER_FREEZE_LEVEL"; return(false); }
          if(tpChanged && tp>0.0 && MathAbs(reference-tp)<=freezeDistance)
@@ -90,25 +94,39 @@ private:
      }
 
    //--- brokers differ on supported order-filling modes (spec section 14) - never hard-code one ---
-   ENUM_ORDER_TYPE_FILLING DetectFillingMode(const string symbol) const
+   bool              DetectFillingMode(const string symbol,ENUM_ORDER_TYPE_FILLING &mode) const
      {
-      int filling = (int)SymbolInfoInteger(symbol,SYMBOL_FILLING_MODE);
-      if((filling & SYMBOL_FILLING_FOK)!=0) return(ORDER_FILLING_FOK);
-      if((filling & SYMBOL_FILLING_IOC)!=0) return(ORDER_FILLING_IOC);
-      return(ORDER_FILLING_RETURN);
+      int filling=(int)SymbolInfoInteger(symbol,SYMBOL_FILLING_MODE);
+      long execution=SymbolInfoInteger(symbol,SYMBOL_TRADE_EXEMODE);
+      // IOC permits a broker-confirmed partial fill; prefer it when available.
+      if((filling & SYMBOL_FILLING_IOC)!=0)
+        { mode=ORDER_FILLING_IOC; return(true); }
+      if((filling & SYMBOL_FILLING_FOK)!=0)
+        { mode=ORDER_FILLING_FOK; return(true); }
+      // RETURN is not legal under Market Execution.
+      if(execution!=SYMBOL_TRADE_EXECUTION_MARKET)
+        { mode=ORDER_FILLING_RETURN; return(true); }
+      return(false);
      }
 
 public:
                      CExecutionEngine(void) { m_maxRetries=2; m_retryDelayMs=200; }
 
-   void              Init(const string symbol,const ulong magic,const int deviationPts,const int maxRetries=2)
+   bool              Init(const string symbol,const ulong magic,const int deviationPts,const int maxRetries=2)
      {
+      ENUM_ORDER_TYPE_FILLING fillingMode;
+      if(!DetectFillingMode(symbol,fillingMode))
+        {
+         PrintFormat("FLIPDEMON EXECUTION BLOCK: no supported filling policy for %s under Market Execution.",symbol);
+         return(false);
+        }
       m_symbol = symbol;
       m_trade.SetExpertMagicNumber(magic);
       m_trade.SetDeviationInPoints(deviationPts);
-      m_trade.SetTypeFilling(DetectFillingMode(symbol));
+      m_trade.SetTypeFilling(fillingMode);
       m_trade.SetAsyncMode(false);
       m_maxRetries = maxRetries;
+      return(true);
      }
 
    //--- live spread can widen well beyond what a demo feed ever shows; a fixed deviation either
