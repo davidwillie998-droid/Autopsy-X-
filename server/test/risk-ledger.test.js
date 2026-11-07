@@ -78,7 +78,7 @@ test('same idempotency key returns the original active reservation, never a seco
     const duplicate = f.ledger.reserve(input);
     assert.equal(duplicate.duplicate, true);
     assert.equal(duplicate.reservationId, first.reservationId);
-    expectCode(() => f.ledger.reserve({ ...input, riskMoney: 51 }), 'IDEMPOTENCY_KEY_ALREADY_USED');
+    expectCode(() => f.ledger.reserve({ ...input, riskMoney: 51 }), 'IDEMPOTENCY_KEY_CONFLICT');
   } finally { f.close(); }
 });
 
@@ -309,3 +309,62 @@ test('active reservations survive a ledger process restart and idempotent retry'
     } finally { restarted.close(); }
   } finally { f.close(); }
 });
+
+test('terminal recovery distinguishes an exact completed reservation from a key conflict', () => {
+  const f = fixture({ reservationTtlMs: 5000 });
+  try {
+    f.ledger.reconcile(f.base);
+    const input = { ...f.base, instanceId: 'terminal-a',
+      idempotencyKey: 'entry-recovery-0001', riskMoney: 100 };
+    f.ledger.reserve(input);
+    f.setNow(f.base.snapshotAtMs + 6000);
+    f.ledger.reconcile({ ...f.base, snapshotAtMs: f.base.snapshotAtMs + 6000,
+      snapshotId: 'snapshot-recovery-0002', existingRiskMoney: 0 });
+    expectCode(() => f.ledger.reserve(input), 'IDEMPOTENCY_KEY_ALREADY_USED');
+    expectCode(() => f.ledger.reserve({ ...input, riskMoney: 99 }), 'IDEMPOTENCY_KEY_CONFLICT');
+    expectCode(() => f.ledger.reserve({ ...input, instanceId: 'terminal-b' }), 'IDEMPOTENCY_KEY_CONFLICT');
+  } finally { f.close(); }
+});
+
+test('crash before reservation leaves no server-side reservation to recover', () => {
+  const f = fixture();
+  try {
+    f.ledger.reconcile(f.base);
+    const next = f.ledger.reserve({ ...f.base, instanceId: 'terminal-a',
+      idempotencyKey: 'entry-pre-crash-0001', riskMoney: 100 });
+    assert.equal(next.duplicate, false);
+    assert.ok(next.reservationId);
+  } finally { f.close(); }
+});
+
+test('crash after commit but before response replays the same active reservation', () => {
+  const f = fixture();
+  try {
+    f.ledger.reconcile(f.base);
+    const request = { ...f.base, instanceId: 'terminal-a',
+      idempotencyKey: 'entry-post-commit-0001', riskMoney: 100 };
+    const committed = f.ledger.reserve(request);
+    const recovered = f.ledger.reserve(request);
+    assert.equal(recovered.duplicate, true);
+    assert.equal(recovered.reservationId, committed.reservationId);
+  } finally { f.close(); }
+});
+
+test('crash after fill is reconciled into broker exposure before reservation is consumed', () => {
+  const f = fixture({ reservationTtlMs: 5000 });
+  try {
+    f.ledger.reconcile(f.base);
+    const request = { ...f.base, instanceId: 'terminal-a',
+      idempotencyKey: 'entry-after-fill-0001', riskMoney: 100 };
+    f.ledger.reserve(request);
+    f.setNow(f.base.snapshotAtMs + 6000);
+    const snapshot = { ...f.base, snapshotAtMs: f.base.snapshotAtMs + 6000,
+      snapshotId: 'snapshot-after-fill-0002', existingRiskMoney: 100 };
+    const reconciled = f.ledger.reconcile(snapshot);
+    assert.equal(reconciled.brokerRiskMoney, 100);
+    expectCode(() => f.ledger.reserve(request), 'IDEMPOTENCY_KEY_ALREADY_USED');
+    expectCode(() => f.ledger.reserve({ ...snapshot, instanceId: 'terminal-b',
+      idempotencyKey: 'entry-over-cap-0001', riskMoney: 101 }), 'ACCOUNT_RISK_BUDGET_EXCEEDED');
+  } finally { f.close(); }
+});
+
