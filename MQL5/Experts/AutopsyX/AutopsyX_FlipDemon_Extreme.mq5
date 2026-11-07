@@ -2084,6 +2084,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
 
    string entryReason = AxBuildEntryReason(score,dir)+" "+tag;
    ulong newTicket; double fillPrice; double actualLots; string execErr; int fillLatencyMs;
+   bool entryOutcomeUncertain=false;
    // Hold the shared terminal-local account mutex from the final scan through the
    // broker request and post-fill reconciliation. This closes the race where two
    // charts both approve against the same uncommitted remaining budget.
@@ -2126,9 +2127,20 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
          return(false);
         }
       distributedReservationActive=true;
+      // Arm the durable uncertainty marker BEFORE submitting to the broker. A crash
+      // between send and confirmation must not let restart recovery release risk.
+      if(!g_distributedRiskCoordinator.MarkExecutionUncertain(reservationError))
+        {
+         g_accountRiskIntegrityLock=true;
+         g_distributedRecoveryPending=true;
+         EventSetTimer(1);
+         PrintFormat("FLIPDEMON DISTRIBUTED RISK: entry blocked; execution journal could not be armed (%s).",reservationError);
+         if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
+         return(false);
+        }
      }
 
-   if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr,fillLatencyMs,actualLots))
+   if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr,fillLatencyMs,actualLots,entryOutcomeUncertain))
      {
       g_consecutiveExecFailures++;
       g_risk.RegisterExecutionFailure(); // feeds CRiskEngine's own MaxExecutionFailures circuit breaker
