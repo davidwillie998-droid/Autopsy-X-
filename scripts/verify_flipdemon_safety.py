@@ -252,6 +252,11 @@ require("ClosePartial(" not in partial_recovery
         and "ClosePosition(" not in partial_recovery,
         "restart recovery never resends a broker close request")
 
+require('rec.entryReason="RESTART_RECOVERED | ENTRY_THESIS_UNAVAILABLE"' in ea
+        and "rec.exitReason=AX_EXIT_NONE;" in ea
+        and "Record NONE rather than falsely labelling" in ea,
+        "recovered trade rows mark unavailable entry thesis and exit reason instead of inventing classifications")
+
 require("struct SAxRiskSizingDecision" in risk
         and "rejectionReason" in risk and "projectedRiskPercent" in risk,
         "risk engine exposes an auditable sizing decision and explicit rejection reason")
