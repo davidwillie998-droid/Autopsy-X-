@@ -438,8 +438,9 @@ require("g_virtualExitRegistry.Init(" in ea
         and "if(removeStaleRecords)" in virtual_reconcile,
         "virtual-exit state loads before broker reconciliation and stale rows clear only after a complete broker snapshot")
 require("virtual execution remains disabled in this phase" in ea
-        and "g_exec.ModifyStops(_Symbol,newSl,g_posState.initialTpPrice,modErr)" in ea,
-        "this commit retains broker-side emergency SL/TP and does not activate virtual execution")
+        and "g_exec.ModifyStopsByTicket(_Symbol,managed.ticket,managed.positionIdentifier" in ea
+        and "managed.magic,newSl,managed.takeProfit" in ea,
+        "virtual exits remain disabled while broker-side stops use exact-ticket modification")
 
 
 # Pyramid calculation module: no order submission here. Campaign execution is a
