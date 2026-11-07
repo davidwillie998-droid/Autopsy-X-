@@ -593,17 +593,20 @@ bool AxCommitPartialClose(const double volumeClosed,const double closePrice,cons
                           const double commission,const double swap,const datetime closeTime,
                           const ulong lastDealTicket)
   {
+   // Commit the deal journal first. If the registry write then fails, the
+   // still-locked baseline and unchanged last-deal cursor allow restart replay;
+   // the journal deduplicates the already-accounted deal ticket.
+   if(!AxRecordPartialClose(volumeClosed,closePrice,grossProfit,commission,swap,closeTime,lastDealTicket))
+      return(false);
    if(!g_virtualExitRegistry.RecordPartialClose(g_positionIdentifier,volumeClosed,lastDealTicket) ||
       !g_virtualExitRegistry.IsPersisting())
      {
       g_virtualExitReady=false;
       g_hedgingLifecycleLock=true;
       g_engineState=AX_ENGINE_PAUSED;
-      Print("FLIPDEMON PARTIAL CLOSE ERROR: durable partial-close state could not be recorded; action lock retained.");
+      Print("FLIPDEMON PARTIAL CLOSE ERROR: journal is accounted but registry update failed; action lock retained for restart replay.");
       return(false);
      }
-   if(!AxRecordPartialClose(volumeClosed,closePrice,grossProfit,commission,swap,closeTime,lastDealTicket))
-      return(false);
    if(!g_virtualExitRegistry.ResolveAction(g_positionIdentifier,3) ||
       !g_virtualExitRegistry.IsPersisting())
      {
@@ -855,6 +858,7 @@ bool AxSaveVirtualExitState(const bool allowEmergencyUpdate=false,const bool isN
       record.actionLocked=false;
       record.actionCode=0;
       record.actionStartedAt=0;
+      record.actionBaselineVolume=0.0;
      }
    record.entryTime=(datetime)PositionGetInteger(POSITION_TIME);
    record.updatedAt=TimeCurrent();
@@ -2539,7 +2543,12 @@ int OnInit(void)
                      g_hedgingPositionManager.FailureReason());
      }
    if(g_virtualExitInitialized && g_virtualExitRegistry.IsPersisting())
-      AxReconcileVirtualExitTickets(true);
+     {
+      if(AxRecoverLockedPartialCloseActions())
+         AxReconcileVirtualExitTickets(true);
+      else
+         Print("FLIPDEMON VIRTUAL EXIT: unresolved action recovery blocked startup reconciliation; broker protection remains active.");
+     }
 
    // Recover campaign tiers only from broker-confirmed position deals. This
    // prepares the durable ledger; scale-in execution remains separately gated.
