@@ -60,10 +60,29 @@ class DistributedRiskRestartJournalTests(unittest.TestCase):
         self.assertIn("m_pendingInstance", recovery)
         self.assertIn("DISTRIBUTED_RISK_RECOVERY_OUTCOME_AMBIGUOUS_BROKER_EXPOSURE_INCREASED", recovery)
 
-    def test_recovery_runs_before_live_entries_are_enabled(self):
+    def test_unresolved_recovery_keeps_ea_attached_and_locks_entries(self):
         init = self.expert[self.expert.index("int OnInit(void)"):self.expert.index("void OnDeinit")]
-        self.assertLess(init.index("RecoverPending(startupRisk"), init.index("startup reconciliation failed"))
-        self.assertIn("unresolved prior reservation; LIVE mode refused", init)
+        self.assertIn("g_distributedRecoveryPending=true", init)
+        self.assertIn("LOCKED RECOVERY MODE", init)
+        self.assertNotIn("unresolved prior reservation; LIVE mode refused", init)
+        self.assertIn("if(InpShowDashboard || g_distributedRecoveryPending)", init)
+
+    def test_timer_retries_recovery_without_dashboard(self):
+        timer = self.expert[self.expert.index("void OnTimer(void)"):self.expert.index("//====================================================================\n// CHART EVENTS")]
+        self.assertLess(timer.index("RecoverPending(recoverySnapshot"), timer.index("if(!InpShowDashboard) return;"))
+        self.assertIn("EventKillTimer();", timer)
+
+    def test_pending_recovery_blocks_new_entries(self):
+        expert = self.expert
+        gate = expert[expert.index("// A distributed reservation left by a prior terminal session"):expert.index("// Restart recovery is a hard entry prerequisite")]
+        self.assertIn("g_distributedRecoveryPending", gate)
+        self.assertIn("return(false);", gate)
+
+    def test_filled_or_increased_exposure_settles_reservation_from_broker_snapshot(self):
+        recovery = self.coordinator[self.coordinator.index("   bool RecoverPending("):self.coordinator.index("   string InstanceId(")]
+        self.assertIn("Settle(reservationId,m_pendingInstance,snapshot,settledWithinCap,error)", recovery)
+        self.assertIn("DISTRIBUTED_RISK_RECOVERY_SETTLED_ACCOUNT_OVER_CAP", recovery)
+        self.assertIn("return(true);", recovery)
 
     def test_journal_clears_only_after_release_or_settlement_confirmation(self):
         release = self.coordinator[self.coordinator.index("   bool Release("):self.coordinator.index("   bool Settle(")]
