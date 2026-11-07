@@ -355,6 +355,10 @@ public:
       SAxVirtualExitRecord record;
       if(!Find(positionIdentifier,record)) return(false);
       if(record.partialLastDealTicket==dealTicket) return(true);
+      // History replay must be strictly forward-moving. An older deal arriving
+      // after a newer one is not a new partial and must never be counted twice.
+      if(record.partialLastDealTicket>0 && dealTicket<record.partialLastDealTicket)
+         return(false);
       record.partialCloseCount++;
       record.partialClosedVolume+=volumeClosed;
       record.partialLastDealTicket=dealTicket;
