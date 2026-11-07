@@ -471,3 +471,51 @@ class BrokerExecutionCompatibilityTests(unittest.TestCase):
         ]
         self.assertIn("bool outcomeUncertain=false;", flip)
         self.assertIn("latencyMs,actualLots,outcomeUncertain", flip)
+
+class NettingPyramidFillReconciliationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        root = Path(__file__).resolve().parents[1]
+        cls.execution = (root / "MQL5/Include/AutopsyX/ExecutionEngine.mqh").read_text()
+
+    def test_netting_add_reconciles_only_exact_order_entry_deals(self):
+        start = self.execution.index("bool              AddToNettingPosition(")
+        end = self.execution.index("//--- close whatever is open on symbol", start)
+        method = self.execution[start:end]
+        for token in (
+            "orderTicketOut=m_trade.ResultOrder()",
+            "DEAL_ORDER)!=orderTicketOut",
+            "DEAL_ENTRY)!=DEAL_ENTRY_IN",
+            "DEAL_SYMBOL)!=symbol",
+            "DEAL_MAGIC)!=expectedMagic",
+            "DEAL_POSITION_ID)!=beforeId",
+            "DEAL_TYPE_BUY",
+            "DEAL_TYPE_SELL",
+            "MathAbs(volumeIncrease-dealVolume)",
+            "stopsPreserved",
+            "actualAddLotsOut=dealVolume",
+            "fillPriceOut=dealPriceValue/dealVolume",
+        ):
+            self.assertIn(token, method)
+
+    def test_unconfirmed_done_or_partial_netting_add_is_uncertain(self):
+        start = self.execution.index("bool              AddToNettingPosition(")
+        end = self.execution.index("//--- close whatever is open on symbol", start)
+        method = self.execution[start:end]
+        failed_send = method[method.index("if(!sent)"):method.index("// A true CTrade return")]
+        for token in (
+            "TRADE_RETCODE_DONE",
+            "TRADE_RETCODE_DONE_PARTIAL",
+            "TRADE_RETCODE_TIMEOUT",
+            "TRADE_RETCODE_CONNECTION",
+            "TRADE_RETCODE_PLACED",
+        ):
+            self.assertIn(token, failed_send)
+        self.assertIn("outcomeUncertain=true;", failed_send)
+
+    def test_unconfirmed_netting_add_does_not_retry_market_submission(self):
+        start = self.execution.index("bool              AddToNettingPosition(")
+        end = self.execution.index("//--- close whatever is open on symbol", start)
+        method = self.execution[start:end]
+        self.assertEqual(method.count("m_trade.Buy(requestedLots"), 1)
+        self.assertEqual(method.count("m_trade.Sell(requestedLots"), 1)

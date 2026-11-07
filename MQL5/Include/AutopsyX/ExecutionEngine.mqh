@@ -383,7 +383,9 @@ public:
 
       if(!sent)
         {
-         outcomeUncertain=(retcode==TRADE_RETCODE_TIMEOUT ||
+         outcomeUncertain=(retcode==TRADE_RETCODE_DONE ||
+                           retcode==TRADE_RETCODE_DONE_PARTIAL ||
+                           retcode==TRADE_RETCODE_TIMEOUT ||
                            retcode==TRADE_RETCODE_CONNECTION ||
                            retcode==TRADE_RETCODE_PLACED);
          errorReason=StringFormat("Pyramid add send failed: %u %s",
