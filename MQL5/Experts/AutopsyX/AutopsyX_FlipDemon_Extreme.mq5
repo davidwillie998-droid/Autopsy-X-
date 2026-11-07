@@ -2117,6 +2117,14 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       return(false);
      }
 
+   string symbolOrderReason="";
+   if(!AxBrokerSymbolOrderPreflight(dir,lots,symbolOrderReason))
+     {
+      PrintFormat("FLIPDEMON SYMBOL ORDER BLOCK: symbol=%s direction=%s lots=%.8f reason=%s",
+                  _Symbol,dir==AX_DIR_BUY?"BUY":"SELL",lots,symbolOrderReason);
+      return(false);
+     }
+
    // Final broker-side margin preflight must use the actual post-risk, post-AFE,
    // post-impact lot size and a fresh executable-side quote. Account leverage alone
    // is not proof that this order is affordable; OrderCalcMargin is broker-specific.
@@ -2396,6 +2404,14 @@ bool AxAttemptPyramidNettingAdd(SAxPyramidCampaignRecord &campaign,
      {
       g_pyramidReady=false;
       Print("FLIPDEMON PYRAMID BLOCKED: direction, volume or protective stop is invalid.");
+      return(false);
+     }
+
+   string symbolOrderReason="";
+   if(!AxBrokerSymbolOrderPreflight(campaign.dir,requestedLots,symbolOrderReason))
+     {
+      PrintFormat("FLIPDEMON PYRAMID BLOCKED: broker symbol contract preflight failed (%s).",
+                  symbolOrderReason);
       return(false);
      }
 
@@ -2752,6 +2768,104 @@ void AxReconcileExistingPosition(void)
    g_haveOpenPosition  = true;
   }
 
+// Validate broker-specific order permissions and per-symbol directional volume.
+// SYMBOL_VOLUME_LIMIT includes open positions and pending orders in that direction.
+bool AxBrokerSymbolOrderPreflight(const ENUM_AX_DIR direction,const double lots,
+                                  string &reason)
+  {
+   reason="";
+   if(direction!=AX_DIR_BUY && direction!=AX_DIR_SELL)
+     {
+      reason="INVALID_ORDER_DIRECTION";
+      return(false);
+     }
+   if(!MathIsValidNumber(lots) || lots<=0.0)
+     {
+      reason="INVALID_ORDER_VOLUME";
+      return(false);
+     }
+   long tradeMode=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_MODE);
+   long orderMode=SymbolInfoInteger(_Symbol,SYMBOL_ORDER_MODE);
+   if(tradeMode==SYMBOL_TRADE_MODE_DISABLED || tradeMode==SYMBOL_TRADE_MODE_CLOSEONLY)
+     {
+      reason="BROKER_SYMBOL_DOES_NOT_ALLOW_NEW_POSITIONS";
+      return(false);
+     }
+   if((orderMode & SYMBOL_ORDER_MARKET)==0)
+     {
+      reason="BROKER_SYMBOL_MARKET_ORDERS_NOT_ALLOWED";
+      return(false);
+     }
+   if(direction==AX_DIR_BUY && tradeMode==SYMBOL_TRADE_MODE_SHORTONLY)
+     {
+      reason="BROKER_SYMBOL_SHORT_ONLY";
+      return(false);
+     }
+   if(direction==AX_DIR_SELL && tradeMode==SYMBOL_TRADE_MODE_LONGONLY)
+     {
+      reason="BROKER_SYMBOL_LONG_ONLY";
+      return(false);
+     }
+
+   double volumeMin=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
+   double volumeMax=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
+   double volumeStep=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
+   double volumeLimit=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_LIMIT);
+   double point=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
+   double tickSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+   if(!MathIsValidNumber(volumeMin) || !MathIsValidNumber(volumeMax) ||
+      !MathIsValidNumber(volumeStep) || !MathIsValidNumber(point) ||
+      !MathIsValidNumber(tickSize) || !MathIsValidNumber(volumeLimit) ||
+      volumeMin<=0.0 || volumeMax<volumeMin || volumeStep<=0.0 ||
+      point<=0.0 || tickSize<=0.0 || volumeLimit<0.0)
+     {
+      reason="BROKER_SYMBOL_CONTRACT_METADATA_INVALID";
+      return(false);
+     }
+   double gridUnits=lots/volumeStep;
+   double gridTolerance=MathMax(0.000001,MathAbs(gridUnits)*0.000000001);
+   if(lots<volumeMin-1e-10 || lots>volumeMax+1e-10 ||
+      MathAbs(gridUnits-MathRound(gridUnits))>gridTolerance)
+     {
+      reason="ORDER_VOLUME_OUTSIDE_BROKER_MIN_MAX_STEP";
+      return(false);
+     }
+
+   if(volumeLimit>0.0)
+     {
+      double directionalVolume=0.0;
+      for(int i=0;i<PositionsTotal();i++)
+        {
+         ulong ticket=PositionGetTicket(i);
+         if(ticket==0 || PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+         long type=PositionGetInteger(POSITION_TYPE);
+         if((direction==AX_DIR_BUY && type==POSITION_TYPE_BUY) ||
+            (direction==AX_DIR_SELL && type==POSITION_TYPE_SELL))
+            directionalVolume+=PositionGetDouble(POSITION_VOLUME);
+        }
+      for(int i=0;i<OrdersTotal();i++)
+        {
+         ulong ticket=OrderGetTicket(i);
+         if(ticket==0 || OrderGetString(ORDER_SYMBOL)!=_Symbol) continue;
+         ENUM_ORDER_TYPE type=(ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+         bool sameDirection=(direction==AX_DIR_BUY)?
+            (type==ORDER_TYPE_BUY_LIMIT || type==ORDER_TYPE_BUY_STOP ||
+             type==ORDER_TYPE_BUY_STOP_LIMIT):
+            (type==ORDER_TYPE_SELL_LIMIT || type==ORDER_TYPE_SELL_STOP ||
+             type==ORDER_TYPE_SELL_STOP_LIMIT);
+         if(sameDirection)
+            directionalVolume+=OrderGetDouble(ORDER_VOLUME_CURRENT);
+        }
+      if(directionalVolume+lots>volumeLimit+MathMax(volumeStep*0.000001,1e-10))
+        {
+         reason=StringFormat("BROKER_SYMBOL_DIRECTIONAL_VOLUME_LIMIT %.8f + %.8f > %.8f",
+                             directionalVolume,lots,volumeLimit);
+         return(false);
+        }
+     }
+   return(true);
+  }
+
 //====================================================================
 // BROKER / SYMBOL CAPABILITY DIAGNOSTICS
 // Runtime metadata is authoritative; broker names are never used as an allowlist.
@@ -2821,9 +2935,20 @@ bool AxLogBrokerCompatibility(void)
       return(false);
      }
 
-   if(tradeMode==SYMBOL_TRADE_MODE_DISABLED)
+   if(tradeMode==SYMBOL_TRADE_MODE_DISABLED ||
+      tradeMode==SYMBOL_TRADE_MODE_CLOSEONLY)
      {
-      PrintFormat("FLIPDEMON BROKER ERROR: symbol '%s' is trade-disabled by the broker. This symbol cannot be traded until broker metadata changes.",_Symbol);
+      PrintFormat("FLIPDEMON BROKER ERROR: symbol '%s' does not permit new positions under trade mode %I64d.",_Symbol,tradeMode);
+      return(false);
+     }
+   if((orderMode & SYMBOL_ORDER_MARKET)==0)
+     {
+      PrintFormat("FLIPDEMON BROKER ERROR: symbol '%s' does not permit market orders.",_Symbol);
+      return(false);
+     }
+   if(!MathIsValidNumber(volumeLimit) || volumeLimit<0.0)
+     {
+      PrintFormat("FLIPDEMON BROKER ERROR: symbol '%s' has invalid directional volume limit %.8g.",_Symbol,volumeLimit);
       return(false);
      }
 
