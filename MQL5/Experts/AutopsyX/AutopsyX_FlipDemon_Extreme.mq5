@@ -3903,6 +3903,22 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
       symbol=HistoryOrderGetString(trans.order,ORDER_SYMBOL);
       magic=(ulong)HistoryOrderGetInteger(trans.order,ORDER_MAGIC);
       relevant=(symbol==_Symbol && magic==InpMagicNumber);
+
+      // Some delayed broker outcomes arrive as order-history transactions rather
+      // than a second REQUEST callback. Only a terminal rejected/cancelled/expired
+      // order with this EA's exact comment can queue the same deferred resolution.
+      long orderState=HistoryOrderGetInteger(trans.order,ORDER_STATE);
+      string orderComment=HistoryOrderGetString(trans.order,ORDER_COMMENT);
+      bool terminalWithoutFill=(orderState==ORDER_STATE_CANCELED ||
+                                orderState==ORDER_STATE_REJECTED ||
+                                orderState==ORDER_STATE_EXPIRED);
+      if(relevant && orderComment=="AXFDX" && terminalWithoutFill &&
+         g_distributedRecoveryPending && g_distributedRiskCoordinator.HasPendingJournal())
+        {
+         g_distributedRejectedCallbackPending=true;
+         PrintFormat("FLIPDEMON DISTRIBUTED RISK: terminal order-history rejection/cancellation observed (order=%I64u state=%d); deferred snapshot reconciliation queued.",
+                     trans.order,orderState);
+        }
      }
 
    // Only a definitive response to this EA's own fresh market-deal request
