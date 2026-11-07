@@ -183,12 +183,17 @@ export function openRiskLedger(path, {
       const prior = db.prepare('SELECT * FROM risk_reservations WHERE account_key=? AND idempotency_key=?')
         .get(identity.accountKey, idempotencyKey);
       if (prior) {
-        if (prior.status === 'active' && prior.instance_id === instanceId &&
-            Math.abs(prior.risk_money - riskMoney) < 0.000001 && prior.expires_at_ms > now) {
+        if (prior.instance_id !== instanceId ||
+            Math.abs(prior.risk_money - riskMoney) >= 0.000001) {
+          fail(409, 'IDEMPOTENCY_KEY_CONFLICT',
+            'This idempotency key is already bound to a different terminal instance or risk amount.');
+        }
+        if (prior.status === 'active' && prior.expires_at_ms > now) {
           return { ok: true, duplicate: true, reservationId: prior.reservation_id,
             expiresAtMs: prior.expires_at_ms, reservedRiskMoney: prior.risk_money };
         }
-        fail(409, 'IDEMPOTENCY_KEY_ALREADY_USED', 'This idempotency key has already been consumed or belongs to another request.');
+        fail(409, 'IDEMPOTENCY_KEY_ALREADY_USED',
+          'This exact reservation request has already reached a terminal state.');
       }
 
       const pending = db.prepare(`SELECT COALESCE(SUM(risk_money),0) AS total
