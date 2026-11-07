@@ -111,8 +111,10 @@ require("m_volMax<m_volMin || m_volStep<=0.0" in normalize_volume
         "invalid broker volume metadata and out-of-range normalized lots fail closed")
 require("DailyLossLimitBreached()" in risk and "WeeklyLossLimitBreached()" in risk,
         "daily and weekly loss locks are checked in the risk engine")
-require("ConfirmPosition(symbol,dir,lots,ticketOut,fillPriceOut,actualLotsOut)" in execution,
-        "market entries require broker position confirmation")
+require("ConfirmMarketOrder(symbol,dir,lots,orderTicket,ticketOut" in execution
+        and "DEAL_ORDER" in execution and "DEAL_POSITION_ID" in execution
+        and "actualLotsOut=dealVolume" in execution,
+        "market entries require exact broker order-deal and live-position confirmation")
 require("retcode!=TRADE_RETCODE_DONE" in execution,
         "stop modifications require an accepted server retcode")
 require("ModifyStopsByTicket(" in ea
