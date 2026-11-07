@@ -75,6 +75,12 @@ class DistributedRiskRestartJournalTests(unittest.TestCase):
         self.assertIn("AX_DistributedRisk_%I64d_%s_%I64u.dat", self.coordinator)
         self.assertNotIn("AX_DistributedRisk_%I64d_%I64d.dat", self.coordinator)
 
+    def test_recovery_only_clears_journal_for_exact_terminal_reservation_code(self):
+        recovery = self.coordinator[self.coordinator.index("   bool RecoverPending("):self.coordinator.index("   bool Reconcile(")]
+        self.assertIn('StringFind(error,"IDEMPOTENCY_KEY_ALREADY_USED")>=0', recovery)
+        self.assertNotIn("IDEMPOTENCY_KEY_REUSED", recovery)
+        self.assertIn("return(ClearPendingJournal());", recovery)
+
     def test_definitive_rejections_clear_new_journal_but_expired_outcomes_do_not(self):
         reserve = self.coordinator[self.coordinator.index("   bool Reserve("):self.coordinator.index("   bool Release(")]
         self.assertIn('StringFind(error,"DISTRIBUTED_RISK_HTTP_4")==0', reserve)
