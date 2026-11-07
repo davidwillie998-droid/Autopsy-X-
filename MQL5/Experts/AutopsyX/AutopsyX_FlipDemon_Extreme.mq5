@@ -3106,7 +3106,11 @@ int OnInit(void)
       g_effectiveVwapExitMode = InpVWAPExitMode;
 
    g_entryEngine.Configure(InpMinConfidenceToEnter);
-   g_exec.Init(_Symbol,InpMagicNumber,InpDeviationPoints,InpMaxExecRetries);
+   if(!g_exec.Init(_Symbol,InpMagicNumber,InpDeviationPoints,InpMaxExecRetries))
+     {
+      Print("FLIPDEMON INIT FAILED: broker execution filling policy is unsupported.");
+      return(INIT_FAILED);
+     }
    g_exit.Configure(InpEmergencySlPoints,InpDynamicTpRR,InpBreakEvenTriggerPoints,InpBreakEvenLockPoints,
                      InpTrailStartPoints,InpTrailDistancePoints,InpMaxHoldSeconds,
                      InpSpreadAbnormalMultiplier,InpOpposingExitConfidence,InpUseAtrStops,
