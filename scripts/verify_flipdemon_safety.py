@@ -391,7 +391,7 @@ require("AX_VIRTUAL_EXIT_FIELD_COUNT 21" in virtual_exit
         and "positionIdentifier" in virtual_exit
         and "FindIndex(record.positionIdentifier)" in virtual_exit,
         "virtual-exit persistence reads legacy 12/20-field rows and writes the 21-field identity record")
-virtual_format = re.search(r'string line=StringFormat\\("([^"]+)"', virtual_exit)
+virtual_format = re.search(r'string line=StringFormat\("([^"]+)"', virtual_exit)
 require(virtual_format is not None
         and len(re.findall(r"%I64u|%d|%s", virtual_format.group(1))) == 21
         and "Number(r.actionBaselineVolume)" in virtual_exit,
