@@ -347,12 +347,6 @@ public:
          return(false);
         }
       withinCap=JsonTrue(response,"withinCap");
-      if(m_journalPending && m_pendingReservationId==reservationId &&
-         !ClearPendingJournal())
-        {
-         error="DISTRIBUTED_RISK_SETTLED_BUT_LOCAL_JOURNAL_CLEAR_FAILED";
-         return(false);
-        }
       return(true);
      }
 
@@ -470,6 +464,12 @@ public:
          return(false);
         }
       withinCap=JsonTrue(response,"withinCap");
+      if(m_journalPending && m_pendingReservationId==reservationId &&
+         !ClearPendingJournal())
+        {
+         error="DISTRIBUTED_RISK_SETTLED_BUT_LOCAL_JOURNAL_CLEAR_FAILED";
+         return(false);
+        }
       return(true);
      }
   };
