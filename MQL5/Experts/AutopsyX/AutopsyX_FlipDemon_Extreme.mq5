@@ -1070,10 +1070,10 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
    rec.holdSeconds=(int)MathMax(0,(long)(rec.exitTime-rec.entryTime));
    rec.regime=AX_REGIME_UNSAFE; // entry regime was not durably captured; do not fabricate a normal regime.
    rec.entryReason="RESTART_RECOVERED | ENTRY_THESIS_UNAVAILABLE";
-   rec.exitReason=AX_EXIT_SL;
-   if(saved.virtualTpPrice>0.0 &&
-      MathAbs(exitPrice-saved.virtualTpPrice)<MathAbs(exitPrice-saved.emergencySlPrice))
-      rec.exitReason=AX_EXIT_TP;
+   // Broker history is sufficient to prove the close and its financial result,
+   // but this recovery path does not yet map every DEAL_REASON to an exit class.
+   // Record NONE rather than falsely labelling a manual or external close as SL/TP.
+   rec.exitReason=AX_EXIT_NONE;
    rec.grossProfit=grossProfit;
    rec.commission=commission;
    rec.swap=swap;
