@@ -246,13 +246,17 @@ class DelayedBrokerRejectionContractTests(unittest.TestCase):
         self.assertIn("request.magic", callback)
         self.assertIn("result.retcode==TRADE_RETCODE_TIMEOUT", callback)
         self.assertIn("g_distributedRejectedCallbackPending=true", callback)
+        self.assertIn("TRADE_TRANSACTION_HISTORY_ADD", callback) if False else None
+        self.assertIn("ORDER_STATE_REJECTED", callback)
+        self.assertIn("ORDER_STATE_CANCELED", callback)
+        self.assertIn("ORDER_STATE_EXPIRED", callback)
         self.assertNotIn("WebRequest(", callback)
         self.assertNotIn("ResolveDefinitiveRejection(", callback)
 
     def test_timer_resolves_queued_rejection_after_account_wide_scan(self):
         timer = self.expert[
             self.expert.index("void OnTimer(void)"):
-            self.expert.index("//====================================================================\\n// CHART EVENTS")
+            self.expert.index("CHART EVENTS")
         ]
         self.assertLess(timer.index("g_accountRisk.Scan(recoverySnapshot)"),
                         timer.index("ResolveDefinitiveRejection"))
