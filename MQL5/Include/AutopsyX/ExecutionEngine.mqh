@@ -476,31 +476,113 @@ public:
       return(true);
      }
 
-   //--- close whatever is open on symbol, confirm flat afterward ---
-   bool              ClosePosition(const string symbol,string &errorReason)
+   //--- close one exact broker position and reconcile the exact close order/deals ---
+   bool              ClosePosition(const string symbol,const ulong positionTicket,
+                                   const ulong expectedPositionId,const ulong expectedMagic,
+                                   string &errorReason,bool &outcomeUncertain)
      {
-      if(!PositionSelect(symbol)) { errorReason=""; return(true); } // already flat
+      outcomeUncertain=false;
+      if(positionTicket==0 || expectedPositionId==0 || expectedMagic==0 ||
+         !PositionSelectByTicket(positionTicket))
+        { errorReason="Tracked position unavailable before full close"; return(false); }
+      if(PositionGetString(POSITION_SYMBOL)!=symbol ||
+         (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=expectedPositionId ||
+         (ulong)PositionGetInteger(POSITION_MAGIC)!=expectedMagic)
+        { errorReason="Tracked position identity/magic mismatch before full close"; return(false); }
+      double beforeVolume=PositionGetDouble(POSITION_VOLUME);
+      long positionType=PositionGetInteger(POSITION_TYPE);
+      if(beforeVolume<=0.0 || (positionType!=POSITION_TYPE_BUY && positionType!=POSITION_TYPE_SELL))
+        { errorReason="Invalid broker position snapshot before full close"; return(false); }
 
-      bool ok=false;
-      for(int attempt=0; attempt<=m_maxRetries; attempt++)
+      // Submit once. Partial IOC fills and lost acknowledgements must be reconciled,
+      // never blindly retried as a second full close.
+      bool sent=m_trade.PositionClose(positionTicket);
+      uint retcode=m_trade.ResultRetcode();
+      ulong orderTicket=m_trade.ResultOrder();
+      ulong resultDeal=m_trade.ResultDeal();
+      bool accepted=(retcode==TRADE_RETCODE_DONE || retcode==TRADE_RETCODE_DONE_PARTIAL ||
+                     retcode==TRADE_RETCODE_PLACED);
+      if(!accepted && !sent)
         {
-         if(attempt>0) Sleep(m_retryDelayMs);
-         if(!PositionSelect(symbol)) { errorReason=""; return(true); }
-         ok = m_trade.PositionClose(symbol);
-         if(ok)
-           {
-            if(!PositionSelect(symbol)) { errorReason=""; return(true); }
-            errorReason="Close reported success but position still open";
-           }
-         else
-           {
-            uint retcode = m_trade.ResultRetcode();
-            errorReason = StringFormat("Close failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
-            if(!RetryableRetcode(retcode)) return(false);
-            continue;
-           }
+         errorReason=StringFormat("Full close rejected: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         outcomeUncertain=(retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION ||
+                           retcode==TRADE_RETCODE_PLACED || retcode==TRADE_RETCODE_DONE_PARTIAL);
+         return(false);
         }
-      return(!PositionSelect(symbol));
+      if(orderTicket==0 || resultDeal==0 || !HistoryDealSelect(resultDeal) ||
+         (ulong)HistoryDealGetInteger(resultDeal,DEAL_ORDER)!=orderTicket ||
+         HistoryDealGetString(resultDeal,DEAL_SYMBOL)!=symbol ||
+         (ulong)HistoryDealGetInteger(resultDeal,DEAL_MAGIC)!=expectedMagic ||
+         (ulong)HistoryDealGetInteger(resultDeal,DEAL_POSITION_ID)!=expectedPositionId)
+        {
+         outcomeUncertain=true;
+         errorReason="Full close accepted but exact result deal identity is unavailable";
+         return(false);
+        }
+      if(!HistorySelectByPosition((long)expectedPositionId))
+        {
+         outcomeUncertain=true;
+         errorReason="Full close accepted but position deal history is unavailable";
+         return(false);
+        }
+      double closedVolume=0.0;
+      for(int i=0;i<HistoryDealsTotal();i++)
+        {
+         ulong deal=HistoryDealGetTicket(i);
+         if(deal==0 || (ulong)HistoryDealGetInteger(deal,DEAL_ORDER)!=orderTicket)
+            continue;
+         if(HistoryDealGetString(deal,DEAL_SYMBOL)!=symbol ||
+            (ulong)HistoryDealGetInteger(deal,DEAL_MAGIC)!=expectedMagic ||
+            (ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID)!=expectedPositionId)
+            continue;
+         long entry=HistoryDealGetInteger(deal,DEAL_ENTRY);
+         if(entry!=DEAL_ENTRY_OUT && entry!=DEAL_ENTRY_OUT_BY) continue;
+         long dealType=HistoryDealGetInteger(deal,DEAL_TYPE);
+         if((positionType==POSITION_TYPE_BUY && dealType!=DEAL_TYPE_SELL) ||
+            (positionType==POSITION_TYPE_SELL && dealType!=DEAL_TYPE_BUY))
+            continue;
+         double volume=HistoryDealGetDouble(deal,DEAL_VOLUME);
+         if(volume<=0.0 || !MathIsValidNumber(volume))
+           {
+            outcomeUncertain=true;
+            errorReason="Full close deal contains invalid volume";
+            return(false);
+           }
+         closedVolume+=volume;
+        }
+      double step=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+      double tolerance=MathMax(step*0.51,0.0000001);
+      if(!PositionSelectByTicket(positionTicket))
+        {
+         if(closedVolume+tolerance<beforeVolume)
+           {
+            outcomeUncertain=true;
+            errorReason=StringFormat("Flat position but close deals account for %.8f of %.8f lots",closedVolume,beforeVolume);
+            return(false);
+           }
+         errorReason="";
+         return(true);
+        }
+      if((ulong)PositionGetInteger(POSITION_IDENTIFIER)!=expectedPositionId ||
+         (ulong)PositionGetInteger(POSITION_MAGIC)!=expectedMagic)
+        {
+         outcomeUncertain=true;
+         errorReason="Full close accepted but tracked position identity changed";
+         return(false);
+        }
+      double afterVolume=PositionGetDouble(POSITION_VOLUME);
+      double observedClosed=beforeVolume-afterVolume;
+      if(observedClosed>tolerance || closedVolume>tolerance)
+        {
+         outcomeUncertain=true;
+         errorReason=StringFormat("Full close partially executed: broker reduction %.8f, exact close deals %.8f; no retry sent",
+                                  observedClosed,closedVolume);
+         return(false);
+        }
+      outcomeUncertain=true;
+      errorReason=StringFormat("Full close response not reflected in broker state: %u %s",
+                               retcode,m_trade.ResultRetcodeDescription());
+      return(false);
      }
 
    //--- close part of an open position (scale-out). This EA runs on NETTING accounts, where
