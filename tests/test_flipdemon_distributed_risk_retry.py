@@ -568,3 +568,22 @@ class FullCloseBrokerReconciliationTests(unittest.TestCase):
         self.assertIn("g_hedgingLifecycleLock=true;", method)
         self.assertIn("g_engineState=AX_ENGINE_PAUSED;", method)
         self.assertIn("g_accountRiskReconciliationPending=true;", method)
+
+
+    def test_partial_close_confirms_exact_order_exit_deals_and_position_volume(self):
+        start = self.execution.index("bool              ClosePartial(")
+        end = self.execution.index("//--- close one exact broker position", start)
+        method = self.execution[start:end]
+        for token in (
+            "m_trade.ResultOrder()",
+            "m_trade.ResultDeal()",
+            "HistoryDealGetInteger(resultDeal,DEAL_ORDER)!=orderTicket",
+            "DEAL_ENTRY_OUT",
+            "DEAL_ENTRY_OUT_BY",
+            "DEAL_POSITION_ID)!=expectedPositionId",
+            "exactOrderClosed",
+            "MathAbs(exactOrderClosed-actualClosed)",
+            "outcomeUncertain=true;",
+        ):
+            self.assertIn(token, method)
+        self.assertEqual(method.count("m_trade.PositionClosePartial(positionTicket,volumeToClose)"), 1)
