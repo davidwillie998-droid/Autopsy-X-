@@ -418,6 +418,7 @@ class BrokerExecutionCompatibilityTests(unittest.TestCase):
         ]
         for token in (
             "m_trade.ResultDeal()",
+            "HistoryDealGetInteger(resultDeal,DEAL_ORDER)!=orderTicket",
             "DEAL_ORDER",
             "DEAL_ENTRY_IN",
             "DEAL_POSITION_ID",
