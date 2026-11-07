@@ -81,6 +81,34 @@ private:
       return(lastDeal);
      }
 
+   bool              LastAccountedRecordInFile(const string sourceFile,
+                                                const ulong positionIdentifier,
+                                                ulong &dealTicket,bool &isPartial,
+                                                double &lots) const
+     {
+      dealTicket=0;
+      isPartial=false;
+      lots=0.0;
+      if(positionIdentifier==0) return(false);
+      int handle=FileOpen(sourceFile,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE);
+      if(handle==INVALID_HANDLE) return(false);
+      bool firstLine=true;
+      while(!FileIsEnding(handle))
+        {
+         string line=FileReadString(handle);
+         if(firstLine) { firstLine=false; continue; }
+         if((ulong)StringToInteger(ParseCsvField(line,43))!=positionIdentifier)
+            continue;
+         ulong deal=(ulong)StringToInteger(ParseCsvField(line,3));
+         if(deal<=dealTicket) continue;
+         dealTicket=deal;
+         lots=StringToDouble(ParseCsvField(line,9));
+         isPartial=(StringToInteger(ParseCsvField(line,28))!=0);
+        }
+      FileClose(handle);
+      return(dealTicket>0 && lots>0.0 && MathIsValidNumber(lots));
+     }
+
    void              AddRiskHistory(const double netProfit,const double rMultiple,
                                     const bool isPartial,const string provenance)
      {
@@ -269,6 +297,37 @@ public:
       ulong currentLast=LastAccountedDealTicketInFile(m_fileName,positionIdentifier);
       ulong legacyLast=LastAccountedDealTicketInFile(m_legacyFileName,positionIdentifier);
       return((currentLast>legacyLast) ? currentLast : legacyLast);
+     }
+
+   // Returns the newest durable row for a position, including whether it is
+   // a partial slice and the volume that row accounted. Used only by restart
+   // reconciliation to distinguish a journal-first partial commit from a
+   // final close that was already written before a crash.
+   bool              LastAccountedRecord(const ulong positionIdentifier,
+                                         ulong &dealTicket,bool &isPartial,
+                                         double &lots) const
+     {
+      ulong currentTicket=0,legacyTicket=0;
+      bool currentPartial=false,legacyPartial=false;
+      double currentLots=0.0,legacyLots=0.0;
+      bool currentFound=LastAccountedRecordInFile(m_fileName,positionIdentifier,
+                                                   currentTicket,currentPartial,currentLots);
+      bool legacyFound=LastAccountedRecordInFile(m_legacyFileName,positionIdentifier,
+                                                  legacyTicket,legacyPartial,legacyLots);
+      if(!currentFound && !legacyFound) return(false);
+      if(currentTicket>=legacyTicket)
+        {
+         dealTicket=currentTicket;
+         isPartial=currentPartial;
+         lots=currentLots;
+        }
+      else
+        {
+         dealTicket=legacyTicket;
+         isPartial=legacyPartial;
+         lots=legacyLots;
+        }
+      return(true);
      }
 
    int               RiskHistoryCount(void) const { return(m_riskCount); }
