@@ -174,6 +174,21 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         self.assertIn("snapshot.hardRiskBudgetMoney+0.01", method)
         self.assertIn("PROPOSED_ORDER_EXCEEDS_ACCOUNT_WIDE_2_PERCENT_CAP", method)
 
+    def test_broker_stopout_threshold_and_buffer_guard_entries_and_pyramid_adds(self):
+        start = self.expert.index("bool AxBrokerMarginPreflight(")
+        end = self.expert.index("\n  }", start) + len("\n  }")
+        helper = self.expert[start:end]
+        self.assertIn("ACCOUNT_MARGIN_SO_MODE", helper)
+        self.assertIn("ACCOUNT_STOPOUT_MODE_PERCENT", helper)
+        self.assertIn("ACCOUNT_MARGIN_SO_CALL", helper)
+        self.assertIn("ACCOUNT_MARGIN_SO_SO", helper)
+        self.assertIn("MathMax(marginCall,stopout)+InpBrokerStopOutBufferPercent", helper)
+        self.assertIn("BROKER_MONEY_BASED_STOPOUT_UNSUPPORTED_FAIL_CLOSED", helper)
+        self.assertIn("MODE_MARGIN_UTILISATION_LIMIT_EXCEEDED", helper)
+        self.assertIn("BROKER_MARGIN_LEVEL_BUFFER_NOT_MET", helper)
+        self.assertEqual(self.expert.count("AxBrokerMarginPreflight(requiredMargin,"), 2)
+        self.assertIn("InpBrokerStopOutBufferPercent = 100.0", self.expert)
+
     def test_margin_utilisation_profiles_are_separate_from_stop_loss_risk(self):
         helper_start = self.expert.index("double AxMarginUsageLimitForMode(void)")
         helper_end = self.expert.index("\n  }", helper_start) + len("\n  }")
