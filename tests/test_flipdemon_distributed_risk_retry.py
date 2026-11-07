@@ -409,3 +409,55 @@ class BrokerExecutionCompatibilityTests(unittest.TestCase):
         self.assertIn("PrepareProtectionPrices(symbol,dir,alignedSl,alignedTp,true", self.execution)
         self.assertIn("PositionModify(positionTicket,alignedSl,alignedTp)", self.execution)
         self.assertIn("MathAbs(actualSl-alignedSl)", self.execution)
+
+
+    def test_fresh_entry_confirms_exact_order_deals_and_actual_partial_volume(self):
+        confirm = self.execution[
+            self.execution.index("bool              ConfirmMarketOrder("):
+            self.execution.index("\\npublic:", self.execution.index("bool              ConfirmMarketOrder("))
+        ]
+        for token in (
+            "m_trade.ResultDeal()",
+            "DEAL_ORDER",
+            "DEAL_ENTRY_IN",
+            "DEAL_POSITION_ID",
+            "DEAL_MAGIC",
+            "POSITION_IDENTIFIER",
+            "MathAbs(liveVolume-dealVolume)",
+            "actualLotsOut=dealVolume",
+            "fillPriceOut=dealPriceValue/dealVolume",
+        ):
+            self.assertIn(token, confirm)
+        entry = self.execution[
+            self.execution.index("bool              OpenMarket("):
+            self.execution.index("//--- add to an existing NETTING position")
+        ]
+        self.assertIn("TRADE_RETCODE_DONE_PARTIAL", entry)
+        self.assertIn("ConfirmMarketOrder(symbol,dir,lots,orderTicket", entry)
+        self.assertIn("outcomeUncertain=true;", entry)
+        self.assertIn("never resend an accepted or ambiguous market request", entry)
+        self.assertIn("a same-symbol position already exists", entry)
+
+    def test_legacy_symbol_stop_modify_routes_through_ticket_confirmation(self):
+        modify = self.execution[
+            self.execution.index("bool              ModifyStops("):
+            self.execution.index("// Ticket-specific stop modification", self.execution.index("bool              ModifyStops("))
+        ]
+        self.assertIn("POSITION_TICKET", modify)
+        self.assertIn("POSITION_IDENTIFIER", modify)
+        self.assertIn("ModifyStopsByTicket(symbol,ticket,positionId,magic", modify)
+        self.assertNotIn("m_trade.PositionModify(symbol", modify)
+
+    def test_rejected_stop_modification_does_not_advance_virtual_exit_state(self):
+        modify = self.execution[
+            self.execution.index("bool              ModifyStopsByTicket("):
+            self.execution.index("// Ticket-specific full close", self.execution.index("bool              ModifyStopsByTicket("))
+        ]
+        self.assertIn("if(!ok || retcode!=TRADE_RETCODE_DONE)", modify)
+        self.assertIn("Ticket stop modification failed", modify)
+        self.assertIn("actualSl=PositionGetDouble(POSITION_SL)", modify)
+        self.assertIn("actualTp=PositionGetDouble(POSITION_TP)", modify)
+        self.assertIn("Broker accepted stop modification but confirmed levels differ", modify)
+        self.assertIn("g_virtualExitReady=false;", self.expert)
+        self.assertIn("g_hedgingLifecycleLock=true;", self.expert)
+        self.assertIn("action lock retained, no retry", self.expert)
