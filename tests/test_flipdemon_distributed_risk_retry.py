@@ -246,7 +246,6 @@ class DelayedBrokerRejectionContractTests(unittest.TestCase):
         self.assertIn("request.magic", callback)
         self.assertIn("result.retcode==TRADE_RETCODE_TIMEOUT", callback)
         self.assertIn("g_distributedRejectedCallbackPending=true", callback)
-        self.assertIn("TRADE_TRANSACTION_HISTORY_ADD", callback) if False else None
         self.assertIn("ORDER_STATE_REJECTED", callback)
         self.assertIn("ORDER_STATE_CANCELED", callback)
         self.assertIn("ORDER_STATE_EXPIRED", callback)
