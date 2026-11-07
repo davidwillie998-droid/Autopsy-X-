@@ -2756,8 +2756,21 @@ int OnInit(void)
         }
       SAxAccountRiskSnapshot startupRisk;
       bool startupWithinCap=false;
-      if(!g_accountRisk.Scan(startupRisk) || !startupRisk.exposureKnown ||
-         !g_distributedRiskCoordinator.Reconcile(startupRisk,startupWithinCap,coordinatorInitError) ||
+      if(!g_accountRisk.Scan(startupRisk) || !startupRisk.exposureKnown)
+        {
+         PrintFormat("FLIPDEMON DISTRIBUTED RISK: startup broker snapshot unavailable; LIVE mode refused (%s).",
+                     startupRisk.failureReason);
+         return(INIT_FAILED);
+        }
+      // A prior terminal session may have stopped after the server committed a
+      // reservation. Recover its exact idempotency key before accepting new risk.
+      if(!g_distributedRiskCoordinator.RecoverPending(startupRisk,coordinatorInitError))
+        {
+         PrintFormat("FLIPDEMON DISTRIBUTED RISK: unresolved prior reservation; LIVE mode refused (%s).",
+                     coordinatorInitError);
+         return(INIT_FAILED);
+        }
+      if(!g_distributedRiskCoordinator.Reconcile(startupRisk,startupWithinCap,coordinatorInitError) ||
          !startupWithinCap)
         {
          PrintFormat("FLIPDEMON DISTRIBUTED RISK: startup reconciliation failed; LIVE mode refused (%s).",
