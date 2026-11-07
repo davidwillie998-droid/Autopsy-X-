@@ -838,6 +838,8 @@ bool AxReconcileVirtualExitTickets(const bool removeStaleRecords)
         {
          ulong oldTicket=saved.ticket;
          saved.ticket=live.ticket;
+         if(live.positionIdentifier==g_positionIdentifier)
+            g_posState.ticket=live.ticket;
          if(!g_virtualExitRegistry.Save(saved) || !g_virtualExitRegistry.IsPersisting())
            {
             g_virtualExitReady=false;
@@ -2758,25 +2760,85 @@ void OnTick(void)
               }
             if(wantModify)
               {
-               string modErr;
-               if(g_exec.ModifyStops(_Symbol,newSl,g_posState.initialTpPrice,modErr))
+               // Persist the lifecycle lock before touching the broker. The stable position
+               // identifier is the primary key; the current broker ticket is only a handle.
+               const int actionCode=isBreakEvenMove ? 1 : 2; // 1=break-even, 2=trailing
+               SAxManagedPosition managed;
+               SAxVirtualExitRecord savedExit;
+               if(!g_hedgingPositionManager.FindByIdentifier(g_positionIdentifier,managed) ||
+                  managed.ticket==0 || managed.positionIdentifier!=g_positionIdentifier ||
+                  managed.symbol!=_Symbol || managed.magic!=InpMagicNumber ||
+                  managed.direction!=g_posState.dir || !managed.hasValidBrokerStop ||
+                  !g_virtualExitRegistry.Find(g_positionIdentifier,savedExit) ||
+                  savedExit.actionLocked)
                  {
-                  g_posState.initialSlPrice = newSl;
-                  if(isBreakEvenMove) g_posState.breakEvenDone = true;
-                  g_posState.modifyFailCount = 0;
-                  if(!AxSaveVirtualExitState(true,false))
-                    {
-                     g_virtualExitReady=false;
-                     Print("FLIPDEMON VIRTUAL EXIT ERROR: broker stop changed but registry update failed; new entries blocked.");
-                    }
+                  g_virtualExitReady=false;
+                  g_hedgingLifecycleLock=true;
+                  g_engineState=AX_ENGINE_PAUSED;
+                  Print("FLIPDEMON VIRTUAL EXIT ERROR: exact broker position or unlocked durable exit state unavailable; stop action blocked.");
+                  return;
                  }
-               else
+
+               if(!g_virtualExitRegistry.BeginAction(g_positionIdentifier,actionCode) ||
+                  !g_virtualExitRegistry.IsPersisting())
                  {
-                  g_posState.modifyFailCount++;
-                  if(InpVerboseLogging) PrintFormat("AUTOPSY X: stop modify failed (%s) - streak=%d",modErr,g_posState.modifyFailCount);
-                  // stops that can't be reliably managed are unsafe to hold - cut rather than run naked
-                  if(g_posState.modifyFailCount>=InpMaxModifyFailures)
-                     AxCloseAndRecord(AX_EXIT_EXECUTION_QUALITY);
+                  g_virtualExitReady=false;
+                  g_hedgingLifecycleLock=true;
+                  g_engineState=AX_ENGINE_PAUSED;
+                  Print("FLIPDEMON VIRTUAL EXIT ERROR: action lock could not be persisted; broker stop was not modified.");
+                  return;
+                 }
+
+               string modErr;
+               if(!g_exec.ModifyStopsByTicket(_Symbol,managed.ticket,managed.positionIdentifier,
+                                               managed.magic,newSl,managed.takeProfit,modErr))
+                 {
+                  // The broker may have accepted a request whose confirmation was lost.
+                  // Keep the durable action lock and quarantine. Never resend on the next tick.
+                  g_virtualExitReady=false;
+                  g_hedgingLifecycleLock=true;
+                  g_engineState=AX_ENGINE_PAUSED;
+                  PrintFormat("FLIPDEMON VIRTUAL EXIT UNCERTAIN: stop action=%d ticket=%I64u identifier=%I64u; action lock retained, no retry (%s).",
+                              actionCode,managed.ticket,managed.positionIdentifier,modErr);
+                  return;
+                 }
+
+               bool recorded=isBreakEvenMove
+                             ? g_virtualExitRegistry.RecordBreakEven(g_positionIdentifier,newSl)
+                             : g_virtualExitRegistry.RecordTrailingStop(g_positionIdentifier,newSl);
+               if(!recorded || !g_virtualExitRegistry.IsPersisting())
+                 {
+                  g_virtualExitReady=false;
+                  g_hedgingLifecycleLock=true;
+                  g_engineState=AX_ENGINE_PAUSED;
+                  PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: broker confirmed stop %.10f but durable lifecycle record failed; action lock retained.",
+                              newSl);
+                  return;
+                 }
+
+               if(!g_virtualExitRegistry.ResolveAction(g_positionIdentifier,actionCode) ||
+                  !g_virtualExitRegistry.IsPersisting())
+                 {
+                  g_virtualExitReady=false;
+                  g_hedgingLifecycleLock=true;
+                  g_engineState=AX_ENGINE_PAUSED;
+                  PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: stop %.10f was recorded but action lock could not be resolved; management quarantined.",
+                              newSl);
+                  return;
+                 }
+
+               g_posState.initialSlPrice=newSl;
+               if(isBreakEvenMove) g_posState.breakEvenDone=true;
+               g_posState.modifyFailCount=0;
+               // Refresh the broker snapshot before another lifecycle action can be considered.
+               if(!g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber) ||
+                  !AxReconcileVirtualExitTickets(false))
+                 {
+                  g_virtualExitReady=false;
+                  g_hedgingLifecycleLock=true;
+                  g_engineState=AX_ENGINE_PAUSED;
+                  Print("FLIPDEMON VIRTUAL EXIT ERROR: post-modification broker snapshot could not be reconciled; management paused.");
+                  return;
                  }
               }
            }
