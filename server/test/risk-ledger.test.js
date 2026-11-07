@@ -393,3 +393,40 @@ test('crash after fill is reconciled into broker exposure before reservation is 
   } finally { f.close(); }
 });
 
+
+test('concurrent recovery settlement has exactly one winner across ledger processes', async () => {
+  const f = fixture();
+  try {
+    f.ledger.reconcile(f.base);
+    const reservation = f.ledger.reserve({ ...f.base, instanceId: 'terminal-recovery-a',
+      idempotencyKey: 'entry-concurrent-settle-0001', riskMoney: 100 });
+    f.setNow(f.base.snapshotAtMs + 100);
+    const moduleUrl = new URL('../risk-ledger.js', import.meta.url).href;
+    const workerSource = `
+      import { openRiskLedger } from ${JSON.stringify(moduleUrl)};
+      const input = JSON.parse(process.argv[1]);
+      const ledger = openRiskLedger(input.path, { clock: () => input.now });
+      try {
+        const result = ledger.settle(input.request);
+        process.stdout.write(JSON.stringify({ ok: true, result }));
+      } catch (error) {
+        process.stdout.write(JSON.stringify({ ok: false, code: error.code ?? error.message }));
+      } finally {
+        ledger.close();
+      }
+    `;
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const run = promisify(execFile);
+    const outcomes = await Promise.all(['settle-race-a', 'settle-race-b'].map(async suffix => {
+      const request = { ...f.base, snapshotAtMs: f.base.snapshotAtMs + 100,
+        snapshotId: 'snapshot-' + suffix, existingRiskMoney: 100,
+        reservationId: reservation.reservationId, instanceId: 'terminal-recovery-a' };
+      const { stdout } = await run(process.execPath, ['--input-type=module', '-e', workerSource,
+        JSON.stringify({ path: f.path, now: f.base.snapshotAtMs + 100, request })], { timeout: 10000 });
+      return JSON.parse(stdout);
+    }));
+    assert.equal(outcomes.filter(x => x.ok && x.result.settled).length, 1);
+    assert.equal(outcomes.filter(x => !x.ok && x.code === 'RESERVATION_NOT_ACTIVE').length, 1);
+  } finally { f.close(); }
+});
