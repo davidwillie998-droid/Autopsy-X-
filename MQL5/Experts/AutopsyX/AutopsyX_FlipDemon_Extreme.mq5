@@ -387,6 +387,49 @@ bool AxFetchCloseFinancials(const ulong posTicket,const ulong sinceTicketExclusi
    return(MathIsValidNumber(closePrice) && closePrice>0.0);
   }
 
+// Sum the complete broker-side campaign result, including entry and exit
+// commissions/fees and every partial exit. A campaign is one position identifier;
+// netting reversals and foreign-magic deals are rejected rather than misattributed.
+bool AxGetCampaignNetProfit(const ulong positionIdentifier,const string symbol,
+                            const ulong magic,double &netProfit,ulong &lastExitDeal)
+  {
+   netProfit=0.0;
+   lastExitDeal=0;
+   if(positionIdentifier==0 || symbol=="" ||
+      !HistorySelectByPosition((long)positionIdentifier))
+      return(false);
+
+   bool found=false;
+   for(int i=0;i<HistoryDealsTotal();i++)
+     {
+      ulong deal=HistoryDealGetTicket(i);
+      if(deal==0) return(false);
+      if((ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID)!=positionIdentifier)
+         continue;
+      if(HistoryDealGetString(deal,DEAL_SYMBOL)!=symbol ||
+         (ulong)HistoryDealGetInteger(deal,DEAL_MAGIC)!=magic)
+         return(false);
+
+      long entry=HistoryDealGetInteger(deal,DEAL_ENTRY);
+      if(entry==DEAL_ENTRY_INOUT)
+         return(false);
+      double profit=HistoryDealGetDouble(deal,DEAL_PROFIT);
+      double commission=HistoryDealGetDouble(deal,DEAL_COMMISSION);
+      double swap=HistoryDealGetDouble(deal,DEAL_SWAP);
+      double fee=HistoryDealGetDouble(deal,DEAL_FEE);
+      if(!MathIsValidNumber(profit) || !MathIsValidNumber(commission) ||
+         !MathIsValidNumber(swap) || !MathIsValidNumber(fee))
+         return(false);
+      netProfit+=profit+commission+swap+fee;
+      if(entry==DEAL_ENTRY_OUT || entry==DEAL_ENTRY_OUT_BY)
+        {
+         if(deal>lastExitDeal) lastExitDeal=deal;
+         found=true;
+        }
+     }
+   return(found && lastExitDeal>0 && MathIsValidNumber(netProfit));
+  }
+
 string AxBuildEntryReason(const SAxScore &score,const ENUM_AX_DIR dir)
   {
    string tags="";
@@ -496,11 +539,27 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
       g_virtualExitReady=false;
       Print("FLIPDEMON VIRTUAL EXIT ERROR: position closed but state removal failed; new entries remain blocked.");
      }
+   // A campaign can contain several banked partial exits. Risk streaks must
+   // use the complete broker-confirmed campaign result, not only its final slice.
+   double campaignNetProfit=0.0;
+   ulong campaignLastExitDeal=0;
+   if(!AxGetCampaignNetProfit(g_positionIdentifier,_Symbol,InpMagicNumber,
+                              campaignNetProfit,campaignLastExitDeal) ||
+      campaignLastExitDeal!=lastDealTicket)
+     {
+      g_recoveryReady=false;
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_engineState=AX_ENGINE_PAUSED;
+      PrintFormat("FLIPDEMON RISK ACCOUNTING ERROR: full campaign result is not confirmed for identifier=%I64u; new entries blocked.",
+                  g_positionIdentifier);
+     }
    // Do not re-enable entries from an exit callback. Recovery may have been blocked because
    // startup reconciliation found an untracked/mismatched live position, not merely a failed write.
    // A fresh successful reconciliation is required to clear that safety latch.
-   if(rec.flipSeq>0) g_accuracy.RegisterFlipOutcome(rec.netProfit>0);
-   g_risk.RegisterTradeClosed(rec.netProfit);
+   if(rec.flipSeq>0) g_accuracy.RegisterFlipOutcome(campaignNetProfit>0);
+   if(campaignLastExitDeal==lastDealTicket)
+      g_risk.RegisterTradeClosed(campaignNetProfit);
    if(reason==AX_EXIT_SL || reason==AX_EXIT_MOMENTUM_COLLAPSE || reason==AX_EXIT_MICROSTRUCTURE_REVERSAL)
       g_chop.RegisterStopOut();
 
@@ -1127,10 +1186,26 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
       return(false);
      }
 
-   // This function runs during startup reconciliation. The risk engine starts
-   // with fresh in-memory counters, so replaying this one unresolved close is
-   // required even when its journal row predates the restart.
-   g_risk.RegisterTradeClosed(durableNetProfit);
+   // Restore the complete campaign outcome, including previously journalled
+   // partial slices and entry-side charges. The final journal row alone is only
+   // the last slice and is not the campaign's total result.
+   double campaignNetProfit=0.0;
+   ulong campaignLastExitDeal=0;
+   if(!AxGetCampaignNetProfit(saved.positionIdentifier,saved.symbol,InpMagicNumber,
+                              campaignNetProfit,campaignLastExitDeal) ||
+      campaignLastExitDeal!=lastExitDeal)
+     {
+      g_recoveryReady=false;
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_engineState=AX_ENGINE_PAUSED;
+      PrintFormat("FLIPDEMON FULL-CLOSE RECOVERY: complete campaign result unavailable for identifier=%I64u.",
+                  saved.positionIdentifier);
+      return(false);
+     }
+   // This function runs during startup reconciliation. Replaying the complete
+   // broker-confirmed result restores the risk streak after an interrupted close.
+   g_risk.RegisterTradeClosed(campaignNetProfit);
 
    if(g_restartRecovery.FindByPositionIdentifier(saved.positionIdentifier,setup) &&
       (!g_restartRecovery.RemoveOpenSetupByPositionIdentifier(saved.positionIdentifier) ||
