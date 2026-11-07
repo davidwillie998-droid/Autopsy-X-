@@ -1177,10 +1177,10 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
 
       ulong journalCursor=saved.partialLastDealTicket;
       bool journalRowPartial=false;
-      double journalRowLots=0.0;
+      double journalRowLots=0.0,journalRowNetProfit=0.0;
       bool journalRowFound=g_autopsy.LastAccountedRecord(saved.positionIdentifier,
                                                           journalCursor,journalRowPartial,
-                                                          journalRowLots);
+                                                          journalRowLots,journalRowNetProfit);
       ulong journalHighWater=g_autopsy.LastAccountedDealTicket(saved.positionIdentifier);
       if(saved.partialLastDealTicket>journalHighWater ||
          (journalRowFound && journalCursor<saved.partialLastDealTicket))
