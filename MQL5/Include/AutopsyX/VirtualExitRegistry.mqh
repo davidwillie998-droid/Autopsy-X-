@@ -9,7 +9,7 @@
 
 #define AX_VIRTUAL_EXIT_MAX_RECORDS 64
 #define AX_VIRTUAL_EXIT_LEGACY_FIELD_COUNT 12
-#define AX_VIRTUAL_EXIT_FIELD_COUNT 20
+#define AX_VIRTUAL_EXIT_FIELD_COUNT 21
 
 struct SAxVirtualExitRecord
   {
@@ -31,6 +31,7 @@ struct SAxVirtualExitRecord
    bool        actionLocked;
    int         actionCode;
    datetime    actionStartedAt;
+   double      actionBaselineVolume;
    datetime    entryTime;
    datetime    updatedAt;
   };
@@ -73,6 +74,7 @@ private:
                         r.partialCloseCount,Number(r.partialClosedVolume),
                         r.partialLastDealTicket,r.actionLocked?1:0,r.actionCode,
                         TimeToString(r.actionStartedAt,TIME_DATE|TIME_SECONDS),
+                        Number(r.actionBaselineVolume),
                         TimeToString(r.entryTime,TIME_DATE|TIME_SECONDS),
                         TimeToString(r.updatedAt,TIME_DATE|TIME_SECONDS));
          string payload=line+"\r\n";
@@ -148,7 +150,7 @@ public:
          string f[];
          int fieldCount=StringSplit(line,'|',f);
          if(fieldCount!=AX_VIRTUAL_EXIT_LEGACY_FIELD_COUNT &&
-            fieldCount!=AX_VIRTUAL_EXIT_FIELD_COUNT)
+            fieldCount!=20 && fieldCount!=AX_VIRTUAL_EXIT_FIELD_COUNT)
            {
             valid=false;
             Print("FLIPDEMON VIRTUAL EXIT ERROR: malformed state row; recovery refused.");
@@ -168,8 +170,10 @@ public:
          int actionLock=legacyFormat ? 0 : (int)StringToInteger(f[15]);
          int actionCode=legacyFormat ? 0 : (int)StringToInteger(f[16]);
          datetime actionStarted=legacyFormat ? 0 : StringToTime(f[17]);
-         int entryIndex=legacyFormat ? 10 : 18;
-         int updatedIndex=legacyFormat ? 11 : 19;
+         bool baselineFormat=(fieldCount==AX_VIRTUAL_EXIT_FIELD_COUNT);
+         double actionBaseline=baselineFormat ? StringToDouble(f[18]) : 0.0;
+         int entryIndex=legacyFormat ? 10 : (baselineFormat ? 19 : 18);
+         int updatedIndex=legacyFormat ? 11 : (baselineFormat ? 20 : 19);
          datetime entry=StringToTime(f[entryIndex]);
          datetime updated=StringToTime(f[updatedIndex]);
          double initialSl=StringToDouble(f[4]);
@@ -185,6 +189,8 @@ public:
             (trailing==1 && trailingStop<=0.0) ||
             (actionLock==0 && (actionCode!=0 || actionStarted>0)) ||
             (actionLock==1 && (actionCode<=0 || actionStarted<=0)) ||
+            actionBaseline<0.0 ||
+            (actionLock==0 && actionBaseline>0.0) ||
             entry<=0 || updated<=0 || initialSl<=0 || emergencySl<=0 ||
             virtualSl<=0 || riskDistance<=0 || virtualTp<0)
            {
@@ -218,6 +224,7 @@ public:
          r.actionLocked=(actionLock==1);
          r.actionCode=actionCode;
          r.actionStartedAt=actionStarted;
+         r.actionBaselineVolume=actionBaseline;
          r.entryTime=entry;
          r.updatedAt=updated;
          m_records[m_count]=r;
@@ -245,8 +252,9 @@ public:
          (record.trailingActive && record.trailingStopPrice<=0) ||
          record.partialCloseCount<0 || record.partialClosedVolume<0 ||
          (record.actionLocked && (record.actionCode<=0 || record.actionStartedAt<=0)) ||
-         (!record.actionLocked && (record.actionCode!=0 || record.actionStartedAt>0)) ||
-         record.entryTime<=0)
+         (!record.actionLocked && (record.actionCode!=0 || record.actionStartedAt>0 ||
+                                   record.actionBaselineVolume>0.0)) ||
+         record.actionBaselineVolume<0.0 || record.entryTime<=0)
         {
          Print("FLIPDEMON VIRTUAL EXIT ERROR: invalid record rejected.");
          return(false);
@@ -329,6 +337,7 @@ public:
       record.actionLocked=true;
       record.actionCode=actionCode;
       record.actionStartedAt=TimeCurrent();
+      record.actionBaselineVolume=0.0;
       return(Save(record) && IsPersisting());
      }
 
@@ -343,6 +352,22 @@ public:
       record.actionLocked=false;
       record.actionCode=0;
       record.actionStartedAt=0;
+      record.actionBaselineVolume=0.0;
+      return(Save(record) && IsPersisting());
+     }
+
+   // Partial closes persist the pre-request broker volume. This is the
+   // restart-recovery anchor used to distinguish a partial from a full close.
+   bool BeginPartialCloseAction(const ulong positionIdentifier,const double baselineVolume)
+     {
+      if(positionIdentifier==0 || baselineVolume<=0.0 || !MathIsValidNumber(baselineVolume))
+         return(false);
+      SAxVirtualExitRecord record;
+      if(!Find(positionIdentifier,record) || record.actionLocked) return(false);
+      record.actionLocked=true;
+      record.actionCode=3;
+      record.actionStartedAt=TimeCurrent();
+      record.actionBaselineVolume=baselineVolume;
       return(Save(record) && IsPersisting());
      }
 
