@@ -572,7 +572,7 @@ class FullCloseBrokerReconciliationTests(unittest.TestCase):
 
     def test_partial_close_confirms_exact_order_exit_deals_and_position_volume(self):
         start = self.execution.index("bool              ClosePartial(")
-        end = self.execution.index("//--- close one exact broker position", start)
+        end = self.execution.index("bool              Flip(", start)
         method = self.execution[start:end]
         for token in (
             "m_trade.ResultOrder()",
