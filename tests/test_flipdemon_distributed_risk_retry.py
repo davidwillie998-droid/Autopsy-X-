@@ -205,7 +205,7 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         self.assertIn("return(0.5);", risk_helper)
         self.assertIn("return(1.0);", risk_helper)
         self.assertIn("AxClampD(InpExtremeRiskPercent,0.05,2.0)", risk_helper)
-        self.assertIn("projectedMarginLevel<InpMinFreeMarginPercent", self.expert)
+        self.assertIn("MathMax(InpMinFreeMarginPercent,brokerFloor)", self.expert)
 
     def test_pyramid_add_arms_uncertainty_before_broker_submission(self):
         start = self.expert.index("bool AxAttemptPyramidNettingAdd(")
