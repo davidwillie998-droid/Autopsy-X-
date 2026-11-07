@@ -2159,11 +2159,12 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
         }
       else if(distributedReservationActive)
         {
-         // Only a definitive broker rejection reaches this branch. Release against
-         // a fresh full-account snapshot, including all positions and pending orders.
+         // Persist the definitive broker rejection before release. If the release
+         // response is lost, restart recovery can safely retry it.
          SAxAccountRiskSnapshot failedOrderSnapshot;
          string releaseError;
-         if(!g_accountRisk.Scan(failedOrderSnapshot) || !failedOrderSnapshot.exposureKnown ||
+         if(!g_distributedRiskCoordinator.MarkExecutionRejected(releaseError) ||
+            !g_accountRisk.Scan(failedOrderSnapshot) || !failedOrderSnapshot.exposureKnown ||
             !g_distributedRiskCoordinator.Release(distributedReservationId,distributedInstanceId,
                                                    failedOrderSnapshot,releaseError))
            {
