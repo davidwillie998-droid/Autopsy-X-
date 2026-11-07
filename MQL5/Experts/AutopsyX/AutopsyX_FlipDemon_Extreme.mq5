@@ -3008,6 +3008,7 @@ int OnInit(void)
 
 void OnDeinit(const int reason)
   {
+   g_distributedRiskCoordinator.Shutdown();
    if(!g_accountRiskCoordinator.Release())
       Print("FLIPDEMON COORDINATION ERROR: account mutex release failed during deinitialization.");
    if(InpShowDashboard)
