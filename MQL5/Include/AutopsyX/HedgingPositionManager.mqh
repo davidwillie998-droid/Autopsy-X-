@@ -122,9 +122,15 @@ public:
             return(false);
            }
 
-         p.hasValidBrokerStop=(p.stopLoss>0.0 &&
-            ((p.direction==AX_DIR_BUY && p.stopLoss<p.openPrice) ||
-             (p.direction==AX_DIR_SELL && p.stopLoss>p.openPrice)));
+         // A protective stop remains valid after break-even or trailing has
+         // moved it beyond entry. Validate against the current executable side,
+         // not the historical entry price.
+         MqlTick positionTick;
+         bool quoteValid=SymbolInfoTick(p.symbol,positionTick) &&
+                         positionTick.bid>0.0 && positionTick.ask>=positionTick.bid;
+         p.hasValidBrokerStop=(quoteValid && p.stopLoss>0.0 &&
+            ((p.direction==AX_DIR_BUY && p.stopLoss<positionTick.bid) ||
+             (p.direction==AX_DIR_SELL && p.stopLoss>positionTick.ask)));
          if(!p.hasValidBrokerStop) m_allProtected=false;
 
          for(int j=0;j<m_count;j++)
