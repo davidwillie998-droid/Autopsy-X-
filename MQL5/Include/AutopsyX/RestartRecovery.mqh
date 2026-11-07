@@ -315,7 +315,8 @@ public:
    //--- end, not once per removal - a registry with many stale entries no longer costs one full file ---
    //--- rewrite per entry (code-review finding). ---
    void               Reconcile(const string symbol,const ulong magic,
-                                 int &matchedOut,int &untrackedOut,int &staleRemovedOut)
+                                 int &matchedOut,int &untrackedOut,int &staleRemovedOut,
+                                 const bool removeStaleRecords=true)
      {
       matchedOut=0; untrackedOut=0; staleRemovedOut=0;
 
@@ -349,57 +350,61 @@ public:
             untrackedOut++; // real position, no history - never fabricate its thesis
         }
 
-      //--- pass 2: every registry entry with no matching real position - the position closed while ---
-      //--- this EA was offline. Removed from memory only here; ONE rewrite happens after the loop. ---
-      SAxOpenSetupRecord snapshot[AX_RECOVERY_MAX_ENTRIES];
-      int previousCount=m_count;
-      for(int i=0;i<previousCount;i++) snapshot[i]=m_records[i];
-
-      bool anyRemoved=false;
-      for(int i=m_count-1;i>=0;i--)
+      // Stale records may represent positions closed while the EA was offline.
+      // Defer their deletion when a second durable ledger still needs the entry identity
+      // to reconstruct the final trade from broker deals.
+      if(removeStaleRecords)
         {
-         bool recordStillValid=false;
-         bool selectedById=false;
-         for(int p=0;p<PositionsTotal();p++)
+         SAxOpenSetupRecord snapshot[AX_RECOVERY_MAX_ENTRIES];
+         int previousCount=m_count;
+         for(int i=0;i<previousCount;i++) snapshot[i]=m_records[i];
+
+         bool anyRemoved=false;
+         for(int i=m_count-1;i>=0;i--)
            {
-            ulong liveTicket=PositionGetTicket(p);
-            if(liveTicket>0 && (ulong)PositionGetInteger(POSITION_IDENTIFIER)==m_records[i].positionIdentifier)
+            bool recordStillValid=false;
+            bool selectedById=false;
+            for(int p=0;p<PositionsTotal();p++)
               {
-               selectedById=true;
-               break;
+               ulong liveTicket=PositionGetTicket(p);
+               if(liveTicket>0 && (ulong)PositionGetInteger(POSITION_IDENTIFIER)==m_records[i].positionIdentifier)
+                 {
+                  selectedById=true;
+                  break;
+                 }
+              }
+            if(selectedById)
+              {
+               string liveSymbol=PositionGetString(POSITION_SYMBOL);
+               ulong liveMagic=(ulong)PositionGetInteger(POSITION_MAGIC);
+               long liveType=PositionGetInteger(POSITION_TYPE);
+               ENUM_AX_DIR liveDir=(liveType==POSITION_TYPE_BUY)?AX_DIR_BUY:AX_DIR_SELL;
+               recordStillValid=(liveSymbol==symbol && liveMagic==magic &&
+                                 (ulong)PositionGetInteger(POSITION_IDENTIFIER)==m_records[i].positionIdentifier &&
+                                 m_records[i].symbol==symbol && m_records[i].dir==liveDir);
+              }
+
+            if(!recordStillValid)
+              {
+               if(RemoveFromMemory(m_records[i].ticket))
+                 {
+                  staleRemovedOut++;
+                  anyRemoved=true;
+                 }
               }
            }
-         if(selectedById)
-           {
-            string liveSymbol=PositionGetString(POSITION_SYMBOL);
-            ulong liveMagic=(ulong)PositionGetInteger(POSITION_MAGIC);
-            long liveType=PositionGetInteger(POSITION_TYPE);
-            ENUM_AX_DIR liveDir=(liveType==POSITION_TYPE_BUY)?AX_DIR_BUY:AX_DIR_SELL;
-            recordStillValid=(liveSymbol==symbol && liveMagic==magic &&
-                              (ulong)PositionGetInteger(POSITION_IDENTIFIER)==m_records[i].positionIdentifier &&
-                              m_records[i].symbol==symbol && m_records[i].dir==liveDir);
-           }
 
-         if(!recordStillValid)
+         if(anyRemoved && !RewriteFile())
            {
-            if(RemoveFromMemory(m_records[i].ticket))
-              {
-               staleRemovedOut++;
-               anyRemoved=true;
-              }
+            m_count=previousCount;
+            for(int i=0;i<previousCount;i++) m_records[i]=snapshot[i];
+            m_persistOk=false;
+            staleRemovedOut=0;
+            Print("FLIPDEMON RECOVERY ERROR: stale-record cleanup was not persisted; original registry restored in memory.");
            }
         }
-
-      if(anyRemoved && !RewriteFile())
-        {
-         // The broker reconciliation succeeded, but the updated registry did not persist.
-         // Restore the in-memory snapshot and keep entries disabled until persistence recovers.
-         m_count=previousCount;
-         for(int i=0;i<previousCount;i++) m_records[i]=snapshot[i];
-         m_persistOk=false;
-         staleRemovedOut=0;
-         Print("FLIPDEMON RECOVERY ERROR: stale-record cleanup was not persisted; original registry restored in memory.");
-        }
+      else
+         Print("FLIPDEMON RECOVERY: stale setup cleanup deferred until closed-position deal accounting completes.");
      }
 
 private:
