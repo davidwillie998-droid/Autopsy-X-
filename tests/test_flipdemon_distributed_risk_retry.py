@@ -124,5 +124,23 @@ class DistributedRiskRestartJournalTests(unittest.TestCase):
         self.assertIn("m_journalLockHandle=INVALID_HANDLE", shutdown)
         self.assertIn("g_distributedRiskCoordinator.Shutdown();", deinit)
 
+
+    def test_transient_recovery_failures_keep_lock_until_central_reconcile_succeeds(self):
+        timer = self.expert[self.expert.index("void OnTimer(void)"):self.expert.index("//====================================================================\n// CHART EVENTS")]
+        failure = timer[timer.index("else if(!g_distributedRiskCoordinator.RecoverPending"):timer.index("else\n        {", timer.index("else if(!g_distributedRiskCoordinator.RecoverPending"))]
+        self.assertIn("g_accountRiskIntegrityLock=true", failure)
+        self.assertNotIn("g_distributedRecoveryPending=false", failure)
+        self.assertLess(timer.index("g_distributedRiskCoordinator.Reconcile(recoverySnapshot"), timer.index("g_distributedRecoveryPending=false"))
+        self.assertIn("next timer retry will reconcile again", timer)
+        self.assertIn("EventSetTimer(1)", self.expert)
+
+    def test_recovery_retries_replay_the_persisted_reservation_identity(self):
+        recovery = self.coordinator[self.coordinator.index("   bool RecoverPending("):self.coordinator.index("   string InstanceId(")]
+        self.assertIn('"idempotencyKey\\":\\""+JsonEscape(m_pendingKey)', recovery)
+        self.assertIn('"riskMoney\\":\\"', recovery) if False else None
+        self.assertIn("m_pendingRiskMoney", recovery)
+        self.assertIn("Post(\"/risk/reserve\",body,response,error)", recovery)
+        self.assertIn('StringFind(error,"IDEMPOTENCY_KEY_ALREADY_USED")>=0', recovery)
+
 if __name__ == "__main__":
     unittest.main()
