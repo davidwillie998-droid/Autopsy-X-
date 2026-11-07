@@ -70,7 +70,7 @@ class DistributedRiskRestartJournalTests(unittest.TestCase):
 
     def test_timer_retries_recovery_without_dashboard(self):
         timer = self.expert[self.expert.index("void OnTimer(void)"):self.expert.index("//====================================================================\n// CHART EVENTS")]
-        self.assertLess(timer.index("RecoverPending(recoverySnapshot"), timer.index("if(!InpShowDashboard) return;"))
+        self.assertLess(timer.index("g_distributedRiskCoordinator.RecoverPending("), timer.index("if(!InpShowDashboard) return;"))
         self.assertIn("EventKillTimer();", timer)
 
     def test_pending_recovery_blocks_new_entries(self):
@@ -127,9 +127,9 @@ class DistributedRiskRestartJournalTests(unittest.TestCase):
 
     def test_transient_recovery_failures_keep_lock_until_central_reconcile_succeeds(self):
         timer = self.expert[self.expert.index("void OnTimer(void)"):self.expert.index("//====================================================================\n// CHART EVENTS")]
-        failure = timer[timer.index("else if(!g_distributedRiskCoordinator.RecoverPending"):timer.index("else\n        {", timer.index("else if(!g_distributedRiskCoordinator.RecoverPending"))]
-        self.assertIn("g_accountRiskIntegrityLock=true", failure)
-        self.assertNotIn("g_distributedRecoveryPending=false", failure)
+        retry = timer[timer.index("if(!recoveredPending)"):timer.index("else\n           {", timer.index("if(!recoveredPending)"))]
+        self.assertIn("g_accountRiskIntegrityLock=true", retry)
+        self.assertNotIn("g_distributedRecoveryPending=false", retry)
         self.assertLess(timer.index("g_distributedRiskCoordinator.Reconcile(recoverySnapshot"), timer.index("g_distributedRecoveryPending=false"))
         self.assertIn("next timer retry will reconcile again", timer)
         self.assertIn("EventSetTimer(1)", self.expert)
