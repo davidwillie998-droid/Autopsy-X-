@@ -154,6 +154,17 @@ public:
 
       ulong resultDeal=m_trade.ResultDeal();
       if(resultDeal==0 || !HistoryDealSelect(resultDeal)) return(false);
+      // The CTrade result ticket itself must belong to this exact order and
+      // expected entry. Never use a stale or unrelated last-deal identifier.
+      if((ulong)HistoryDealGetInteger(resultDeal,DEAL_ORDER)!=orderTicket ||
+         HistoryDealGetString(resultDeal,DEAL_SYMBOL)!=symbol ||
+         (ulong)HistoryDealGetInteger(resultDeal,DEAL_MAGIC)!=m_magic ||
+         HistoryDealGetInteger(resultDeal,DEAL_ENTRY)!=DEAL_ENTRY_IN)
+         return(false);
+      long resultType=HistoryDealGetInteger(resultDeal,DEAL_TYPE);
+      if((expectedDir==AX_DIR_BUY && resultType!=DEAL_TYPE_BUY) ||
+         (expectedDir==AX_DIR_SELL && resultType!=DEAL_TYPE_SELL))
+         return(false);
       ulong positionId=(ulong)HistoryDealGetInteger(resultDeal,DEAL_POSITION_ID);
       if(positionId==0 || !HistorySelectByPosition((long)positionId)) return(false);
 
