@@ -990,6 +990,153 @@ bool AxReconcileVirtualExitTickets(const bool removeStaleRecords)
    return(true);
   }
 
+// Recover an interrupted partial-close request from its persisted pre-request volume.
+// A live-position partial is committed only when the exact POSITION_IDENTIFIER history
+// volume equals the broker-confirmed reduction. A missing position is classified as a
+// full close only when exit deals equal the entire persisted baseline; journal finalization
+// remains deferred because a closed campaign's full in-memory thesis must be reconstructed.
+bool AxRecoverLockedPartialCloseActions(void)
+  {
+   if(!g_virtualExitInitialized || !g_virtualExitRegistry.IsPersisting() ||
+      !g_hedgingPositionManager.IsComplete())
+      return(false);
+
+   for(int i=0;i<g_virtualExitRegistry.Count();i++)
+     {
+      SAxVirtualExitRecord saved;
+      if(!g_virtualExitRegistry.GetAt(i,saved)) return(false);
+      if(!saved.actionLocked || saved.actionCode!=3) continue;
+      if(saved.actionBaselineVolume<=0.0 || saved.positionIdentifier==0)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         PrintFormat("FLIPDEMON PARTIAL RECOVERY QUARANTINE: legacy action lock for identifier=%I64u has no baseline volume.",
+                     saved.positionIdentifier);
+         return(false);
+        }
+
+      if(!HistorySelectByPosition((long)saved.positionIdentifier))
+         return(false);
+      double historyExitVolume=0.0;
+      ulong lastExitDeal= saved.partialLastDealTicket;
+      bool historyValid=true;
+      for(int d=0;d<HistoryDealsTotal();d++)
+        {
+         ulong deal=HistoryDealGetTicket(d);
+         if(deal==0 || deal<=saved.partialLastDealTicket) continue;
+         if((ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID)!=saved.positionIdentifier ||
+            HistoryDealGetString(deal,DEAL_SYMBOL)!=saved.symbol ||
+            (ulong)HistoryDealGetInteger(deal,DEAL_MAGIC)!=InpMagicNumber)
+           {
+            historyValid=false;
+            break;
+           }
+         long entry=HistoryDealGetInteger(deal,DEAL_ENTRY);
+         if(entry==DEAL_ENTRY_INOUT)
+           {
+            historyValid=false;
+            break;
+           }
+         if(entry!=DEAL_ENTRY_OUT && entry!=DEAL_ENTRY_OUT_BY) continue;
+         double volume=HistoryDealGetDouble(deal,DEAL_VOLUME);
+         if(!MathIsValidNumber(volume) || volume<=0.0)
+           {
+            historyValid=false;
+            break;
+           }
+         historyExitVolume+=volume;
+         if(deal>lastExitDeal) lastExitDeal=deal;
+        }
+      if(!historyValid)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         PrintFormat("FLIPDEMON PARTIAL RECOVERY QUARANTINE: invalid or reversal deal history for identifier=%I64u.",
+                     saved.positionIdentifier);
+         return(false);
+        }
+
+      SAxManagedPosition live;
+      bool positionStillOpen=g_hedgingPositionManager.FindByIdentifier(saved.positionIdentifier,live);
+      double step=SymbolInfoDouble(saved.symbol,SYMBOL_VOLUME_STEP);
+      double tolerance=MathMax(step*0.5,0.0000001);
+      if(step<=0.0)
+         return(false);
+
+      if(!positionStillOpen)
+        {
+         if(MathAbs(historyExitVolume-saved.actionBaselineVolume)<=tolerance &&
+            historyExitVolume>0.0)
+           {
+            g_virtualExitReady=false;
+            g_hedgingLifecycleLock=true;
+            g_recoveryReady=false;
+            g_engineState=AX_ENGINE_PAUSED;
+            PrintFormat("FLIPDEMON PARTIAL RECOVERY: identifier=%I64u classified as FULLY CLOSED (baseline=%.8f exitDeals=%.8f lastDeal=%I64u). Final journal reconstruction is still required; state lock preserved.",
+                        saved.positionIdentifier,saved.actionBaselineVolume,historyExitVolume,lastExitDeal);
+           }
+         else
+           {
+            g_virtualExitReady=false;
+            g_hedgingLifecycleLock=true;
+            g_recoveryReady=false;
+            g_engineState=AX_ENGINE_PAUSED;
+            PrintFormat("FLIPDEMON PARTIAL RECOVERY QUARANTINE: identifier=%I64u is absent but exit volume %.8f does not reconcile to baseline %.8f; state lock preserved.",
+                        saved.positionIdentifier,historyExitVolume,saved.actionBaselineVolume);
+           }
+         return(false);
+        }
+
+      if(live.symbol!=saved.symbol || live.magic!=InpMagicNumber ||
+         live.positionIdentifier!=saved.positionIdentifier ||
+         !PositionSelectByTicket(live.ticket))
+         return(false);
+      double currentVolume=PositionGetDouble(POSITION_VOLUME);
+      double expectedReduction=saved.actionBaselineVolume-currentVolume;
+      if(expectedReduction<=tolerance ||
+         MathAbs(expectedReduction-historyExitVolume)>tolerance)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON PARTIAL RECOVERY QUARANTINE: identifier=%I64u baseline=%.8f live=%.8f reduction=%.8f dealVolume=%.8f; no journal mutation.",
+                     saved.positionIdentifier,saved.actionBaselineVolume,currentVolume,
+                     expectedReduction,historyExitVolume);
+         return(false);
+        }
+
+      if(!g_posState.active || g_positionIdentifier!=saved.positionIdentifier)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_recoveryReady=false;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON PARTIAL RECOVERY QUARANTINE: broker volume reconciles for identifier=%I64u, but restored campaign state is unavailable.",
+                     saved.positionIdentifier);
+         return(false);
+        }
+
+      double closePrice=0.0,grossProfit=0.0,commission=0.0,swap=0.0,closedVolume=0.0;
+      datetime closeTime=0;
+      ulong lastDeal= saved.partialLastDealTicket;
+      if(!AxFetchCloseFinancials(live.ticket,saved.partialLastDealTicket,
+                                 closePrice,grossProfit,commission,swap,closeTime,lastDeal,closedVolume) ||
+         MathAbs(closedVolume-expectedReduction)>tolerance ||
+         MathAbs(closedVolume-historyExitVolume)>tolerance)
+         return(false);
+
+      // AxRecordPartialClose subtracts the closed slice from this baseline.
+      // Restore the persisted pre-request volume before committing the journal row.
+      g_posState.lots=saved.actionBaselineVolume;
+      if(!AxCommitPartialClose(expectedReduction,closePrice,grossProfit,commission,
+                               swap,closeTime,lastDeal))
+         return(false);
+      PrintFormat("FLIPDEMON PARTIAL RECOVERY: identifier=%I64u reconciled partial volume=%.8f remaining=%.8f lastDeal=%I64u.",
+                  saved.positionIdentifier,expectedReduction,currentVolume,lastDeal);
+     }
+   return(true);
+  }
+
 // Reconcile each durable pyramid campaign against the complete broker snapshot.
 // Missing rows are reconstructed only from HistorySelectByPosition deal evidence.
 bool AxReconcilePyramidCampaignTickets(const bool removeStaleRecords)
