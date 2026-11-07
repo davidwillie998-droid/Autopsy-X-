@@ -633,7 +633,20 @@ void AxExecutePartialClose(const double volumeToClose)
       Print("FLIPDEMON PARTIAL CLOSE BLOCKED: durable unlocked position state is unavailable.");
       return;
      }
-   if(!g_virtualExitRegistry.BeginAction(g_positionIdentifier,3) ||
+   if(!PositionSelectByTicket(g_posState.ticket) ||
+      (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=g_positionIdentifier ||
+      (ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber ||
+      MathAbs(PositionGetDouble(POSITION_VOLUME)-g_posState.lots)>
+         MathMax(SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP)*0.5,0.0000001))
+     {
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_engineState=AX_ENGINE_PAUSED;
+      Print("FLIPDEMON PARTIAL CLOSE BLOCKED: broker position changed before baseline capture.");
+      return;
+     }
+   double partialBaselineVolume=PositionGetDouble(POSITION_VOLUME);
+   if(!g_virtualExitRegistry.BeginPartialCloseAction(g_positionIdentifier,partialBaselineVolume) ||
       !g_virtualExitRegistry.IsPersisting())
      {
       g_virtualExitReady=false;
@@ -830,6 +843,7 @@ bool AxSaveVirtualExitState(const bool allowEmergencyUpdate=false,const bool isN
       record.actionLocked=existing.actionLocked;
       record.actionCode=existing.actionCode;
       record.actionStartedAt=existing.actionStartedAt;
+      record.actionBaselineVolume=existing.actionBaselineVolume;
      }
    else
      {
@@ -947,6 +961,17 @@ bool AxReconcileVirtualExitTickets(const bool removeStaleRecords)
          SAxManagedPosition live;
          if(!g_hedgingPositionManager.FindByIdentifier(saved.positionIdentifier,live))
            {
+            if(saved.actionLocked)
+              {
+               // A locked row can represent an unjournaled final close. Never
+               // erase it merely because the broker position is now absent.
+               g_virtualExitReady=false;
+               g_hedgingLifecycleLock=true;
+               g_engineState=AX_ENGINE_PAUSED;
+               PrintFormat("FLIPDEMON VIRTUAL EXIT QUARANTINE: closed/missing position %I64u has unresolved action=%d; preserve state for deal-history recovery.",
+                           saved.positionIdentifier,saved.actionCode);
+               return(false);
+              }
             if(!g_virtualExitRegistry.Remove(saved.positionIdentifier) ||
                !g_virtualExitRegistry.IsPersisting())
               {
