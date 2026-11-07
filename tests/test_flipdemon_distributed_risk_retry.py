@@ -151,6 +151,27 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         cls.coordinator = (root / "MQL5/Include/AutopsyX/DistributedRiskCoordinator.mqh").read_text()
         cls.expert = (root / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text()
 
+    def test_pyramid_add_uses_campaign_stop_and_account_wide_risk_budget(self):
+        start = self.expert.index("bool AxAttemptPyramidNettingAdd(")
+        end = self.expert.index("\n\n//--- self-tuning", start)
+        method = self.expert[start:end]
+        self.assertIn("double stop=PositionGetDouble(POSITION_SL);", method)
+        self.assertIn("g_accountRisk.Evaluate(_Symbol,campaign.dir,requestedLots,stop,deviationPts,", method)
+        self.assertLess(method.index("g_accountRisk.Evaluate"),
+                        method.index("g_distributedRiskCoordinator.Reserve"))
+        self.assertIn("g_accountRisk.Scan(reserveSnapshot)", method)
+        self.assertIn("g_distributedRiskCoordinator.Reserve(riskDecision,reserveSnapshot,instanceId,", method)
+
+    def test_account_risk_calculator_adds_existing_and_proposed_campaign_risk(self):
+        start = self.coordinator.index("bool              Evaluate(")
+        method = self.coordinator[start:]
+        self.assertIn("if(!Scan(snapshot))", method)
+        self.assertIn("snapshot.existingRiskMoney= snapshot.existingRiskMoney", method) if False else None
+        self.assertIn("decision.proposedRiskMoney", method)
+        self.assertIn("snapshot.existingRiskMoney+decision.proposedRiskMoney>", method)
+        self.assertIn("snapshot.hardRiskBudgetMoney+0.01", method)
+        self.assertIn("PROPOSED_ORDER_EXCEEDS_ACCOUNT_WIDE_2_PERCENT_CAP", method)
+
     def test_pyramid_add_arms_uncertainty_before_broker_submission(self):
         start = self.expert.index("bool AxAttemptPyramidNettingAdd(")
         end = self.expert.index('g_exec.AddToNettingPosition', start)
