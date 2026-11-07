@@ -217,5 +217,56 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         self.assertIn("count==7 || fields[7]==\"1\"", load)
         self.assertIn("MarkExecutionUncertain", self.coordinator)
 
+
+class DelayedBrokerRejectionContractTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        root = Path(__file__).resolve().parents[1]
+        cls.coordinator = (root / "MQL5/Include/AutopsyX/DistributedRiskCoordinator.mqh").read_text()
+        cls.expert = (root / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text()
+
+    def test_delayed_rejection_resolution_requires_fresh_known_baseline_snapshot(self):
+        method = self.coordinator[
+            self.coordinator.index("bool ResolveDefinitiveRejection"):
+            self.coordinator.index("string InstanceId", self.coordinator.index("bool ResolveDefinitiveRejection"))
+        ]
+        self.assertIn("snapshot.exposureKnown", method)
+        self.assertIn("snapshot.existingRiskMoney>m_pendingBaselineRisk+0.01", method)
+        self.assertIn("MarkExecutionRejected(error)", method)
+        self.assertIn("Release(m_pendingReservationId,m_pendingInstance,snapshot,error)", method)
+
+    def test_transaction_callback_only_queues_matching_market_request_rejection(self):
+        callback = self.expert[
+            self.expert.index("void OnTradeTransaction"):
+            self.expert.index("void OnChartEvent")
+        ]
+        self.assertIn("trans.type==TRADE_TRANSACTION_REQUEST", callback)
+        self.assertIn("request.action==TRADE_ACTION_DEAL", callback)
+        self.assertIn('request.comment=="AXFDX"', callback)
+        self.assertIn("request.magic", callback)
+        self.assertIn("result.retcode==TRADE_RETCODE_TIMEOUT", callback)
+        self.assertIn("g_distributedRejectedCallbackPending=true", callback)
+        self.assertNotIn("WebRequest(", callback)
+        self.assertNotIn("ResolveDefinitiveRejection(", callback)
+
+    def test_timer_resolves_queued_rejection_after_account_wide_scan(self):
+        timer = self.expert[
+            self.expert.index("void OnTimer(void)"):
+            self.expert.index("//====================================================================\\n// CHART EVENTS")
+        ]
+        self.assertLess(timer.index("g_accountRisk.Scan(recoverySnapshot)"),
+                        timer.index("ResolveDefinitiveRejection"))
+        self.assertIn("g_distributedRejectedCallbackPending=false", timer)
+        self.assertIn("g_distributedRiskCoordinator.RecoverPending", timer)
+
+    def test_immediate_rejection_clears_callback_flag_before_direct_release(self):
+        entry = self.expert[
+            self.expert.index("else if(distributedReservationActive)"):
+            self.expert.index("if(!g_accountRiskCoordinator.Release())", self.expert.index("else if(distributedReservationActive)"))
+        ]
+        self.assertIn("g_distributedRejectedCallbackPending=false", entry)
+        self.assertLess(entry.index("g_distributedRejectedCallbackPending=false"),
+                        entry.index("MarkExecutionRejected"))
+
 if __name__ == "__main__":
     unittest.main()
