@@ -78,7 +78,7 @@ test('HTTP lost response after committed reservation returns the same reservatio
   const ledgerPath = join(tempDir, 'risk-ledger.sqlite');
   const bridgePort = await freePort();
   const coordinatorKey = 'integration-test-risk-coordinator-key-0123456789';
-  const bridge = spawn(process.execPath, ['server.js'], {
+  const bridgeOptions = {
     cwd: new URL('..', import.meta.url),
     env: {
       ...process.env,
@@ -93,7 +93,8 @@ test('HTTP lost response after committed reservation returns the same reservatio
       RISK_MAX_SNAPSHOT_AGE_MS: '15000',
     },
     stdio: 'ignore',
-  });
+  };
+  let bridge = spawn(process.execPath, ['server.js'], bridgeOptions);
   let proxyServer;
   t.after(async () => {
     if (proxyServer?.listening) {
@@ -162,6 +163,13 @@ test('HTTP lost response after committed reservation returns the same reservatio
   const committedBody = JSON.parse(committed.body);
   assert.equal(committedBody.ok, true);
   assert.equal(committedBody.duplicate, false);
+
+  // Simulate the harder failure: the reservation committed to SQLite, the
+  // client lost the response, and the bridge process then restarted before retry.
+  bridge.kill('SIGTERM');
+  await once(bridge, 'exit');
+  bridge = spawn(process.execPath, ['server.js'], bridgeOptions);
+  await waitForHealth(`${bridgeUrl}/health`, bridge);
 
   const retryResponse = await fetch(`${proxyUrl}/risk/reserve`, {
     method: 'POST',
