@@ -1068,6 +1068,7 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
    rec.exitPrice=exitPrice;
    rec.lots=exitVolume;
    rec.holdSeconds=(int)MathMax(0,(long)(rec.exitTime-rec.entryTime));
+   rec.regime=AX_REGIME_UNSAFE; // entry regime was not durably captured; do not fabricate a normal regime.
    rec.entryReason="RESTART_RECOVERED | ENTRY_THESIS_UNAVAILABLE";
    rec.exitReason=AX_EXIT_SL;
    if(saved.virtualTpPrice>0.0 &&
@@ -1157,8 +1158,18 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
       bool journalRowFound=g_autopsy.LastAccountedRecord(saved.positionIdentifier,
                                                           journalCursor,journalRowPartial,
                                                           journalRowLots);
-      if(journalRowFound && journalCursor<saved.partialLastDealTicket)
+      ulong journalHighWater=g_autopsy.LastAccountedDealTicket(saved.positionIdentifier);
+      if(saved.partialLastDealTicket>journalHighWater ||
+         (journalRowFound && journalCursor<saved.partialLastDealTicket))
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_recoveryReady=false;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON PARTIAL RECOVERY QUARANTINE: registry deal cursor %I64u is ahead of durable journal cursor %I64u for identifier=%I64u.",
+                     saved.partialLastDealTicket,journalHighWater,saved.positionIdentifier);
          return(false);
+        }
       if(!journalRowFound)
          journalCursor=saved.partialLastDealTicket;
 
