@@ -3812,6 +3812,14 @@ void OnTick(void)
    if(g_haveOpenPosition)
      {
       g_engineState = AX_ENGINE_MANAGING;
+      if(g_tradeLifecycle.SetupId()==g_posState.setupId &&
+         g_tradeLifecycle.State()==AX_LIFECYCLE_POSITION_ACTIVE &&
+         !g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_POSITION_MANAGED))
+        {
+         g_recoveryReady=false;
+         PrintFormat("FLIPDEMON LIFECYCLE ERROR: active setup %s could not enter POSITION_MANAGED (%s); new entries blocked.",
+                     g_posState.setupId,g_tradeLifecycle.LastError());
+        }
 
       // Pyramid candidate preflight. ANALYSIS_ONLY and PAPER_EXECUTION only log the
        // candidate; broker submission is separately opt-in and guarded by AX_EXEC_LIVE.
