@@ -208,8 +208,21 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         self.assertIn("BROKER_MONEY_BASED_STOPOUT_UNSUPPORTED_FAIL_CLOSED", helper)
         self.assertIn("MODE_MARGIN_UTILISATION_LIMIT_EXCEEDED", helper)
         self.assertIn("BROKER_MARGIN_LEVEL_BUFFER_NOT_MET", helper)
-        self.assertEqual(self.expert.count("AxBrokerMarginPreflight(requiredMargin,"), 2)
+        self.assertEqual(self.expert.count("AxBrokerMarginPreflight(requiredMargin,"), 3)
         self.assertIn("InpBrokerStopOutBufferPercent = 100.0", self.expert)
+
+    def test_pyramid_execution_is_demo_only_and_rechecks_margin_under_mutex(self):
+        start = self.expert.index("bool AxAttemptPyramidNettingAdd(")
+        end = self.expert.index("g_exec.AddToNettingPosition", start)
+        method = self.expert[start:end]
+        self.assertIn("AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO", method)
+        self.assertIn("g_accountRiskCoordinator.TryAcquire()", method)
+        locked_margin = "OrderCalcMargin(orderType,_Symbol,requestedLots,lockedOrderPrice,requiredMargin)"
+        self.assertIn(locked_margin, method)
+        self.assertLess(method.index("g_accountRiskCoordinator.TryAcquire()"),
+                        method.index(locked_margin))
+        self.assertIn("AxBrokerMarginPreflight(requiredMargin,projectedMarginUsage,projectedMarginLevel,marginReason)", method)
+        self.assertIn("InpEnablePyramidExecution=false", self.expert)
 
     def test_margin_utilisation_profiles_are_separate_from_stop_loss_risk(self):
         helper_start = self.expert.index("double AxMarginUsageLimitForMode(void)")
