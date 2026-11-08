@@ -93,13 +93,15 @@ public:
 
       double alpha=2.0/(m_signal+1.0);
       double ema=macdSeries[m_signal+1];
-      for(int i=m_signal;i>=0;i--)
+      for(int i=m_signal;i>=1;i--)
          ema=alpha*macdSeries[i]+(1.0-alpha)*ema;
+      double priorSignal=ema;
+      ema=alpha*macdSeries[0]+(1.0-alpha)*ema;
 
       m_macd=macdSeries[0];
       m_signalLine=ema;
       m_histogram=m_macd-m_signalLine;
-      double priorHistogram=macdSeries[1]-ema;
+      double priorHistogram=macdSeries[1]-priorSignal;
       if(!MathIsValidNumber(m_macd) || !MathIsValidNumber(m_signalLine) ||
          !MathIsValidNumber(m_histogram)) return(false);
 
