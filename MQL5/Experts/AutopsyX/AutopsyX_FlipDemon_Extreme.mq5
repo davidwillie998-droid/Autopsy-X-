@@ -4055,8 +4055,8 @@ void OnTimer(void)
    extras.weeklyLockout           = g_risk.WeeklyLockout();
    extras.marginUsagePercent      = g_risk.MarginUsagePercent();
 
-   // composite direction / structure / eligibility / lifecycle engines exist (Phases 2-6) but are
-   // not yet wired into this OnTick loop - honestly reported as pending rather than fabricated
+   // composite direction and closed-bar structure now gate the shared entry funnel. The
+   // execution-eligibility and full trade-lifecycle state machine remain pending integration.
    extras.extendedEnginesIntegrated = false;
 
    g_dash.Render(InpMode,g_regime.Regime(),g_lastScore,g_mom.VelocityLabel(),
