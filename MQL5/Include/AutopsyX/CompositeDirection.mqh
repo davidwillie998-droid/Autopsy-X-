@@ -34,6 +34,7 @@
 #include "Regime.mqh"
 #include "OrderFlow.mqh"
 #include "AntiChop.mqh"
+#include "StructureEngine.mqh"
 
 class CCompositeDirectionEngine
   {
@@ -69,7 +70,7 @@ public:
    //--- them. Passing the raw engines in as well and voting on them a second time was an earlier      ---
    //--- version of this function - removed after code-review flagged it as double/triple-counting    ---
    //--- correlated evidence and overstating the reported vote confidence. ---
-   ENUM_AX_COMPOSITE_DIRECTION Evaluate(const CRegimeEngine &execRegime,const CRegimeEngine &htfRegime,
+   ENUM_AX_COMPOSITE_DIRECTION Evaluate(const CRegimeEngine &execRegime,const CRegimeEngine &htfRegime,const CStructureEngine &structure,
                                          const COrderFlowEngine &oflow,const CAntiChopEngine &antiChop,
                                          const SAxScore &score,const double vwapValue,const string vwapTrend,
                                          const string vpMacdState,const string newsState,
@@ -117,6 +118,14 @@ public:
         {
          net += (execRegime.Slope()>0 ? 1.0 : -1.0)*0.6;
          weightUsed += 0.6; usableInputs++;
+        }
+
+      //--- Closed-bar market structure is an independent directional input. Undefined structure
+      //--- is excluded rather than treated as neutral or fabricated confirmation.
+      if(structure.Trend()==AX_STRUCT_TREND_BULLISH || structure.Trend()==AX_STRUCT_TREND_BEARISH)
+        {
+         net += (structure.Trend()==AX_STRUCT_TREND_BULLISH ? 1.0 : -1.0)*0.8;
+         weightUsed += 0.8; usableInputs++;
         }
 
       //--- liquidity-attack-readiness, momentum persistence and microstructure tick imbalance are   ---
