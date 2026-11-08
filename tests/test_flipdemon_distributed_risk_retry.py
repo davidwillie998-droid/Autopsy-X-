@@ -507,7 +507,7 @@ class NettingPyramidFillReconciliationTests(unittest.TestCase):
             "DEAL_TYPE_BUY",
             "DEAL_TYPE_SELL",
             "MathAbs(volumeIncrease-dealVolume)",
-            "stopsPreserved",
+            "EnsurePostFillProtection(symbol,dir,afterTicket,beforeSl,beforeTp",
             "actualAddLotsOut=dealVolume",
             "fillPriceOut=dealPriceValue/dealVolume",
         ):
