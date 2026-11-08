@@ -2345,7 +2345,9 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    g_posState.vpMacdStateAtEntry = g_vpMacd.State();
    double entryFlowImbalance = g_orderFlow.ImbalanceRatio();
    double entrySessionCvd = g_orderFlow.SessionCvd();
-   if(!MathIsValidNumber(entryFlowImbalance) || !MathIsValidNumber(entrySessionCvd))
+   double entryFlowVolume = g_orderFlow.WindowVolume();
+   if(!MathIsValidNumber(entryFlowImbalance) || !MathIsValidNumber(entrySessionCvd) ||
+      !MathIsValidNumber(entryFlowVolume) || entryFlowVolume<=0.0)
       g_posState.orderFlowStateAtEntry = "DATA_UNAVAILABLE";
    else if(entryFlowImbalance>0.0 && entrySessionCvd>0.0)
       g_posState.orderFlowStateAtEntry = "BUY_DOMINANT";
@@ -2360,6 +2362,26 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    g_posState.liquidityStateAtEntry = entryLiquidityReady ? "ATTACK_READY" : "NOT_READY_OR_CONSUMED";
    g_posState.newsStateAtEntry = g_newsDefense.State();
    g_posState.sessionAtEntry = "NOT_CAPTURED";
+   // Resolve the real opening deal from broker history using the stable position identifier.
+   // Do not guess from request/result tickets, which are not guaranteed to be deal tickets.
+   g_posState.setupId = recoverySetupId;
+   g_posState.entryReason = entryReason;
+   g_posState.lastAccountedDealTicket = 0;
+   if(g_positionIdentifier>0 && HistorySelectByPosition(g_positionIdentifier))
+     {
+      int entryDeals=HistoryDealsTotal();
+      for(int dealIndex=0;dealIndex<entryDeals;dealIndex++)
+        {
+         ulong entryDeal=HistoryDealGetTicket(dealIndex);
+         if(entryDeal==0) continue;
+         if((ulong)HistoryDealGetInteger(entryDeal,DEAL_POSITION_ID)!=g_positionIdentifier) continue;
+         if(HistoryDealGetInteger(entryDeal,DEAL_ENTRY)!=DEAL_ENTRY_IN) continue;
+         if(HistoryDealGetString(entryDeal,DEAL_SYMBOL)!=_Symbol) continue;
+         if((ulong)HistoryDealGetInteger(entryDeal,DEAL_MAGIC)!=InpMagicNumber) continue;
+         g_posState.entryDealId=entryDeal;
+         break; // history is chronological; retain the first actual opening deal
+        }
+     }
    bool recoverySaved = g_recoveryInitialized &&
                         g_restartRecovery.RecordOpenSetup(newTicket,g_positionIdentifier,recoverySetupId,_Symbol,dir,TimeCurrent());
    if(!recoverySaved || !g_restartRecovery.IsPersisting())
