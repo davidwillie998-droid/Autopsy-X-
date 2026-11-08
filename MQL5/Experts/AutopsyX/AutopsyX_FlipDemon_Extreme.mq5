@@ -31,6 +31,7 @@
 #include <AutopsyX/AccountRiskCalculator.mqh>
 #include <AutopsyX/DistributedRiskCoordinator.mqh>
 #include <AutopsyX/EntryEngine.mqh>
+#include <AutopsyX/ExecutionEligibility.mqh>
 #include <AutopsyX/ExecutionEngine.mqh>
 #include <AutopsyX/ExitEngine.mqh>
 #include <AutopsyX/SniperEngine.mqh>
@@ -256,6 +257,7 @@ ENUM_AX_VWAP_EXIT_MODE g_effectiveVwapExitMode = AX_VWAP_EXIT_OFF; // set at OnI
                                                                      // down from InpVWAPExitMode - see
                                                                      // OnInit's validation for why
 CEntryEngine          g_entryEngine;
+CExecutionEligibility g_executionEligibility;
 CExecutionEngine      g_exec;
 CExitEngine           g_exit;
 CSniperEngine         g_sniper;
@@ -2219,6 +2221,69 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       PrintFormat("FLIPDEMON MARGIN OK: symbol=%s lots=%.8f required=%.2f usageAfter=%.2f%% levelAfter=%.2f%%",
                   _Symbol,lots,requiredMargin,projectedUsage,projectedLevel);
 
+   // Final thesis-quality gate. It runs after the actual stops, final lot size and broker
+   // margin have been calculated, but before any reservation or broker request is created.
+   // Existing risk, account-wide monetary-risk and distributed reservation controls remain
+   // authoritative and are deliberately retained after this additional eligibility check.
+   SAxTradeThesis executionThesis;
+   executionThesis.setupId=AxGenerateSetupId(_Symbol,dir);
+   executionThesis.symbol=_Symbol;
+   executionThesis.direction=dir;
+   executionThesis.timestamp=TimeCurrent();
+   executionThesis.htfBias=AX_COMPOSITE_NEUTRAL; // not independently synthesized here
+   executionThesis.executionBias=compositeDirection;
+   executionThesis.marketRegime=score.regime;
+   executionThesis.liquidityTargetPrice=0.0; // no verified target is supplied by this entry path
+   executionThesis.liquidityCondition=g_structure.StateSummary();
+   executionThesis.structureState=g_structure.StateSummary();
+   executionThesis.entryModel=tag;
+   executionThesis.vwapState=g_vwapTrend;
+   executionThesis.vpMacdState=g_vpMacd.State();
+   double thesisFlowImbalance=g_orderFlow.ImbalanceRatio();
+   double thesisFlowVolume=g_orderFlow.WindowVolume();
+   executionThesis.orderFlowState=(MathIsValidNumber(thesisFlowImbalance) &&
+                                   MathIsValidNumber(thesisFlowVolume) && thesisFlowVolume>0.0)
+                                  ? (thesisFlowImbalance>0.0 ? "BUY_DOMINANT" :
+                                     thesisFlowImbalance<0.0 ? "SELL_DOMINANT" : "MIXED")
+                                  : "DATA_UNAVAILABLE";
+   executionThesis.momentumState="SCORE_CONFIRMED";
+   executionThesis.signalScore=score;
+   executionThesis.expectedEntry=marginPrice;
+   executionThesis.stopLoss=slPrice;
+   executionThesis.takeProfit=tpPrice;
+   double thesisRiskDistance=MathAbs(marginPrice-slPrice);
+   double thesisRewardDistance=(tpPrice>0.0) ? MathAbs(tpPrice-marginPrice) : 0.0;
+   executionThesis.initialRR=(thesisRiskDistance>0.0 && thesisRewardDistance>0.0)
+                             ? thesisRewardDistance/thesisRiskDistance : 0.0;
+   executionThesis.spreadPts=g_md.CurrentSpreadPts();
+   executionThesis.estimatedImpactCostPct=impactCostPct;
+   // No calibrated per-setup EV estimator is wired into this path yet. Keep it explicitly
+   // neutral instead of presenting the AFE portfolio estimate as a setup-specific forecast.
+   executionThesis.expectedValueR=0.0;
+   executionThesis.newsState=g_newsDefense.State();
+   executionThesis.session="NOT_CAPTURED";
+   executionThesis.volatilityState=AxRegimeToString(score.regime);
+   executionThesis.riskPercent=g_risk.RiskPercent();
+   executionThesis.riskMultiplier=afeRiskMultiplier;
+   executionThesis.flipSeq=0;
+   executionThesis.eligibilityStatus="";
+   executionThesis.entryReason=entryReason;
+   executionThesis.invalidationReason="";
+   string eligibilityReason="";
+   ENUM_AX_ELIGIBILITY eligibility=g_executionEligibility.Check(
+      executionThesis,compositeDirection,g_risk,accountOpenPositions,accountExposureLots,
+      g_md.CurrentSpreadPts(),requiredMargin,eligibilityReason);
+   if(eligibility!=AX_ELIGIBLE_LONG && eligibility!=AX_ELIGIBLE_SHORT)
+     {
+      if(InpVerboseLogging)
+         PrintFormat("FLIPDEMON EXECUTION ELIGIBILITY: %s blocked %s (%s)",
+                     AxDirToString(dir),AxEligibilityToString(eligibility),eligibilityReason);
+      return(false);
+     }
+   if(InpVerboseLogging)
+      PrintFormat("FLIPDEMON EXECUTION ELIGIBILITY: %s approved (R:R=%.2f, margin=%.2f, reason=%s)",
+                  AxDirToString(dir),executionThesis.initialRR,requiredMargin,eligibilityReason);
+
    // live spread can widen well past anything a demo feed shows - scale the allowed deviation to
    // it (floored at the configured minimum) so normal spread widening doesn't spuriously reject
    // an otherwise-fine fill, while still capping how far price can move against us
@@ -3238,6 +3303,7 @@ int OnInit(void)
       g_effectiveVwapExitMode = InpVWAPExitMode;
 
    g_entryEngine.Configure(InpMinConfidenceToEnter);
+   g_executionEligibility.Configure(1.2,0.0,50.0);
    if(!g_exec.Init(_Symbol,InpMagicNumber,InpDeviationPoints,InpMaxExecRetries))
      {
       Print("FLIPDEMON INIT FAILED: broker execution filling policy is unsupported.");
