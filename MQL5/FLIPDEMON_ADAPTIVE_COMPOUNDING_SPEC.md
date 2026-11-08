@@ -12,7 +12,7 @@ Scale position size in response to account equity and verified continuation oppo
 
 - `InpExecutionMode` currently defaults to `AX_EXEC_ANALYSIS_ONLY`; preserve this.
 - Existing `CRiskEngine::CalculateLotSize` already sizes from equity and a configured risk percentage, so ordinary percentage sizing compounds naturally.
-- The current defaults include `InpMaxOpenPositions=1`, `InpMaxPositionsPerSymbol=1`, and `InpMaxExposureLots=1.0`. These prevent the intended multi-add campaign in their current configuration. Do not simply raise these limits: implement and test campaign-level aggregate-risk accounting first.
+- The current defaults include `InpMaxOpenPositions=1` and `InpMaxPositionsPerSymbol=1`. There is no EA-imposed gross-lot or directional-lot ceiling. Each order is bounded by the broker's live `SYMBOL_VOLUME_MIN`, `SYMBOL_VOLUME_MAX`, `SYMBOL_VOLUME_STEP` and `SYMBOL_VOLUME_LIMIT`; account-wide stop-risk, campaign risk and margin checks remain authoritative.
 - `CMarketData::NormalizeVolume` rejects a raw size below broker minimum rather than rounding it up. Preserve this behavior.
 - The existing EA has a hard risk-engine ceiling of 2% per entry. Retain 2% as the absolute per-entry ceiling; configure a lower default for small-account deployment.
 - MQL5 compilation, broker-specific contract validation, and Strategy Tester verification are outstanding. This document and the Python reference tests do not establish EA readiness.
@@ -24,7 +24,7 @@ Scale position size in response to account equity and verified continuation oppo
 - `InpBaseRiskPercent`: default 0.50% of current equity per initial entry.
 - `InpMaxRiskPercentPerEntry`: hard-capped at 2.00%; no input may raise the ceiling.
 - `InpMaxCampaignRiskPercent`: default 2.00% of current equity for the sum of remaining stop-risk across all campaign entries, including the proposed addition.
-- `InpMaxAccountOpenRiskPercent`: default 4.00% of equity across all positions controlled by the EA. Existing account-wide loss, daily/weekly loss, margin, position-count and lot caps remain independently active.
+- `InpMaxAccountOpenRiskPercent`: default 4.00% of equity across all positions controlled by the EA. Existing account-wide loss, daily/weekly loss, margin and position-count limits remain independently active. No fixed EA gross-lot or directional-lot cap is applied.
 - `InpProgressiveSizingEnabled`: true for analysis calculations; this does not authorize orders while execution mode is ANALYSIS_ONLY.
 - `InpMaxProgressiveMultiplier`: 1.50 maximum risk multiplier from equity growth; this multiplier is still subject to the 2% per-entry cap and campaign/account risk caps.
 - `InpMinEquityForSizing`: configurable minimum equity. If equity is lower or unavailable, no trade.
@@ -61,7 +61,7 @@ Effective entry risk percent = min(base risk percent × growth multiplier × dra
 2. Normalize downward to the broker's valid volume step; never round upward.
 3. If raw lots are below broker minimum, return zero and record `REJECT_MIN_LOT_EXCEEDS_RISK_BUDGET`. Do not force a minimum lot even if the user wants aggressive growth.
 4. If the stop-risk for broker minimum lot exceeds the allowed per-entry risk, reject the trade. If the broker's contract metadata or profit calculation is unavailable, reject.
-5. Cap by broker maximum, configured order-lot ceiling, remaining account gross-lot allowance and available margin. Any final cap must be re-normalized downward and rechecked against all risk limits.
+5. Cap by the broker maximum, broker directional symbol volume limit and available margin. There is no EA-imposed gross-lot or directional-lot ceiling. Re-normalize downward after any broker constraint and recheck stop-risk and margin before execution.
 6. Use broker-aware margin estimation for the proposed order and reject if projected margin usage/free margin would breach the existing limits.
 
 ### Step D — pyramiding / campaign sizing
