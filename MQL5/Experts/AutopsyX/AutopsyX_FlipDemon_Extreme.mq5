@@ -2605,6 +2605,17 @@ bool AxAttemptPyramidNettingAdd(SAxPyramidCampaignRecord &campaign,
       !g_virtualExitReady || !g_virtualExitRegistry.IsPersisting())
       return(false);
 
+   // Pyramid order execution is a demo-validation feature in this rollout.
+   // AX_EXEC_LIVE means broker orders are enabled; it does NOT mean a real-money
+   // account is permitted. Refuse real/contest accounts even if the input is
+   // accidentally enabled. A separate reviewed authorization is required before
+   // any future real-account campaign execution can be considered.
+   if(AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO)
+     {
+      Print("FLIPDEMON PYRAMID BLOCKED: campaign order execution is restricted to MT5 DEMO accounts.");
+      return(false);
+     }
+
    long marginMode=AccountInfoInteger(ACCOUNT_MARGIN_MODE);
    if(marginMode!=ACCOUNT_MARGIN_MODE_RETAIL_NETTING &&
       marginMode!=ACCOUNT_MARGIN_MODE_EXCHANGE)
@@ -2716,6 +2727,26 @@ bool AxAttemptPyramidNettingAdd(SAxPyramidCampaignRecord &campaign,
       (campaign.dir==AX_DIR_SELL && stop<=lockedQuote.ask))
      {
       g_pyramidReady=false;
+      if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
+      return(false);
+     }
+
+   // Recalculate broker margin with the fresh quote while holding the account
+   // mutex. The earlier preflight is only an early rejection; it is not trusted
+   // as the final margin decision because price, equity and free margin can move
+   // while the campaign is being revalidated.
+   double lockedOrderPrice=(campaign.dir==AX_DIR_BUY)?lockedQuote.ask:lockedQuote.bid;
+   requiredMargin=0.0;
+   projectedMarginUsage=0.0;
+   projectedMarginLevel=0.0;
+   marginReason="";
+   if(!OrderCalcMargin(orderType,_Symbol,requestedLots,lockedOrderPrice,requiredMargin) ||
+      !MathIsValidNumber(requiredMargin) || requiredMargin<=0.0 ||
+      !AxBrokerMarginPreflight(requiredMargin,projectedMarginUsage,projectedMarginLevel,marginReason))
+     {
+      PrintFormat("FLIPDEMON PYRAMID BLOCKED: locked final margin recheck failed; required=%.2f usageAfter=%.2f%% levelAfter=%.2f%% reason=%s.",
+                  requiredMargin,projectedMarginUsage,projectedMarginLevel,
+                  marginReason==""?"ORDER_CALC_MARGIN_FAILED":marginReason);
       if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
       return(false);
      }
