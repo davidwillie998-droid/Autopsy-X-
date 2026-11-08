@@ -539,6 +539,7 @@ SAxTradeRecord AxBuildTradeRecord(const double closePrice,const double grossProf
                                    const double lotsForRecord,const bool isPartial)
   {
    SAxTradeRecord rec;
+   rec.setupId       = g_posState.setupId;
    rec.ticket        = g_posState.ticket;
    rec.positionIdentifier = g_positionIdentifier;
    rec.entryTime     = g_posState.entryTime;
@@ -592,10 +593,15 @@ SAxTradeRecord AxBuildTradeRecord(const double closePrice,const double grossProf
         }
      }
 
-   //--- KNOWN GAP, documented rather than silently left broken: vwapStateAtEntry, vpMacdStateAtEntry,
-   //--- orderFlowStateAtEntry, structureStateAtEntry, liquidityStateAtEntry, newsStateAtEntry,
-   //--- sessionAtEntry, setupId and dealIdIn remain unpopulated until their entry/event capture is wired.
-   //--- dealIdOut and positionIdentifier are populated by the exit accounting path for restart recovery.
+   //--- Frozen evidence is copied from the confirmed position snapshot, never reconstructed from exit-time data.
+   rec.vwapStateAtEntry       = g_posState.vwapStateAtEntry;
+   rec.vpMacdStateAtEntry     = g_posState.vpMacdStateAtEntry;
+   rec.orderFlowStateAtEntry  = g_posState.orderFlowStateAtEntry;
+   rec.structureStateAtEntry  = g_posState.structureStateAtEntry;
+   rec.liquidityStateAtEntry  = g_posState.liquidityStateAtEntry;
+   rec.newsStateAtEntry       = g_posState.newsStateAtEntry;
+   rec.sessionAtEntry         = g_posState.sessionAtEntry;
+   // dealIdIn is deliberately left 0 until the actual broker IN deal is reconciled by identifier.
    return(rec);
   }
 
@@ -1747,6 +1753,14 @@ void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double l
    g_posState.entryConfidence    = score.confidence;
    g_posState.entryRegime        = score.regime;
    g_posState.entryReason        = entryReason;
+   g_posState.setupId            = "";
+   g_posState.vwapStateAtEntry   = "NOT_CAPTURED";
+   g_posState.vpMacdStateAtEntry = "NOT_CAPTURED";
+   g_posState.orderFlowStateAtEntry = "NOT_CAPTURED";
+   g_posState.structureStateAtEntry = "NOT_CAPTURED";
+   g_posState.liquidityStateAtEntry = "NOT_CAPTURED";
+   g_posState.newsStateAtEntry   = "NOT_CAPTURED";
+   g_posState.sessionAtEntry     = "NOT_CAPTURED";
    g_posState.entrySpreadPts     = g_md.CurrentSpreadPts();
    double point = g_md.Point();
    g_posState.entrySlippagePts = (point>0) ? MathAbs(fillPrice-intendedPrice)/point : 0.0;
@@ -2325,6 +2339,27 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    // The broker has already confirmed this fill. Persist its real ticket and a unique setup ID
    // immediately; if persistence fails, keep managing the open position but block every new entry.
    string recoverySetupId = AxGenerateSetupId(_Symbol,dir);
+   g_posState.setupId = recoverySetupId;
+   // Snapshot the actual engine states at fill time. Missing readings remain explicit.
+   g_posState.vwapStateAtEntry = g_vwapTrend;
+   g_posState.vpMacdStateAtEntry = g_vpMacd.State();
+   double entryFlowImbalance = g_orderFlow.ImbalanceRatio();
+   double entrySessionCvd = g_orderFlow.SessionCvd();
+   if(!MathIsValidNumber(entryFlowImbalance) || !MathIsValidNumber(entrySessionCvd))
+      g_posState.orderFlowStateAtEntry = "DATA_UNAVAILABLE";
+   else if(entryFlowImbalance>0.0 && entrySessionCvd>0.0)
+      g_posState.orderFlowStateAtEntry = "BUY_DOMINANT";
+   else if(entryFlowImbalance<0.0 && entrySessionCvd<0.0)
+      g_posState.orderFlowStateAtEntry = "SELL_DOMINANT";
+   else
+      g_posState.orderFlowStateAtEntry = "MIXED";
+   g_posState.structureStateAtEntry = g_structure.StateSummary();
+   bool entryLiquidityReady = (dir==AX_DIR_BUY)
+                              ? g_liq.BullishAttackReady(g_mom.DisplacementPts())
+                              : g_liq.BearishAttackReady(g_mom.DisplacementPts());
+   g_posState.liquidityStateAtEntry = entryLiquidityReady ? "ATTACK_READY" : "NOT_READY_OR_CONSUMED";
+   g_posState.newsStateAtEntry = g_newsDefense.State();
+   g_posState.sessionAtEntry = "NOT_CAPTURED";
    bool recoverySaved = g_recoveryInitialized &&
                         g_restartRecovery.RecordOpenSetup(newTicket,g_positionIdentifier,recoverySetupId,_Symbol,dir,TimeCurrent());
    if(!recoverySaved || !g_restartRecovery.IsPersisting())
@@ -2773,6 +2808,14 @@ void AxReconcileExistingPosition(void)
    g_posState.entryConfidence                = 0;
    g_posState.entryRegime                     = AX_REGIME_UNSAFE;
    g_posState.entryReason                      = "RECONCILED_ON_INIT";
+   g_posState.setupId                           = "RESTART_RECOVERED";
+   g_posState.vwapStateAtEntry                  = "DATA_UNAVAILABLE";
+   g_posState.vpMacdStateAtEntry                = "DATA_UNAVAILABLE";
+   g_posState.orderFlowStateAtEntry             = "DATA_UNAVAILABLE";
+   g_posState.structureStateAtEntry             = "DATA_UNAVAILABLE";
+   g_posState.liquidityStateAtEntry             = "DATA_UNAVAILABLE";
+   g_posState.newsStateAtEntry                  = "DATA_UNAVAILABLE";
+   g_posState.sessionAtEntry                    = "DATA_UNAVAILABLE";
    g_posState.entrySpreadPts                    = 0;
    g_posState.entrySlippagePts                   = 0;
    g_posState.flipSeq = 0;
