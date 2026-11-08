@@ -115,7 +115,7 @@ require("g_accountRisk.Evaluate(_Symbol,campaign.dir,requestedLots,stop,deviatio
         and "g_distributedRiskCoordinator.Reserve(riskDecision,reserveSnapshot" in pyramid_execution
         and "g_distributedRiskCoordinator.Settle(reservationId,instanceId,postFill" in pyramid_execution,
         "pyramid additions require final account-risk approval, distributed reservation and post-fill settlement")
-require("InpEnablePyramidExecution=false" in ea
+require(bool(re.search(r"InpEnablePyramidExecution\\s*=\\s*false", ea))
         and "InpExecutionMode!=AX_EXEC_LIVE" in pyramid_execution,
         "pyramid order execution remains opt-in and cannot run in ANALYSIS_ONLY or PAPER_EXECUTION")
 
