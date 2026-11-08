@@ -200,6 +200,29 @@ class Mql5SourceHygieneTests(unittest.TestCase):
         self.assertGreater(manage_start, tick_end)
         self.assertIn("g_nettingReversalQuarantined", main[:manage_start])
 
+    def test_order_volume_has_no_ea_gross_or_directional_lot_ceiling(self):
+        main = self.text[MQL_ROOT / "Experts" / "AutopsyX" / "AutopsyX_FlipDemon_Extreme.mq5"]
+        risk = self.text[MQL_ROOT / "Include" / "AutopsyX" / "RiskEngine.mqh"]
+
+        self.assertNotIn("InpMaxExposureLots", main)
+        self.assertNotIn("InpMaxDirectionalExposureLots", main)
+        self.assertNotIn("m_maxExposureLots", risk)
+        self.assertNotIn("m_maxDirectionalExposureLots", risk)
+        self.assertNotIn("Max exposure reached", risk)
+        self.assertNotIn("Max directional exposure reached", risk)
+        self.assertIn("double lots=md.NormalizeVolume(rawLots);", risk)
+
+        preflight_start = main.find("bool AxBrokerSymbolOrderPreflight(")
+        preflight_end = main.find("\\n//====================================================================", preflight_start)
+        self.assertGreaterEqual(preflight_start, 0)
+        preflight = main[preflight_start:preflight_end]
+        self.assertIn("SYMBOL_VOLUME_MIN", preflight)
+        self.assertIn("SYMBOL_VOLUME_MAX", preflight)
+        self.assertIn("SYMBOL_VOLUME_STEP", preflight)
+        self.assertIn("SYMBOL_VOLUME_LIMIT", preflight)
+        self.assertIn("AxBrokerSymbolOrderPreflight(campaign.dir,requestedLots", main)
+        self.assertIn("g_accountRisk.Evaluate(_Symbol,campaign.dir,candidateLots", main)
+
     def test_copybuffer_results_are_checked_for_exact_or_minimum_count(self):
         failures = []
         for path, source in self.text.items():
