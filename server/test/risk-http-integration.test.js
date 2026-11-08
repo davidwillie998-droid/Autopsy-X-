@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { DatabaseSync } from 'node:sqlite';
 import { createServer, request as httpRequest } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -181,6 +182,33 @@ test('HTTP lost response after committed reservation returns the same reservatio
   assert.equal(retry.ok, true);
   assert.equal(retry.duplicate, true);
   assert.equal(retry.reservationId, committedBody.reservationId);
+
+  // Verify the durable database invariant, not only the HTTP response: one
+  // active row exists for this account/idempotency key after the lost response,
+  // bridge restart, and retry.
+  const verificationDb = new DatabaseSync(ledgerPath);
+  try {
+    const rows = verificationDb.prepare(`
+      SELECT COUNT(*) AS count, MIN(reservation_id) AS reservation_id, MIN(status) AS status
+      FROM risk_reservations
+      WHERE account_key=? AND idempotency_key=?
+    `).get(`${snapshot.login}@${snapshot.server.toLowerCase()}`, reservationRequest.idempotencyKey);
+    assert.equal(Number(rows.count), 1);
+    assert.equal(rows.reservation_id, committedBody.reservationId);
+    assert.equal(rows.status, 'active');
+  } finally {
+    verificationDb.close();
+  }
+
+  // The same key must never be rebound to a different risk amount.
+  const conflictingRetryResponse = await fetch(`${proxyUrl}/risk/reserve`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ ...reservationRequest, riskMoney: reservationRequest.riskMoney + 1 }),
+  });
+  assert.equal(conflictingRetryResponse.status, 409);
+  const conflictingRetry = await conflictingRetryResponse.json();
+  assert.equal(conflictingRetry.code, 'IDEMPOTENCY_KEY_CONFLICT');
 
   const oversubscriptionResponse = await fetch(`${proxyUrl}/risk/reserve`, {
     method: 'POST',
