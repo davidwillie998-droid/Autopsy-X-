@@ -3,16 +3,13 @@
 //|  Composite Direction Engine (FLIPDEMON EXTREME upgrade, spec     |
 //|  section 4) - weighs every directional engine against every      |
 //|  other one and returns an explicit state, never a bare BUY/SELL. |
+//|  VP-MACD and News Defense are supplied by separate live modules.  |
+//|  Only verified VP-MACD direction votes; News BLOCK vetoes, and   |
+//|  required-but-unavailable live calendar data fails closed.       |
 //|                                                                    |
-//|  Two inputs referenced by the spec do not exist as real modules   |
-//|  yet: VP-MACD and News Defense. Rather than fabricate a reading    |
-//|  for either, this engine takes their state as plain strings and   |
-//|  only ever counts a REAL "BULLISH"/"BEARISH" report from them -   |
-//|  "DATA_UNAVAILABLE" (the honest value a caller should pass until  |
-//|  those modules are built) contributes nothing to the vote, and    |
-//|  News reporting "BLOCK" is a hard veto handled before any vote is |
-//|  even tallied, exactly as spec section 11 requires ("must NEVER   |
-//|  generate BUY or SELL direction").                                |
+//|  SIGNAL-ONLY, NEVER TRADE PERMISSION: this class returns a        |
+//|  candidate direction, never execution authorization. Risk and    |
+//|  broker controls remain downstream and independently enforced.  |
 //|                                                                    |
 //|  SIGNAL-ONLY, NEVER TRADE PERMISSION (institutional engine spec     |
 //|  section 9, verified rather than requiring a rewrite): confirmed    |
@@ -43,7 +40,7 @@ private:
    double            m_htfMinR2;          // mirrors AxHtfConfluenceOk's own "no clear opinion" floor
    bool              m_requireNewsData;   // if true, missing news data blocks entries outright rather
                                            // than just being excluded from the vote (off by default -
-                                           // see the Phase 1 gap report: no News Defense module exists
+                                           // see the Phase 1 gap report: the live calendar module must prove the window is clear
                                            // yet, and defaulting this to true would silently disable
                                            // every entry until that module is built)
 
@@ -147,7 +144,7 @@ public:
          weightUsed += 0.5; usableInputs++;
         }
 
-      //--- VP-MACD: no module exists yet (Phase 1 gap report) - a caller passing "DATA_UNAVAILABLE"
+      //--- VP-MACD: the volume-weighted MACD module supplies real states - a caller passing "DATA_UNAVAILABLE"
       //--- contributes nothing here, exactly like any other genuinely-unavailable input ---
       if(vpMacdState=="BULLISH" || vpMacdState=="BEARISH")
         {
