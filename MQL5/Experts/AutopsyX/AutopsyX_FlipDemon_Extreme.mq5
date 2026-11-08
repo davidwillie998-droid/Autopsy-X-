@@ -32,6 +32,7 @@
 #include <AutopsyX/DistributedRiskCoordinator.mqh>
 #include <AutopsyX/EntryEngine.mqh>
 #include <AutopsyX/ExecutionEligibility.mqh>
+#include <AutopsyX/TradeLifecycle.mqh>
 #include <AutopsyX/ExecutionEngine.mqh>
 #include <AutopsyX/ExitEngine.mqh>
 #include <AutopsyX/SniperEngine.mqh>
@@ -258,6 +259,7 @@ ENUM_AX_VWAP_EXIT_MODE g_effectiveVwapExitMode = AX_VWAP_EXIT_OFF; // set at OnI
                                                                      // OnInit's validation for why
 CEntryEngine          g_entryEngine;
 CExecutionEligibility g_executionEligibility;
+CTradeLifecycle        g_tradeLifecycle;
 CExecutionEngine      g_exec;
 CExitEngine           g_exit;
 CSniperEngine         g_sniper;
@@ -621,6 +623,19 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
       g_recoveryReady=false;
       Print("FLIPDEMON JOURNAL ERROR: final exit was not confirmed in the durable journal; new entries blocked.");
      }
+   else if(g_tradeLifecycle.SetupId()==g_posState.setupId &&
+           g_tradeLifecycle.State()==AX_LIFECYCLE_EXIT_TRIGGERED)
+     {
+      bool lifecycleClosed=g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_POSITION_CLOSED) &&
+                           g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_JOURNALED) &&
+                           g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_AUTOPSIED);
+      if(!lifecycleClosed)
+        {
+         g_recoveryReady=false;
+         PrintFormat("FLIPDEMON LIFECYCLE ERROR: closed campaign %s could not complete journal/autopsy transitions (%s); new entries blocked.",
+                     g_posState.setupId,g_tradeLifecycle.LastError());
+        }
+     }
    // A campaign can contain several banked partial exits. Risk streaks must
    // use the complete broker-confirmed campaign result, not only its final slice.
    double campaignNetProfit=0.0;
@@ -679,6 +694,17 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
 bool AxCloseAndRecord(const ENUM_AX_EXIT_REASON reason)
   {
    ulong ticket = g_posState.ticket;
+   if(g_tradeLifecycle.SetupId()==g_posState.setupId &&
+      (g_tradeLifecycle.State()==AX_LIFECYCLE_POSITION_ACTIVE ||
+       g_tradeLifecycle.State()==AX_LIFECYCLE_POSITION_MANAGED))
+     {
+      if(!g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_EXIT_TRIGGERED))
+        {
+         PrintFormat("FLIPDEMON LIFECYCLE ERROR: close request withheld for setup %s (%s).",
+                     g_posState.setupId,g_tradeLifecycle.LastError());
+         return(false);
+        }
+     }
    string errReason;
    bool closeOutcomeUncertain=false;
    if(!g_exec.ClosePosition(_Symbol,ticket,g_positionIdentifier,InpMagicNumber,
@@ -2225,8 +2251,23 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    // margin have been calculated, but before any reservation or broker request is created.
    // Existing risk, account-wide monetary-risk and distributed reservation controls remain
    // authoritative and are deliberately retained after this additional eligibility check.
+   // One identifier follows the setup through broker fill, recovery and autopsy.
+   // Ambiguous sends remain ORDER_SUBMITTED until broker reconciliation resolves them.
+   string entryReason = AxBuildEntryReason(score,dir)+" "+tag;
+   string lifecycleSetupId = AxGenerateSetupId(_Symbol,dir);
+   g_tradeLifecycle.Begin(lifecycleSetupId);
+   bool lifecycleReady =
+      g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_THESIS_CREATED) &&
+      g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_VALIDATING) &&
+      g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_RISK_CHECK);
+   if(!lifecycleReady)
+     {
+      PrintFormat("FLIPDEMON LIFECYCLE ERROR: could not initialize setup %s (%s).",
+                  lifecycleSetupId,g_tradeLifecycle.LastError());
+      return(false);
+     }
    SAxTradeThesis executionThesis;
-   executionThesis.setupId=AxGenerateSetupId(_Symbol,dir);
+   executionThesis.setupId=lifecycleSetupId;
    executionThesis.symbol=_Symbol;
    executionThesis.direction=dir;
    executionThesis.timestamp=TimeCurrent();
@@ -2275,9 +2316,16 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       g_md.CurrentSpreadPts(),requiredMargin,eligibilityReason);
    if(eligibility!=AX_ELIGIBLE_LONG && eligibility!=AX_ELIGIBLE_SHORT)
      {
+      g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_CANCELLED);
       if(InpVerboseLogging)
          PrintFormat("FLIPDEMON EXECUTION ELIGIBILITY: %s blocked %s (%s)",
                      AxDirToString(dir),AxEligibilityToString(eligibility),eligibilityReason);
+      return(false);
+     }
+   if(!g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_ORDER_READY))
+     {
+      PrintFormat("FLIPDEMON LIFECYCLE ERROR: setup %s could not reach ORDER_READY (%s).",
+                  lifecycleSetupId,g_tradeLifecycle.LastError());
       return(false);
      }
    if(InpVerboseLogging)
@@ -2290,7 +2338,6 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    int deviationPts = (int)MathMax(InpDeviationPoints,MathRound(g_md.CurrentSpreadPts()*InpDeviationSpreadMultiplier));
    g_exec.SetDeviationPoints(deviationPts);
 
-   string entryReason = AxBuildEntryReason(score,dir)+" "+tag;
    ulong newTicket; double fillPrice; double actualLots; string execErr; int fillLatencyMs;
    bool entryOutcomeUncertain=false;
    // Hold the shared terminal-local account mutex from the final scan through the
@@ -2348,8 +2395,19 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
         }
      }
 
+   if(!g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_ORDER_SUBMITTED))
+     {
+      g_accountRiskIntegrityLock=true;
+      g_distributedRecoveryPending=distributedReservationActive;
+      if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
+      PrintFormat("FLIPDEMON LIFECYCLE ERROR: setup %s could not enter ORDER_SUBMITTED; broker request withheld (%s).",
+                  lifecycleSetupId,g_tradeLifecycle.LastError());
+      return(false);
+     }
    if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr,fillLatencyMs,actualLots,entryOutcomeUncertain))
      {
+      if(!entryOutcomeUncertain && g_tradeLifecycle.State()==AX_LIFECYCLE_ORDER_SUBMITTED)
+         g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_FAILED);
       g_consecutiveExecFailures++;
       g_risk.RegisterExecutionFailure(); // feeds CRiskEngine's own MaxExecutionFailures circuit breaker
                                           // (spec section 18) - a distinct counter/threshold from
@@ -2398,6 +2456,14 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
      }
    g_consecutiveExecFailures = 0;
    g_risk.RegisterExecutionSuccess();
+   // OpenMarket returns true only after broker-position confirmation, never on request acceptance.
+   if(!g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_ORDER_FILLED) ||
+      !g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_POSITION_ACTIVE))
+     {
+      g_recoveryReady=false;
+      PrintFormat("FLIPDEMON LIFECYCLE ERROR: confirmed fill exists for %s but lifecycle transition failed (%s); position remains managed and new entries are blocked.",
+                  lifecycleSetupId,g_tradeLifecycle.LastError());
+     }
 
    // Use the confirmed filled volume, not the requested volume. A legitimate partial
    // fill is a real position and must be managed at its actual exposure.
@@ -2405,7 +2471,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    AxInitPositionState(newTicket,dir,lots,fillPrice,slPrice,tpPrice,score,entryReason,flipSeq,intendedPrice);
    // The broker has already confirmed this fill. Persist its real ticket and a unique setup ID
    // immediately; if persistence fails, keep managing the open position but block every new entry.
-   string recoverySetupId = AxGenerateSetupId(_Symbol,dir);
+   string recoverySetupId = lifecycleSetupId;
    g_posState.setupId = recoverySetupId;
    // Snapshot the actual engine states at fill time. Missing readings remain explicit.
    g_posState.vwapStateAtEntry = g_vwapTrend;
