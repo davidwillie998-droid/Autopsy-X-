@@ -213,7 +213,7 @@ class Mql5SourceHygieneTests(unittest.TestCase):
         self.assertIn("double lots=md.NormalizeVolume(rawLots);", risk)
 
         preflight_start = main.find("bool AxBrokerSymbolOrderPreflight(")
-        preflight_end = main.find("\\n//====================================================================", preflight_start)
+        preflight_end = main.find("\n//====================================================================", preflight_start)
         self.assertGreaterEqual(preflight_start, 0)
         preflight = main[preflight_start:preflight_end]
         self.assertIn("SYMBOL_VOLUME_MIN", preflight)
