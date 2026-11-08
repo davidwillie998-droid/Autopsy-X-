@@ -149,11 +149,10 @@ public:
      {
       outcomeUncertain=false;
       errorReason="";
-      if(positionTicket==0 || expectedSl<=0.0 || !MathIsValidNumber(expectedSl) ||
-         !MathIsValidNumber(expectedTp))
+      if(positionTicket==0)
         {
          outcomeUncertain=true;
-         errorReason="POST_FILL_PROTECTION_INPUT_INVALID";
+         errorReason="POST_FILL_POSITION_TICKET_INVALID";
          return(false);
         }
       if(!PositionSelectByTicket(positionTicket))
@@ -166,6 +165,12 @@ public:
       ulong positionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
       ulong positionMagic=(ulong)PositionGetInteger(POSITION_MAGIC);
       long positionType=PositionGetInteger(POSITION_TYPE);
+      if(positionType!=POSITION_TYPE_BUY && positionType!=POSITION_TYPE_SELL)
+        {
+         outcomeUncertain=true;
+         errorReason="POST_FILL_POSITION_TYPE_INVALID";
+         return(false);
+        }
       ENUM_AX_DIR liveDir=(positionType==POSITION_TYPE_BUY)?AX_DIR_BUY:AX_DIR_SELL;
       if(PositionGetString(POSITION_SYMBOL)!=symbol || positionId==0 ||
          positionMagic!=m_magic || liveDir!=expectedDir)
@@ -179,22 +184,31 @@ public:
       double actualSl=PositionGetDouble(POSITION_SL);
       double actualTp=PositionGetDouble(POSITION_TP);
       double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
-      if(volumeBeforeClose<=0.0 || tickSize<=0.0)
+      if(volumeBeforeClose<=0.0)
         {
          outcomeUncertain=true;
-         errorReason="POST_FILL_POSITION_OR_TICK_METADATA_INVALID";
+         errorReason="POST_FILL_POSITION_VOLUME_INVALID";
          return(false);
         }
-      double tolerance=MathMax(tickSize*0.51,0.00000001);
-      if(MathAbs(actualSl-expectedSl)<=tolerance &&
+
+      string repairReason="";
+      bool expectedProtectionValid=(expectedSl>0.0 && MathIsValidNumber(expectedSl) &&
+                                    MathIsValidNumber(expectedTp));
+      if(!expectedProtectionValid)
+         repairReason="EXPECTED_PROTECTION_INPUT_INVALID";
+      else if(tickSize<=0.0)
+         repairReason="BROKER_TICK_SIZE_INVALID";
+      double tolerance=(tickSize>0.0)?MathMax(tickSize*0.51,0.00000001):0.0;
+      if(expectedProtectionValid && tickSize>0.0 &&
+         MathAbs(actualSl-expectedSl)<=tolerance &&
          MathAbs(actualTp-expectedTp)<=tolerance)
          return(true);
 
-      string repairReason="";
       double repairSl=expectedSl;
       double repairTp=expectedTp;
-      bool repairPrepared=PrepareProtectionPrices(symbol,expectedDir,repairSl,repairTp,
-                                                   true,actualSl,actualTp,repairReason);
+      bool repairPrepared=(expectedProtectionValid && tickSize>0.0 &&
+         PrepareProtectionPrices(symbol,expectedDir,repairSl,repairTp,
+                                  true,actualSl,actualTp,repairReason));
       bool repairSent=false;
       uint repairRetcode=0;
       int repairTerminalError=0;
