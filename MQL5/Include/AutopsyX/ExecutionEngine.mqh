@@ -528,14 +528,12 @@ public:
       double beforeTp=PositionGetDouble(POSITION_TP);
       ulong beforeMagic=(ulong)PositionGetInteger(POSITION_MAGIC);
       double volumeStep=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
-      double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
       double tolerance=MathMax(volumeStep*0.51,0.00000001);
-      double priceTolerance=MathMax(tickSize*0.51,0.00000001);
 
       if(beforeTicket==0 || beforeId==0 || beforeTicket!=expectedTicket ||
          beforeId!=expectedPositionId || beforeMagic!=expectedMagic ||
          beforeDir!=dir || beforeVolume<=0.0 ||
-         beforeSl<=0.0 || volumeStep<=0.0 || tickSize<=0.0)
+         beforeSl<=0.0 || volumeStep<=0.0)
         { errorReason="Existing position identity, direction, volume or protection changed"; return(false); }
 
       MqlTick tick;
@@ -623,22 +621,25 @@ public:
       ulong afterId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
       long afterType=PositionGetInteger(POSITION_TYPE);
       double afterVolume=PositionGetDouble(POSITION_VOLUME);
-      double afterSl=PositionGetDouble(POSITION_SL);
-      double afterTp=PositionGetDouble(POSITION_TP);
       double volumeIncrease=afterVolume-beforeVolume;
       bool sameDirection=((dir==AX_DIR_BUY && afterType==POSITION_TYPE_BUY) ||
                           (dir==AX_DIR_SELL && afterType==POSITION_TYPE_SELL));
-      bool stopsPreserved=(MathAbs(afterSl-beforeSl)<=priceTolerance &&
-                           MathAbs(afterTp-beforeTp)<=priceTolerance);
       bool fillMatchesPosition=(MathAbs(volumeIncrease-dealVolume)<=tolerance);
       if(afterId!=beforeId || !sameDirection || afterVolume<=beforeVolume ||
-         volumeIncrease>requestedLots+tolerance || !fillMatchesPosition || !stopsPreserved)
+         volumeIncrease>requestedLots+tolerance || !fillMatchesPosition)
         {
          outcomeUncertain=true;
-         errorReason=StringFormat("Pyramid add broker state mismatch id=%s direction=%s volumeDelta=%.8f dealVolume=%.8f stopsPreserved=%s",
+         errorReason=StringFormat("Pyramid add broker state mismatch id=%s direction=%s volumeDelta=%.8f dealVolume=%.8f",
                                   afterId==beforeId?"same":"changed",
                                   sameDirection?"same":"changed",
-                                  volumeIncrease,dealVolume,stopsPreserved?"true":"false");
+                                  volumeIncrease,dealVolume);
+         return(false);
+        }
+
+      if(!EnsurePostFillProtection(symbol,dir,afterTicket,beforeSl,beforeTp,
+                                   outcomeUncertain,errorReason))
+        {
+         outcomeUncertain=true;
          return(false);
         }
 
