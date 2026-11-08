@@ -844,6 +844,7 @@ struct SAxPositionState
    string         entryReason;
    // Frozen engine evidence captured immediately after a broker-confirmed fill.
    string         setupId;
+   ulong          entryDealId;
    string         vwapStateAtEntry;
    string         vpMacdStateAtEntry;
    string         orderFlowStateAtEntry;
