@@ -540,6 +540,7 @@ SAxTradeRecord AxBuildTradeRecord(const double closePrice,const double grossProf
   {
    SAxTradeRecord rec;
    rec.setupId       = g_posState.setupId;
+   rec.dealIdIn      = g_posState.entryDealId;
    rec.ticket        = g_posState.ticket;
    rec.positionIdentifier = g_positionIdentifier;
    rec.entryTime     = g_posState.entryTime;
@@ -1754,6 +1755,7 @@ void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double l
    g_posState.entryRegime        = score.regime;
    g_posState.entryReason        = entryReason;
    g_posState.setupId            = "";
+   g_posState.entryDealId         = 0;
    g_posState.vwapStateAtEntry   = "NOT_CAPTURED";
    g_posState.vpMacdStateAtEntry = "NOT_CAPTURED";
    g_posState.orderFlowStateAtEntry = "NOT_CAPTURED";
@@ -2831,6 +2833,7 @@ void AxReconcileExistingPosition(void)
    g_posState.entryRegime                     = AX_REGIME_UNSAFE;
    g_posState.entryReason                      = "RECONCILED_ON_INIT";
    g_posState.setupId                           = "RESTART_RECOVERED";
+   g_posState.entryDealId                        = 0;
    g_posState.vwapStateAtEntry                  = "DATA_UNAVAILABLE";
    g_posState.vpMacdStateAtEntry                = "DATA_UNAVAILABLE";
    g_posState.orderFlowStateAtEntry             = "DATA_UNAVAILABLE";
