@@ -590,3 +590,32 @@ class FullCloseBrokerReconciliationTests(unittest.TestCase):
         self.assertIn("if(serverAccepted || retcode==TRADE_RETCODE_PLACED)", method)
         self.assertIn("outcomeUncertain=true;", method)
         self.assertIn("no retry sent", method)
+
+
+class FlipAndTransactionIdentityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        root = Path(__file__).resolve().parents[1]
+        cls.execution = (root / "MQL5/Include/AutopsyX/ExecutionEngine.mqh").read_text()
+        cls.expert = (root / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text()
+
+    def test_flip_closes_exact_ticket_before_open_and_propagates_uncertainty(self):
+        start = self.execution.index("bool              Flip(")
+        end = self.execution.index("bool              ModifyStops(", start)
+        method = self.execution[start:end]
+        self.assertIn("oldPositionTicket", method)
+        self.assertIn("oldPositionId", method)
+        self.assertIn("oldMagic", method)
+        self.assertIn("ClosePosition(symbol,oldPositionTicket,oldPositionId,oldMagic", method)
+        self.assertLess(method.index("ClosePosition("), method.index("OpenMarket("))
+        self.assertIn("outcomeUncertain=openOutcomeUncertain;", method)
+
+    def test_trade_transaction_exit_finalization_is_scoped_to_exact_campaign_id(self):
+        start = self.expert.index("void OnTradeTransaction(")
+        end = self.expert.index("void OnChartEvent(", start)
+        callback = self.expert[start:end]
+        self.assertIn("g_positionIdentifier>0", callback)
+        self.assertIn("HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID)==g_positionIdentifier", callback)
+        self.assertIn("AxFetchCloseFinancials(g_posState.ticket,g_posState.lastAccountedDealTicket", callback)
+        self.assertIn("DEAL_ENTRY_INOUT", callback)
+        self.assertIn("g_nettingReversalQuarantined=true;", callback)
