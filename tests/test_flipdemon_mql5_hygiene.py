@@ -247,5 +247,35 @@ class Mql5SourceHygieneTests(unittest.TestCase):
         )
 
 
+    def test_fresh_entry_verifies_postfill_protection_repairs_or_emergency_closes(self):
+        execution = self.text[MQL_ROOT / "Include" / "AutopsyX" / "ExecutionEngine.mqh"]
+        open_start = execution.index("bool              OpenMarket(")
+        open_end = execution.index("//--- add to an existing NETTING position", open_start)
+        open_body = execution[open_start:open_end]
+        self.assertLess(
+            open_body.index("ConfirmMarketOrder"),
+            open_body.index("EnsurePostFillProtection"),
+        )
+        self.assertIn("outcomeUncertain=true;", open_body)
+
+        verify_start = execution.index("bool              EnsurePostFillProtection(")
+        verify_end = execution.index("//--- confirm a fresh entry", verify_start)
+        verify = execution[verify_start:verify_end]
+        for token in (
+            "PositionSelectByTicket(positionTicket)",
+            "POSITION_IDENTIFIER",
+            "POSITION_MAGIC",
+            "PrepareProtectionPrices",
+            "m_trade.PositionModify(positionTicket",
+            "m_trade.PositionClose(positionTicket)",
+            "HistorySelectByPosition((long)positionId)",
+            "DEAL_ENTRY_OUT",
+            "closedVolume+volumeTolerance>=volumeBeforeClose",
+            "outcomeUncertain=true;",
+        ):
+            self.assertIn(token, verify)
+        self.assertIn("POST_FILL_PROTECTION_UNVERIFIED", verify)
+
+
 if __name__ == "__main__":
     unittest.main()
