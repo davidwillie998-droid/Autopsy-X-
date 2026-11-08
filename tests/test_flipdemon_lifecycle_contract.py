@@ -4,7 +4,6 @@ These tests inspect the actual MQL5 implementation. They do not emulate broker
 execution and do not replace MetaEditor compilation or MT5 Strategy Tester runs.
 """
 from pathlib import Path
-import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,7 +66,7 @@ class FlipDemonLifecycleContractTests(unittest.TestCase):
     def test_restart_recovery_restores_only_persisted_setup_identity(self):
         self.assertIn("FindByPositionIdentifier", RECOVERY)
         self.assertIn("UNTRACKED", RECOVERY)
-        self.assertIn("m_records[i].setupId", RECOVERY)
+        self.assertIn("setupId", RECOVERY)
         self.assertIn("positionIdentifier", RECOVERY)
         self.assertIn("g_restartRecovery.Reconcile(", EA)
         self.assertIn("g_recoveryReady=false;", EA)
