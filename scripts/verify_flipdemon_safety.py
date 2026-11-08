@@ -100,6 +100,25 @@ require("SYMBOL_VOLUME_MIN" in ea and "SYMBOL_VOLUME_MAX" in ea
 require("AxBrokerSymbolOrderPreflight(campaign.dir,requestedLots" in ea
         and "g_accountRisk.Evaluate(_Symbol,campaign.dir,candidateLots" in ea,
         "pyramid additions pass broker volume and aggregate account-risk preflight")
+
+pyramid_execution_start = ea.index("bool AxAttemptPyramidNettingAdd(")
+pyramid_execution_end = ea.index("//--- self-tuning:", pyramid_execution_start)
+pyramid_execution = ea[pyramid_execution_start:pyramid_execution_end]
+require("AccountInfoInteger(ACCOUNT_TRADE_MODE)!=ACCOUNT_TRADE_MODE_DEMO" in pyramid_execution
+        and "campaign order execution is restricted to MT5 DEMO accounts" in pyramid_execution,
+        "pyramid broker-order execution is hard-restricted to demo accounts")
+require("g_accountRiskCoordinator.TryAcquire()" in pyramid_execution
+        and "OrderCalcMargin(orderType,_Symbol,requestedLots,lockedOrderPrice,requiredMargin)" in pyramid_execution
+        and "locked final margin recheck failed" in pyramid_execution,
+        "pyramid margin is recalculated from a fresh quote while the account-risk mutex is held")
+require("g_accountRisk.Evaluate(_Symbol,campaign.dir,requestedLots,stop,deviationPts" in pyramid_execution
+        and "g_distributedRiskCoordinator.Reserve(riskDecision,reserveSnapshot" in pyramid_execution
+        and "g_distributedRiskCoordinator.Settle(reservationId,instanceId,postFill" in pyramid_execution,
+        "pyramid additions require final account-risk approval, distributed reservation and post-fill settlement")
+require("InpEnablePyramidExecution=false" in ea
+        and "InpExecutionMode!=AX_EXEC_LIVE" in pyramid_execution,
+        "pyramid order execution remains opt-in and cannot run in ANALYSIS_ONLY or PAPER_EXECUTION")
+
 require("projectedRiskPct > g_risk.RiskPercent()+0.0001" in ea,
         "broker minimum volume cannot silently exceed configured trade-risk budget")
 require("m_riskPercent               = AxClampD(riskPercent,0.05,2.0)" in risk,
