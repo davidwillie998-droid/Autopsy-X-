@@ -750,16 +750,24 @@ public:
      }
 
    //--- flip = close, confirm flat, then open opposite direction ---
-   bool              Flip(const string symbol,const ENUM_AX_DIR newDir,const double lots,
+   bool              Flip(const string symbol,const ulong oldPositionTicket,
+                           const ulong oldPositionId,const ulong oldMagic,
+                           const ENUM_AX_DIR newDir,const double lots,
                            const double slPrice,const double tpPrice,const string comment,
-                           ulong &ticketOut,double &fillPriceOut,string &errorReason)
+                           ulong &ticketOut,double &fillPriceOut,string &errorReason,
+                           bool &outcomeUncertain)
      {
-      if(!ClosePosition(symbol,errorReason)) return(false);
+      outcomeUncertain=false;
+      if(!ClosePosition(symbol,oldPositionTicket,oldPositionId,oldMagic,
+                        errorReason,outcomeUncertain))
+         return(false);
       int latencyMs;
       double actualLots;
-      bool outcomeUncertain=false;
-      return(OpenMarket(symbol,newDir,lots,slPrice,tpPrice,comment,ticketOut,fillPriceOut,
-                        errorReason,latencyMs,actualLots,outcomeUncertain));
+      bool openOutcomeUncertain=false;
+      bool opened=OpenMarket(symbol,newDir,lots,slPrice,tpPrice,comment,ticketOut,fillPriceOut,
+                             errorReason,latencyMs,actualLots,openOutcomeUncertain);
+      outcomeUncertain=openOutcomeUncertain;
+      return(opened);
      }
 
    bool              ModifyStops(const string symbol,const double slPrice,const double tpPrice,string &errorReason)
