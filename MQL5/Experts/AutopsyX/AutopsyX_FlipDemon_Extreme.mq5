@@ -4080,8 +4080,9 @@ void OnTimer(void)
    extras.weeklyLockout           = g_risk.WeeklyLockout();
    extras.marginUsagePercent      = g_risk.MarginUsagePercent();
 
-   // composite direction and closed-bar structure now gate the shared entry funnel. The
-   // execution-eligibility and full trade-lifecycle state machine remain pending integration.
+   // Closed-bar structure, volume-weighted MACD and economic-calendar news state now feed
+   // the shared composite entry gate. The separate thesis eligibility and full lifecycle
+   // state-machine modules remain dormant; existing live risk/reservation/execution controls remain active.
    extras.extendedEnginesIntegrated = false;
 
    g_dash.Render(InpMode,g_regime.Regime(),g_lastScore,g_mom.VelocityLabel(),
