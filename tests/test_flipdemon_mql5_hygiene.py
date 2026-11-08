@@ -276,6 +276,15 @@ class Mql5SourceHygieneTests(unittest.TestCase):
             self.assertIn(token, verify)
         self.assertIn("POST_FILL_PROTECTION_UNVERIFIED", verify)
 
+        add_start = execution.index("bool              AddToNettingPosition(")
+        add_end = execution.index("//--- close one exact broker position", add_start)
+        add_body = execution[add_start:add_end]
+        self.assertLess(
+            add_body.index("fillMatchesPosition"),
+            add_body.index("EnsurePostFillProtection"),
+        )
+        self.assertIn("EnsurePostFillProtection(symbol,dir,afterTicket,beforeSl,beforeTp", add_body)
+
 
 if __name__ == "__main__":
     unittest.main()
