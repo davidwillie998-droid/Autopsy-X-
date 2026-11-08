@@ -135,7 +135,6 @@ input group "=== RISK ENGINE ===";
 input double         InpDailyLossLimitPercent   = 8.0;    // Daily loss limit (%) - stops session when hit
 input int            InpMaxConsecutiveLosses    = 5;      // Max consecutive losses before pausing
 input int            InpMaxOpenPositions        = 1;      // Max simultaneously open positions
-input double         InpMaxExposureLots         = 1.0;    // Max total exposure, lots
 input int            InpMaxFlipsPerDay          = 20;      // Max direction flips per day
 input int            InpMaxTradesPerRollingPeriod = 10;    // Max trades within rolling window
 input int            InpRollingPeriodSeconds    = 300;     // Rolling window length, seconds
@@ -144,7 +143,6 @@ input double         InpMaxSlippagePoints       = 30;      // Max acceptable sli
 input double         InpMinFreeMarginPercent    = 150.0;   // Min margin level %, refuse new entries below this
 input double         InpWeeklyLossLimitPercent  = 15.0;    // Weekly loss limit (%), Monday-anchored - stops the week when hit
 input int            InpMaxPositionsPerSymbol   = 1;       // Max simultaneously open positions on this symbol specifically
-input double         InpMaxDirectionalExposureLots = 1.0;  // Max exposure lots in one direction (BUY or SELL) at once
 input double         InpExtremeMaxMarginUsagePercent = 100.0; // EXTREME ceiling for ACCOUNT_MARGIN / ACCOUNT_EQUITY; Normal=5%, Aggressive=20%
 input double         InpBrokerStopOutBufferPercent = 100.0; // Keep projected margin level this many percentage points above broker call/stop-out thresholds
 input int            InpMaxExecutionFailures    = 5;        // Max consecutive order-send failures before blocking new entries
@@ -2099,24 +2097,6 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    double lots = g_risk.CalculateLotSize(g_md,intendedPrice,slPrice,dir,sizingDecision);
    if(InpVerboseLogging) PrintFormat("FLIPDEMON SIZING | equity=%.2f budget=%.2f raw=%.5f lots=%.5f risk=%.2f%% reason=%s",sizingDecision.equity,sizingDecision.riskBudgetMoney,sizingDecision.rawLots,sizingDecision.normalizedLots,sizingDecision.projectedRiskPercent,sizingDecision.rejectionReason);
 
-   // Enforce the remaining account-wide gross-lot budget, not just the per-order ceiling.
-   // NormalizeVolume may clamp upward to the broker minimum, so reject a remainder too small
-   // to represent safely rather than letting normalization exceed the account cap.
-   double remainingExposureLots = InpMaxExposureLots-accountExposureLots;
-   if(remainingExposureLots<=0.0)
-      lots=0.0;
-   else if(lots>remainingExposureLots)
-     {
-      if(remainingExposureLots<g_md.VolumeMin())
-         lots=0.0;
-      else
-        {
-         lots=g_md.NormalizeVolume(MathMin(lots,remainingExposureLots));
-         if(lots>remainingExposureLots+0.0000001)
-            lots=0.0;
-        }
-     }
-
    // A broker minimum lot can otherwise force a position larger than the configured
    // account-risk budget. Fail closed instead of allowing the minimum volume to
    // override the risk ceiling.
@@ -2672,28 +2652,9 @@ bool AxAttemptPyramidNettingAdd(SAxPyramidCampaignRecord &campaign,
      }
    if(!g_micro.SpreadAcceptable(InpMaxSpreadPoints)) return(false);
 
-   double grossLots=0.0,sameDirectionLots=0.0;
-   for(int i=0;i<PositionsTotal();i++)
-     {
-      ulong ticket=PositionGetTicket(i);
-      if(ticket==0) continue;
-      double volume=PositionGetDouble(POSITION_VOLUME);
-      if(volume<=0.0) continue;
-      grossLots+=volume;
-      long type=PositionGetInteger(POSITION_TYPE);
-      if((campaign.dir==AX_DIR_BUY && type==POSITION_TYPE_BUY) ||
-         (campaign.dir==AX_DIR_SELL && type==POSITION_TYPE_SELL))
-         sameDirectionLots+=volume;
-     }
-   if(InpMaxExposureLots<=0.0 || grossLots+requestedLots>InpMaxExposureLots+0.0000001 ||
-      InpMaxDirectionalExposureLots<=0.0 ||
-      sameDirectionLots+requestedLots>InpMaxDirectionalExposureLots+0.0000001)
-     {
-      PrintFormat("FLIPDEMON PYRAMID BLOCKED: gross %.8f + %.8f exceeds %.8f or directional %.8f + %.8f exceeds %.8f.",
-                  grossLots,requestedLots,InpMaxExposureLots,
-                  sameDirectionLots,requestedLots,InpMaxDirectionalExposureLots);
-      return(false);
-     }
+   // No EA-imposed gross or directional lot ceiling. The broker preflight above
+   // enforces SYMBOL_VOLUME_MIN/MAX/STEP and SYMBOL_VOLUME_LIMIT for this symbol;
+   // account-wide stop-risk and margin checks remain authoritative for total exposure.
 
    MqlTick quote;
    if(!SymbolInfoTick(_Symbol,quote) || quote.bid<=0.0 || quote.ask<quote.bid) return(false);
@@ -3353,11 +3314,11 @@ int OnInit(void)
    g_flip.Configure(InpFlipRequiredConfirmations,InpFlipMinConfidence);
    g_chop.Configure(InpAntiChopBaseCooldownSec,InpAntiChopMaxCooldownSec);
    g_risk.Configure(AxRiskPercentForMode(),InpDailyLossLimitPercent,InpMaxConsecutiveLosses,
-                     InpMaxOpenPositions,InpMaxExposureLots,InpMaxFlipsPerDay,
+                     InpMaxOpenPositions,InpMaxFlipsPerDay,
                      InpMaxTradesPerRollingPeriod,InpRollingPeriodSeconds,
                      InpMaxSpreadPoints,InpMaxSlippagePoints,InpMinFreeMarginPercent,
                      InpWeeklyLossLimitPercent,InpMaxPositionsPerSymbol,
-                     InpMaxDirectionalExposureLots,AxMarginUsageLimitForMode(),InpMaxExecutionFailures);
+                     AxMarginUsageLimitForMode(),InpMaxExecutionFailures);
    g_emergency.Configure(InpExecutionMode,InpEnableTrading,InpEnableLong,InpEnableShort);
 
    //--- IMMEDIATE and CONFIRMED_CROSS_PLUS_STRUCTURE VWAP exit modes need live-price and structure-
