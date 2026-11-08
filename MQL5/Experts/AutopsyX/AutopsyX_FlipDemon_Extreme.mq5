@@ -20,6 +20,8 @@
 #include <AutopsyX/Microstructure.mqh>
 #include <AutopsyX/Liquidity.mqh>
 #include <AutopsyX/Regime.mqh>
+#include <AutopsyX/StructureEngine.mqh>
+#include <AutopsyX/CompositeDirection.mqh>
 #include <AutopsyX/SignalScore.mqh>
 #include <AutopsyX/FlipEngine.mqh>
 #include <AutopsyX/AntiChop.mqh>
@@ -228,6 +230,8 @@ CMicrostructureEngine g_micro;
 CLiquidityEngine      g_liq;
 CRegimeEngine         g_regime;
 CRegimeEngine         g_regimeHtf;
+CStructureEngine      g_structure;
+CCompositeDirectionEngine g_compositeDirection;
 CSignalScorer         g_scorer;
 CFlipEngine           g_flip;
 CAntiChopEngine       g_chop;
@@ -1966,6 +1970,21 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       if(InpVerboseLogging) Print("AUTOPSY X: entry blocked (anti-chop cooldown)");
       return(false);
      }
+   string compositeReason="";
+   bool compositeSpreadOk=g_micro.SpreadAcceptable(InpMaxSpreadPoints);
+   ENUM_AX_COMPOSITE_DIRECTION compositeDirection=g_compositeDirection.Evaluate(
+      g_regime,g_regimeHtf,g_structure,g_orderFlow,g_chop,score,
+      g_vwapValue,g_vwapTrend,"DATA_UNAVAILABLE","DATA_UNAVAILABLE",
+      compositeSpreadOk,compositeReason);
+   bool compositeDirectionMatches=(dir==AX_DIR_BUY && compositeDirection==AX_COMPOSITE_BULLISH) ||
+                                  (dir==AX_DIR_SELL && compositeDirection==AX_COMPOSITE_BEARISH);
+   if(!compositeDirectionMatches)
+     {
+      if(InpVerboseLogging)
+         PrintFormat("AUTOPSY X: composite direction gate blocked %s (%s, structure=%s).",
+                     AxDirToString(dir),compositeReason,AxStructTrendToString(g_structure.Trend()));
+      return(false);
+     }
    if(!AxHtfConfluenceOk(dir))
      {
       if(InpVerboseLogging) Print("AUTOPSY X: entry blocked (HTF confluence)");
@@ -3081,10 +3100,17 @@ int OnInit(void)
       Print("AUTOPSY X: failed to initialize HTF regime engine (ATR handle)");
       return(INIT_FAILED);
      }
+   if(!g_structure.Init(_Symbol,InpRegimeTimeframe,300))
+     {
+      Print("AUTOPSY X: failed to initialize closed-bar structure engine");
+      return(INIT_FAILED);
+     }
+   g_compositeDirection.Configure(55.0,InpHtfMinR2ToBlock,false);
    g_liq.Init(_Symbol,InpRegimeTimeframe);
    g_liq.RefreshLevels();
    g_regime.Update();
    g_regimeHtf.Update();
+   g_structure.Update();
 
    g_volProfile.Init(_Symbol,InpVolumeProfileBars,InpVolumeProfileBinPoints,g_md.Point(),InpRegimeTimeframe);
    g_volProfile.Refresh();
@@ -3466,6 +3492,7 @@ void OnTick(void)
       isNewBarThisTick = true;
       g_lastBarTime = barTime;
       g_regime.Update();
+      g_structure.Update();
       g_liq.RefreshLevels();
       g_volProfile.Refresh();
       g_adaptiveConfMultiplier = AxAdaptiveConfidenceMultiplier();
