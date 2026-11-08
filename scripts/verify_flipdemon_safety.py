@@ -84,15 +84,22 @@ require("ACCOUNT_MARGIN_MODE_RETAIL_HEDGING" in ea and "return(INIT_FAILED)" in 
 require("bool AxHasForeignPositionOnSymbol(string &reasonOut)" in ea
         and "if(AxHasForeignPositionOnSymbol(gateReason))" in ea,
         "entries refuse to trade against a foreign position on the same netting symbol")
-require("void AxCountAccountExposure(int &positionsOut,double &grossLotsOut)" in ea,
-        "account-wide open positions and gross lots are measured")
-require("PreTradeAllowed(accountOpenPositions,accountExposureLots" in ea
-        and not re.search(r"PreTradeAllowed\(\s*0\s*,\s*0\.0", ea),
-        "account-wide counts reach the hard pre-trade risk gate")
-require(bool(re.search(r"remainingExposureLots\s*=\s*InpMaxExposureLots\s*-\s*accountExposureLots", ea)),
-        "new order size is capped to remaining account-wide gross-lot allowance")
-require("remainingExposureLots<g_md.VolumeMin()" in ea and "lots=0.0" in ea,
-        "under-minimum remaining exposure fails closed")
+require("void AxCountAccountExposure(int &positionsOut,double &grossLotsOut)" in ea
+        and "PreTradeAllowed(accountOpenPositions,accountExposureLots" in ea,
+        "account-wide position snapshot reaches the pre-trade gate")
+require("InpMaxExposureLots" not in ea and "InpMaxDirectionalExposureLots" not in ea
+        and "m_maxExposureLots" not in risk and "m_maxDirectionalExposureLots" not in risk,
+        "no fixed EA gross-lot or directional-lot ceiling remains")
+require("double lots=md.NormalizeVolume(rawLots);" in risk
+        and "projectedRiskPct > g_risk.RiskPercent()+0.0001" in ea,
+        "initial volume is broker-normalized and remains bounded by monetary stop-risk")
+require("SYMBOL_VOLUME_MIN" in ea and "SYMBOL_VOLUME_MAX" in ea
+        and "SYMBOL_VOLUME_STEP" in ea and "SYMBOL_VOLUME_LIMIT" in ea
+        and "BROKER_SYMBOL_DIRECTIONAL_VOLUME_LIMIT" in ea,
+        "entry and pyramid volumes are constrained by live broker contract limits")
+require("AxBrokerSymbolOrderPreflight(campaign.dir,requestedLots" in ea
+        and "g_accountRisk.Evaluate(_Symbol,campaign.dir,candidateLots" in ea,
+        "pyramid additions pass broker volume and aggregate account-risk preflight")
 require("projectedRiskPct > g_risk.RiskPercent()+0.0001" in ea,
         "broker minimum volume cannot silently exceed configured trade-risk budget")
 require("m_riskPercent               = AxClampD(riskPercent,0.05,2.0)" in risk,
