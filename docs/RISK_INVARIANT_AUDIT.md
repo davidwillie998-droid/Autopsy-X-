@@ -99,3 +99,18 @@ loss limits, consecutive-loss/execution-failure breakers, margin checks) -
 those are independent boolean gates in `PreTradeAllowed()`, not part of
 the sizing-multiplier chain this audit traced, and were not in scope for
 "does risk-per-trade ever exceed what `Configure()` allowed."
+
+
+## Superseding implementation note: broker-defined volume limits
+
+The historical `m_maxExposureLots` and one-lot defaults documented in Finding 1 have been removed from the active FLIPDEMON implementation. They are no longer part of risk-engine sizing or pre-trade gates.
+
+Current policy:
+
+- No fixed EA-imposed gross-lot ceiling.
+- No fixed EA-imposed directional-lot ceiling.
+- Initial sizing is normalized against the broker's live minimum, maximum and volume step.
+- Entry and pyramid order preflight enforce the broker's `SYMBOL_VOLUME_MAX`, `SYMBOL_VOLUME_STEP` and `SYMBOL_VOLUME_LIMIT` rules.
+- Account-wide monetary stop-risk reservations, per-entry risk, drawdown controls and projected margin checks remain in force.
+
+The earlier audit's historical description of a configurable one-lot cap is retained above as a record of the prior implementation, not as the current policy.
