@@ -222,7 +222,7 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         self.assertLess(method.index("g_accountRiskCoordinator.TryAcquire()"),
                         method.index(locked_margin))
         self.assertIn("AxBrokerMarginPreflight(requiredMargin,projectedMarginUsage,projectedMarginLevel,marginReason)", method)
-        self.assertRegex(self.expert, r"InpEnablePyramidExecution\\s*=\\s*false")
+        self.assertRegex(self.expert, r"InpEnablePyramidExecution\s*=\s*false")
 
     def test_margin_utilisation_profiles_are_separate_from_stop_loss_risk(self):
         helper_start = self.expert.index("double AxMarginUsageLimitForMode(void)")
