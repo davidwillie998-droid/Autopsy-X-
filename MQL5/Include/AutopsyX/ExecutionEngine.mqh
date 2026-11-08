@@ -139,6 +139,158 @@ public:
       m_trade.SetDeviationInPoints(deviationPts);
      }
 
+   // Verify broker-retained protection after the exact fill is confirmed.
+   // If repair cannot be confirmed, submit one ticket-specific emergency close.
+   // Every failure remains uncertain until the caller reconciles broker state.
+   bool              EnsurePostFillProtection(const string symbol,const ENUM_AX_DIR expectedDir,
+                                               const ulong positionTicket,const double expectedSl,
+                                               const double expectedTp,bool &outcomeUncertain,
+                                               string &errorReason)
+     {
+      outcomeUncertain=false;
+      errorReason="";
+      if(positionTicket==0 || expectedSl<=0.0 || !MathIsValidNumber(expectedSl) ||
+         !MathIsValidNumber(expectedTp))
+        {
+         outcomeUncertain=true;
+         errorReason="POST_FILL_PROTECTION_INPUT_INVALID";
+         return(false);
+        }
+      if(!PositionSelectByTicket(positionTicket))
+        {
+         outcomeUncertain=true;
+         errorReason="POST_FILL_POSITION_NOT_VISIBLE_FOR_PROTECTION_CHECK";
+         return(false);
+        }
+
+      ulong positionId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      ulong positionMagic=(ulong)PositionGetInteger(POSITION_MAGIC);
+      long positionType=PositionGetInteger(POSITION_TYPE);
+      ENUM_AX_DIR liveDir=(positionType==POSITION_TYPE_BUY)?AX_DIR_BUY:AX_DIR_SELL;
+      if(PositionGetString(POSITION_SYMBOL)!=symbol || positionId==0 ||
+         positionMagic!=m_magic || liveDir!=expectedDir)
+        {
+         outcomeUncertain=true;
+         errorReason="POST_FILL_POSITION_IDENTITY_MISMATCH";
+         return(false);
+        }
+
+      double volumeBeforeClose=PositionGetDouble(POSITION_VOLUME);
+      double actualSl=PositionGetDouble(POSITION_SL);
+      double actualTp=PositionGetDouble(POSITION_TP);
+      double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+      if(volumeBeforeClose<=0.0 || tickSize<=0.0)
+        {
+         outcomeUncertain=true;
+         errorReason="POST_FILL_POSITION_OR_TICK_METADATA_INVALID";
+         return(false);
+        }
+      double tolerance=MathMax(tickSize*0.51,0.00000001);
+      if(MathAbs(actualSl-expectedSl)<=tolerance &&
+         MathAbs(actualTp-expectedTp)<=tolerance)
+         return(true);
+
+      string repairReason="";
+      double repairSl=expectedSl;
+      double repairTp=expectedTp;
+      bool repairPrepared=PrepareProtectionPrices(symbol,expectedDir,repairSl,repairTp,
+                                                   true,actualSl,actualTp,repairReason);
+      bool repairSent=false;
+      uint repairRetcode=0;
+      int repairTerminalError=0;
+      if(repairPrepared)
+        {
+         ResetLastError();
+         repairSent=m_trade.PositionModify(positionTicket,repairSl,repairTp);
+         repairTerminalError=GetLastError();
+         repairRetcode=m_trade.ResultRetcode();
+        }
+      else
+         repairReason="PROTECTION_REPAIR_PREFLIGHT_FAILED: "+repairReason;
+
+      if(repairSent && repairRetcode==TRADE_RETCODE_DONE &&
+         PositionSelectByTicket(positionTicket) &&
+         PositionGetString(POSITION_SYMBOL)==symbol &&
+         (ulong)PositionGetInteger(POSITION_IDENTIFIER)==positionId &&
+         (ulong)PositionGetInteger(POSITION_MAGIC)==m_magic)
+        {
+         double verifiedSl=PositionGetDouble(POSITION_SL);
+         double verifiedTp=PositionGetDouble(POSITION_TP);
+         if(MathAbs(verifiedSl-repairSl)<=tolerance &&
+            MathAbs(verifiedTp-repairTp)<=tolerance)
+           {
+            PrintFormat("FLIPDEMON PROTECTION REPAIRED: ticket=%I64u positionId=%I64u SL=%.10f TP=%.10f.",
+                        positionTicket,positionId,verifiedSl,verifiedTp);
+            return(true);
+           }
+         repairReason="BROKER_REPAIR_LEVELS_DID_NOT_MATCH_REQUEST";
+        }
+      else if(repairPrepared)
+         repairReason=StringFormat("PROTECTION_REPAIR_FAILED retcode=%u terminalError=%d %s",
+                                   repairRetcode,repairTerminalError,
+                                   m_trade.ResultRetcodeDescription());
+
+      // A filled position without the approved protection is not allowed to remain
+      // unmanaged. Close only the exact ticket and verify the exact close deal.
+      ResetLastError();
+      bool closeSent=m_trade.PositionClose(positionTicket);
+      int closeTerminalError=GetLastError();
+      uint closeRetcode=m_trade.ResultRetcode();
+      ulong closeOrder=m_trade.ResultOrder();
+      ulong closeDeal=m_trade.ResultDeal();
+      bool closeDealValid=false;
+      double closedVolume=0.0;
+      if(closeOrder>0 && closeDeal>0 && HistoryDealSelect(closeDeal) &&
+         (ulong)HistoryDealGetInteger(closeDeal,DEAL_ORDER)==closeOrder &&
+         HistoryDealGetString(closeDeal,DEAL_SYMBOL)==symbol &&
+         (ulong)HistoryDealGetInteger(closeDeal,DEAL_MAGIC)==m_magic &&
+         (ulong)HistoryDealGetInteger(closeDeal,DEAL_POSITION_ID)==positionId)
+        {
+         long resultEntry=HistoryDealGetInteger(closeDeal,DEAL_ENTRY);
+         closeDealValid=(resultEntry==DEAL_ENTRY_OUT || resultEntry==DEAL_ENTRY_OUT_BY);
+         if(closeDealValid && HistorySelectByPosition((long)positionId))
+           {
+            int historyCount=HistoryDealsTotal();
+            for(int i=0;i<historyCount;i++)
+              {
+               ulong dealTicket=HistoryDealGetTicket(i);
+               if(dealTicket==0 ||
+                  (ulong)HistoryDealGetInteger(dealTicket,DEAL_ORDER)!=closeOrder ||
+                  HistoryDealGetString(dealTicket,DEAL_SYMBOL)!=symbol ||
+                  (ulong)HistoryDealGetInteger(dealTicket,DEAL_MAGIC)!=m_magic ||
+                  (ulong)HistoryDealGetInteger(dealTicket,DEAL_POSITION_ID)!=positionId)
+                  continue;
+               long entry=HistoryDealGetInteger(dealTicket,DEAL_ENTRY);
+               if(entry!=DEAL_ENTRY_OUT && entry!=DEAL_ENTRY_OUT_BY) continue;
+               double dealVolume=HistoryDealGetDouble(dealTicket,DEAL_VOLUME);
+               if(dealVolume<=0.0 || !MathIsValidNumber(dealVolume))
+                 {
+                  closeDealValid=false;
+                  break;
+                 }
+               closedVolume+=dealVolume;
+              }
+           }
+         else
+            closeDealValid=false;
+        }
+      double volumeStep=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+      double volumeTolerance=MathMax(volumeStep*0.51,0.00000001);
+      bool positionFlat=!PositionSelectByTicket(positionTicket);
+      bool closeConfirmed=(closeSent || closeRetcode==TRADE_RETCODE_DONE ||
+                           closeRetcode==TRADE_RETCODE_DONE_PARTIAL) &&
+                          closeDealValid && positionFlat && volumeStep>0.0 &&
+                          closedVolume+volumeTolerance>=volumeBeforeClose;
+
+      outcomeUncertain=true;
+      errorReason=StringFormat("POST_FILL_PROTECTION_UNVERIFIED; repair=%s; emergencyClose=%s; closeRetcode=%u terminalError=%d closeOrder=%I64u closeDeal=%I64u closedVolume=%.8f expectedVolume=%.8f",
+                               repairReason,closeConfirmed?"CONFIRMED":"UNCONFIRMED",
+                               closeRetcode,closeTerminalError,closeOrder,closeDeal,
+                               closedVolume,volumeBeforeClose);
+      PrintFormat("FLIPDEMON CRITICAL: %s",errorReason);
+      return(false);
+     }
+
    //--- confirm a fresh entry from its exact broker order and entry deals.
    //--- Symbol-level aggregate volume is not fill evidence: it can include another
    //--- position, a pre-existing net position, or unrelated same-symbol activity.
@@ -294,8 +446,16 @@ public:
          if(ConfirmMarketOrder(symbol,dir,lots,orderTicket,ticketOut,
                                fillPriceOut,actualLotsOut))
            {
+            bool protectionOutcomeUncertain=false;
+            if(!EnsurePostFillProtection(symbol,dir,ticketOut,alignedSl,alignedTp,
+                                         protectionOutcomeUncertain,errorReason))
+              {
+               outcomeUncertain=true;
+               latencyMsOut=(int)(GetTickCount()-startTick);
+               return(false);
+              }
             errorReason="";
-            return(true); // actualLotsOut may be a legitimate IOC partial fill
+            return(true); // confirmed fill and broker-retained protection; IOC partial fills are valid
            }
 
          bool acceptedOrUnresolved=(sent ||
