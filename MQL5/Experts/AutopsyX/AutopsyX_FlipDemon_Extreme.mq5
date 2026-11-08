@@ -623,10 +623,18 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
       g_recoveryReady=false;
       Print("FLIPDEMON JOURNAL ERROR: final exit was not confirmed in the durable journal; new entries blocked.");
      }
-   else if(g_tradeLifecycle.SetupId()==g_posState.setupId &&
-           g_tradeLifecycle.State()==AX_LIFECYCLE_EXIT_TRIGGERED)
+   else if(lastDealTicket>0 && g_autopsy.LastAccountedDealTicket(g_positionIdentifier)>=lastDealTicket &&
+           g_tradeLifecycle.SetupId()==g_posState.setupId)
      {
-      bool lifecycleClosed=g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_POSITION_CLOSED) &&
+      // External SL/TP/manual closes arrive through broker history, not AxCloseAndRecord.
+      // Convert those confirmed exits into the same lifecycle path before journal completion.
+      bool exitTriggered=(g_tradeLifecycle.State()==AX_LIFECYCLE_EXIT_TRIGGERED);
+      if(!exitTriggered &&
+         (g_tradeLifecycle.State()==AX_LIFECYCLE_POSITION_ACTIVE ||
+          g_tradeLifecycle.State()==AX_LIFECYCLE_POSITION_MANAGED))
+         exitTriggered=g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_EXIT_TRIGGERED);
+      bool lifecycleClosed=exitTriggered &&
+                           g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_POSITION_CLOSED) &&
                            g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_JOURNALED) &&
                            g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_AUTOPSIED);
       if(!lifecycleClosed)
