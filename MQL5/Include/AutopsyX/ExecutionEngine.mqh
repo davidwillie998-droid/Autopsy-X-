@@ -446,9 +446,8 @@ public:
          if(ConfirmMarketOrder(symbol,dir,lots,orderTicket,ticketOut,
                                fillPriceOut,actualLotsOut))
            {
-            bool protectionOutcomeUncertain=false;
             if(!EnsurePostFillProtection(symbol,dir,ticketOut,alignedSl,alignedTp,
-                                         protectionOutcomeUncertain,errorReason))
+                                         outcomeUncertain,errorReason))
               {
                outcomeUncertain=true;
                latencyMsOut=(int)(GetTickCount()-startTick);
