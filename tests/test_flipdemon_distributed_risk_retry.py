@@ -469,8 +469,10 @@ class BrokerExecutionCompatibilityTests(unittest.TestCase):
             self.execution.index("bool              Flip("):
             self.execution.index("bool              ModifyStops(", self.execution.index("bool              Flip("))
         ]
-        self.assertIn("bool outcomeUncertain=false;", flip)
-        self.assertIn("latencyMs,actualLots,outcomeUncertain", flip)
+        self.assertIn("bool &outcomeUncertain", flip)
+        self.assertIn("bool openOutcomeUncertain=false;", flip)
+        self.assertIn("latencyMs,actualLots,openOutcomeUncertain", flip)
+        self.assertIn("outcomeUncertain=openOutcomeUncertain;", flip)
 
 class NettingPyramidFillReconciliationTests(unittest.TestCase):
     @classmethod
