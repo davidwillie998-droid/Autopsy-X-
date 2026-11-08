@@ -842,6 +842,15 @@ struct SAxPositionState
    double         entryConfidence;
    ENUM_AX_REGIME entryRegime;
    string         entryReason;
+   // Frozen engine evidence captured immediately after a broker-confirmed fill.
+   string         setupId;
+   string         vwapStateAtEntry;
+   string         vpMacdStateAtEntry;
+   string         orderFlowStateAtEntry;
+   string         structureStateAtEntry;
+   string         liquidityStateAtEntry;
+   string         newsStateAtEntry;
+   string         sessionAtEntry;
    double         entrySpreadPts;
    double         entrySlippagePts;
    int            flipSeq;
