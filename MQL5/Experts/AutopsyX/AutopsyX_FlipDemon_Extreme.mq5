@@ -3132,7 +3132,8 @@ int OnInit(void)
    g_regimeHtf.Update();
    g_structure.Update();
    g_vpMacd.Update();
-   g_newsDefense.Update(true);
+   // Respect the calendar engine's refresh interval after the forced startup read.
+   g_newsDefense.Update(false);
 
    g_volProfile.Init(_Symbol,InpVolumeProfileBars,InpVolumeProfileBinPoints,g_md.Point(),InpRegimeTimeframe);
    g_volProfile.Refresh();
