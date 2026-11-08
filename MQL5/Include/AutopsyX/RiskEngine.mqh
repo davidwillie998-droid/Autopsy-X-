@@ -34,7 +34,6 @@ private:
    double            m_dailyLossLimitPercent;
    int               m_maxConsecutiveLosses;
    int               m_maxOpenPositions;
-   double            m_maxExposureLots;
    int               m_maxFlipsPerDay;
    int               m_maxTradesPerRollingPeriod;
    int               m_rollingPeriodSec;
@@ -45,7 +44,6 @@ private:
    //--- FLIPDEMON EXTREME upgrade (spec section 18): additional hard circuit breakers ---
    double            m_weeklyLossLimitPercent;
    int               m_maxPositionsPerSymbol;
-   double            m_maxDirectionalExposureLots;
    double            m_maxMarginUsagePercent;   // ACCOUNT_MARGIN / ACCOUNT_EQUITY * 100 - distinct
                                                   // from margin LEVEL (which is the broker's own
                                                   // equity/margin ratio, already checked above)
@@ -100,10 +98,10 @@ public:
                      CRiskEngine(void)
      {
       m_riskPercent=1.0; m_dailyLossLimitPercent=8.0; m_maxConsecutiveLosses=5;
-      m_maxOpenPositions=1; m_maxExposureLots=1.0; m_maxFlipsPerDay=20;
+      m_maxOpenPositions=1; m_maxFlipsPerDay=20;
       m_maxTradesPerRollingPeriod=10; m_rollingPeriodSec=300;
       m_maxSpreadPts=250; m_maxSlippagePts=30; m_minFreeMarginPercent=150.0;
-      m_weeklyLossLimitPercent=15.0; m_maxPositionsPerSymbol=1; m_maxDirectionalExposureLots=1.0;
+      m_weeklyLossLimitPercent=15.0; m_maxPositionsPerSymbol=1;
       m_maxMarginUsagePercent=50.0; m_maxExecutionFailures=5;
       m_dayStartEquity=0; m_dayStartTime=0; m_weekStartEquity=0; m_weekStartTime=0;
       m_consecutiveLosses=0; m_flipsToday=0; m_consecutiveExecutionFailures=0;
@@ -112,13 +110,12 @@ public:
 
    void              Configure(const double riskPercent,const double dailyLossLimitPercent,
                                 const int maxConsecutiveLosses,const int maxOpenPositions,
-                                const double maxExposureLots,const int maxFlipsPerDay,
+                                const int maxFlipsPerDay,
                                 const int maxTradesPerRollingPeriod,const int rollingPeriodSec,
                                 const double maxSpreadPts,const double maxSlippagePts,
                                 const double minFreeMarginPercent,
                                 const double weeklyLossLimitPercent=15.0,
                                 const int maxPositionsPerSymbol=1,
-                                const double maxDirectionalExposureLots=1.0,
                                 const double maxMarginUsagePercent=50.0,
                                 const int maxExecutionFailures=5)
      {
@@ -126,7 +123,6 @@ public:
       m_dailyLossLimitPercent     = dailyLossLimitPercent;
       m_maxConsecutiveLosses      = maxConsecutiveLosses;
       m_maxOpenPositions          = maxOpenPositions;
-      m_maxExposureLots           = maxExposureLots;
       m_maxFlipsPerDay            = maxFlipsPerDay;
       m_maxTradesPerRollingPeriod = maxTradesPerRollingPeriod;
       m_rollingPeriodSec          = rollingPeriodSec;
@@ -135,7 +131,6 @@ public:
       m_minFreeMarginPercent      = minFreeMarginPercent;
       m_weeklyLossLimitPercent    = weeklyLossLimitPercent;
       m_maxPositionsPerSymbol     = maxPositionsPerSymbol;
-      m_maxDirectionalExposureLots= maxDirectionalExposureLots;
       m_maxMarginUsagePercent     = maxMarginUsagePercent;
       m_maxExecutionFailures      = maxExecutionFailures;
      }
@@ -214,12 +209,11 @@ public:
       decision.rawLots=rawLots;
       if(!MathIsValidNumber(rawLots) || rawLots<=0.0)
         { decision.rejectionReason="INVALID_RAW_VOLUME"; return(0.0); }
+      // NormalizeVolume applies the broker's live minimum, maximum and step rules.
+      // There is no EA-imposed gross-lot ceiling; stop-risk and margin checks govern size.
       double lots=md.NormalizeVolume(rawLots);
       if(lots<=0.0)
-        { decision.rejectionReason="MIN_LOT_EXCEEDS_RISK_OR_VOLUME_INVALID"; return(0.0); }
-      lots=md.NormalizeVolume(MathMin(lots,m_maxExposureLots));
-      if(lots<=0.0)
-        { decision.rejectionReason="EXPOSURE_CAP_BELOW_BROKER_MINIMUM"; return(0.0); }
+        { decision.rejectionReason="MIN_LOT_EXCEEDS_RISK_OR_BROKER_VOLUME_INVALID"; return(0.0); }
 
       double sizedProfit=0.0;
       if(!OrderCalcProfit(orderType,_Symbol,lots,entryPrice,stopPrice,sizedProfit))
@@ -332,7 +326,6 @@ public:
                                       const double directionalExposureLots=-1)
      {
       int posForSymbol = (positionsForSymbol<0) ? openPositions : positionsForSymbol;
-      double dirExposure = (directionalExposureLots<0) ? currentExposureLots : directionalExposureLots;
 
       if(m_killed) { reason="Kill switch active"; return(false); }
       if(DailyLossLimitBreached()) { reason=m_lockoutReason; return(false); }
@@ -342,8 +335,6 @@ public:
         { reason=StringFormat("Max consecutive execution failures reached (%d)",m_consecutiveExecutionFailures); return(false); }
       if(openPositions>=m_maxOpenPositions) { reason="Max open positions reached"; return(false); }
       if(posForSymbol>=m_maxPositionsPerSymbol) { reason="Max positions for this symbol reached"; return(false); }
-      if(currentExposureLots>=m_maxExposureLots) { reason="Max exposure reached"; return(false); }
-      if(dirExposure>=m_maxDirectionalExposureLots) { reason="Max directional exposure reached"; return(false); }
       if(m_flipsToday>=m_maxFlipsPerDay) { reason="Max flips per day reached"; return(false); }
       if(TradesInRollingWindow()>=m_maxTradesPerRollingPeriod) { reason="Max trades in rolling window reached"; return(false); }
       if(spreadPts>m_maxSpreadPts) { reason="Spread above maximum allowed"; return(false); }
