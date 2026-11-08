@@ -22,6 +22,8 @@
 #include <AutopsyX/Regime.mqh>
 #include <AutopsyX/StructureEngine.mqh>
 #include <AutopsyX/CompositeDirection.mqh>
+#include <AutopsyX/VPMACD.mqh>
+#include <AutopsyX/NewsDefense.mqh>
 #include <AutopsyX/SignalScore.mqh>
 #include <AutopsyX/FlipEngine.mqh>
 #include <AutopsyX/AntiChop.mqh>
@@ -73,6 +75,14 @@ input int             InpSniperMaxWaitSeconds     = 8;     // Give up waiting fo
 input double          InpSniperMaxChasePoints     = 40;    // Abandon if price runs this far in our favor without ever pulling back
 input bool            InpSniperUseStructureStop   = true;  // Prefer a stop just beyond the nearest liquidity level when it's tighter than ATR/fixed
 input double          InpSniperStructureBufferPts = 10;    // Buffer placed beyond the structural level, points
+
+input group "=== NEWS DEFENSE / VP-MACD ===";
+input int             InpNewsMinutesBefore        = 20;
+input int             InpNewsMinutesAfter         = 15;
+input int             InpNewsRefreshSeconds       = 30;
+input int             InpVPMACDFastPeriod         = 12;
+input int             InpVPMACDSlowPeriod         = 26;
+input int             InpVPMACDSignalPeriod       = 9;
 
 input group "=== ORDER FLOW / VOLUME PROFILE / FOOTPRINT / HEATMAP / PULSE ===";
 input bool            InpUseOrderFlow             = true;  // Blend order-flow/footprint/volume-profile into the score (advisory, not a hard gate)
@@ -232,6 +242,8 @@ CRegimeEngine         g_regime;
 CRegimeEngine         g_regimeHtf;
 CStructureEngine      g_structure;
 CCompositeDirectionEngine g_compositeDirection;
+CVPMACDEngine         g_vpMacd;
+CNewsDefenseEngine    g_newsDefense;
 CSignalScorer         g_scorer;
 CFlipEngine           g_flip;
 CAntiChopEngine       g_chop;
@@ -1974,7 +1986,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    bool compositeSpreadOk=g_micro.SpreadAcceptable(InpMaxSpreadPoints);
    ENUM_AX_COMPOSITE_DIRECTION compositeDirection=g_compositeDirection.Evaluate(
       g_regime,g_regimeHtf,g_structure,g_orderFlow,g_chop,score,
-      g_vwapValue,g_vwapTrend,"DATA_UNAVAILABLE","DATA_UNAVAILABLE",
+      g_vwapValue,g_vwapTrend,g_vpMacd.State(),g_newsDefense.State(),
       compositeSpreadOk,compositeReason);
    bool compositeDirectionMatches=(dir==AX_DIR_BUY && compositeDirection==AX_COMPOSITE_BULLISH) ||
                                   (dir==AX_DIR_SELL && compositeDirection==AX_COMPOSITE_BEARISH);
@@ -3105,12 +3117,22 @@ int OnInit(void)
       Print("AUTOPSY X: failed to initialize closed-bar structure engine");
       return(INIT_FAILED);
      }
-   g_compositeDirection.Configure(55.0,InpHtfMinR2ToBlock,false);
+   if(!g_vpMacd.Init(_Symbol,InpRegimeTimeframe,InpVPMACDFastPeriod,InpVPMACDSlowPeriod,InpVPMACDSignalPeriod))
+      Print("AUTOPSY X: VP-MACD initialization failed; its vote will remain unavailable.");
+   else if(!g_vpMacd.Update())
+      Print("AUTOPSY X: VP-MACD warming up; waiting for completed-bar volume history.");
+   if(!g_newsDefense.Init(_Symbol,InpNewsMinutesBefore,InpNewsMinutesAfter,InpNewsRefreshSeconds))
+      Print("AUTOPSY X: News Defense initialization failed; calendar state remains unavailable.");
+   else if(!g_newsDefense.Update(true))
+      PrintFormat("AUTOPSY X: News Defense data unavailable at startup (%s). LIVE entries will fail closed.",g_newsDefense.Reason());
+   g_compositeDirection.Configure(55.0,InpHtfMinR2ToBlock,InpExecutionMode==AX_EXEC_LIVE);
    g_liq.Init(_Symbol,InpRegimeTimeframe);
    g_liq.RefreshLevels();
    g_regime.Update();
    g_regimeHtf.Update();
    g_structure.Update();
+   g_vpMacd.Update();
+   g_newsDefense.Update(true);
 
    g_volProfile.Init(_Symbol,InpVolumeProfileBars,InpVolumeProfileBinPoints,g_md.Point(),InpRegimeTimeframe);
    g_volProfile.Refresh();
@@ -3311,6 +3333,8 @@ void OnDeinit(const int reason)
 void OnTick(void)
   {
    if(!g_md.OnTickUpdate()) return;
+   // Calendar refresh is internally throttled, never queried on every tick.
+   g_newsDefense.Update(false);
    g_risk.OnTickHousekeeping();
    g_afe.OnTickHousekeeping();
 
@@ -3493,6 +3517,7 @@ void OnTick(void)
       g_lastBarTime = barTime;
       g_regime.Update();
       g_structure.Update();
+      g_vpMacd.Update();
       g_liq.RefreshLevels();
       g_volProfile.Refresh();
       g_adaptiveConfMultiplier = AxAdaptiveConfidenceMultiplier();
