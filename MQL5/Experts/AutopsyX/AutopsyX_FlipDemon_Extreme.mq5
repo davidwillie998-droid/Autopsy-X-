@@ -4082,7 +4082,9 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
       // when the deal is an exit, our tracked campaign is active, and the symbol no
       // longer has a live position. Partial closes leave a live position and are left
       // to the existing volume/history accounting path; entry deals never finalize.
-      if(relevant && g_haveOpenPosition && g_posState.active)
+      if(relevant && g_haveOpenPosition && g_posState.active &&
+         g_positionIdentifier>0 &&
+         (ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID)==g_positionIdentifier)
         {
          long dealEntry=HistoryDealGetInteger(trans.deal,DEAL_ENTRY);
          bool isExit=(dealEntry==DEAL_ENTRY_OUT || dealEntry==DEAL_ENTRY_OUT_BY ||
