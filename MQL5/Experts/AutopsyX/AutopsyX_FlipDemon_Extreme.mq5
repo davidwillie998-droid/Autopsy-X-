@@ -1853,10 +1853,17 @@ void AxApplyOrderFlowBonus(SAxScore &score)
       sellBonus += (g_heatmap.BearishScoreComponent()/100.0)*w;
      }
 
-   score.buyScore  = AxClampD(score.buyScore+buyBonus,0,100);
-   score.sellScore = AxClampD(score.sellScore+sellBonus,0,100);
+   // Preserve the exact additive evidence used to move the base scorer output.
+   // These fields are diagnostic only and do not alter the score formula.
+   score.orderFlowBullBonus=buyBonus;
+   score.orderFlowBearBonus=sellBonus;
+   score.buyScore  = AxClampD(score.preBonusBuyScore+buyBonus,0,100);
+   score.sellScore = AxClampD(score.preBonusSellScore+sellBonus,0,100);
 
    double gap = MathAbs(score.buyScore-score.sellScore);
+   score.scoreGap=gap;
+   score.minimumScoreToAct=InpMinScoreToAct;
+   score.minimumGapToAct=InpMinGapToAct;
    score.confidence = AxClampD(gap*1.15,0,100);
 
    score.action = AX_DIR_NONE;
