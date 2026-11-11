@@ -69,6 +69,23 @@ public:
       s.time   = TimeCurrent();
       s.regime = regime.Regime();
 
+      // Initialize every evidence field on every path. A blocked regime is an explicit
+      // zero-evidence decision, never an uninitialized score snapshot.
+      s.microBullScore=0.0;
+      s.microBearScore=0.0;
+      s.liquidityBullScore=0.0;
+      s.liquidityBearScore=0.0;
+      s.momentumBullScore=0.0;
+      s.momentumBearScore=0.0;
+      s.regimeMultiplier=regime.AggressionMultiplier();
+      s.preBonusBuyScore=0.0;
+      s.preBonusSellScore=0.0;
+      s.orderFlowBullBonus=0.0;
+      s.orderFlowBearBonus=0.0;
+      s.scoreGap=0.0;
+      s.minimumScoreToAct=m_minScoreToAct;
+      s.minimumGapToAct=m_minGapToAct;
+
       if(!regime.TradingAllowed())
         {
          s.buyScore=0; s.sellScore=0; s.confidence=0; s.action=AX_DIR_NONE;
@@ -83,17 +100,27 @@ public:
       double momBull     = MomentumBullish(mom);
       double momBear     = MomentumBearish(mom);
 
+      s.microBullScore=microBull;
+      s.microBearScore=microBear;
+      s.liquidityBullScore=liqBull;
+      s.liquidityBearScore=liqBear;
+      s.momentumBullScore=momBull;
+      s.momentumBearScore=momBear;
+
       double buy  = m_wMicro*microBull + m_wLiquidity*liqBull + m_wMomentum*momBull;
       double sell = m_wMicro*microBear + m_wLiquidity*liqBear + m_wMomentum*momBear;
 
       //--- regime-based aggression scaling of the achieved score (section 7) ---
-      double mult = regime.AggressionMultiplier();
+      double mult = s.regimeMultiplier;
       buy  = AxClampD(buy*mult,0,100);
       sell = AxClampD(sell*mult,0,100);
 
+      s.preBonusBuyScore=buy;
+      s.preBonusSellScore=sell;
       s.buyScore  = buy;
       s.sellScore = sell;
       double gap  = MathAbs(buy-sell);
+      s.scoreGap=gap;
       s.confidence = AxClampD(gap*1.15,0,100);
 
       s.action = AX_DIR_NONE;
