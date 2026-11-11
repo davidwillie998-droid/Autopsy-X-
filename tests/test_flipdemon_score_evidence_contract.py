@@ -35,7 +35,7 @@ class FlipDemonScoreEvidenceContractTests(unittest.TestCase):
             "scoreGap", "minimumScoreToAct", "minimumGapToAct",
         ):
             with self.subTest(field=field):
-                self.assertRegex(SCORER, rf"s\\.{field}\\s*=")
+                self.assertRegex(SCORER, rf"s\.{field}\s*=")
         self.assertIn("if(!regime.TradingAllowed())", SCORER)
         blocked = SCORER.split("if(!regime.TradingAllowed())", 1)[1].split("double microBull", 1)[0]
         self.assertIn("s.buyScore=0", blocked)
