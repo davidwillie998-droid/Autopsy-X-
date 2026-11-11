@@ -66,6 +66,17 @@ WAIT is a valid terminal analytical outcome. It must not be converted into an or
 
 The current `SignalScore.mqh` baseline uses microstructure/liquidity/momentum weights of 0.40/0.25/0.35, a minimum directional score of 60 and a minimum BUY/SELL gap of 15. Its reported confidence is derived from score separation (`gap * 1.15`), so it is a **heuristic score, not a calibrated probability of winning**. Regime aggression scaling also changes the displayed scores. Preserve this baseline for comparison; do not tune weights on the final test set or describe its confidence as a probability until calibration has been measured.
 
+## 5. Existing adaptive confidence state
+
+The current EA has `InpAdaptiveTuning=true` by default. `AxAdaptiveConfidenceMultiplier()` reads up to the latest 20 non-partial trade records, requires at least 10 counted outcomes, and changes the entry confidence threshold: 0.90 after a win rate of at least 55% with positive net P/L; 1.15 after a win rate below 40% or negative net P/L; otherwise 1.00. The multiplier is bounded by the configured 0.85 to 1.25 range. It changes the entry confidence threshold, not position size or risk limits.
+
+This is a stateful strategy variant, not a fixed-threshold baseline. Therefore:
+- The primary hypothesis/ablation baseline must run with adaptive tuning disabled so the decision rule is frozen.
+- Adaptive tuning must be evaluated as a separate, explicitly named variant against the same chronological folds and costs.
+- Each decision record must include the adaptive-tuning enabled flag, lookback size, counted sample size, win rate, net P/L, raw multiplier, clamped multiplier and effective entry-confidence threshold.
+- Restart/replay tests must prove the same journal state and same input snapshot reproduce the same multiplier and decision.
+- Do not allow adaptive tuning to rewrite signal weights, market labels, stop logic or the immutable risk ceiling.
+
 ## 5. Execution and capital-preservation constraints
 
 - Preserve `ANALYSIS_ONLY` as the default. Research and decision logging do not grant execution authority.
