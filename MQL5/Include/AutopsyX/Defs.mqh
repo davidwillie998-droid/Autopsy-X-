@@ -345,12 +345,27 @@ struct SAxTick
 //--- Independent BUY/SELL score bundle ---------------------------------------
 struct SAxScore
   {
-   double        buyScore;     // 0..100
-   double        sellScore;    // 0..100
-   double        confidence;   // 0..100
+   double        buyScore;             // final 0..100 score after all enabled advisory components
+   double        sellScore;            // final 0..100 score after all enabled advisory components
+   double        confidence;           // heuristic score-separation measure, NOT win probability
    ENUM_AX_DIR   action;
    ENUM_AX_REGIME regime;
    datetime      time;
+   // Deterministic score decomposition captured from the exact evaluation snapshot.
+   double        microBullScore;
+   double        microBearScore;
+   double        liquidityBullScore;
+   double        liquidityBearScore;
+   double        momentumBullScore;
+   double        momentumBearScore;
+   double        regimeMultiplier;
+   double        preBonusBuyScore;
+   double        preBonusSellScore;
+   double        orderFlowBullBonus;
+   double        orderFlowBearBonus;
+   double        scoreGap;
+   double        minimumScoreToAct;
+   double        minimumGapToAct;
   };
 
 //--- Pending directional-accuracy snapshot (section 18) ----------------------
