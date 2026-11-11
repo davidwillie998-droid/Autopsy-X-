@@ -24,7 +24,7 @@ Scale position size in response to account equity and verified continuation oppo
 - `InpBaseRiskPercent`: default 0.50% of current equity per initial entry.
 - `InpMaxRiskPercentPerEntry`: hard-capped at 2.00%; no input may raise the ceiling.
 - `InpMaxCampaignRiskPercent`: default 2.00% of current equity for the sum of remaining stop-risk across all campaign entries, including the proposed addition.
-- `InpMaxAccountOpenRiskPercent`: default 4.00% of equity across all positions controlled by the EA. Existing account-wide loss, daily/weekly loss, margin and position-count limits remain independently active. No fixed EA gross-lot or directional-lot cap is applied.
+- `InpMaxAccountOpenRiskPercent`: hard-capped at 2.00% of current equity in aggregate across all EA-controlled open positions, pending orders and outstanding reservations. This is the same immutable account-wide ceiling enforced by `AccountRiskCalculator.mqh`, not an additional allowance on top of per-entry or campaign limits. Existing daily/weekly loss, margin and position-count limits remain independently active. No fixed EA gross-lot or directional-lot cap is applied.
 - `InpProgressiveSizingEnabled`: true for analysis calculations; this does not authorize orders while execution mode is ANALYSIS_ONLY.
 - `InpMaxProgressiveMultiplier`: 1.50 maximum risk multiplier from equity growth; this multiplier is still subject to the 2% per-entry cap and campaign/account risk caps.
 - `InpMinEquityForSizing`: configurable minimum equity. If equity is lower or unavailable, no trade.
