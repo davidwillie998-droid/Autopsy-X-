@@ -41,7 +41,8 @@ public:
                                 const double minFreeMarginBufferPercent)
      {
       m_minRR                      = MathMax(0.0,minRR);
-      m_minExpectedValueR          = minExpectedValueR;
+      m_minExpectedValueR          = (MathIsValidNumber(minExpectedValueR) && minExpectedValueR>=0.0)
+                                      ? minExpectedValueR : 0.0;
       m_minFreeMarginBufferPercent = MathMax(0.0,minFreeMarginBufferPercent);
      }
 
