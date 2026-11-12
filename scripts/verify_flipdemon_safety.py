@@ -50,9 +50,12 @@ require("if(!MathIsValidNumber(thesis.expectedValueR))" in execution_eligibility
 require("if(thesis.expectedValueR<=m_minExpectedValueR)" in execution_eligibility
         and "return(AX_ELIGIBILITY_INSUFFICIENT_EVIDENCE);" in execution_eligibility,
         "zero or below-threshold setup expectancy cannot pass execution eligibility")
+require("MathIsValidNumber(minExpectedValueR)" in execution_eligibility
+        and "minExpectedValueR>=0.0" in execution_eligibility,
+        "invalid or negative expectancy thresholds are normalized to a safe non-negative floor")
 require("executionThesis.expectedValueR=0.0;" in ea
         and "No calibrated per-setup EV estimator is wired into this path yet." in ea,
-        "un calibrated live-path expectancy remains explicitly unavailable until a measured estimator is wired")
+        "uncalibrated live-path expectancy remains explicitly unavailable until a measured estimator is wired")
 require("CopyBuffer(m_atrHandle,0,1,need,atrBuf)" in regime
         and "int need = AX_REGIME_ATR_LOOKBACK+1" in regime,
         "regime ATR uses the latest completed bar and a separate prior-bar reference window")
