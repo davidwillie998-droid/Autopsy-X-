@@ -10,9 +10,27 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFS = (ROOT / "MQL5/Include/AutopsyX/Defs.mqh").read_text(encoding="utf-8-sig")
 SCORER = (ROOT / "MQL5/Include/AutopsyX/SignalScore.mqh").read_text(encoding="utf-8-sig")
 EA = (ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(encoding="utf-8-sig")
+EXEC_ELIGIBILITY = (ROOT / "MQL5/Include/AutopsyX/ExecutionEligibility.mqh").read_text(encoding="utf-8-sig")
 
 
 class FlipDemonScoreEvidenceContractTests(unittest.TestCase):
+    def test_nonfinite_setup_expectancy_is_reported_as_data_unavailable(self):
+        self.assertIn("if(!MathIsValidNumber(thesis.expectedValueR))", EXEC_ELIGIBILITY)
+        self.assertIn("return(AX_ELIGIBILITY_DATA_UNAVAILABLE);", EXEC_ELIGIBILITY)
+
+    def test_zero_expectancy_cannot_pass_when_minimum_is_zero(self):
+        self.assertIn("if(thesis.expectedValueR<=m_minExpectedValueR)", EXEC_ELIGIBILITY)
+        self.assertIn("return(AX_ELIGIBILITY_INSUFFICIENT_EVIDENCE);", EXEC_ELIGIBILITY)
+        self.assertIn("m_minExpectedValueR=0.0", EXEC_ELIGIBILITY)
+
+    def test_invalid_expectancy_threshold_is_normalized_to_nonnegative_floor(self):
+        self.assertIn("MathIsValidNumber(minExpectedValueR)", EXEC_ELIGIBILITY)
+        self.assertIn("minExpectedValueR>=0.0", EXEC_ELIGIBILITY)
+
+    def test_live_thesis_does_not_substitute_portfolio_ev_for_setup_ev(self):
+        self.assertIn("executionThesis.expectedValueR=0.0;", EA)
+        self.assertIn("No calibrated per-setup EV estimator is wired into this path yet.", EA)
+
     def test_score_record_contains_component_level_evidence(self):
         required = (
             "microBullScore", "microBearScore",
