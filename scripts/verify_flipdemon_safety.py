@@ -740,15 +740,15 @@ REGIME_CLASSIFIER_SOURCE = REGIME_CLASSIFIER.read_text(encoding="utf-8")
 require("CopyBuffer(m_atrHandle,0,1,need,atrBuf)" in VOLATILITY_SOURCE,
         "volatility percentile and shock calculations use completed ATR bars only")
 require("#include <AutopsyX/RegimeClassifierEngine.mqh>" in EA_SOURCE
-        and bool(re.search(r"CRegimeClassifierEngine\\s+g_regimeClassifier;", EA_SOURCE))
-        and bool(re.search(r"CVolatilityEngine\\s+g_volatility;", EA_SOURCE),
+        and bool(re.search(r"CRegimeClassifierEngine\s+g_regimeClassifier;", EA_SOURCE))
+        and bool(re.search(r"CVolatilityEngine\s+g_volatility;", EA_SOURCE)),
         "existing volatility and directional regime engines are connected to the EA")
 require("g_regimeIntelligence.Sample(" in EA_SOURCE
         and "g_regimeClassifier.Sample(" in EA_SOURCE
         and "g_regime.Update();" in EA_SOURCE,
         "regime intelligence is sampled after the base regime update on the new-bar path")
 ENTRY_METHOD_START = EA_SOURCE.index("bool AxAttemptEntry(")
-ENTRY_METHOD_END = EA_SOURCE.find("\\nbool ", ENTRY_METHOD_START + 10)
+ENTRY_METHOD_END = EA_SOURCE.find("\nbool ", ENTRY_METHOD_START + 10)
 REGIME_ENTRY_METHOD = EA_SOURCE[ENTRY_METHOD_START:ENTRY_METHOD_END if ENTRY_METHOD_END >= 0 else len(EA_SOURCE)]
 require("InpEnableRegimeClassificationAnalysis" in EA_SOURCE
         and "never gates orders" in EA_SOURCE
