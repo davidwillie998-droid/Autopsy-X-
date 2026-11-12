@@ -1,8 +1,8 @@
 """Adapters from canonical Phase 3A observations into the research PIT contract.
 
-The adapter requires an explicit feature-ready timestamp. The store ingestion
-timestamp is not silently treated as feature readiness. Provider payload hashes
-are retained as provenance; records without one are rejected.
+The adapter requires an explicit provider event timestamp and feature-ready
+timestamp. It never substitutes local observation or ingestion time for source
+event time. Provider raw identifiers are retained as provenance.
 """
 from __future__ import annotations
 
@@ -30,10 +30,11 @@ def observation_event_id(record: Observation) -> str:
 def adapt_observation(record: Observation, *, feature_ready_ts: int) -> EventEnvelope:
     """Convert one canonical observation without inventing missing timestamps.
 
-    source_ts is preferred as event time only when the provider supplied it.
-    Otherwise observation_ts is retained as the best-known event time. Chain
-    transaction ordering is omitted because the canonical schema does not
-    guarantee every ordering index.
+    A canonical observation may carry a best-known observation_ts even when
+    the provider did not supply the actual event/publication time. That value
+    is not admissible as event_ts for point-in-time research. Such records
+    remain available in the canonical store but must not enter this strict
+    event envelope until source time is observed.
     """
     if not isinstance(record, Observation):
         raise TypeError("record must be a canonical Observation")
@@ -41,13 +42,14 @@ def adapt_observation(record: Observation, *, feature_ready_ts: int) -> EventEnv
         raise TypeError("feature_ready_ts must be integer milliseconds")
     if (record.source_ts is None) != (record.source_ts_state != Availability.OBSERVED):
         raise ValueError("source_ts and source_ts_state disagree")
+    if record.source_ts is None:
+        raise ValueError("source event timestamp is required for point-in-time admission")
     if not record.raw_id:
         raise ValueError("observation raw_id is required for point-in-time provenance")
-    event_ts = record.source_ts if record.source_ts is not None else record.observation_ts
     return EventEnvelope(
         event_id=observation_event_id(record),
         chain=record.chain,
-        event_ts=event_ts,
+        event_ts=record.source_ts,
         first_seen_ts=record.ingestion_ts,
         feature_ready_ts=feature_ready_ts,
         payload_hash=record.raw_id,
