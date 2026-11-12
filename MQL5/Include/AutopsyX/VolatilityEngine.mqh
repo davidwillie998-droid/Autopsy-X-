@@ -84,7 +84,7 @@ public:
       int need = m_percentileLookback+AX_VOL_ACCEL_LOOKBACK+2;
       double atrBuf[];
       ArraySetAsSeries(atrBuf,true);
-      int copied = CopyBuffer(m_atrHandle,0,0,need,atrBuf);
+      int copied = CopyBuffer(m_atrHandle,0,1,need,atrBuf);
       if(copied<m_percentileLookback+AX_VOL_ACCEL_LOOKBACK)
         {
          // not enough history yet to rank/accelerate meaningfully - report NORMAL rather than
@@ -94,6 +94,11 @@ public:
         }
 
       m_currentAtr = atrBuf[0];
+      if(!MathIsValidNumber(m_currentAtr) || m_currentAtr<=0.0)
+        {
+         m_currentAtr=0.0; m_percentileRank=0.0; m_accelerationPct=0.0; m_state=AX_VOL_NORMAL;
+         return;
+        }
 
       //--- percentile rank: mid-rank convention (a tie counts as HALF a "below", not a full one) -    ---
       //--- a strict <= comparison would pin the rank to 100 (EXTREME) whenever the whole lookback       ---
