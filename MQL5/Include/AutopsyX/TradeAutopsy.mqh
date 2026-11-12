@@ -123,6 +123,287 @@ private:
       return(dealTicket>0 && MathIsValidNumber(lots) && MathIsValidNumber(netProfit));
      }
 
+
+   bool              ParseFiniteNumber(const string source,double &value) const
+     {
+      string token=source;
+      StringTrimLeft(token);
+      StringTrimRight(token);
+      int n=StringLen(token);
+      if(n<=0) return(false);
+      bool digit=false;
+      for(int i=0;i<n;i++)
+        {
+         ushort ch=StringGetCharacter(token,i);
+         if(ch>=48 && ch<=57) { digit=true; continue; }
+         if(ch==43 || ch==45 || ch==46 || ch==69 || ch==101) continue;
+         return(false);
+        }
+      if(!digit) return(false);
+      value=StringToDouble(token);
+      return(MathIsValidNumber(value));
+     }
+
+   bool              ParseUnsigned(const string source,ulong &value) const
+     {
+      string token=source;
+      StringTrimLeft(token);
+      StringTrimRight(token);
+      if(StringLen(token)<=0) return(false);
+      for(int i=0;i<StringLen(token);i++)
+        {
+         ushort ch=StringGetCharacter(token,i);
+         if(ch<48 || ch>57) return(false);
+        }
+      long parsed=StringToInteger(token);
+      if(parsed<0) return(false);
+      value=(ulong)parsed;
+      return(true);
+     }
+
+   bool              ParseDirectionField(const string value,ENUM_AX_DIR &out) const
+     {
+      if(value=="BUY") { out=AX_DIR_BUY; return(true); }
+      if(value=="SELL") { out=AX_DIR_SELL; return(true); }
+      return(false);
+     }
+
+   bool              ParseRegimeField(const string value,ENUM_AX_REGIME &out) const
+     {
+      if(value=="TREND") out=AX_REGIME_TREND;
+      else if(value=="STRONG TREND") out=AX_REGIME_STRONG_TREND;
+      else if(value=="BREAKOUT") out=AX_REGIME_BREAKOUT;
+      else if(value=="RANGE") out=AX_REGIME_RANGE;
+      else if(value=="MEAN REVERSION") out=AX_REGIME_MEAN_REVERSION;
+      else if(value=="HIGH VOLATILITY") out=AX_REGIME_HIGH_VOL;
+      else if(value=="LOW VOLATILITY") out=AX_REGIME_LOW_VOL;
+      else if(value=="CHAOTIC") out=AX_REGIME_CHAOTIC;
+      else if(value=="UNSAFE") out=AX_REGIME_UNSAFE;
+      else return(false);
+      return(true);
+     }
+
+   bool              ParseExitReasonField(const string value,ENUM_AX_EXIT_REASON &out) const
+     {
+      if(value=="NONE") out=AX_EXIT_NONE;
+      else if(value=="TAKE_PROFIT") out=AX_EXIT_TP;
+      else if(value=="STOP_LOSS") out=AX_EXIT_SL;
+      else if(value=="MOMENTUM_COLLAPSE") out=AX_EXIT_MOMENTUM_COLLAPSE;
+      else if(value=="OPPOSITE_SIGNAL") out=AX_EXIT_OPPOSITE_SIGNAL;
+      else if(value=="MICROSTRUCTURE_REVERSAL") out=AX_EXIT_MICROSTRUCTURE_REVERSAL;
+      else if(value=="MAX_HOLD_TIME") out=AX_EXIT_MAX_HOLD_TIME;
+      else if(value=="SPREAD_ABNORMAL") out=AX_EXIT_SPREAD_ABNORMAL;
+      else if(value=="EXECUTION_QUALITY") out=AX_EXIT_EXECUTION_QUALITY;
+      else if(value=="RISK_SHUTDOWN") out=AX_EXIT_RISK_SHUTDOWN;
+      else if(value=="FLIP") out=AX_EXIT_FLIP;
+      else if(value=="MANUAL_KILL") out=AX_EXIT_MANUAL_KILL;
+      else if(value=="BREAKEVEN_STOP") out=AX_EXIT_BREAKEVEN_STOP;
+      else if(value=="TRAIL_STOP") out=AX_EXIT_TRAIL_STOP;
+      else if(value=="VWAP_TREND_FLIP") out=AX_EXIT_VWAP_TREND_FLIP;
+      else return(false);
+      return(true);
+     }
+
+   bool              ParseTradeClassField(const string value,ENUM_AX_TRADE_CLASS &out) const
+     {
+      if(value=="CORRECT_MOMENTUM") out=AX_CLASS_CORRECT_MOMENTUM;
+      else if(value=="FALSE_BREAKOUT") out=AX_CLASS_FALSE_BREAKOUT;
+      else if(value=="LIQUIDITY_TRAP") out=AX_CLASS_LIQUIDITY_TRAP;
+      else if(value=="LATE_ENTRY") out=AX_CLASS_LATE_ENTRY;
+      else if(value=="PREMATURE_EXIT") out=AX_CLASS_PREMATURE_EXIT;
+      else if(value=="MOMENTUM_FAILURE") out=AX_CLASS_MOMENTUM_FAILURE;
+      else if(value=="CORRECT_FLIP") out=AX_CLASS_CORRECT_FLIP;
+      else if(value=="FALSE_FLIP") out=AX_CLASS_FALSE_FLIP;
+      else if(value=="SPREAD_FAILURE") out=AX_CLASS_SPREAD_FAILURE;
+      else if(value=="SLIPPAGE_FAILURE") out=AX_CLASS_SLIPPAGE_FAILURE;
+      else if(value=="STOP_LOSS") out=AX_CLASS_STOP_LOSS;
+      else if(value=="TAKE_PROFIT") out=AX_CLASS_TAKE_PROFIT;
+      else if(value=="RISK_SHUTDOWN") out=AX_CLASS_RISK_SHUTDOWN;
+      else return(false);
+      return(true);
+     }
+
+   bool              ParseCapitalStateField(const string value,ENUM_AX_CAPITAL_STATE &out) const
+     {
+      if(value=="NORMAL") out=AX_CAPITAL_NORMAL;
+      else if(value=="CAUTION") out=AX_CAPITAL_CAUTION;
+      else if(value=="DEFENSIVE") out=AX_CAPITAL_DEFENSIVE;
+      else if(value=="LOCKED") out=AX_CAPITAL_LOCKED;
+      else return(false);
+      return(true);
+     }
+
+   ENUM_AX_DATASET_PROVENANCE ParseProvenanceField(const string value) const
+     {
+      if(value=="BACKTEST") return(AX_PROVENANCE_BACKTEST);
+      if(value=="FORWARD_DEMO") return(AX_PROVENANCE_FORWARD_DEMO);
+      if(value=="LIVE") return(AX_PROVENANCE_LIVE);
+      return(AX_PROVENANCE_UNKNOWN);
+     }
+
+   bool              ParseTradeRecordFields(string &fields[],const bool legacyV3,
+                                              SAxTradeRecord &rec) const
+     {
+      if(ArraySize(fields)!=44) return(false);
+      double values[20];
+      int numericIndexes[20]={7,8,9,10,11,13,14,15,19,20,21,22,23,24,30,31,32,33,34,0};
+      for(int i=0;i<19;i++)
+         if(!ParseFiniteNumber(fields[numericIndexes[i]],values[i])) return(false);
+
+      ulong ticket=0,dealIn=0,dealOut=0,positionId=0;
+      if(!ParseUnsigned(fields[1],ticket) ||
+         !ParseUnsigned(fields[2],dealIn) ||
+         !ParseUnsigned(fields[3],dealOut) ||
+         !ParseUnsigned(fields[43],positionId)) return(false);
+
+      double flipValue=0.0,holdValue=0.0;
+      if(!ParseFiniteNumber(fields[12],holdValue) ||
+         !ParseFiniteNumber(fields[27],flipValue)) return(false);
+      if(holdValue<0.0 || holdValue>2147483647.0 ||
+         MathFloor(holdValue)!=holdValue || flipValue<0.0 ||
+         flipValue>2147483647.0 || MathFloor(flipValue)!=flipValue) return(false);
+
+      ENUM_AX_DIR direction;
+      ENUM_AX_REGIME regime;
+      ENUM_AX_EXIT_REASON exitReason;
+      ENUM_AX_TRADE_CLASS tradeClass;
+      ENUM_AX_CAPITAL_STATE capitalState;
+      if(!ParseDirectionField(fields[6],direction) ||
+         !ParseRegimeField(fields[16],regime) ||
+         !ParseExitReasonField(fields[18],exitReason) ||
+         !ParseTradeClassField(fields[26],tradeClass) ||
+         !ParseCapitalStateField(fields[29],capitalState)) return(false);
+
+      datetime entryTime=StringToTime(fields[4]);
+      datetime exitTime=StringToTime(fields[5]);
+      if(entryTime<=0 || exitTime<=0 || exitTime<entryTime) return(false);
+
+      double rMultiple=EMPTY_VALUE;
+      if(fields[25]!="NA")
+        {
+         if(!ParseFiniteNumber(fields[25],rMultiple)) return(false);
+         if(legacyV3 && rMultiple==0.0) rMultiple=EMPTY_VALUE;
+        }
+
+      rec.setupId=fields[0];
+      rec.ticket=ticket;
+      rec.positionIdentifier=positionId;
+      rec.dealIdIn=dealIn;
+      rec.dealIdOut=dealOut;
+      rec.entryTime=entryTime;
+      rec.exitTime=exitTime;
+      rec.direction=direction;
+      rec.entryPrice=values[0];
+      rec.exitPrice=values[1];
+      rec.lots=values[2];
+      rec.spreadAtEntry=values[3];
+      rec.slippagePts=values[4];
+      rec.holdSeconds=(int)holdValue;
+      rec.buyScore=values[5];
+      rec.sellScore=values[6];
+      rec.confidence=values[7];
+      rec.regime=regime;
+      rec.entryReason=fields[17];
+      rec.exitReason=exitReason;
+      rec.mfe=values[8];
+      rec.mae=values[9];
+      rec.grossProfit=values[10];
+      rec.commission=values[11];
+      rec.swap=values[12];
+      rec.netProfit=values[13];
+      rec.rMultiple=rMultiple;
+      rec.tradeClass=tradeClass;
+      rec.flipSeq=(int)flipValue;
+      rec.isPartial=ParseCsvBoolean(fields[28]);
+      rec.afeCapitalState=capitalState;
+      rec.afeRiskOfRuinPct=values[14];
+      rec.afeExpectedValueR=values[15];
+      rec.afeWinProbability=values[16];
+      rec.afeRiskMultiplier=values[17];
+      rec.impactCostPct=values[18];
+      rec.vwapStateAtEntry=fields[35];
+      rec.vpMacdStateAtEntry=fields[36];
+      rec.orderFlowStateAtEntry=fields[37];
+      rec.structureStateAtEntry=fields[38];
+      rec.liquidityStateAtEntry=fields[39];
+      rec.newsStateAtEntry=fields[40];
+      rec.sessionAtEntry=fields[41];
+      rec.provenance=ParseProvenanceField(fields[42]);
+
+      if(rec.dealIdOut==0 || rec.positionIdentifier==0 ||
+         rec.lots<=0.0 || rec.entryPrice<=0.0 || rec.exitPrice<=0.0 ||
+         (rec.rMultiple!=EMPTY_VALUE && !MathIsValidNumber(rec.rMultiple)))
+         return(false);
+      return(true);
+     }
+
+   bool              HasLoadedDeal(const SAxTradeRecord &candidate) const
+     {
+      if(candidate.dealIdOut==0 || candidate.positionIdentifier==0) return(false);
+      for(int i=0;i<m_count;i++)
+         if(m_records[i].dealIdOut==candidate.dealIdOut &&
+            m_records[i].positionIdentifier==candidate.positionIdentifier)
+            return(true);
+      return(false);
+     }
+
+   bool              LoadTradeRecordsFile(const string sourceFile,const bool legacyV3,
+                                            int &loaded,int &rejected)
+     {
+      int handle=FileOpen(sourceFile,FILE_READ|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,',');
+      if(handle==INVALID_HANDLE) return(true); // absent legacy file is expected
+      string fields[44];
+      bool header=true;
+      while(!FileIsEnding(handle))
+        {
+         bool rowRead=false;
+         for(int f=0;f<44;f++)
+           {
+            if(FileIsEnding(handle) && f==0) { rowRead=false; break; }
+            if(FileIsEnding(handle)) { rowRead=false; break; }
+            fields[f]=FileReadString(handle);
+            rowRead=true;
+           }
+         if(!rowRead) break;
+         if(header) { header=false; continue; }
+
+         SAxTradeRecord record;
+         if(!ParseTradeRecordFields(fields,legacyV3,record))
+           {
+            rejected++;
+            continue;
+           }
+         if(HasLoadedDeal(record)) continue;
+
+         if(m_count<AX_AUTOPSY_MAX_MEMORY)
+           {
+            ArrayResize(m_records,m_count+1);
+            m_records[m_count]=record;
+            m_count++;
+           }
+         else
+           {
+            for(int i=1;i<AX_AUTOPSY_MAX_MEMORY;i++) m_records[i-1]=m_records[i];
+            m_records[AX_AUTOPSY_MAX_MEMORY-1]=record;
+           }
+         loaded++;
+        }
+      FileClose(handle);
+      return(true);
+     }
+
+   bool              LoadTradeRecords(void)
+     {
+      m_count=0;
+      ArrayResize(m_records,0);
+      int loaded=0,rejected=0;
+      if(!LoadTradeRecordsFile(m_legacyFileName,true,loaded,rejected)) return(false);
+      if(!LoadTradeRecordsFile(m_fileName,false,loaded,rejected)) return(false);
+      PrintFormat("FLIPDEMON AUTOPSY RECOVERY: restored=%d rejected=%d duplicate_deals_skipped; memory_limit=%d.",
+                  loaded,rejected,AX_AUTOPSY_MAX_MEMORY);
+      return(true);
+     }
+
    void              AddRiskHistory(const double netProfit,const double rMultiple,
                                     const bool isPartial,const string provenance)
      {
@@ -204,7 +485,7 @@ public:
       WriteHeaderIfNew();
       ArrayResize(m_records,0);
       m_count=0;
-      if(!LoadRiskHistory())
+      if(!LoadRiskHistory() || !LoadTradeRecords())
         {
          FileClose(m_fileHandle); m_fileHandle=INVALID_HANDLE;
          return(false);
