@@ -261,6 +261,18 @@ require("g_positionIdentifier          = (ulong)PositionGetInteger(POSITION_IDEN
         and "g_positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);" in ea,
         "position identifier is captured on restart reconciliation and fresh position initialization")
 autopsy = AUTOPSY.read_text(encoding="utf-8")
+require("!LoadRiskHistory() || !LoadTradeRecords()" in autopsy
+        and "LoadTradeRecordsFile(m_legacyFileName,true" in autopsy
+        and "LoadTradeRecordsFile(m_fileName,false" in autopsy
+        and "if(ArraySize(fields)!=44)" in autopsy
+        and "HasLoadedDeal(record)" in autopsy
+        and "rec.isPartial=isPartial;" in autopsy,
+        "restart restores validated v3/v4 trade records, preserves partial flags and deduplicates broker deal identity")
+require("legacyV3 && rMultiple==0.0" in autopsy
+        and "ParseBooleanField(fields[28],isPartial)" in autopsy
+        and "ParseProvenanceField(fields[42])" in autopsy
+        and "if(i!=n) return(false);" in autopsy,
+        "journal recovery rejects malformed numeric/boolean fields and quarantines unknown provenance from learning datasets")
 require("LastAccountedDealTicket(const ulong positionIdentifier)" in autopsy
         and "LastAccountedDealTicketInFile(m_legacyFileName,positionIdentifier)" in autopsy
         and "TradeAutopsy_v3.csv" in autopsy
