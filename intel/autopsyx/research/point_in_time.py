@@ -16,6 +16,7 @@ from typing import Any, Iterable
 @dataclass(frozen=True)
 class EventEnvelope:
     event_id: str
+    chain: str
     event_ts: int
     first_seen_ts: int
     feature_ready_ts: int
@@ -56,8 +57,8 @@ _LINEAGE_FIELDS = ("slot", "transaction_index", "instruction_index", "event_inde
 def event_order_key(event: EventEnvelope) -> tuple:
     """Stable chain order where lineage exists, with a deterministic fallback."""
     if all(getattr(event, field) is not None for field in _LINEAGE_FIELDS):
-        return (0, *(getattr(event, field) for field in _LINEAGE_FIELDS), event.event_id)
-    return (1, event.event_ts, event.event_id)
+        return (0, event.chain, *(getattr(event, field) for field in _LINEAGE_FIELDS), event.event_id)
+    return (1, event.chain, event.event_ts, event.event_id)
 
 
 def validate_contract(
@@ -70,9 +71,11 @@ def validate_contract(
     feature_rows = list(features)
     issues: list[ContractIssue] = []
     seen_ids: set[str] = set()
-    lineage_keys: set[tuple[int, int, int, int]] = set()
+    lineage_keys: set[tuple[str, int, int, int, int]] = set()
 
     for event in event_rows:
+        if not event.chain:
+            issues.append(ContractIssue("EMPTY_CHAIN", event.event_id or "<empty>", "chain is required"))
         if not event.event_id:
             issues.append(ContractIssue("EMPTY_EVENT_ID", "<empty>", "event_id is required"))
         if event.event_id in seen_ids:
@@ -105,11 +108,13 @@ def validate_contract(
                 issues.append(ContractIssue("INVALID_CHAIN_ORDER", event.event_id,
                                              "slot and chain indices must be non-negative integers"))
             else:
-                if lineage in lineage_keys:
+                scoped_lineage = (event.chain, *lineage)
+                if scoped_lineage in lineage_keys:
                     issues.append(ContractIssue("DUPLICATE_CHAIN_ORDER", event.event_id,
                                                 "chain lineage tuple must be unique within a snapshot"))
-                lineage_keys.add(lineage)
+                lineage_keys.add(scoped_lineage)
 
+    event_by_id = {event.event_id: event for event in event_rows}
     feature_names: set[str] = set()
     for feature in feature_rows:
         if not feature.name:
@@ -125,9 +130,13 @@ def validate_contract(
             issues.append(ContractIssue("MISSING_FEATURE_VERSION", feature.name,
                                          "feature version is required"))
         for event_id in feature.source_event_ids:
-            if event_id not in seen_ids:
+            source = event_by_id.get(event_id)
+            if source is None:
                 issues.append(ContractIssue("UNKNOWN_FEATURE_SOURCE", feature.name,
                                              f"source event {event_id!r} is absent from the snapshot"))
+            elif source.feature_ready_ts > feature.feature_ready_ts:
+                issues.append(ContractIssue("FEATURE_BEFORE_SOURCE_READY", feature.name,
+                                             f"source event {event_id!r} was not ready when the feature was computed"))
     return issues
 
 
