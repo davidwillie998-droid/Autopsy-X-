@@ -104,3 +104,15 @@ def test_snapshot_order_and_digest_are_input_order_independent():
 def test_builder_fails_closed_instead_of_dropping_late_data():
     with pytest.raises(ValueError, match="EVENT_NOT_READY"):
         build_snapshot([event(feature_ready_ts=141)], [], decision_ts=140)
+
+
+def test_rejects_mixed_chain_ordering_modes():
+    rows = [event("a"), event("b", slot=None, transaction_index=None,
+                         instruction_index=None, event_index=None)]
+    issues = validate_contract(rows, [], decision_ts=140)
+    assert "MIXED_CHAIN_ORDER_COVERAGE" in {issue.code for issue in issues}
+
+
+def test_rejects_feature_without_provenance():
+    issues = validate_contract([event()], [feature(source_event_ids=())], decision_ts=140)
+    assert "FEATURE_WITHOUT_SOURCES" in {issue.code for issue in issues}
