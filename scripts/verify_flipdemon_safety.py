@@ -694,5 +694,39 @@ require("CTrade" not in journal_harness.replace("CTradeAutopsy","")
         and "PositionOpen(" not in journal_harness,
         "journal recovery harness contains no broker order-submission path")
 
+
+# Trade journal durability: persistence must precede memory/learning admission.
+AUTOPSY_SOURCE = (MQL5_ROOT / "Include/AutopsyX/TradeAutopsy.mqh").read_text(encoding="utf-8")
+RECORD_METHOD_START = AUTOPSY_SOURCE.index("ENUM_AX_TRADE_CLASS RecordTrade")
+RECORD_METHOD_END = AUTOPSY_SOURCE.index("ulong             LastAccountedDealTicket", RECORD_METHOD_START)
+RECORD_METHOD = AUTOPSY_SOURCE[RECORD_METHOD_START:RECORD_METHOD_END]
+require("bool              m_persistenceHealthy;" in AUTOPSY_SOURCE
+        and "bool              IsPersisting(void) const" in AUTOPSY_SOURCE,
+        "trade autopsy exposes an explicit journal persistence health latch")
+require("bool              WriteHeaderIfNew(void)" in AUTOPSY_SOURCE
+        and "headerWrite>0 && FileSize(m_fileHandle)>0" in AUTOPSY_SOURCE,
+        "new journal header creation must be verified")
+require("if(!m_persistenceHealthy || m_fileHandle==INVALID_HANDLE)" in RECORD_METHOD
+        and "FileWrite(m_fileHandle" in RECORD_METHOD
+        and "FileFlush(m_fileHandle)" in RECORD_METHOD
+        and "fileSizeAfter<=fileSizeBefore" in RECORD_METHOD,
+        "trade journal append and flush are checked before accepting the record")
+require(RECORD_METHOD.index("FileWrite(m_fileHandle")
+        < RECORD_METHOD.index("m_records[m_count] = rec")
+        and RECORD_METHOD.index("FileFlush(m_fileHandle)")
+        < RECORD_METHOD.index("m_records[m_count] = rec")
+        and RECORD_METHOD.index("FileFlush(m_fileHandle)")
+        < RECORD_METHOD.index("AddRiskHistory("),
+        "in-memory and risk-history datasets update only after verified journal append")
+EA_SOURCE = (MQL5_ROOT / "Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(encoding="utf-8")
+ENTRY_METHOD_START = EA_SOURCE.index("bool AxAttemptEntry(")
+ENTRY_METHOD_END = EA_SOURCE.find("\\nbool ", ENTRY_METHOD_START + 10)
+ENTRY_METHOD = EA_SOURCE[ENTRY_METHOD_START:ENTRY_METHOD_END if ENTRY_METHOD_END >= 0 else len(EA_SOURCE)]
+require("if(!g_autopsy.IsPersisting())" in ENTRY_METHOD,
+        "entry funnel blocks new exposure when trade journal persistence is unhealthy")
+require("if(!g_autopsy.IsPersisting() ||" in EA_SOURCE
+        and "final exit persistence is unverified" in EA_SOURCE,
+        "finalization latches recovery when durable journal confirmation fails")
+
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
 
