@@ -18,6 +18,10 @@ Phase 1 output. These documents define what the engine measures, how, from which
 | 12 | [Testing strategy](12-testing-strategy.md) | Unit, replay, leakage, integration, paper-trading gates |
 | 13 | [Known limitations](13-known-limitations.md) | What this system cannot see or cannot yet claim |
 | 14 | [Research hypotheses](14-research-hypotheses.md) | H1 to H10 with test designs and kill criteria |
+| 15 | [Memecoin momentum evidence](15-ssrn-memecoin-momentum-evidence.md) | What existing research supports and does not support |
+| 16 | [Point-in-time memecoin evaluation](16-point-in-time-memecoin-evaluation.md) | Three clocks, chronology, decision-time admissibility |
+| 17 | [Three-clock point-in-time contract](17-three-clock-point-in-time-contract.md) | Immutable envelopes, chain ordering, deterministic snapshots |
+| 18 | [Canonical observation adapter](18-canonical-observation-point-in-time-adapter.md) | Mapping Phase 3A observations into the three-clock contract |
 
 ## Status
 
