@@ -24,11 +24,12 @@ private:
    bool              m_riskPartial[];
    string            m_riskProvenance[];
    int               m_riskCount;
+   bool              m_persistenceHealthy;
 
-   void              WriteHeaderIfNew(void)
+   bool              WriteHeaderIfNew(void)
      {
-      if(FileSize(m_fileHandle)>0) return;
-      FileWrite(m_fileHandle,
+      if(FileSize(m_fileHandle)>0) return(true);
+      uint headerWrite=FileWrite(m_fileHandle,
                 "SetupId","Ticket","DealIdIn","DealIdOut","EntryTime","ExitTime","Direction","EntryPrice",
                 "ExitPrice","Lots","SpreadAtEntry","SlippagePts","HoldSeconds","BuyScore","SellScore",
                 "Confidence","Regime","EntryReason","ExitReason","MFE","MAE","GrossProfit","Commission","Swap",
@@ -36,6 +37,8 @@ private:
                 "AfeCapitalState","AfeRiskOfRuinPct","AfeExpectedValueR","AfeWinProbability","AfeRiskMultiplier",
                 "ImpactCostPct","VWAPState","VPMACDState","OrderFlowState","StructureState","LiquidityState",
                 "NewsState","Session","Provenance","PositionIdentifier");
+      FileFlush(m_fileHandle);
+      return(headerWrite>0 && FileSize(m_fileHandle)>0);
      }
 
    string            ParseCsvField(const string line,const int wantedField) const
@@ -511,10 +514,11 @@ private:
      }
 
 public:
-                     CTradeAutopsy(void) { m_fileHandle=INVALID_HANDLE; m_count=0; m_riskCount=0; }
+                     CTradeAutopsy(void) { m_fileHandle=INVALID_HANDLE; m_count=0; m_riskCount=0; m_persistenceHealthy=false; }
 
    bool              Init(const string eaName,const string symbol)
      {
+      m_persistenceHealthy=false;
       m_digits = (int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
       //--- v4 retains the 44-column schema and gives R-multiple an explicit EMPTY_VALUE sentinel.
       //--- v3 rows are read as legacy history, but ambiguous zero-R rows are excluded safely.
@@ -523,7 +527,11 @@ public:
       m_fileHandle = FileOpen(m_fileName,FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ,',');
       if(m_fileHandle==INVALID_HANDLE) return(false);
       FileSeek(m_fileHandle,0,SEEK_END);
-      WriteHeaderIfNew();
+      if(!WriteHeaderIfNew())
+        {
+         FileClose(m_fileHandle); m_fileHandle=INVALID_HANDLE;
+         return(false);
+        }
       ArrayResize(m_records,0);
       m_count=0;
       if(!LoadRiskHistory() || !LoadTradeRecords())
@@ -531,6 +539,7 @@ public:
          FileClose(m_fileHandle); m_fileHandle=INVALID_HANDLE;
          return(false);
         }
+      m_persistenceHealthy=true;
       return(true);
      }
 
@@ -586,22 +595,23 @@ public:
       if(rec.dealIdOut>0 && rec.positionIdentifier>0 && rec.dealIdOut<=LastAccountedDealTicket(rec.positionIdentifier))
          return(rec.tradeClass);
 
-      if(m_count<AX_AUTOPSY_MAX_MEMORY)
+      // Fail closed: a record is not admitted to memory or learning statistics until
+      // the CSV append has succeeded and the terminal has flushed the file handle.
+      if(!m_persistenceHealthy || m_fileHandle==INVALID_HANDLE)
         {
-         ArrayResize(m_records,m_count+1);
-         m_records[m_count] = rec;
-         m_count++;
-        }
-      else
-        {
-         // ring-shift memory buffer once capacity is reached; file remains the full record
-         for(int i=1;i<AX_AUTOPSY_MAX_MEMORY;i++) m_records[i-1]=m_records[i];
-         m_records[AX_AUTOPSY_MAX_MEMORY-1]=rec;
+         m_persistenceHealthy=false;
+         Print("AUTOPSY JOURNAL ERROR: persistence unavailable; trade record rejected from in-memory learning data.");
+         return(rec.tradeClass);
         }
 
-      if(m_fileHandle!=INVALID_HANDLE)
+      if(!FileSeek(m_fileHandle,0,SEEK_END))
         {
-         uint writeResult=FileWrite(m_fileHandle,
+         m_persistenceHealthy=false;
+         PrintFormat("AUTOPSY JOURNAL ERROR: seek-to-end failed (%d); trade record not admitted.",GetLastError());
+         return(rec.tradeClass);
+        }
+      ulong fileSizeBefore=FileSize(m_fileHandle);
+      uint writeResult=FileWrite(m_fileHandle,
                    rec.setupId,rec.ticket,rec.dealIdIn,rec.dealIdOut,
                    TimeToString(rec.entryTime,TIME_DATE|TIME_SECONDS),
                    TimeToString(rec.exitTime,TIME_DATE|TIME_SECONDS),AxDirToString(rec.direction),
@@ -621,7 +631,27 @@ public:
                    rec.vwapStateAtEntry,rec.vpMacdStateAtEntry,rec.orderFlowStateAtEntry,
                    rec.structureStateAtEntry,rec.liquidityStateAtEntry,rec.newsStateAtEntry,
                    rec.sessionAtEntry,AxProvenanceToString(rec.provenance),rec.positionIdentifier);
-         FileFlush(m_fileHandle);
+      FileFlush(m_fileHandle);
+      ulong fileSizeAfter=FileSize(m_fileHandle);
+      if(writeResult==0 || fileSizeAfter<=fileSizeBefore)
+        {
+         m_persistenceHealthy=false;
+         PrintFormat("AUTOPSY JOURNAL ERROR: CSV append/flush could not be verified (write=%u before=%I64u after=%I64u). New entries must remain blocked.",
+                     writeResult,fileSizeBefore,fileSizeAfter);
+         return(rec.tradeClass);
+        }
+
+      if(m_count<AX_AUTOPSY_MAX_MEMORY)
+        {
+         ArrayResize(m_records,m_count+1);
+         m_records[m_count] = rec;
+         m_count++;
+        }
+      else
+        {
+         // ring-shift memory buffer once capacity is reached; file remains the full record
+         for(int i=1;i<AX_AUTOPSY_MAX_MEMORY;i++) m_records[i-1]=m_records[i];
+         m_records[AX_AUTOPSY_MAX_MEMORY-1]=rec;
         }
 
       AddRiskHistory(rec.netProfit,rec.rMultiple,rec.isPartial,AxProvenanceToString(rec.provenance));
@@ -689,6 +719,7 @@ public:
       return(true);
      }
    string            FileName(void) const { return(m_fileName); }
+   bool              IsPersisting(void) const { return(m_persistenceHealthy && m_fileHandle!=INVALID_HANDLE); }
 
    //--- adaptive learning dataset access (spec section 29). Callers doing adaptive tuning/learning ---
    //--- go through this rather than reading records directly, so historical/forward-demo/live data ---
