@@ -616,10 +616,11 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
    rec.positionIdentifier=g_positionIdentifier;
 
    g_autopsy.RecordTrade(rec);
-   if(lastDealTicket>0 && g_autopsy.LastAccountedDealTicket(g_positionIdentifier)<lastDealTicket)
+   if(!g_autopsy.IsPersisting() ||
+      (lastDealTicket>0 && g_autopsy.LastAccountedDealTicket(g_positionIdentifier)<lastDealTicket))
      {
       g_recoveryReady=false;
-      Print("FLIPDEMON JOURNAL ERROR: final exit was not confirmed in the durable journal; new entries blocked.");
+      Print("FLIPDEMON JOURNAL ERROR: final exit persistence is unverified; existing positions remain managed, new entries blocked.");
      }
    else if(lastDealTicket>0 && g_autopsy.LastAccountedDealTicket(g_positionIdentifier)>=lastDealTicket &&
            g_tradeLifecycle.SetupId()==g_posState.setupId)
@@ -1969,6 +1970,13 @@ void AxCountAccountExposure(int &positionsOut,double &grossLotsOut)
 
 bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSeq,const string tag)
   {
+   if(!g_autopsy.IsPersisting())
+     {
+      g_recoveryReady=false;
+      if(InpVerboseLogging) Print("FLIPDEMON JOURNAL: new entry blocked; trade journal is not verified as persistent.");
+      return(false);
+     }
+
    // A post-fill exposure breach latches entries until a fresh broker scan proves
    // A distributed reservation left by a prior terminal session is unresolved.
    // Existing positions continue to be managed, but no fresh entry or pyramid add is allowed.
