@@ -728,5 +728,34 @@ require("if(!g_autopsy.IsPersisting() ||" in EA_SOURCE
         and "final exit persistence is unverified" in EA_SOURCE,
         "finalization latches recovery when durable journal confirmation fails")
 
+
+VOLATILITY = MQL5_ROOT / "Include/AutopsyX/VolatilityEngine.mqh"
+REGIME_INTEL = MQL5_ROOT / "Include/AutopsyX/RegimeIntelligenceEngine.mqh"
+REGIME_CLASSIFIER = MQL5_ROOT / "Include/AutopsyX/RegimeClassifierEngine.mqh"
+for path in (VOLATILITY, REGIME_INTEL, REGIME_CLASSIFIER):
+    require(path.is_file(), f"regime research source exists: {path.relative_to(ROOT)}")
+VOLATILITY_SOURCE = VOLATILITY.read_text(encoding="utf-8")
+REGIME_INTEL_SOURCE = REGIME_INTEL.read_text(encoding="utf-8")
+REGIME_CLASSIFIER_SOURCE = REGIME_CLASSIFIER.read_text(encoding="utf-8")
+require("CopyBuffer(m_atrHandle,0,1,need,atrBuf)" in VOLATILITY_SOURCE,
+        "volatility percentile and shock calculations use completed ATR bars only")
+require("#include <AutopsyX/RegimeClassifierEngine.mqh>" in EA_SOURCE
+        and "CRegimeClassifierEngine g_regimeClassifier;" in EA_SOURCE
+        and "CVolatilityEngine g_volatility;" in EA_SOURCE,
+        "existing volatility and directional regime engines are connected to the EA")
+require("g_regimeIntelligence.Sample(" in EA_SOURCE
+        and "g_regimeClassifier.Sample(" in EA_SOURCE
+        and "g_regime.Update();" in EA_SOURCE,
+        "regime intelligence is sampled after the base regime update on the new-bar path")
+require("InpEnableRegimeClassificationAnalysis" in EA_SOURCE
+        and "never gates orders" in EA_SOURCE
+        and "AxAttemptEntry(" in EA_SOURCE,
+        "new regime classifier is explicitly analysis-only and does not replace execution eligibility")
+require("g_volatilityReady && g_volatility.CurrentAtr()>0.0" in EA_SOURCE
+        and "g_regimeClassification.dataQualityOk" in EA_SOURCE,
+        "missing volatility history marks the research classification unavailable")
+require("g_volatility.Deinit();" in EA_SOURCE and "g_macroRegime.Deinit();" in EA_SOURCE,
+        "new regime research resources are released during deinitialization")
+
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
 
