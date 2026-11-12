@@ -30,10 +30,10 @@ def test_adapter_preserves_three_clocks_and_raw_provenance():
     assert event.slot is None  # partial transaction lineage is not fabricated
 
 
-def test_adapter_uses_observation_time_when_source_time_was_not_supplied():
+def test_adapter_rejects_missing_provider_event_time():
     record = sample_observation(source_ts=None, source_ts_state=Availability.NOT_OBSERVED)
-    event = adapt_observation(record, feature_ready_ts=1_250)
-    assert event.event_ts == record.observation_ts
+    with pytest.raises(ValueError, match="source event timestamp is required"):
+        adapt_observation(record, feature_ready_ts=1_250)
 
 
 def test_adapter_event_id_is_stable_and_tracks_raw_provenance():
@@ -42,7 +42,7 @@ def test_adapter_event_id_is_stable_and_tracks_raw_provenance():
     assert observation_event_id(record) != observation_event_id(replace(record, raw_id="sha256:corrected"))
 
 
-def test_adapter_requires_real_payload_hash():
+def test_adapter_requires_real_payload_provenance():
     with pytest.raises(ValueError, match="raw_id is required"):
         adapt_observation(sample_observation(raw_id=None), feature_ready_ts=1_250)
 
