@@ -720,7 +720,7 @@ require(RECORD_METHOD.index("FileWrite(m_fileHandle")
         "in-memory and risk-history datasets update only after verified journal append")
 EA_SOURCE = (MQL5_ROOT / "Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(encoding="utf-8")
 ENTRY_METHOD_START = EA_SOURCE.index("bool AxAttemptEntry(")
-ENTRY_METHOD_END = EA_SOURCE.find("\\nbool ", ENTRY_METHOD_START + 10)
+ENTRY_METHOD_END = EA_SOURCE.find("\nbool ", ENTRY_METHOD_START + 10)
 ENTRY_METHOD = EA_SOURCE[ENTRY_METHOD_START:ENTRY_METHOD_END if ENTRY_METHOD_END >= 0 else len(EA_SOURCE)]
 require("if(!g_autopsy.IsPersisting())" in ENTRY_METHOD,
         "entry funnel blocks new exposure when trade journal persistence is unhealthy")
