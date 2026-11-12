@@ -20,6 +20,10 @@
 #include <AutopsyX/Microstructure.mqh>
 #include <AutopsyX/Liquidity.mqh>
 #include <AutopsyX/Regime.mqh>
+#include <AutopsyX/MacroRegime.mqh>
+#include <AutopsyX/VolatilityEngine.mqh>
+#include <AutopsyX/RegimeIntelligenceEngine.mqh>
+#include <AutopsyX/RegimeClassifierEngine.mqh>
 #include <AutopsyX/StructureEngine.mqh>
 #include <AutopsyX/CompositeDirection.mqh>
 #include <AutopsyX/VPMACD.mqh>
@@ -231,6 +235,14 @@ input bool            InpCloseAllOnKill         = true;      // Close open posit
 input bool            InpVerboseLogging         = false;     // Verbose diagnostic logging (keep off live)
 input int             InpMaxConsecutiveExecFailures = 3;     // Consecutive execution failures before auto-kill
 
+input group "=== REGIME INTELLIGENCE (ANALYSIS ONLY) ===";
+input bool            InpEnableRegimeClassificationAnalysis = true; // Observe R1-R8 classifications; never gates orders
+input string          InpMacroReferenceSymbol = ""; // Optional broker-specific cross-asset symbol; blank means unavailable
+input int             InpRegimePersistenceBars = 5; // Completed bars required before a trend is called persistent
+input double          InpRegimePersistenceStability = 70.0; // Direction-sign stability floor, percent
+input double          InpRegimePersistenceMomentum = 0.70; // Existing momentum persistence floor
+input double          InpRegimeShockAccelPct = 60.0; // ATR acceleration threshold for volatility-shock classification
+
 //====================================================================
 // GLOBAL ENGINE OBJECTS
 //====================================================================
@@ -240,6 +252,14 @@ CMicrostructureEngine g_micro;
 CLiquidityEngine      g_liq;
 CRegimeEngine         g_regime;
 CRegimeEngine         g_regimeHtf;
+CMacroRegimeEngine    g_macroRegime;
+CVolatilityEngine     g_volatility;
+CRegimeIntelligenceEngine g_regimeIntelligence;
+CRegimeClassifierEngine g_regimeClassifier;
+SAxRegimeIntelligence g_regimeIntelSnapshot;
+SAxRegimeClassification g_regimeClassification;
+bool                  g_volatilityReady = false;
+bool                  g_regimeClassificationAvailable = false;
 CStructureEngine      g_structure;
 CCompositeDirectionEngine g_compositeDirection;
 CVPMACDEngine         g_vpMacd;
@@ -3326,6 +3346,18 @@ int OnInit(void)
       Print("AUTOPSY X: failed to initialize HTF regime engine (ATR handle)");
       return(INIT_FAILED);
      }
+   if(InpEnableRegimeClassificationAnalysis)
+     {
+      g_macroRegime.Configure(60.0,40.0,20,PERIOD_M5,50.0);
+      g_regimeIntelligence.Configure(20);
+      g_regimeClassifier.Configure(InpRegimePersistenceBars,InpRegimePersistenceStability,
+                                   InpRegimePersistenceMomentum,2.0);
+      g_volatility.Configure(20.0,80.0,95.0,InpRegimeShockAccelPct);
+      g_volatilityReady = g_volatility.Init(_Symbol,InpRegimeTimeframe,
+                                             AX_VOL_ATR_PERIOD_DEFAULT,100);
+      if(!g_volatilityReady)
+         Print("FLIPDEMON REGIME RESEARCH: volatility ATR handle unavailable; R1-R8 output will remain unavailable and order flow is unchanged.");
+     }
    if(!g_structure.Init(_Symbol,InpRegimeTimeframe,300))
      {
       Print("AUTOPSY X: failed to initialize closed-bar structure engine");
@@ -3538,6 +3570,8 @@ void OnDeinit(const int reason)
    g_autopsy.Deinit();
    g_regime.Deinit();
    g_regimeHtf.Deinit();
+   g_volatility.Deinit();
+   g_macroRegime.Deinit();
    g_heatmap.Deinit();
    g_pyramidEngine.Release();
    g_pyramidCampaignRegistry.Deinit();
@@ -3732,6 +3766,33 @@ void OnTick(void)
       isNewBarThisTick = true;
       g_lastBarTime = barTime;
       g_regime.Update();
+      if(InpEnableRegimeClassificationAnalysis)
+        {
+         if(g_volatilityReady) g_volatility.Update();
+         bool intelSampled = g_regimeIntelligence.Sample(_Symbol,InpRegimeTimeframe,
+                                                         g_regime,g_macroRegime,
+                                                         InpMacroReferenceSymbol,g_regimeIntelSnapshot);
+         if(intelSampled)
+           {
+            bool regimeDataReady = g_volatilityReady && g_volatility.CurrentAtr()>0.0
+                                   && g_regime.CurrentAtr()>0.0;
+            string regimeDataReason = regimeDataReady ? "" : "Volatility or base-regime history unavailable";
+            if(g_regimeClassifier.Sample(_Symbol,InpRegimeTimeframe,regimeDataReady,
+                                         regimeDataReason,g_regime,g_volatility,g_mom,
+                                         g_regimeIntelSnapshot,g_regimeClassification))
+              {
+               g_regimeClassificationAvailable = g_regimeClassification.dataQualityOk;
+               if(InpVerboseLogging)
+                  PrintFormat("FLIPDEMON REGIME RESEARCH: %s | confidence=%.1f | age=%d bars | transition=%s | macro=%s | evidence=%s",
+                              AxRegimeClassToString(g_regimeClassification.regime),
+                              g_regimeClassification.regimeConfidence,
+                              g_regimeClassification.regimeAgeBars,
+                              g_regimeClassification.transitionDetected ? g_regimeClassification.transitionDescription : "NONE",
+                              g_regimeIntelSnapshot.macroDataAvailable ? "AVAILABLE" : "UNAVAILABLE",
+                              g_regimeClassification.dataQualityOk ? "VALID" : g_regimeClassification.dataQualityReason);
+              }
+           }
+        }
       g_structure.Update();
       g_vpMacd.Update();
       g_liq.RefreshLevels();
