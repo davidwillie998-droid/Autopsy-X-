@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 
-from ..core.observation import Observation
+from ..core.observation import Availability, Observation
 from .point_in_time import EventEnvelope
 
 
@@ -37,8 +37,10 @@ def adapt_observation(record: Observation, *, feature_ready_ts: int) -> EventEnv
     """
     if not isinstance(record, Observation):
         raise TypeError("record must be a canonical Observation")
-    if not isinstance(feature_ready_ts, int):
+    if type(feature_ready_ts) is not int:
         raise TypeError("feature_ready_ts must be integer milliseconds")
+    if (record.source_ts is None) != (record.source_ts_state != Availability.OBSERVED):
+        raise ValueError("source_ts and source_ts_state disagree")
     if not record.raw_id:
         raise ValueError("observation raw_id is required for point-in-time provenance")
     event_ts = record.source_ts if record.source_ts is not None else record.observation_ts
