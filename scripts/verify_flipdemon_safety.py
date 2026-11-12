@@ -666,5 +666,33 @@ for source_path, source in source_text.items():
         require("IndicatorRelease(" in source,
                 f"iMA handle has an IndicatorRelease lifecycle: {relative}")
 
+
+# Isolated MQL5 journal recovery harness: source contract only. The script
+# itself must be run in a MetaTrader 5 terminal to exercise FileOpen/FileRead.
+JOURNAL_HARNESS = ROOT / "MQL5/Scripts/AutopsyX/JournalRecoveryTest.mq5"
+require(JOURNAL_HARNESS.is_file(), "standalone MQL5 journal recovery harness exists")
+journal_harness = JOURNAL_HARNESS.read_text(encoding="utf-8")
+require('#include <AutopsyX/TradeAutopsy.mqh>' in journal_harness
+        and "CTradeAutopsy autopsy;" in journal_harness
+        and "autopsy.Init(eaName,symbol)" in journal_harness,
+        "journal harness exercises the production CTradeAutopsy loader")
+require("TradeAutopsy_v3.csv" in journal_harness
+        and "TradeAutopsy_v4.csv" in journal_harness
+        and "MakeTradeRow(1001,7001" in journal_harness,
+        "journal harness covers both schema versions and cross-version deal duplication")
+require("MakeTradeRow(1002,7001,\"FORWARD_DEMO\",true" in journal_harness
+        and "MakeTradeRow(1003,7002,\"UNKNOWN\",false" in journal_harness
+        and "MakeTradeRow(1004,7003,\"FORWARD_DEMO\",false,\"1.000\",\"BROKEN\")" in journal_harness,
+        "journal fixtures include partial, unknown-provenance and malformed numeric rows")
+require("autopsy.Count()==3" in journal_harness
+        and "record.rMultiple==EMPTY_VALUE" in journal_harness
+        and "record.isPartial" in journal_harness
+        and "forwardCount==1" in journal_harness,
+        "journal harness asserts recovery count, legacy zero-R, partial preservation and dataset exclusion")
+require("CTrade" not in journal_harness.replace("CTradeAutopsy","")
+        and "OrderSend(" not in journal_harness
+        and "PositionOpen(" not in journal_harness,
+        "journal recovery harness contains no broker order-submission path")
+
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
 
