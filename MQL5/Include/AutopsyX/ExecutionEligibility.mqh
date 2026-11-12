@@ -121,11 +121,20 @@ public:
          reasonOut=StringFormat("R:R %.2f below minimum %.2f",thesis.initialRR,m_minRR);
          return(AX_NOT_ELIGIBLE);
         }
-      if(thesis.expectedValueR<m_minExpectedValueR)
+      //--- EV is a measured setup-level input, not a neutral default. NaN/INF means the
+      //--- estimator did not produce a usable observation. Zero or negative EV is not proof
+      //--- of an edge, even when the configured minimum is zero. No score or risk setting
+      //--- may override this thesis-quality gate.
+      if(!MathIsValidNumber(thesis.expectedValueR))
         {
-         reasonOut=StringFormat("Expected value %.3fR below minimum %.3fR",
+         reasonOut="Setup expected value is unavailable or non-finite";
+         return(AX_ELIGIBILITY_DATA_UNAVAILABLE);
+        }
+      if(thesis.expectedValueR<=m_minExpectedValueR)
+        {
+         reasonOut=StringFormat("Expected value %.3fR does not exceed minimum %.3fR",
                                  thesis.expectedValueR,m_minExpectedValueR);
-         return(AX_NOT_ELIGIBLE);
+         return(AX_ELIGIBILITY_INSUFFICIENT_EVIDENCE);
         }
 
       //--- 6. news defense: BLOCK is already funneled through compositeDirection==BLOCKED above -  ---
