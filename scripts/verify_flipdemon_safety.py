@@ -19,6 +19,7 @@ PYRAMID_CAMPAIGN = ROOT / "MQL5/Include/AutopsyX/PyramidCampaignRegistry.mqh"
 DISTRIBUTED = ROOT / "MQL5/Include/AutopsyX/DistributedRiskCoordinator.mqh"
 REGIME = ROOT / "MQL5/Include/AutopsyX/Regime.mqh"
 README = ROOT / "MQL5/README.md"
+EXEC_ELIGIBILITY = ROOT / "MQL5/Include/AutopsyX/ExecutionEligibility.mqh"
 AUTOPSY = ROOT / "MQL5/Include/AutopsyX/TradeAutopsy.mqh"
 
 def require(condition: bool, message: str) -> None:
@@ -39,8 +40,19 @@ pyramid_campaign = PYRAMID_CAMPAIGN.read_text(encoding="utf-8")
 distributed = DISTRIBUTED.read_text(encoding="utf-8")
 regime = REGIME.read_text(encoding="utf-8")
 readme = README.read_text(encoding="utf-8")
+execution_eligibility = EXEC_ELIGIBILITY.read_text(encoding="utf-8")
 
 require("#property strict" in ea, "MQL5 strict mode is enabled")
+require(EXEC_ELIGIBILITY.is_file(), "execution eligibility source exists")
+require("if(!MathIsValidNumber(thesis.expectedValueR))" in execution_eligibility
+        and "return(AX_ELIGIBILITY_DATA_UNAVAILABLE);" in execution_eligibility,
+        "non-finite or unavailable setup expectancy fails closed")
+require("if(thesis.expectedValueR<=m_minExpectedValueR)" in execution_eligibility
+        and "return(AX_ELIGIBILITY_INSUFFICIENT_EVIDENCE);" in execution_eligibility,
+        "zero or below-threshold setup expectancy cannot pass execution eligibility")
+require("executionThesis.expectedValueR=0.0;" in ea
+        and "No calibrated per-setup EV estimator is wired into this path yet." in ea,
+        "un calibrated live-path expectancy remains explicitly unavailable until a measured estimator is wired")
 require("CopyBuffer(m_atrHandle,0,1,need,atrBuf)" in regime
         and "int need = AX_REGIME_ATR_LOOKBACK+1" in regime,
         "regime ATR uses the latest completed bar and a separate prior-bar reference window")
