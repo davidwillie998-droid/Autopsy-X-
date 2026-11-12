@@ -131,15 +131,44 @@ private:
       StringTrimRight(token);
       int n=StringLen(token);
       if(n<=0) return(false);
-      bool digit=false;
-      for(int i=0;i<n;i++)
+      int i=0;
+      if(StringGetCharacter(token,i)==43 || StringGetCharacter(token,i)==45) i++;
+      int integerDigits=0;
+      while(i<n)
         {
          ushort ch=StringGetCharacter(token,i);
-         if(ch>=48 && ch<=57) { digit=true; continue; }
-         if(ch==43 || ch==45 || ch==46 || ch==69 || ch==101) continue;
-         return(false);
+         if(ch<48 || ch>57) break;
+         integerDigits++;
+         i++;
         }
-      if(!digit) return(false);
+      int fractionalDigits=0;
+      if(i<n && StringGetCharacter(token,i)==46)
+        {
+         i++;
+         while(i<n)
+           {
+            ushort ch=StringGetCharacter(token,i);
+            if(ch<48 || ch>57) break;
+            fractionalDigits++;
+            i++;
+           }
+        }
+      if(integerDigits==0 && fractionalDigits==0) return(false);
+      if(i<n && (StringGetCharacter(token,i)==69 || StringGetCharacter(token,i)==101))
+        {
+         i++;
+         if(i<n && (StringGetCharacter(token,i)==43 || StringGetCharacter(token,i)==45)) i++;
+         int exponentDigits=0;
+         while(i<n)
+           {
+            ushort ch=StringGetCharacter(token,i);
+            if(ch<48 || ch>57) break;
+            exponentDigits++;
+            i++;
+           }
+         if(exponentDigits==0) return(false);
+        }
+      if(i!=n) return(false);
       value=StringToDouble(token);
       return(MathIsValidNumber(value));
      }
@@ -159,6 +188,15 @@ private:
       if(parsed<0) return(false);
       value=(ulong)parsed;
       return(true);
+     }
+
+   bool              ParseBooleanField(const string value,bool &out) const
+     {
+      if(value=="1" || value=="true" || value=="TRUE" || value=="yes" || value=="YES")
+        { out=true; return(true); }
+      if(value=="0" || value=="false" || value=="FALSE" || value=="no" || value=="NO")
+        { out=false; return(true); }
+      return(false);
      }
 
    bool              ParseDirectionField(const string value,ENUM_AX_DIR &out) const
@@ -245,8 +283,8 @@ private:
                                               SAxTradeRecord &rec) const
      {
       if(ArraySize(fields)!=44) return(false);
-      double values[20];
-      int numericIndexes[20]={7,8,9,10,11,13,14,15,19,20,21,22,23,24,30,31,32,33,34,0};
+      double values[19];
+      int numericIndexes[19]={7,8,9,10,11,13,14,15,19,20,21,22,23,24,30,31,32,33,34};
       for(int i=0;i<19;i++)
          if(!ParseFiniteNumber(fields[numericIndexes[i]],values[i])) return(false);
 
@@ -262,6 +300,9 @@ private:
       if(holdValue<0.0 || holdValue>2147483647.0 ||
          MathFloor(holdValue)!=holdValue || flipValue<0.0 ||
          flipValue>2147483647.0 || MathFloor(flipValue)!=flipValue) return(false);
+
+      bool isPartial=false;
+      if(!ParseBooleanField(fields[28],isPartial)) return(false);
 
       ENUM_AX_DIR direction;
       ENUM_AX_REGIME regime;
@@ -314,7 +355,7 @@ private:
       rec.rMultiple=rMultiple;
       rec.tradeClass=tradeClass;
       rec.flipSeq=(int)flipValue;
-      rec.isPartial=ParseCsvBoolean(fields[28]);
+      rec.isPartial=isPartial;
       rec.afeCapitalState=capitalState;
       rec.afeRiskOfRuinPct=values[14];
       rec.afeExpectedValueR=values[15];
