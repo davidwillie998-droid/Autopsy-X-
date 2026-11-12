@@ -72,6 +72,7 @@ def validate_contract(
     issues: list[ContractIssue] = []
     seen_ids: set[str] = set()
     lineage_keys: set[tuple[str, int, int, int, int]] = set()
+    lineage_modes: dict[str, set[bool]] = {}
 
     for event in event_rows:
         if not event.chain:
@@ -100,6 +101,7 @@ def validate_contract(
 
         lineage = tuple(getattr(event, field) for field in _LINEAGE_FIELDS)
         present = tuple(value is not None for value in lineage)
+        lineage_modes.setdefault(event.chain, set()).add(all(present))
         if any(present) and not all(present):
             issues.append(ContractIssue("INCOMPLETE_CHAIN_ORDER", event.event_id,
                                          "slot and all transaction/instruction indices must be present together"))
@@ -113,6 +115,11 @@ def validate_contract(
                     issues.append(ContractIssue("DUPLICATE_CHAIN_ORDER", event.event_id,
                                                 "chain lineage tuple must be unique within a snapshot"))
                 lineage_keys.add(scoped_lineage)
+
+    for chain, modes in lineage_modes.items():
+        if len(modes) > 1:
+            issues.append(ContractIssue("MIXED_CHAIN_ORDER_COVERAGE", chain,
+                                         "all events for a chain must use lineage ordering or timestamp fallback consistently"))
 
     event_by_id = {event.event_id: event for event in event_rows}
     feature_names: set[str] = set()
@@ -129,6 +136,9 @@ def validate_contract(
         if not feature.version:
             issues.append(ContractIssue("MISSING_FEATURE_VERSION", feature.name,
                                          "feature version is required"))
+        if not feature.source_event_ids:
+            issues.append(ContractIssue("FEATURE_WITHOUT_SOURCES", feature.name,
+                                         "feature provenance must reference at least one source event"))
         for event_id in feature.source_event_ids:
             source = event_by_id.get(event_id)
             if source is None:
