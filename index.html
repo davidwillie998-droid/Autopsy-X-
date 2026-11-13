@@ -1607,7 +1607,7 @@ function disconnectBridge(){
 async function pollBridgeOnce(){
   if(!bridge.connected) return;
   try{
-    const res=await fetch(bridge.url+'/state');
+    const res=await fetch(bridge.url+'/state',{headers:{'x-bridge-key':bridge.key}});
     if(!res.ok) throw new Error('status '+res.status);
     const state=await res.json();
     bridge.lastState=state;
