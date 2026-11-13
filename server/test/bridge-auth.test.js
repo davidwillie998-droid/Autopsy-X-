@@ -118,3 +118,20 @@ test('/analyze rejects a missing key before attempting an upstream API call', as
     await bridge.close();
   }
 });
+test('/analyze accepts the configured key before checking upstream credentials', async () => {
+  const key = 'test-bridge-secret-32-characters-minimum';
+  const bridge = await startBridge({ bridgeKey: key });
+  try {
+    const response = await fetch(`${bridge.baseUrl}/analyze`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-bridge-key': key },
+      body: JSON.stringify({ system: 'test', prompt: 'test' }),
+    });
+    // The test process deliberately has no Anthropic key. Reaching this
+    // response proves bridge authentication passed before upstream handling.
+    assert.equal(response.status, 500);
+    assert.match((await response.json()).error, /no ANTHROPIC_API_KEY/i);
+  } finally {
+    await bridge.close();
+  }
+});
