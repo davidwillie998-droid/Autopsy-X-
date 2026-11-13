@@ -44,7 +44,7 @@ private:
       if(count!=AX_REGIME_JOURNAL_FIELDS) return(false);
 
       long stamp=StringToInteger(fields[0]);
-      if(stamp<=0 || fields[1]!=m_symbol) return(false);
+      if(stamp<=0 || fields[1]!=SafeSymbol(m_symbol)) return(false);
       if(StringToInteger(fields[2])!=(long)m_timeframe) return(false);
 
       long quality=StringToInteger(fields[3]);
