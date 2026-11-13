@@ -135,3 +135,31 @@ test('/analyze accepts the configured key before checking upstream credentials',
     await bridge.close();
   }
 });
+test('/state rejects requests without the bridge key', async () => {
+  const key = 'test-bridge-secret-32-characters-minimum';
+  const bridge = await startBridge({ bridgeKey: key });
+  try {
+    const response = await fetch(`${bridge.baseUrl}/state`);
+    assert.equal(response.status, 401);
+  } finally {
+    await bridge.close();
+  }
+});
+
+test('/state returns account state only with the configured bridge key', async () => {
+  const key = 'test-bridge-secret-32-characters-minimum';
+  const bridge = await startBridge({ bridgeKey: key });
+  try {
+    const response = await fetch(`${bridge.baseUrl}/state`, {
+      headers: { 'x-bridge-key': key },
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      symbols: {},
+      account: null,
+      staleness_ms: null,
+    });
+  } finally {
+    await bridge.close();
+  }
+});
