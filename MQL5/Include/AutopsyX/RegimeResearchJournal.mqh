@@ -222,6 +222,7 @@ public:
 
    datetime          LastTimestamp(void) const { return(m_lastTimestamp); }
    int               RowsWritten(void) const { return(m_rowsWritten); }
+   string            FileName(void) const { return(m_fileName); }
 
    void              Deinit(void)
      {
