@@ -181,7 +181,8 @@ public:
                             const CVolatilityEngine &volatility)
      {
       if(!m_persistenceHealthy || m_handle==INVALID_HANDLE) return(false);
-      if(classification.timestamp<=0 || classification.timestamp<=m_lastTimestamp) return(false);
+      if(classification.timestamp<=0) return(false);
+      if(classification.timestamp<=m_lastTimestamp) return(true); // restart replay: this completed bar is already durable
 
       string payload=StringFormat("%I64d,%s,%d,%d,%d,%.2f,%d,%d,%d,%d,%d,%.10f,%.2f,%.2f,%d,%.2f,%.8f,%.4f\r\n",
                                   (long)classification.timestamp,SafeSymbol(m_symbol),(int)m_timeframe,
@@ -195,7 +196,12 @@ public:
                                   intelligence.macroAgreementScore,baseRegime.Slope(),baseRegime.VolRatio());
       if(m_needsLineBreak) payload="\r\n"+payload;
 
-      FileSeek(m_handle,0,SEEK_END);
+      if(!FileSeek(m_handle,0,SEEK_END))
+        {
+         m_persistenceHealthy=false;
+         PrintFormat("FLIPDEMON REGIME JOURNAL ERROR: cannot seek to append position (error=%d).",GetLastError());
+         return(false);
+        }
       ulong sizeBefore=FileSize(m_handle);
       uint expected=(uint)StringLen(payload);
       uint written=FileWriteString(m_handle,payload);
