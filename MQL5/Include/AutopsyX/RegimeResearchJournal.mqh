@@ -35,6 +35,64 @@ private:
       return(value);
      }
 
+   bool              IsIntegerToken(const string value) const
+     {
+      int length=StringLen(value);
+      if(length<=0) return(false);
+      int index=0;
+      ushort ch=StringGetCharacter(value,index);
+      if(ch=='+' || ch=='-') index++;
+      if(index>=length) return(false);
+      for(;index<length;index++)
+        {
+         ch=StringGetCharacter(value,index);
+         if(ch<'0' || ch>'9') return(false);
+        }
+      return(true);
+     }
+
+   bool              IsDecimalToken(const string value) const
+     {
+      int length=StringLen(value);
+      if(length<=0) return(false);
+      int index=0;
+      ushort ch=StringGetCharacter(value,index);
+      if(ch=='+' || ch=='-') index++;
+      bool mantissaDigit=false;
+      bool decimalSeen=false;
+      bool exponentSeen=false;
+      bool exponentDigit=false;
+      for(;index<length;index++)
+        {
+         ch=StringGetCharacter(value,index);
+         if(ch>='0' && ch<='9')
+           {
+            if(exponentSeen) exponentDigit=true;
+            else mantissaDigit=true;
+            continue;
+           }
+         if(ch=='.' && !decimalSeen && !exponentSeen)
+           {
+            decimalSeen=true;
+            continue;
+           }
+         if((ch=='e' || ch=='E') && !exponentSeen && mantissaDigit)
+           {
+            exponentSeen=true;
+            if(index+1<length)
+              {
+               ushort next=StringGetCharacter(value,index+1);
+               if(next=='+' || next=='-') index++;
+              }
+            continue;
+           }
+         return(false);
+        }
+      if(!mantissaDigit) return(false);
+      if(exponentSeen && !exponentDigit) return(false);
+      return(true);
+     }
+
    bool              ValidateRow(const string line,datetime &timestampOut) const
      {
       timestampOut=0;
@@ -42,6 +100,12 @@ private:
       ushort separator=StringGetCharacter(",",0);
       int count=StringSplit(line,separator,fields);
       if(count!=AX_REGIME_JOURNAL_FIELDS) return(false);
+      int integerFields[]={0,2,3,4,6,7,8,9,10,14};
+      for(int i=0;i<ArraySize(integerFields);i++)
+         if(!IsIntegerToken(fields[integerFields[i]])) return(false);
+      int decimalFields[]={5,11,12,13,15,16,17};
+      for(int i=0;i<ArraySize(decimalFields);i++)
+         if(!IsDecimalToken(fields[decimalFields[i]])) return(false);
 
       long stamp=StringToInteger(fields[0]);
       if(stamp<=0 || fields[1]!=SafeSymbol(m_symbol)) return(false);
