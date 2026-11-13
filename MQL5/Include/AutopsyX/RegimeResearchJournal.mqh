@@ -294,6 +294,10 @@ public:
    int               RowsWritten(void) const { return(m_rowsWritten); }
    string            FileName(void) const { return(m_fileName); }
 
+#ifdef AX_REGIME_JOURNAL_TESTING
+   void              TestForcePersistenceFailure(void) { m_persistenceHealthy=false; }
+#endif
+
    void              Deinit(void)
      {
       if(m_handle!=INVALID_HANDLE)
