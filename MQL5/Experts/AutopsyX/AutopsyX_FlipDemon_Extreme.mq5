@@ -4485,8 +4485,13 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
            }
         }
      }
-   else if(trans.order>0 && HistoryOrderSelect(trans.order))
+   else if(trans.type==TRADE_TRANSACTION_HISTORY_ADD &&
+           trans.order>0 && HistoryOrderSelect(trans.order))
      {
+      // HISTORY_ADD is an order-history lifecycle event, not proof of a fill.
+      // It only dirties/reconciles the broker snapshot. Deal tickets remain the
+      // sole source for campaign volume, entry price and realized trade accounting.
+      g_accountRiskReconciliationPending=true;
       symbol=HistoryOrderGetString(trans.order,ORDER_SYMBOL);
       magic=(ulong)HistoryOrderGetInteger(trans.order,ORDER_MAGIC);
       relevant=(symbol==_Symbol && magic==InpMagicNumber);
