@@ -191,3 +191,49 @@ test('dashboard state polling CORS preflight permits the bridge-key header', asy
     await bridge.close();
   }
 });
+test('/state fails closed when BRIDGE_KEY is not configured', async () => {
+  const bridge = await startBridge({ bridgeKey: '' });
+  try {
+    const response = await fetch(`${bridge.baseUrl}/state`);
+    assert.equal(response.status, 503);
+  } finally {
+    await bridge.close();
+  }
+});
+
+test('/state exposes ingested account and tick data only to an authenticated caller', async () => {
+  const key = 'test-bridge-secret-32-characters-minimum';
+  const bridge = await startBridge({ bridgeKey: key });
+  try {
+    const headers = { 'content-type': 'application/json', 'x-bridge-key': key };
+    const tick = await fetch(`${bridge.baseUrl}/ingest/tick`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ symbol: 'XAUUSD', bid: 2345.1, ask: 2345.4 }),
+    });
+    assert.equal(tick.status, 200);
+
+    const account = await fetch(`${bridge.baseUrl}/ingest/account`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ balance: 1000, equity: 995, currency: 'USD' }),
+    });
+    assert.equal(account.status, 200);
+
+    const denied = await fetch(`${bridge.baseUrl}/state`);
+    assert.equal(denied.status, 401);
+
+    const allowed = await fetch(`${bridge.baseUrl}/state`, {
+      headers: { 'x-bridge-key': key },
+    });
+    assert.equal(allowed.status, 200);
+    const state = await allowed.json();
+    assert.equal(state.symbols.XAUUSD.bid, 2345.1);
+    assert.equal(state.symbols.XAUUSD.ask, 2345.4);
+    assert.equal(state.account.balance, 1000);
+    assert.equal(state.account.equity, 995);
+    assert.equal(state.account.currency, 'USD');
+  } finally {
+    await bridge.close();
+  }
+});
