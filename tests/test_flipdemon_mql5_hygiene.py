@@ -286,5 +286,27 @@ class Mql5SourceHygieneTests(unittest.TestCase):
         self.assertIn("EnsurePostFillProtection(symbol,dir,afterTicket,beforeSl,beforeTp", add_body)
 
 
+    def test_trade_autopsy_checks_array_resize_results_and_fails_closed(self):
+        path = MQL_ROOT / "Include" / "AutopsyX" / "TradeAutopsy.mqh"
+        source = self.text[path]
+        bare_calls = re.findall(r"^\\s*ArrayResize\\s*\\([^;]*\\);\\s*$", source, re.MULTILINE)
+        self.assertEqual([], bare_calls, "TradeAutopsy contains unchecked standalone ArrayResize calls")
+        self.assertIn("if(ArrayResize(m_records,m_count+1)!=m_count+1)", source)
+        self.assertIn("m_persistenceHealthy=false;", source)
+        self.assertIn("if(!AddRiskHistory(", source)
+        self.assertIn("if(ArrayResize(out,found+1)!=found+1) return(-1);", source)
+
+    def test_distributed_risk_request_buffer_resize_is_checked(self):
+        path = MQL_ROOT / "Include" / "AutopsyX" / "DistributedRiskCoordinator.mqh"
+        source = self.text[path]
+        self.assertNotRegex(
+            source,
+            r"^\\s*ArrayResize\\s*\\([^;]*\\);\\s*$",
+            "DistributedRiskCoordinator contains an unchecked standalone ArrayResize call",
+        )
+        self.assertIn("if(ArrayResize(requestData,byteCount-1)!=byteCount-1)", source)
+        self.assertIn("DISTRIBUTED_RISK_REQUEST_BUFFER_ALLOCATION_FAILED", source)
+
+
 if __name__ == "__main__":
     unittest.main()
