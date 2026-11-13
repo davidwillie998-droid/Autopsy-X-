@@ -63,7 +63,9 @@ const state = {
 };
 
 function requireBridgeKey(req, res, next) {
-  if (!BRIDGE_KEY) return next(); // dev-mode fallback when no key is configured
+  if (!BRIDGE_KEY) {
+    return res.status(503).json({ error: 'Bridge authentication is not configured. Protected endpoints remain unavailable.' });
+  }
   if (req.get('x-bridge-key') !== BRIDGE_KEY) {
     return res.status(401).json({ error: 'Invalid or missing x-bridge-key header.' });
   }
