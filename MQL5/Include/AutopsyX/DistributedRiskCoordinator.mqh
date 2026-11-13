@@ -152,7 +152,11 @@ private:
          error="DISTRIBUTED_RISK_REQUEST_ENCODING_FAILED";
          return(false);
         }
-      ArrayResize(requestData,byteCount-1);
+      if(ArrayResize(requestData,byteCount-1)!=byteCount-1)
+        {
+         error="DISTRIBUTED_RISK_REQUEST_BUFFER_ALLOCATION_FAILED";
+         return(false);
+        }
 
       char responseData[];
       string responseHeaders;
