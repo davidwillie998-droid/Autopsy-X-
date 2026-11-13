@@ -3368,7 +3368,7 @@ int OnInit(void)
             Print("FLIPDEMON REGIME JOURNAL WARNING: research journal unavailable; regime analysis continues without persistence and trade execution is unchanged.");
          else
             PrintFormat("FLIPDEMON REGIME JOURNAL: ready file=%s last_timestamp=%s",
-                        "AX_RegimeResearch_<symbol>_<timeframe>.csv",
+                        g_regimeJournal.FileName(),
                         g_regimeJournal.LastTimestamp()>0 ? TimeToString(g_regimeJournal.LastTimestamp(),TIME_DATE|TIME_MINUTES) : "NONE");
         }
      }
