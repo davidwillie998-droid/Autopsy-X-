@@ -24,7 +24,7 @@ if (!ANTHROPIC_API_KEY) {
   console.warn('WARNING: ANTHROPIC_API_KEY is not set. /analyze will return an error until it is.');
 }
 if (!BRIDGE_KEY) {
-  console.warn('WARNING: BRIDGE_KEY is not set — /analyze and /ingest/* are UNAUTHENTICATED. Set BRIDGE_KEY before exposing this beyond localhost.');
+  console.warn('WARNING: BRIDGE_KEY is not set — /analyze and /ingest/* will reject requests with HTTP 503 until authentication is configured.');
 }
 
 let riskLedger = null;
