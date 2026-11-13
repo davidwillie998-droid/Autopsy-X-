@@ -80,7 +80,7 @@ app.get('/health', (req, res) => {
 // NOTE: unauthenticated, same as the frontend's current fetch(url + '/state') call —
 // anyone who can reach this bridge can read live prices and account balance/equity.
 // Keep this bound to 127.0.0.1 unless you add auth here and to the frontend's poll call.
-app.get('/state', (req, res) => {
+app.get('/state', requireBridgeKey, (req, res) => {
   const ages = Object.values(state.symbols).map((s) => Date.now() - (s.receivedAt || 0));
   const staleness_ms = ages.length ? Math.min(...ages) : null;
   res.json({ symbols: state.symbols, account: state.account, staleness_ms });
