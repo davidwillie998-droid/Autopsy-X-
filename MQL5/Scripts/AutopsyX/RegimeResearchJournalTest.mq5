@@ -5,6 +5,7 @@
 #property strict
 #property script_show_inputs
 
+#define AX_REGIME_JOURNAL_TESTING
 #include <AutopsyX/RegimeResearchJournal.mqh>
 
 int g_assertions=0;
@@ -130,10 +131,19 @@ void OnStart(void)
               "restart recovers the newly appended complete row");
    ulong beforeDuplicate=ReadFileSize(fileName);
    bool duplicateAccepted=recovered.Record(classification,intelligence,baseRegime,volatility);
-   recovered.Deinit();
    ulong afterDuplicate=ReadFileSize(fileName);
    AssertTrue(duplicateAccepted && beforeDuplicate==afterDuplicate,
               "replayed bar is idempotent and does not append a duplicate");
+
+   recovered.TestForcePersistenceFailure();
+   classification.timestamp=(datetime)t3;
+   ulong beforeFailedAppend=ReadFileSize(fileName);
+   bool failedAppendAccepted=recovered.Record(classification,intelligence,baseRegime,volatility);
+   ulong afterFailedAppend=ReadFileSize(fileName);
+   AssertTrue(!recovered.IsPersisting() && !failedAppendAccepted &&
+              beforeFailedAppend==afterFailedAppend,
+              "injected persistence failure latches unhealthy and refuses further writes");
+   recovered.Deinit();
 
    // Scenario 2: malformed numeric row between two valid rows must not hide the later valid row.
    FileDelete(fileName);
