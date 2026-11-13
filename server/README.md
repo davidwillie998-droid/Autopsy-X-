@@ -64,9 +64,10 @@ live prices and account state into `/state`, but no such EA
 yet — that's a separate build if you want live MT5 ticks flowing through the
 chart/sizing panels instead of only the direct MetaApi connection.
 
-If `BRIDGE_KEY` is left unset, `/analyze` and `/ingest/*` run unauthenticated
-(a startup warning says so) — fine for local dev, never for anything reachable
-off your own machine.
+If `BRIDGE_KEY` is unset, `/analyze` and `/ingest/*` fail closed with HTTP
+503 until a key is configured. An incorrect or missing request key returns
+HTTP 401. Set a strong `BRIDGE_KEY` in the host's secret environment settings
+before using these endpoints.
 
 
 ## FLIPDEMON distributed risk coordinator
