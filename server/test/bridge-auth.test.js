@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { once } from 'node:events';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const SERVER_PATH = new URL('../server.js', import.meta.url);
 
@@ -15,7 +18,7 @@ async function reservePort() {
   return port;
 }
 
-async function startBridge({ bridgeKey }) {
+async function startBridge({ bridgeKey, riskCoordinatorKey = '', riskLedgerPath = '', riskLedgerPersistenceAck = '' }) {
   const port = await reservePort();
   const child = spawn(process.execPath, [SERVER_PATH.pathname], {
     env: {
@@ -24,9 +27,9 @@ async function startBridge({ bridgeKey }) {
       HOST: '127.0.0.1',
       BRIDGE_KEY: bridgeKey,
       ANTHROPIC_API_KEY: '',
-      RISK_COORDINATOR_KEY: '',
-      RISK_LEDGER_PATH: '',
-      RISK_LEDGER_PERSISTENCE_ACK: '',
+      RISK_COORDINATOR_KEY: riskCoordinatorKey,
+      RISK_LEDGER_PATH: riskLedgerPath,
+      RISK_LEDGER_PERSISTENCE_ACK: riskLedgerPersistenceAck,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -235,5 +238,40 @@ test('/state exposes ingested account and tick data only to an authenticated cal
     assert.equal(state.account.currency, 'USD');
   } finally {
     await bridge.close();
+  }
+});
+
+
+test('/health reports the risk coordinator disabled when durable-ledger configuration is incomplete', async () => {
+  const bridge = await startBridge({ bridgeKey: 'test-bridge-secret-32-characters-minimum' });
+  try {
+    const response = await fetch(`${bridge.baseUrl}/health`);
+    assert.equal(response.status, 200);
+    const health = await response.json();
+    assert.equal(health.ok, true);
+    assert.equal(health.riskCoordinatorReady, false);
+  } finally {
+    await bridge.close();
+  }
+});
+
+test('/health reports the risk coordinator ready only after ledger initialization and explicit persistence acknowledgement', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'flipdemon-risk-health-'));
+  const key = 'test-risk-coordinator-secret-32-characters';
+  const bridge = await startBridge({
+    bridgeKey: 'test-bridge-secret-32-characters-minimum',
+    riskCoordinatorKey: key,
+    riskLedgerPath: join(directory, 'risk.sqlite'),
+    riskLedgerPersistenceAck: 'CONFIRMED',
+  });
+  try {
+    const response = await fetch(`${bridge.baseUrl}/health`);
+    assert.equal(response.status, 200);
+    const health = await response.json();
+    assert.equal(health.ok, true);
+    assert.equal(health.riskCoordinatorReady, true);
+  } finally {
+    await bridge.close();
+    await rm(directory, { recursive: true, force: true });
   }
 });
