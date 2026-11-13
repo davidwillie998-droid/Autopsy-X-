@@ -289,7 +289,7 @@ class Mql5SourceHygieneTests(unittest.TestCase):
     def test_trade_autopsy_checks_array_resize_results_and_fails_closed(self):
         path = MQL_ROOT / "Include" / "AutopsyX" / "TradeAutopsy.mqh"
         source = self.text[path]
-        bare_calls = re.findall(r"^\\s*ArrayResize\\s*\\([^;]*\\);\\s*$", source, re.MULTILINE)
+        bare_calls = re.findall(r"^\s*ArrayResize\s*\([^;]*\);\s*$", source, re.MULTILINE)
         self.assertEqual([], bare_calls, "TradeAutopsy contains unchecked standalone ArrayResize calls")
         self.assertIn("if(ArrayResize(m_records,m_count+1)!=m_count+1)", source)
         self.assertIn("m_persistenceHealthy=false;", source)
@@ -301,7 +301,7 @@ class Mql5SourceHygieneTests(unittest.TestCase):
         source = self.text[path]
         self.assertNotRegex(
             source,
-            r"^\\s*ArrayResize\\s*\\([^;]*\\);\\s*$",
+            r"^\s*ArrayResize\s*\([^;]*\);\s*$",
             "DistributedRiskCoordinator contains an unchecked standalone ArrayResize call",
         )
         self.assertIn("if(ArrayResize(requestData,byteCount-1)!=byteCount-1)", source)
