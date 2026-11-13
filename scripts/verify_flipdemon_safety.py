@@ -760,5 +760,39 @@ require("g_volatilityReady && g_volatility.CurrentAtr()>0.0" in EA_SOURCE
 require("g_volatility.Deinit();" in EA_SOURCE and "g_macroRegime.Deinit();" in EA_SOURCE,
         "new regime research resources are released during deinitialization")
 
+
+# Durable regime research journal: append only on a fresh completed-bar classification.
+REGIME_JOURNAL = MQL5_ROOT / "Include/AutopsyX/RegimeResearchJournal.mqh"
+require(REGIME_JOURNAL.is_file(), "durable regime research journal source exists")
+REGIME_JOURNAL_SOURCE = REGIME_JOURNAL.read_text(encoding="utf-8")
+require("#include <AutopsyX/RegimeResearchJournal.mqh>" in EA_SOURCE
+        and "CRegimeResearchJournal g_regimeJournal;" in EA_SOURCE,
+        "EA owns one dedicated regime research journal")
+require("g_regimeJournal.Init(_Symbol,InpRegimeTimeframe)" in EA_SOURCE
+        and "g_regimeJournal.Deinit();" in EA_SOURCE
+        and "InpEnableRegimeResearchJournal" in EA_SOURCE,
+        "regime journal has an explicit analysis-only lifecycle and operator switch")
+require("g_regimeJournal.Record(g_regimeClassification,g_regimeIntelSnapshot,g_regime,g_volatility)" in EA_SOURCE
+        and EA_SOURCE.index("g_regimeClassifier.Sample(") < EA_SOURCE.index("g_regimeJournal.Record("),
+        "journal records the classifier output after a completed-bar classification")
+require("FileWriteString(m_handle,payload)" in REGIME_JOURNAL_SOURCE
+        and "FileFlush(m_handle);" in REGIME_JOURNAL_SOURCE
+        and "written!=expected" in REGIME_JOURNAL_SOURCE
+        and "sizeAfter<=sizeBefore" in REGIME_JOURNAL_SOURCE,
+        "journal append requires full write and post-flush file growth confirmation")
+require("RecoverTail()" in REGIME_JOURNAL_SOURCE
+        and "ValidateRow(line,rowTime)" in REGIME_JOURNAL_SOURCE
+        and "m_needsLineBreak=!lastNonEmptyValid" in REGIME_JOURNAL_SOURCE
+        and "rowTime>m_lastTimestamp" in REGIME_JOURNAL_SOURCE,
+        "restart recovery accepts complete rows, rejects malformed tails and prevents duplicate bars")
+require("if(!m_persistenceHealthy || m_handle==INVALID_HANDLE)" in REGIME_JOURNAL_SOURCE
+        and "classification.timestamp<=m_lastTimestamp" in REGIME_JOURNAL_SOURCE
+        and "CTrade" not in REGIME_JOURNAL_SOURCE
+        and "OrderSend(" not in REGIME_JOURNAL_SOURCE,
+        "journal fails closed on persistence loss, deduplicates bars and has no execution capability")
+require("Trading decisions remain unchanged" in EA_SOURCE
+        and "g_regimeJournalReady=g_regimeJournal.IsPersisting();" in EA_SOURCE,
+        "journal failure disables research persistence only and does not gate trading")
+
 print("Static safety audit passed. This is not an MQL5 compile or runtime test.")
 
