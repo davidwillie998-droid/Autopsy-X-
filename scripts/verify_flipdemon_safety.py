@@ -680,10 +680,15 @@ require('#include <AutopsyX/TradeAutopsy.mqh>' in journal_harness
 REGIME_JOURNAL_HARNESS = ROOT / "MQL5/Scripts/AutopsyX/RegimeResearchJournalTest.mq5"
 require(REGIME_JOURNAL_HARNESS.is_file(), "standalone regime research journal harness exists")
 regime_journal_harness = REGIME_JOURNAL_HARNESS.read_text(encoding="utf-8")
-require('#include <AutopsyX/RegimeResearchJournal.mqh>' in regime_journal_harness
+require("#define AX_REGIME_JOURNAL_TESTING" in regime_journal_harness
+        and '#include <AutopsyX/RegimeResearchJournal.mqh>' in regime_journal_harness
         and "CRegimeResearchJournal journal;" in regime_journal_harness
         and "journal.Init(symbol,timeframe)" in regime_journal_harness,
         "regime journal harness exercises the production research journal")
+require("TestForcePersistenceFailure()" in regime_journal_harness
+        and "injected persistence failure latches unhealthy" in regime_journal_harness
+        and "beforeFailedAppend==afterFailedAppend" in regime_journal_harness,
+        "regime journal harness injects a persistence failure and asserts writes remain blocked")
 require("truncated-tail fixture created" in regime_journal_harness
         and "malformed-middle-row fixture created" in regime_journal_harness
         and "malformed-final-row fixture created" in regime_journal_harness,
@@ -805,6 +810,9 @@ require("FileWriteString(m_handle,payload)" in REGIME_JOURNAL_SOURCE
         and "written!=expected" in REGIME_JOURNAL_SOURCE
         and "sizeAfter<=sizeBefore" in REGIME_JOURNAL_SOURCE,
         "journal append requires full write and post-flush file growth confirmation")
+require("#ifdef AX_REGIME_JOURNAL_TESTING" in REGIME_JOURNAL_SOURCE
+        and "TestForcePersistenceFailure(void)" in REGIME_JOURNAL_SOURCE,
+        "journal fault injection is compiled only when the dedicated test macro is defined")
 require("IsIntegerToken(const string value)" in REGIME_JOURNAL_SOURCE
         and "IsDecimalToken(const string value)" in REGIME_JOURNAL_SOURCE
         and "if(!IsIntegerToken(fields[integerFields[i]])) return(false);" in REGIME_JOURNAL_SOURCE
