@@ -24,6 +24,7 @@
 #include <AutopsyX/VolatilityEngine.mqh>
 #include <AutopsyX/RegimeIntelligenceEngine.mqh>
 #include <AutopsyX/RegimeClassifierEngine.mqh>
+#include <AutopsyX/RegimeResearchJournal.mqh>
 #include <AutopsyX/StructureEngine.mqh>
 #include <AutopsyX/CompositeDirection.mqh>
 #include <AutopsyX/VPMACD.mqh>
@@ -237,6 +238,7 @@ input int             InpMaxConsecutiveExecFailures = 3;     // Consecutive exec
 
 input group "=== REGIME INTELLIGENCE (ANALYSIS ONLY) ===";
 input bool            InpEnableRegimeClassificationAnalysis = true; // Observe R1-R8 classifications; never gates orders
+input bool            InpEnableRegimeResearchJournal = true; // Persist one research row per completed regime bar; never gates orders
 input string          InpMacroReferenceSymbol = ""; // Optional broker-specific cross-asset symbol; blank means unavailable
 input int             InpRegimePersistenceBars = 5; // Completed bars required before a trend is called persistent
 input double          InpRegimePersistenceStability = 70.0; // Direction-sign stability floor, percent
@@ -258,6 +260,8 @@ CRegimeIntelligenceEngine g_regimeIntelligence;
 CRegimeClassifierEngine g_regimeClassifier;
 SAxRegimeIntelligence g_regimeIntelSnapshot;
 SAxRegimeClassification g_regimeClassification;
+CRegimeResearchJournal g_regimeJournal;
+bool                  g_regimeJournalReady = false;
 bool                  g_volatilityReady = false;
 bool                  g_regimeClassificationAvailable = false;
 CStructureEngine      g_structure;
@@ -3357,6 +3361,16 @@ int OnInit(void)
                                              AX_VOL_ATR_PERIOD_DEFAULT,100);
       if(!g_volatilityReady)
          Print("FLIPDEMON REGIME RESEARCH: volatility ATR handle unavailable; R1-R8 output will remain unavailable and order flow is unchanged.");
+      if(InpEnableRegimeResearchJournal)
+        {
+         g_regimeJournalReady=g_regimeJournal.Init(_Symbol,InpRegimeTimeframe);
+         if(!g_regimeJournalReady)
+            Print("FLIPDEMON REGIME JOURNAL WARNING: research journal unavailable; regime analysis continues without persistence and trade execution is unchanged.");
+         else
+            PrintFormat("FLIPDEMON REGIME JOURNAL: ready file=%s last_timestamp=%s",
+                        "AX_RegimeResearch_<symbol>_<timeframe>.csv",
+                        g_regimeJournal.LastTimestamp()>0 ? TimeToString(g_regimeJournal.LastTimestamp(),TIME_DATE|TIME_MINUTES) : "NONE");
+        }
      }
    if(!g_structure.Init(_Symbol,InpRegimeTimeframe,300))
      {
@@ -3567,6 +3581,7 @@ void OnDeinit(const int reason)
       EventKillTimer();
       g_dash.RemoveAll();
      }
+   g_regimeJournal.Deinit();
    g_autopsy.Deinit();
    g_regime.Deinit();
    g_regimeHtf.Deinit();
@@ -3782,6 +3797,14 @@ void OnTick(void)
                                          g_regimeIntelSnapshot,g_regimeClassification))
               {
                g_regimeClassificationAvailable = g_regimeClassification.dataQualityOk;
+               if(InpEnableRegimeResearchJournal && g_regimeJournalReady)
+                 {
+                  if(!g_regimeJournal.Record(g_regimeClassification,g_regimeIntelSnapshot,g_regime,g_volatility))
+                    {
+                     g_regimeJournalReady=g_regimeJournal.IsPersisting();
+                     Print("FLIPDEMON REGIME JOURNAL WARNING: bar record was not durably confirmed; journal disabled for this session. Trading decisions remain unchanged.");
+                    }
+                 }
                if(InpVerboseLogging)
                   PrintFormat("FLIPDEMON REGIME RESEARCH: %s | confidence=%.1f | age=%d bars | transition=%s | macro=%s | evidence=%s",
                               AxRegimeClassToString(g_regimeClassification.regime),
