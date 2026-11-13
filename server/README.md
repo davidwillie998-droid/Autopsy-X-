@@ -45,10 +45,9 @@ slow, not broken.
 ## Endpoints
 
 - `GET /health` — `{ ok, hasAnthropicKey }`
-- `GET /state` — `{ symbols, account, staleness_ms }`, whatever the last
-  `/ingest/*` calls pushed in. **Unauthenticated**, matching the page's
-  current unauthenticated poll — don't expose this past localhost without
-  adding auth here and to the frontend's `pollBridgeOnce()` fetch.
+- `GET /state` (requires `x-bridge-key`) — `{ symbols, account, staleness_ms }`,
+  whatever the last `/ingest/*` calls pushed in. The dashboard sends its
+  configured bridge key with each `pollBridgeOnce()` request.
 - `POST /analyze` (requires `x-bridge-key`) — `{ system, prompt, useSearch }`
   → proxies to `https://api.anthropic.com/v1/messages` and returns the raw
   response.
