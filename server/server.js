@@ -150,7 +150,7 @@ app.post('/risk/settle', requireRiskCoordinator, (req, res) => {
 
 // Proxies to Claude so the API key never reaches the browser.
 // Body: { system, prompt, useSearch }
-app.post('/analyze', analysisRateLimit, async (req, res) => {
+app.post('/analyze', requireBridgeKey, analysisRateLimit, async (req, res) => {
   if (!ANTHROPIC_API_KEY) {
     return res.status(500).json({ error: 'Server has no ANTHROPIC_API_KEY configured.' });
   }
