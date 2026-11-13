@@ -14,7 +14,7 @@ services:
     runtime: node
     rootDir: server
     plan: free
-    buildCommand: npm install
+    buildCommand: npm ci
     startCommand: npm start
     envVars:
       - key: ANTHROPIC_API_KEY
@@ -25,3 +25,11 @@ services:
         value: claude-sonnet-5
       - key: ALLOWED_ORIGIN
         value: https://autopsy-x-dashboard.onrender.com
+      # Configure these in Render only after attaching and verifying a persistent disk.
+      # Never set the acknowledgement to CONFIRMED before verifying durable storage.
+      - key: RISK_COORDINATOR_KEY
+        sync: false
+      - key: RISK_LEDGER_PATH
+        sync: false
+      - key: RISK_LEDGER_PERSISTENCE_ACK
+        sync: false
