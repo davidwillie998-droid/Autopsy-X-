@@ -676,6 +676,31 @@ require('#include <AutopsyX/TradeAutopsy.mqh>' in journal_harness
         and "CTradeAutopsy autopsy;" in journal_harness
         and "autopsy.Init(eaName,symbol)" in journal_harness,
         "journal harness exercises the production CTradeAutopsy loader")
+# Dedicated R1-R8 journal recovery harness: source contract only.
+REGIME_JOURNAL_HARNESS = ROOT / "MQL5/Scripts/AutopsyX/RegimeResearchJournalTest.mq5"
+require(REGIME_JOURNAL_HARNESS.is_file(), "standalone regime research journal harness exists")
+regime_journal_harness = REGIME_JOURNAL_HARNESS.read_text(encoding="utf-8")
+require('#include <AutopsyX/RegimeResearchJournal.mqh>' in regime_journal_harness
+        and "CRegimeResearchJournal journal;" in regime_journal_harness
+        and "journal.Init(symbol,timeframe)" in regime_journal_harness,
+        "regime journal harness exercises the production research journal")
+require("truncated-tail fixture created" in regime_journal_harness
+        and "malformed-middle-row fixture created" in regime_journal_harness
+        and "malformed-final-row fixture created" in regime_journal_harness,
+        "regime journal harness covers truncated tail and malformed middle/final rows")
+require("journal.LastTimestamp()==(datetime)t1" in regime_journal_harness
+        and "recovered.LastTimestamp()==(datetime)t2" in regime_journal_harness
+        and "middleRecovery.LastTimestamp()==(datetime)t3" in regime_journal_harness
+        and "finalRecovery.LastTimestamp()==(datetime)t1" in regime_journal_harness,
+        "regime journal harness asserts valid-row recovery and rejects incomplete records")
+require("duplicateAccepted && beforeDuplicate==afterDuplicate" in regime_journal_harness
+        and "replayed bar is idempotent" in regime_journal_harness,
+        "regime journal harness asserts restart replay does not append a duplicate bar")
+require("OrderSend(" not in regime_journal_harness
+        and "PositionOpen(" not in regime_journal_harness
+        and "PositionClose(" not in regime_journal_harness,
+        "regime research journal harness cannot submit or manage broker orders")
+
 require("TradeAutopsy_v3.csv" in journal_harness
         and "TradeAutopsy_v4.csv" in journal_harness
         and "MakeTradeRow(1001,7001" in journal_harness,
@@ -780,6 +805,11 @@ require("FileWriteString(m_handle,payload)" in REGIME_JOURNAL_SOURCE
         and "written!=expected" in REGIME_JOURNAL_SOURCE
         and "sizeAfter<=sizeBefore" in REGIME_JOURNAL_SOURCE,
         "journal append requires full write and post-flush file growth confirmation")
+require("IsIntegerToken(const string value)" in REGIME_JOURNAL_SOURCE
+        and "IsDecimalToken(const string value)" in REGIME_JOURNAL_SOURCE
+        and "if(!IsIntegerToken(fields[integerFields[i]])) return(false);" in REGIME_JOURNAL_SOURCE
+        and "if(!IsDecimalToken(fields[decimalFields[i]])) return(false);" in REGIME_JOURNAL_SOURCE,
+        "journal recovery rejects malformed numeric tokens instead of accepting StringToDouble zero fallbacks")
 require("RecoverTail()" in REGIME_JOURNAL_SOURCE
         and "ValidateRow(line,rowTime)" in REGIME_JOURNAL_SOURCE
         and "m_needsLineBreak=!lastNonEmptyValid" in REGIME_JOURNAL_SOURCE
