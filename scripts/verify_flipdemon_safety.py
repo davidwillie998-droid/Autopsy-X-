@@ -167,6 +167,13 @@ require("bool              ClosePartial(" in execution
         and "MathAbs(exactOrderClosed-actualClosed)" in execution
         and "HistoryDealGetInteger(resultDeal,DEAL_ORDER)!=orderTicket" in execution,
         "partial closes require exact broker exit-order deal volume to match the position reduction")
+require("void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &request" in ea
+        and "trans.type==TRADE_TRANSACTION_DEAL_ADD" in ea
+        and "trans.type==TRADE_TRANSACTION_HISTORY_ADD" in ea,
+        "trade transaction observer handles confirmed deal additions and order-history additions")
+require("HISTORY_ADD is an order-history lifecycle event, not proof of a fill" in ea
+        and "HistoryDealGetInteger(trans.deal,DEAL_ENTRY)" in ea,
+        "history additions only trigger reconciliation; campaign accounting remains deal-confirmed")
 require("g_exec.ClosePosition(_Symbol,ticket,g_positionIdentifier,InpMagicNumber" in ea
         and "closeOutcomeUncertain" in ea
         and "g_recoveryReady=false;" in ea
