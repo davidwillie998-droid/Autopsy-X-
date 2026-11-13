@@ -49,9 +49,17 @@ async function startBridge({ bridgeKey }) {
     return {
       baseUrl,
       async close() {
-        child.kill('SIGTERM');
-        await Promise.race([once(child, 'exit'), new Promise(resolve => setTimeout(resolve, 2000))]);
-        if (child.exitCode === null) child.kill('SIGKILL');
+        await new Promise(resolve => {
+          const timeout = setTimeout(() => {
+            child.kill('SIGKILL');
+            resolve();
+          }, 2000);
+          child.once('exit', () => {
+            clearTimeout(timeout);
+            resolve();
+          });
+          child.kill('SIGTERM');
+        });
       },
     };
   } catch (error) {
@@ -159,6 +167,26 @@ test('/state returns account state only with the configured bridge key', async (
       account: null,
       staleness_ms: null,
     });
+  } finally {
+    await bridge.close();
+  }
+});
+
+test('dashboard state polling CORS preflight permits the bridge-key header', async () => {
+  const bridge = await startBridge({ bridgeKey: 'test-bridge-secret-32-characters-minimum' });
+  try {
+    const response = await fetch(`${bridge.baseUrl}/state`, {
+      method: 'OPTIONS',
+      headers: {
+        origin: 'https://autopsy-x-dashboard.onrender.com',
+        'access-control-request-method': 'GET',
+        'access-control-request-headers': 'x-bridge-key',
+      },
+    });
+    assert.equal(response.status, 204);
+    assert.equal(response.headers.get('access-control-allow-origin'), 'https://autopsy-x-dashboard.onrender.com');
+    assert.match(response.headers.get('access-control-allow-headers') || '', /x-bridge-key/i);
+    assert.match(response.headers.get('access-control-allow-methods') || '', /GET/i);
   } finally {
     await bridge.close();
   }
