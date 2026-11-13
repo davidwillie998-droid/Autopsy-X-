@@ -421,7 +421,13 @@ private:
 
          if(m_count<AX_AUTOPSY_MAX_MEMORY)
            {
-            ArrayResize(m_records,m_count+1);
+            if(ArrayResize(m_records,m_count+1)!=m_count+1)
+              {
+               FileClose(handle);
+               m_persistenceHealthy=false;
+               Print("AUTOPSY JOURNAL ERROR: trade-record recovery memory allocation failed.");
+               return(false);
+              }
             m_records[m_count]=record;
             m_count++;
            }
@@ -439,7 +445,12 @@ private:
    bool              LoadTradeRecords(void)
      {
       m_count=0;
-      ArrayResize(m_records,0);
+      if(ArrayResize(m_records,0)!=0)
+        {
+         m_persistenceHealthy=false;
+         Print("AUTOPSY JOURNAL ERROR: trade-record recovery buffer reset failed.");
+         return(false);
+        }
       int loaded=0,rejected=0;
       if(!LoadTradeRecordsFile(m_legacyFileName,true,loaded,rejected)) return(false);
       if(!LoadTradeRecordsFile(m_fileName,false,loaded,rejected)) return(false);
@@ -448,7 +459,7 @@ private:
       return(true);
      }
 
-   void              AddRiskHistory(const double netProfit,const double rMultiple,
+   bool              AddRiskHistory(const double netProfit,const double rMultiple,
                                     const bool isPartial,const string provenance)
      {
       if(m_riskCount>=AX_AUTOPSY_MAX_MEMORY)
@@ -462,15 +473,22 @@ private:
            }
          m_riskCount=AX_AUTOPSY_MAX_MEMORY-1;
         }
-      ArrayResize(m_riskNetProfit,m_riskCount+1);
-      ArrayResize(m_riskMultiple,m_riskCount+1);
-      ArrayResize(m_riskPartial,m_riskCount+1);
-      ArrayResize(m_riskProvenance,m_riskCount+1);
+      int requiredCount=m_riskCount+1;
+      if(ArrayResize(m_riskNetProfit,requiredCount)!=requiredCount ||
+         ArrayResize(m_riskMultiple,requiredCount)!=requiredCount ||
+         ArrayResize(m_riskPartial,requiredCount)!=requiredCount ||
+         ArrayResize(m_riskProvenance,requiredCount)!=requiredCount)
+        {
+         m_persistenceHealthy=false;
+         Print("AUTOPSY JOURNAL ERROR: risk-history memory allocation failed; new entries must remain blocked.");
+         return(false);
+        }
       m_riskNetProfit[m_riskCount]=netProfit;
       m_riskMultiple[m_riskCount]=rMultiple;
       m_riskPartial[m_riskCount]=isPartial;
       m_riskProvenance[m_riskCount]=provenance;
       m_riskCount++;
+      return(true);
      }
 
    bool              ReadRiskHistoryFile(const string sourceFile,const bool legacyV3)
@@ -495,8 +513,12 @@ private:
          // v3 used zero for both unavailable R and true breakeven. Treat those
          // ambiguous legacy zeros as unavailable. v4 writes an explicit NA token.
          if(legacyV3 && rMultiple==0.0) rMultiple=EMPTY_VALUE;
-         AddRiskHistory(StringToDouble(fields[24]),rMultiple,
-                        (StringToInteger(fields[28])!=0),fields[42]);
+         if(!AddRiskHistory(StringToDouble(fields[24]),rMultiple,
+                            (StringToInteger(fields[28])!=0),fields[42]))
+           {
+            FileClose(handle);
+            return(false);
+           }
         }
       FileClose(handle);
       return(true);
@@ -505,10 +527,15 @@ private:
    bool              LoadRiskHistory(void)
      {
       m_riskCount=0;
-      ArrayResize(m_riskNetProfit,0);
-      ArrayResize(m_riskMultiple,0);
-      ArrayResize(m_riskPartial,0);
-      ArrayResize(m_riskProvenance,0);
+      if(ArrayResize(m_riskNetProfit,0)!=0 ||
+         ArrayResize(m_riskMultiple,0)!=0 ||
+         ArrayResize(m_riskPartial,0)!=0 ||
+         ArrayResize(m_riskProvenance,0)!=0)
+        {
+         m_persistenceHealthy=false;
+         Print("AUTOPSY JOURNAL ERROR: risk-history recovery buffer reset failed.");
+         return(false);
+        }
       if(!ReadRiskHistoryFile(m_legacyFileName,true)) return(false);
       return(ReadRiskHistoryFile(m_fileName,false));
      }
@@ -532,7 +559,12 @@ public:
          FileClose(m_fileHandle); m_fileHandle=INVALID_HANDLE;
          return(false);
         }
-      ArrayResize(m_records,0);
+      if(ArrayResize(m_records,0)!=0)
+        {
+         FileClose(m_fileHandle); m_fileHandle=INVALID_HANDLE;
+         Print("AUTOPSY JOURNAL ERROR: trade-record buffer initialization failed.");
+         return(false);
+        }
       m_count=0;
       if(!LoadRiskHistory() || !LoadTradeRecords())
         {
@@ -643,7 +675,12 @@ public:
 
       if(m_count<AX_AUTOPSY_MAX_MEMORY)
         {
-         ArrayResize(m_records,m_count+1);
+         if(ArrayResize(m_records,m_count+1)!=m_count+1)
+           {
+            m_persistenceHealthy=false;
+            Print("AUTOPSY JOURNAL ERROR: durable trade was written but in-memory record allocation failed; new entries must remain blocked.");
+            return(rec.tradeClass);
+           }
          m_records[m_count] = rec;
          m_count++;
         }
@@ -654,7 +691,8 @@ public:
          m_records[AX_AUTOPSY_MAX_MEMORY-1]=rec;
         }
 
-      AddRiskHistory(rec.netProfit,rec.rMultiple,rec.isPartial,AxProvenanceToString(rec.provenance));
+      if(!AddRiskHistory(rec.netProfit,rec.rMultiple,rec.isPartial,AxProvenanceToString(rec.provenance)))
+         return(rec.tradeClass);
       return(rec.tradeClass);
      }
 
@@ -728,12 +766,12 @@ public:
    int               GetDatasetRecords(const ENUM_AX_DATASET_PROVENANCE provenance,SAxTradeRecord &out[]) const
      {
       int found=0;
-      ArrayResize(out,0);
+      if(ArrayResize(out,0)!=0) return(-1);
       for(int i=0;i<m_count;i++)
         {
          if(m_records[i].isPartial) continue;
          if(m_records[i].provenance!=provenance) continue;
-         ArrayResize(out,found+1);
+         if(ArrayResize(out,found+1)!=found+1) return(-1);
          out[found]=m_records[i];
          found++;
         }
