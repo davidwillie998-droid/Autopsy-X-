@@ -16,6 +16,7 @@
 
 #include <AutopsyX/Defs.mqh>
 #include <AutopsyX/MarketData.mqh>
+#include <AutopsyX/BrokerCompatibility.mqh>
 #include <AutopsyX/SpreadCostIntelligence.mqh>
 #include <AutopsyX/Momentum.mqh>
 #include <AutopsyX/Microstructure.mqh>
@@ -255,6 +256,8 @@ input double          InpRegimeShockAccelPct = 60.0; // ATR acceleration thresho
 //====================================================================
 // GLOBAL ENGINE OBJECTS
 //====================================================================
+CBrokerCompatibility  g_brokerCompatibility;
+SAxBrokerCompatibilitySnapshot g_brokerSnapshot;
 CMarketData          g_md;
 CSpreadCostIntelligence g_spreadCost;
 CMomentumEngine       g_mom;
@@ -3288,8 +3291,17 @@ int OnInit(void)
       return(INIT_FAILED);
      }
 
-   // Inspect the connected broker and actual symbol before configuring strategy/risk modules.
-   // This is metadata-driven portability, not a hard-coded broker-name allowlist.
+   // Capture account and symbol capabilities from live MT5 metadata. Account labels such as
+   // Pro/ECN/Raw/Cent are not inferred because MT5 does not expose a universal account-type field.
+   if(!g_brokerCompatibility.Capture(_Symbol,g_brokerSnapshot))
+     {
+      PrintFormat("FLIPDEMON UBCE: compatibility snapshot failed closed (%s).",
+                  g_brokerSnapshot.validationReason);
+      return(INIT_FAILED);
+     }
+   g_brokerCompatibility.Log(g_brokerSnapshot);
+
+   // Retain the existing detailed broker diagnostics and stricter symbol preflight.
    if(!AxLogBrokerCompatibility())
       return(INIT_FAILED);
 
