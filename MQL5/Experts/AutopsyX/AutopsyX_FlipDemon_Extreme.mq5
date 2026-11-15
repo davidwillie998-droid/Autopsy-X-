@@ -3306,18 +3306,14 @@ int OnInit(void)
    if(!AxLogBrokerCompatibility())
       return(INIT_FAILED);
 
-   // this EA assumes one net position per symbol throughout (PositionSelect-based state
-   // tracking, single-ticket close/flip/partial logic). That assumption only holds on a
-   // netting account. US NFA-regulated accounts are netting/FIFO by law (no hedging); on a
-   // hedging-mode account, multiple simultaneous tickets per symbol are possible and this
-   // EA's position tracking is not designed to reconcile against that - refuse to run rather
-   // than risk silently mismanaging exposure it can't see.
-   long marginMode = AccountInfoInteger(ACCOUNT_MARGIN_MODE);
-   if(marginMode==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING)
+   // Position lifecycle compatibility is an explicit UBCE capability, not a broker-name
+   // guess. Hedging and exchange modes remain blocked until their ticket-level lifecycle
+   // adapters are fully validated against close, partial-close, recovery and campaign flows.
+   if(g_brokerSnapshot.positionManagementCapability!=AX_CAPABILITY_SUPPORTED)
      {
-      Print("AUTOPSY X: account is in hedging mode. This EA requires a netting account ",
-            "(one net position per symbol) and will not run on hedging-mode accounts. ",
-            "Use a netting account, or a broker/account type that supports it.");
+      PrintFormat("AUTOPSY X: position lifecycle unsupported (%s). Analysis-only attachment is not
+      enabled on this account model; execution remains blocked until the adapter is validated.",
+                  g_brokerSnapshot.positionManagementReason);
       return(INIT_FAILED);
      }
 
