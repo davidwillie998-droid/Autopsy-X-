@@ -56,6 +56,7 @@ public:
    bool              ConfigurePriceDistance(const double sensitivityPrice,
                                              const double reversalMultiplier=2.0)
      {
+      m_configured=false;
       if(!MathIsValidNumber(sensitivityPrice) || sensitivityPrice<=0.0)
          return(false);
       if(!MathIsValidNumber(reversalMultiplier) || reversalMultiplier<1.0)
@@ -81,6 +82,7 @@ public:
                                       const double pointSize,
                                       const double reversalMultiplier=2.0)
      {
+      m_configured=false;
       if(!MathIsValidNumber(sensitivityPoints) || sensitivityPoints<=0.0 ||
          !MathIsValidNumber(pointSize) || pointSize<=0.0)
          return(false);
