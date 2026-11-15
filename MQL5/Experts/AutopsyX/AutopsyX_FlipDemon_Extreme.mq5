@@ -3301,7 +3301,8 @@ int OnInit(void)
      }
    g_brokerCompatibility.Log(g_brokerSnapshot);
 
-   // Retain the existing detailed broker diagnostics and stricter symbol preflight.
+   // Retain detailed diagnostics and stricter symbol preflight. There is no broker-name allowlist:
+   // broker names are descriptive metadata, while actual capabilities decide compatibility.
    if(!AxLogBrokerCompatibility())
       return(INIT_FAILED);
 
