@@ -3311,8 +3311,7 @@ int OnInit(void)
    // adapters are fully validated against close, partial-close, recovery and campaign flows.
    if(g_brokerSnapshot.positionManagementCapability!=AX_CAPABILITY_SUPPORTED)
      {
-      PrintFormat("AUTOPSY X: position lifecycle unsupported (%s). Analysis-only attachment is not
-      enabled on this account model; execution remains blocked until the adapter is validated.",
+      PrintFormat("AUTOPSY X: position lifecycle unsupported (%s). Analysis-only attachment is not enabled on this account model; execution remains blocked until the adapter is validated.",
                   g_brokerSnapshot.positionManagementReason);
       return(INIT_FAILED);
      }
