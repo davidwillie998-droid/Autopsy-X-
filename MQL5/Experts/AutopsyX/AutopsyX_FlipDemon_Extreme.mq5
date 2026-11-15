@@ -16,6 +16,7 @@
 
 #include <AutopsyX/Defs.mqh>
 #include <AutopsyX/MarketData.mqh>
+#include <AutopsyX/SpreadCostIntelligence.mqh>
 #include <AutopsyX/Momentum.mqh>
 #include <AutopsyX/Microstructure.mqh>
 #include <AutopsyX/Liquidity.mqh>
@@ -136,6 +137,12 @@ input bool            InpUseVWAPExit         = false;  // Opt-in mechanical exit
 input ENUM_AX_VWAP_EXIT_MODE InpVWAPExitMode  = AX_VWAP_EXIT_CONFIRMED_CROSS; // Only relevant when InpUseVWAPExit is on. CONFIRMED_CROSS is the original/default behavior (closed-bar confirmation) - see ExitEngine.mqh for all four modes
 input double          InpVWAPAlignmentBonus  = 1.15;   // Sizing bonus applied ONLY when InpUseVWAPExit is on and this signal agrees with VWAP trend - see AdaptiveFlipEngine.mqh for how this is bounded
 
+input group "=== SPREAD COST INTELLIGENCE ===";
+input bool   InpUseSpreadCostIntelligence = true;
+input int    InpSpreadCostMinSamples       = 20;
+input double InpSpreadCostMaxCostToGross  = 0.25;
+input double InpSpreadCostMaxSpreadToAtr  = 0.15;
+
 input group "=== RISK ENGINE ===";
 input double         InpDailyLossLimitPercent   = 8.0;    // Daily loss limit (%) - stops session when hit
 input int            InpMaxConsecutiveLosses    = 5;      // Max consecutive losses before pausing
@@ -249,6 +256,7 @@ input double          InpRegimeShockAccelPct = 60.0; // ATR acceleration thresho
 // GLOBAL ENGINE OBJECTS
 //====================================================================
 CMarketData          g_md;
+CSpreadCostIntelligence g_spreadCost;
 CMomentumEngine       g_mom;
 CMicrostructureEngine g_micro;
 CLiquidityEngine      g_liq;
@@ -3240,6 +3248,34 @@ bool AxLogBrokerCompatibility(void)
   }
 
 //====================================================================
+// SPREAD COST INTELLIGENCE
+//====================================================================
+//--- Additional fail-closed entry filter. Existing absolute spread and risk gates remain intact.
+bool AxSpreadCostAllowed(string &reason)
+  {
+   if(!InpUseSpreadCostIntelligence) { reason=""; return(true); }
+   double point=g_md.Point();
+   double atrPoints=(point>0.0) ? g_regime.CurrentAtr()/point : 0.0;
+   SAxSpreadCostAssessment assessment;
+   bool allowed=g_spreadCost.Assess(g_md.CurrentBid(),g_md.CurrentAsk(),point,
+                                    atrPoints,InpEmergencySlPoints*InpDynamicTpRR,
+                                    1.0,g_md.TickSize(),g_md.TickValue(),
+                                    InpCommissionPerLot,InpSlippageToleranceBufferPts,
+                                    assessment);
+   if(!allowed)
+     {
+      reason=assessment.reason;
+      if(InpVerboseLogging)
+         PrintFormat("FLIPDEMON SPREAD COST: blocked (%s), spread=%.1f pts, median=%.1f, percentile=%.1f, cost/gross=%.3f, spread/ATR=%.3f",
+                     reason,assessment.currentSpreadPts,assessment.medianSpreadPts,
+                     assessment.percentileRank,assessment.costToGrossRatio,assessment.spreadToAtr);
+      return(false);
+     }
+   reason="";
+   return(true);
+  }
+
+//====================================================================
 // LIFECYCLE
 //====================================================================
 int OnInit(void)
@@ -3340,6 +3376,8 @@ int OnInit(void)
       Print("AUTOPSY X: failed to initialize market data for ",_Symbol);
       return(INIT_FAILED);
      }
+   g_spreadCost.Configure(InpSpreadCostMinSamples,InpSpreadCostMaxCostToGross,
+                          InpSpreadCostMaxSpreadToAtr);
    if(!g_regime.Init(_Symbol,InpRegimeTimeframe))
      {
       Print("AUTOPSY X: failed to initialize regime engine (ATR handle)");
@@ -3598,6 +3636,7 @@ void OnDeinit(const int reason)
 void OnTick(void)
   {
    if(!g_md.OnTickUpdate()) return;
+   g_spreadCost.Observe(g_md.CurrentBid(),g_md.CurrentAsk(),g_md.Point());
    // Calendar refresh is internally throttled, never queried on every tick.
    g_newsDefense.Update(false);
    g_risk.OnTickHousekeeping();
@@ -4146,7 +4185,8 @@ void OnTick(void)
             if(triggered)
               {
                string finalReason;
-               if(g_entryEngine.FinalConfirm(g_md,g_pendingScore,score,InpMaxSpreadPoints,finalReason) &&
+               if(AxSpreadCostAllowed(finalReason) &&
+                  g_entryEngine.FinalConfirm(g_md,g_pendingScore,score,InpMaxSpreadPoints,finalReason) &&
                   AxHtfConfluenceOk(g_pendingScore.action))
                  {
                   g_engineState = AX_ENGINE_ATTACKING;
@@ -4167,7 +4207,8 @@ void OnTick(void)
            {
             string reason;
             double stopDistPts = InpEmergencySlPoints;
-            bool ok = g_entryEngine.PreFlightCheck(_Symbol,g_md,score,g_risk,g_chop,stopDistPts,0,0.0,
+            bool ok = AxSpreadCostAllowed(reason)
+                      && g_entryEngine.PreFlightCheck(_Symbol,g_md,score,g_risk,g_chop,stopDistPts,0,0.0,
                                                     InpSessionStartHour,InpSessionEndHour,
                                                     InpAvoidRolloverMinutes,reason)
                       && AxHtfConfluenceOk(score.action);
@@ -4191,7 +4232,8 @@ void OnTick(void)
          if(g_pendingActive)
            {
             string finalReason;
-            if(g_entryEngine.FinalConfirm(g_md,g_pendingScore,score,InpMaxSpreadPoints,finalReason) &&
+            if(AxSpreadCostAllowed(finalReason) &&
+               g_entryEngine.FinalConfirm(g_md,g_pendingScore,score,InpMaxSpreadPoints,finalReason) &&
                AxHtfConfluenceOk(score.action))
               {
                g_engineState = AX_ENGINE_ATTACKING;
@@ -4204,7 +4246,8 @@ void OnTick(void)
            {
             string reason;
             double stopDistPts = InpEmergencySlPoints;
-            bool ok = g_entryEngine.PreFlightCheck(_Symbol,g_md,score,g_risk,g_chop,stopDistPts,0,0.0,
+            bool ok = AxSpreadCostAllowed(reason)
+                      && g_entryEngine.PreFlightCheck(_Symbol,g_md,score,g_risk,g_chop,stopDistPts,0,0.0,
                                                     InpSessionStartHour,InpSessionEndHour,
                                                     InpAvoidRolloverMinutes,reason)
                       && AxHtfConfluenceOk(score.action);
