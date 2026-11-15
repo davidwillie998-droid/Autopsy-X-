@@ -1009,50 +1009,14 @@ public:
 
    // Ticket-specific full close. An uncertain server response is never retried,
    // and another same-symbol position can never be selected as a substitute.
+   // Ticket-specific close delegates to the stronger exact-deal reconciler.
+   // This keeps a single source of truth for close-volume and broker-history proof.
    bool              ClosePositionByTicket(const string symbol,const ulong positionTicket,
                                             const ulong expectedPositionId,const ulong expectedMagic,
                                             string &errorReason,bool &outcomeUncertain)
      {
-      outcomeUncertain=false;
-      if(positionTicket==0 || expectedPositionId==0 || expectedMagic==0 ||
-         !PositionSelectByTicket(positionTicket))
-        { errorReason="Tracked position ticket is unavailable"; return(false); }
-      if(PositionGetString(POSITION_SYMBOL)!=symbol ||
-         (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=expectedPositionId ||
-         (ulong)PositionGetInteger(POSITION_MAGIC)!=expectedMagic)
-        { errorReason="Tracked position identity changed before close"; return(false); }
-
-      bool ok=m_trade.PositionClose(positionTicket);
-      uint retcode=m_trade.ResultRetcode();
-      bool accepted=(retcode==TRADE_RETCODE_DONE || retcode==TRADE_RETCODE_DONE_PARTIAL);
-      if(!ok || !accepted)
-        {
-         if(retcode==TRADE_RETCODE_TIMEOUT || retcode==TRADE_RETCODE_CONNECTION)
-           {
-            outcomeUncertain=true;
-            errorReason="Ticket close outcome uncertain; broker reconciliation required";
-            return(false);
-           }
-         errorReason=StringFormat("Ticket close failed: %u %s",
-                                  retcode,m_trade.ResultRetcodeDescription());
-         return(false);
-        }
-
-      if(PositionSelectByTicket(positionTicket))
-        {
-         if((ulong)PositionGetInteger(POSITION_IDENTIFIER)!=expectedPositionId ||
-            PositionGetString(POSITION_SYMBOL)!=symbol ||
-            (ulong)PositionGetInteger(POSITION_MAGIC)!=expectedMagic)
-           {
-            errorReason="Original ticket remains selectable but its identity changed";
-            return(false);
-           }
-         errorReason="Broker accepted ticket close but the tracked position remains open";
-         return(false);
-        }
-
-      errorReason="";
-      return(true);
+      return(ClosePosition(symbol,positionTicket,expectedPositionId,expectedMagic,
+                           errorReason,outcomeUncertain));
      }
 
    //--- pending stop entry (spec section 19: "OPTIONAL BUY STOP / OPTIONAL SELL STOP"). Confirms   ---
