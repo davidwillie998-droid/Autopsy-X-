@@ -778,8 +778,31 @@ public:
          (ulong)PositionGetInteger(POSITION_MAGIC)!=expectedMagic)
         { errorReason="Tracked position identity/magic mismatch before partial close"; return(false); }
       double before=PositionGetDouble(POSITION_VOLUME);
-      if(volumeToClose<=0.0 || volumeToClose>=before)
-        { errorReason="Invalid partial close volume"; return(false); }
+      long positionType=PositionGetInteger(POSITION_TYPE);
+      if(before<=0.0 || (positionType!=POSITION_TYPE_BUY && positionType!=POSITION_TYPE_SELL) ||
+         volumeToClose<=0.0 || volumeToClose>=before ||
+         !MathIsValidNumber(before) || !MathIsValidNumber(volumeToClose))
+        { errorReason="Invalid partial close position or volume"; return(false); }
+
+      // Validate both the close amount and the residual against the broker's
+      // volume grid before sending. Never round a requested reduction upward.
+      double volumeStep=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+      double minimumVolume=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
+      if(volumeStep<=0.0 || minimumVolume<=0.0 ||
+         !MathIsValidNumber(volumeStep) || !MathIsValidNumber(minimumVolume))
+        { errorReason="Broker volume step/minimum unavailable for partial close"; return(false); }
+      double volumeGridTolerance=MathMax(volumeStep*0.000001,0.00000001);
+      double closeGridUnits=volumeToClose/volumeStep;
+      double residualVolume=before-volumeToClose;
+      double residualGridUnits=residualVolume/volumeStep;
+      if(MathAbs(closeGridUnits-MathRound(closeGridUnits))*volumeStep>volumeGridTolerance ||
+         MathAbs(residualGridUnits-MathRound(residualGridUnits))*volumeStep>volumeGridTolerance ||
+         residualVolume+volumeGridTolerance<minimumVolume)
+        {
+         errorReason=StringFormat("Partial close violates broker volume grid/minimum (close=%.8f residual=%.8f step=%.8f min=%.8f)",
+                                  volumeToClose,residualVolume,volumeStep,minimumVolume);
+         return(false);
+        }
 
       long marginMode=AccountInfoInteger(ACCOUNT_MARGIN_MODE);
       bool isHedging=(marginMode==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING);
@@ -820,7 +843,7 @@ public:
                errorReason="Partial close accepted but exact result deal identity is unavailable";
                return(false);
               }
-            long expectedCloseType=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY)
+            long expectedCloseType=(positionType==POSITION_TYPE_BUY)
                                    ?DEAL_TYPE_SELL:DEAL_TYPE_BUY;
             if(HistoryDealGetInteger(resultDeal,DEAL_ENTRY)!=DEAL_ENTRY_OUT &&
                HistoryDealGetInteger(resultDeal,DEAL_ENTRY)!=DEAL_ENTRY_OUT_BY)
