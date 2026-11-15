@@ -40,6 +40,8 @@ struct SAxBrokerCompatibilitySnapshot
    ENUM_AX_ACCOUNT_MODEL accountModel;
    ENUM_AX_ACCOUNT_ENVIRONMENT accountEnvironment;
    ENUM_AX_CAPABILITY_STATE marketOrderCapability;
+   ENUM_AX_CAPABILITY_STATE positionManagementCapability;
+   string positionManagementReason;
    long accountLeverage;
    long marginStopoutMode;
    double marginStopoutCall;
@@ -84,6 +86,8 @@ private:
       out.accountModel=AX_ACCOUNT_MODEL_UNKNOWN;
       out.accountEnvironment=AX_ACCOUNT_ENV_UNKNOWN;
       out.marketOrderCapability=AX_CAPABILITY_UNKNOWN;
+      out.positionManagementCapability=AX_CAPABILITY_UNKNOWN;
+      out.positionManagementReason="ACCOUNT_MARGIN_MODEL_NOT_VERIFIED";
       out.accountLeverage=0;
       out.marginStopoutMode=0;
       out.marginStopoutCall=0.0;
@@ -129,11 +133,23 @@ private:
 
       long marginMode=AccountInfoInteger(ACCOUNT_MARGIN_MODE);
       if(marginMode==ACCOUNT_MARGIN_MODE_RETAIL_NETTING)
+        {
          out.accountModel=AX_ACCOUNT_MODEL_NETTING;
+         out.positionManagementCapability=AX_CAPABILITY_SUPPORTED;
+         out.positionManagementReason="NETTING_LIFECYCLE_SUPPORTED";
+        }
       else if(marginMode==ACCOUNT_MARGIN_MODE_EXCHANGE)
+        {
          out.accountModel=AX_ACCOUNT_MODEL_EXCHANGE;
+         out.positionManagementCapability=AX_CAPABILITY_UNSUPPORTED;
+         out.positionManagementReason="EXCHANGE_POSITION_LIFECYCLE_NOT_YET_VALIDATED";
+        }
       else if(marginMode==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING)
+        {
          out.accountModel=AX_ACCOUNT_MODEL_HEDGING;
+         out.positionManagementCapability=AX_CAPABILITY_UNSUPPORTED;
+         out.positionManagementReason="HEDGING_TICKET_LIFECYCLE_ADAPTER_NOT_YET_ACTIVE";
+        }
 
       long tradeMode=AccountInfoInteger(ACCOUNT_TRADE_MODE);
       if(tradeMode==ACCOUNT_TRADE_MODE_DEMO)
@@ -248,6 +264,11 @@ public:
                   s.tickValueLoss,s.contractSize,s.volumeMinimum,s.volumeMaximum,
                   s.volumeStep,s.volumeLimit,s.spreadPoints,
                   s.quoteAvailable?"true":"false");
+      string positionLifecycle="UNKNOWN";
+      if(s.positionManagementCapability==AX_CAPABILITY_SUPPORTED) positionLifecycle="SUPPORTED";
+      else if(s.positionManagementCapability==AX_CAPABILITY_UNSUPPORTED) positionLifecycle="UNSUPPORTED";
+      PrintFormat("FLIPDEMON UBCE POSITION LIFECYCLE: %s (%s).",
+                  positionLifecycle,s.positionManagementReason);
       PrintFormat("FLIPDEMON UBCE ACCOUNT PROFILE: %s; account-label classification and cent scaling require a verified broker profile, never inference.",
                   s.accountProfileReason);
      }
