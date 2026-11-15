@@ -94,8 +94,10 @@ require("FLIPDEMON MARGIN OK" in ea and "FLIPDEMON MARGIN BLOCK" in ea,
         "margin preflight outcome is auditable in the terminal Journal")
 require(bool(re.search(r"InpExecutionMode\s*=\s*AX_EXEC_ANALYSIS_ONLY", ea)),
         "execution defaults to ANALYSIS_ONLY")
-require("ACCOUNT_MARGIN_MODE_RETAIL_HEDGING" in ea and "return(INIT_FAILED)" in ea,
-        "unsupported hedging accounts fail initialization")
+require("g_brokerSnapshot.positionManagementCapability!=AX_CAPABILITY_SUPPORTED" in ea
+        and "g_brokerSnapshot.positionManagementReason" in ea
+        and "return(INIT_FAILED)" in ea,
+        "unsupported broker position lifecycles fail initialization through the UBCE capability gate")
 require("bool AxHasForeignPositionOnSymbol(string &reasonOut)" in ea
         and "if(AxHasForeignPositionOnSymbol(gateReason))" in ea,
         "entries refuse to trade against a foreign position on the same netting symbol")
