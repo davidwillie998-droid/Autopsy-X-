@@ -3720,6 +3720,7 @@ void OnDeinit(const int reason)
       g_dash.RemoveAll();
      }
    g_regimeJournal.Deinit();
+   g_autopsy.ReportVWAPAlignment(InpMinTradesForValidation);
    g_autopsy.Deinit();
    g_regime.Deinit();
    g_regimeHtf.Deinit();
