@@ -749,6 +749,17 @@ bool AxCloseAndRecord(const ENUM_AX_EXIT_REASON reason)
          return(false);
         }
      }
+   // Capture the executable quote immediately before this EA-initiated full close.
+   // BUY positions sell at bid; SELL positions buy at ask. Use it only after exact
+   // broker close-history confirmation below.
+   MqlTick exitBenchmarkTick;
+   ZeroMemory(exitBenchmarkTick);
+   bool exitBenchmarkValid=SymbolInfoTick(_Symbol,exitBenchmarkTick) &&
+                           exitBenchmarkTick.bid>0.0 && exitBenchmarkTick.ask>=exitBenchmarkTick.bid;
+   double exitBenchmarkPrice=0.0;
+   if(exitBenchmarkValid)
+      exitBenchmarkPrice=(g_posState.dir==AX_DIR_BUY)?exitBenchmarkTick.bid:exitBenchmarkTick.ask;
+
    string errReason;
    bool closeOutcomeUncertain=false;
    if(!g_exec.ClosePosition(_Symbol,ticket,g_positionIdentifier,InpMagicNumber,
@@ -780,6 +791,15 @@ bool AxCloseAndRecord(const ENUM_AX_EXIT_REASON reason)
       // finalization; returning false prevents immediate flip-entry on incomplete evidence.
       Print("FLIPDEMON: close confirmed but deal history is not ready; finalization deferred.");
       return(false);
+     }
+   if(exitBenchmarkValid && exitBenchmarkPrice>0.0 && g_md.Point()>0.0)
+     {
+      // Adverse-only slippage: long exits sell below bid; short exits buy above ask.
+      double adverseExitSlippagePts=(g_posState.dir==AX_DIR_BUY)
+                                    ?MathMax(0.0,(exitBenchmarkPrice-closePrice)/g_md.Point())
+                                    :MathMax(0.0,(closePrice-exitBenchmarkPrice)/g_md.Point());
+      if(MathIsValidNumber(adverseExitSlippagePts))
+         g_spreadCost.ObserveExitSlippage(adverseExitSlippagePts);
      }
    AxFinalizeTrade(closePrice,grossProfit,commission,swap,closeTime,reason,lastTicket);
    return(true);
