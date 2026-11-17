@@ -1921,6 +1921,8 @@ void AxRegisterFillQuality(const double slippagePts,const int latencyMs)
    g_sumSlippagePts += slippagePts;
    g_sumLatencyMs   += latencyMs;
    g_fillCount++;
+   // This function is called only after exact broker fill confirmation.
+   g_spreadCost.ObserveFillSlippage(slippagePts);
 
    bool poor = !g_risk.SlippageAcceptable(slippagePts) || (latencyMs>InpMaxFillLatencyMs);
    if(poor)
@@ -3274,9 +3276,12 @@ bool AxSpreadCostAllowed(string &reason)
      {
       reason=assessment.reason;
       if(InpVerboseLogging)
-         PrintFormat("FLIPDEMON SPREAD COST: blocked (%s), spread=%.1f pts, median=%.1f, percentile=%.1f, cost/gross=%.3f, spread/ATR=%.3f",
+         PrintFormat("FLIPDEMON SPREAD COST: blocked (%s), spread=%.1f pts, median=%.1f, percentile=%.1f, slip/side=%.1f pts, fillSamples=%d empiricalP95=%s, cost/gross=%.3f, spread/ATR=%.3f",
                      reason,assessment.currentSpreadPts,assessment.medianSpreadPts,
-                     assessment.percentileRank,assessment.costToGrossRatio,assessment.spreadToAtr);
+                     assessment.percentileRank,assessment.effectiveSlippagePerSidePts,
+                     assessment.empiricalSlippageSamples,
+                     assessment.usedEmpiricalSlippage?"yes":"no",
+                     assessment.costToGrossRatio,assessment.spreadToAtr);
       return(false);
      }
    reason="";
