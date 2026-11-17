@@ -696,6 +696,89 @@ public:
       return(rec.tradeClass);
      }
 
+   // Research-only cohort report. A trade is aligned when BUY entered with BULLISH VWAP
+   // or SELL entered with BEARISH VWAP. Opposed trades are kept separate. NEUTRAL,
+   // unavailable and legacy NOT_CAPTURED rows are excluded from both cohorts.
+   // Provenance is segmented so tester, forward-demo and live outcomes are never blended.
+   void              ReportVWAPAlignment(const int minimumSamples) const
+     {
+      int samples[12],wins[12],losses[12],rSamples[12];
+      double net[12],grossWins[12],grossLosses[12],rTotal[12];
+      ArrayInitialize(samples,0);
+      ArrayInitialize(wins,0);
+      ArrayInitialize(losses,0);
+      ArrayInitialize(rSamples,0);
+      ArrayInitialize(net,0.0);
+      ArrayInitialize(grossWins,0.0);
+      ArrayInitialize(grossLosses,0.0);
+      ArrayInitialize(rTotal,0.0);
+
+      for(int i=0;i<m_count;i++)
+        {
+         SAxTradeRecord rec=m_records[i];
+         if(rec.isPartial) continue;
+
+         int provenance=3;
+         if(rec.provenance==AX_PROVENANCE_BACKTEST) provenance=0;
+         else if(rec.provenance==AX_PROVENANCE_FORWARD_DEMO) provenance=1;
+         else if(rec.provenance==AX_PROVENANCE_LIVE) provenance=2;
+
+         int cohort=2;
+         if(rec.vwapStateAtEntry=="BULLISH" || rec.vwapStateAtEntry=="BEARISH")
+           {
+            bool aligned=(rec.direction==AX_DIR_BUY && rec.vwapStateAtEntry=="BULLISH") ||
+                         (rec.direction==AX_DIR_SELL && rec.vwapStateAtEntry=="BEARISH");
+            cohort=aligned ? 0 : 1;
+           }
+
+         int slot=provenance*3+cohort;
+         samples[slot]++;
+         net[slot]+=rec.netProfit;
+         if(rec.netProfit>0.0)
+           {
+            wins[slot]++;
+            grossWins[slot]+=rec.netProfit;
+           }
+         else if(rec.netProfit<0.0)
+           {
+            losses[slot]++;
+            grossLosses[slot]+=MathAbs(rec.netProfit);
+           }
+         if(rec.rMultiple!=EMPTY_VALUE && MathIsValidNumber(rec.rMultiple))
+           {
+            rSamples[slot]++;
+            rTotal[slot]+=rec.rMultiple;
+           }
+        }
+
+      string provenanceNames[4]={"BACKTEST","FORWARD_DEMO","LIVE","UNKNOWN_PROVENANCE"};
+      string cohortNames[3]={"ALIGNED","OPPOSED","VWAP_STATE_UNAVAILABLE"};
+      PrintFormat("FLIPDEMON VWAP RESEARCH | symbol-scoped closed-trade cohorts | minimum sample threshold=%d | partial slices excluded | no execution or sizing changes",
+                  MathMax(1,minimumSamples));
+      for(int p=0;p<4;p++)
+        {
+         for(int c=0;c<3;c++)
+           {
+            int slot=p*3+c;
+            if(samples[slot]<=0) continue;
+            int decided=wins[slot]+losses[slot];
+            double winRate=(decided>0) ? 100.0*wins[slot]/decided : 0.0;
+            string pfText=(grossLosses[slot]>0.0)
+                          ? DoubleToString(grossWins[slot]/grossLosses[slot],3)
+                          : (grossWins[slot]>0.0 ? "INF" : "N/A");
+            string avgRText=(rSamples[slot]>0)
+                            ? DoubleToString(rTotal[slot]/rSamples[slot],3)
+                            : "N/A";
+            string sampleState=(samples[slot]>=MathMax(1,minimumSamples))
+                               ? "SAMPLE_THRESHOLD_MET" : "INSUFFICIENT_SAMPLE";
+            PrintFormat("FLIPDEMON VWAP COHORT | provenance=%s cohort=%s n=%d wins=%d losses=%d winRate=%.1f%% net=%.2f PF=%s avgR=%s validR=%d/%d status=%s",
+                        provenanceNames[p],cohortNames[c],samples[slot],wins[slot],
+                        losses[slot],winRate,net[slot],pfText,avgRText,
+                        rSamples[slot],samples[slot],sampleState);
+           }
+        }
+     }
+
    ulong             LastAccountedDealTicket(const ulong positionIdentifier) const
      {
       ulong currentLast=LastAccountedDealTicketInFile(m_fileName,positionIdentifier);
