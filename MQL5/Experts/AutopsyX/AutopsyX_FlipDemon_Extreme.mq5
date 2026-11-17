@@ -79,7 +79,7 @@ input double          InpAccountFlipTargetEquity = 10000.0; // Initial target; c
 
 input group "=== PYRAMID CAMPAIGN (DECISION LAYER) ===";
 input bool            InpEnablePyramidDecision    = true;   // Evaluate profitable continuation adds; order execution remains separately gated
-input int             InpPyramidMaxTiers          = 5;      // Includes the initial position
+input int             InpPyramidMaxTiers          = 0;      // Zero means no EA-imposed tier count ceiling; risk, margin and broker limits still apply
 input double          InpPyramidLotMultiplier     = 1.5;    // Each tier must exceed the prior tier; anti-martingale only
 input double          InpPyramidAtrGapMultiplier  = 0.75;   // Minimum favorable continuation distance from the last confirmed tier fill
 input double          InpPyramidMinProfitMoney    = 0.01;   // Require positive broker-reported floating P/L plus swap before considering an add
@@ -4083,9 +4083,9 @@ void AxProcessTick(void)
          g_lastPyramidDecisionBar=pyramidClosedBar;
          SAxPyramidCampaignRecord campaign;
          if(g_pyramidCampaignRegistry.Find(g_positionIdentifier,campaign) &&
-            campaign.active && campaign.tierCount<InpPyramidMaxTiers &&
-            campaign.tierCount<AX_PYRAMID_CAMPAIGN_MAX_TIERS &&
-            PositionSelectByTicket(g_posState.ticket))
+            campaign.active &&
+             (InpPyramidMaxTiers<=0 || campaign.tierCount<InpPyramidMaxTiers) &&
+             PositionSelectByTicket(g_posState.ticket))
            {
             double basketProfit=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
             ENUM_AX_DIR closedTrend=AX_DIR_NONE;
@@ -4128,8 +4128,9 @@ void AxProcessTick(void)
                                          InpDeviationPoints,g_risk.RiskPercent(),
                                          pyramidRiskDecision,pyramidRiskReason))
                  {
-                  PrintFormat("FLIPDEMON PYRAMID CANDIDATE: tier=%d/%d direction=%s addLots=%.8f basketPnl=%.2f lastTierFill=%.8f requiredGap=%.8f projectedAggregateRisk=%.2f%%.",
-                              campaign.tierCount+1,InpPyramidMaxTiers,
+                  PrintFormat("FLIPDEMON PYRAMID CANDIDATE: tier=%d/%s direction=%s addLots=%.8f basketPnl=%.2f lastTierFill=%.8f requiredGap=%.8f projectedAggregateRisk=%.2f%%.",
+                               campaign.tierCount+1,
+                               InpPyramidMaxTiers>0?IntegerToString(InpPyramidMaxTiers):"UNLIMITED",
                               campaign.dir==AX_DIR_BUY?"BUY":"SELL",candidateLots,
                               basketProfit,campaign.lastTierFillPrice,requiredGap,
                               (pyramidRiskDecision.existingRiskMoney+pyramidRiskDecision.proposedRiskMoney)/
