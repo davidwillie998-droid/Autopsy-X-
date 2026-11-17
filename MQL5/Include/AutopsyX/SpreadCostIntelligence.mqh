@@ -137,11 +137,12 @@ public:
    // Entry-fill observations are used as a conservative per-side proxy for the
    // round trip. Until the configured warm-up sample count is reached, retain
    // the explicit configured allowance rather than claiming a measured baseline.
-   double            FillSlippagePercentile(const double percentile) const
+   bool              FillSlippagePercentile(const double percentile,double &valueOut) const
      {
-      if(m_fillCount<=0 || !MathIsValidNumber(percentile)) return(0.0);
+      valueOut=0.0;
+      if(m_fillCount<=0 || !MathIsValidNumber(percentile)) return(false);
       double sorted[];
-      if(ArrayResize(sorted,m_fillCount)!=m_fillCount) return(0.0);
+      if(ArrayResize(sorted,m_fillCount)!=m_fillCount) return(false);
       for(int i=0;i<m_fillCount;i++)
         {
          int idx=m_fillHead-i;
@@ -152,7 +153,8 @@ public:
       double bounded=MathMax(0.0,MathMin(1.0,percentile));
       int index=(int)MathCeil((m_fillCount-1)*bounded);
       index=(int)MathMax(0,MathMin(m_fillCount-1,index));
-      return(sorted[index]);
+      valueOut=sorted[index];
+      return(MathIsValidNumber(valueOut) && valueOut>=0.0);
      }
 
    // Estimates full round-trip cost and compares it with a gross target
@@ -235,8 +237,8 @@ public:
       out.effectiveSlippagePerSidePts=slippagePerSidePts;
       if(m_fillCount>=m_minSamples)
         {
-         double observedP95=FillSlippagePercentile(0.95);
-         if(!MathIsValidNumber(observedP95) || observedP95<0.0)
+         double observedP95=0.0;
+         if(!FillSlippagePercentile(0.95,observedP95))
            {
             out.status=AX_SCI_INVALID_COST_INPUT;
             out.reason="Empirical fill-slippage estimate unavailable";
