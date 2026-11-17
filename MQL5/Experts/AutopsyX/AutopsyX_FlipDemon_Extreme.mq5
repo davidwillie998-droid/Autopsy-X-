@@ -2445,10 +2445,9 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       return(false);
      }
    ulong orderCallStartUs=GetMicrosecondCount();
-   bool orderCallReturned=g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr,fillLatencyMs,actualLots,entryOutcomeUncertain);
-   g_executionLatency.RecordOrderCall(GetMicrosecondCount()-orderCallStartUs);
-   if(!orderCallReturned)
+   if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr,fillLatencyMs,actualLots,entryOutcomeUncertain))
      {
+      g_executionLatency.RecordOrderCall(GetMicrosecondCount()-orderCallStartUs);
       if(!entryOutcomeUncertain && g_tradeLifecycle.State()==AX_LIFECYCLE_ORDER_SUBMITTED)
          g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_FAILED);
       g_consecutiveExecFailures++;
@@ -2497,6 +2496,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry failed (%s)",execErr);
       return(false);
      }
+   g_executionLatency.RecordOrderCall(GetMicrosecondCount()-orderCallStartUs);
    g_consecutiveExecFailures = 0;
    g_risk.RegisterExecutionSuccess();
    // OpenMarket returns true only after broker-position confirmation, never on request acceptance.
