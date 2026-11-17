@@ -72,13 +72,12 @@ public:
      }
 
    // Terminal Global Variables persist the equity high-water mark across EA restarts.
-   // The key includes account login, symbol and magic to prevent cross-account collisions.
-   bool              Init(const string symbol,const ulong magic)
+   // The key is account-wide, not symbol-specific, so every chart using this magic
+   // shares one equity high-water mark and one growth milestone state.
+   bool              Init(const ulong magic)
      {
       long login=AccountInfoInteger(ACCOUNT_LOGIN);
-      // MT5 terminal Global Variable names are limited to 63 characters.
-      // Account + magic + a bounded symbol prefix keeps this key within that limit.
-      m_persistKey=StringFormat("AXFP_%I64d_%I64u_%s",login,magic,StringSubstr(symbol,0,17));
+      m_persistKey=StringFormat("AXFP_%I64d_%I64u",login,magic);
       m_currentEquity=AccountInfoDouble(ACCOUNT_EQUITY);
       if(m_startingEquity<=0.0 || m_targetEquity<=m_startingEquity ||
          !MathIsValidNumber(m_currentEquity) || m_currentEquity<=0.0)
