@@ -7,7 +7,6 @@
 #define AX_VIRTUALEXITREGISTRY_MQH
 #include "Defs.mqh"
 
-#define AX_VIRTUAL_EXIT_MAX_RECORDS 64
 #define AX_VIRTUAL_EXIT_LEGACY_FIELD_COUNT 12
 #define AX_VIRTUAL_EXIT_FIELD_COUNT 21
 
@@ -40,7 +39,7 @@ class CVirtualExitRegistry
   {
 private:
    string                 m_fileName;
-   SAxVirtualExitRecord   m_records[AX_VIRTUAL_EXIT_MAX_RECORDS];
+   SAxVirtualExitRecord   m_records[];
    int                    m_count;
    bool                   m_persistOk;
 
@@ -122,6 +121,12 @@ public:
      {
       m_fileName=StringFormat("%s_%s_%I64u_%I64u_VirtualExits_v1.csv",eaName,symbol,(ulong)AccountInfoInteger(ACCOUNT_LOGIN),magic);
       m_count=0;
+      if(ArrayResize(m_records,0)!=0)
+        {
+         m_persistOk=false;
+         Print("FLIPDEMON VIRTUAL EXIT ERROR: registry dynamic storage initialization failed.");
+         return(false);
+        }
       int handle=FileOpen(m_fileName,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ);
       if(handle==INVALID_HANDLE)
         {
@@ -140,12 +145,6 @@ public:
         {
          string line=FileReadString(handle);
          if(StringLen(line)==0) continue;
-         if(m_count>=AX_VIRTUAL_EXIT_MAX_RECORDS)
-           {
-            valid=false;
-            Print("FLIPDEMON VIRTUAL EXIT ERROR: state capacity exceeded; refusing to truncate records.");
-            break;
-           }
 
          string f[];
          int fieldCount=StringSplit(line,'|',f);
@@ -204,6 +203,13 @@ public:
             Print("FLIPDEMON VIRTUAL EXIT ERROR: duplicate position identifier; recovery refused.");
             break;
            }
+         int nextCount=m_count+1;
+         if(ArrayResize(m_records,nextCount)!=nextCount)
+           {
+            valid=false;
+            Print("FLIPDEMON VIRTUAL EXIT ERROR: registry memory allocation failed; recovery refused.");
+            break;
+           }
 
          SAxVirtualExitRecord r;
          r.ticket=(ulong)ticket;
@@ -234,6 +240,7 @@ public:
       if(!valid)
         {
          m_count=0;
+         ArrayResize(m_records,0);
          m_persistOk=false;
          return(false);
         }
@@ -261,14 +268,19 @@ public:
         }
 
       int index=FindIndex(record.positionIdentifier);
-      if(index<0 && m_count>=AX_VIRTUAL_EXIT_MAX_RECORDS)
+      int previousCount=m_count;
+      if(index<0)
         {
-         m_persistOk=false;
-         Print("FLIPDEMON VIRTUAL EXIT ERROR: registry full; refusing new state.");
-         return(false);
+         int nextCount=m_count+1;
+         if(ArrayResize(m_records,nextCount)!=nextCount)
+           {
+            m_persistOk=false;
+            Print("FLIPDEMON VIRTUAL EXIT ERROR: registry memory allocation failed; new position state rejected.");
+            return(false);
+           }
         }
 
-      int previousCount=m_count;
+
       SAxVirtualExitRecord previous;
       if(index>=0) previous=m_records[index];
       SAxVirtualExitRecord next=record;
