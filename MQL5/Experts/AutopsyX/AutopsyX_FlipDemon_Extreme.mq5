@@ -151,8 +151,8 @@ input group "=== RISK ENGINE ===";
 input double         InpDailyLossLimitPercent   = 8.0;    // Daily loss limit (%) - stops session when hit
 input int            InpMaxConsecutiveLosses    = 5;      // Max consecutive losses before pausing
 input int            InpMaxOpenPositions        = 1;      // Max simultaneously open positions
-input int            InpMaxFlipsPerDay          = 20;      // Max direction flips per day
-input int            InpMaxTradesPerRollingPeriod = 10;    // Max trades within rolling window
+input int            InpMaxFlipsPerDay          = 0;       // 0 = no fixed daily flip-count cap; every opportunity must still pass all risk gates
+input int            InpMaxTradesPerRollingPeriod = 0;       // 0 = no fixed rolling trade-count cap; safety controls remain active
 input int            InpRollingPeriodSeconds    = 300;     // Rolling window length, seconds
 input double         InpMaxSpreadPoints         = 250;     // Max acceptable spread, points
 input double         InpMaxSlippagePoints       = 30;      // Max acceptable slippage, points
