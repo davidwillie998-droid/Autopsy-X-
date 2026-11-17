@@ -696,12 +696,62 @@ public:
       return(rec.tradeClass);
      }
 
-   // Research-only cohort report. A trade is aligned when BUY entered with BULLISH VWAP
-   // or SELL entered with BEARISH VWAP. Opposed trades are kept separate. NEUTRAL,
-   // unavailable and legacy NOT_CAPTURED rows are excluded from both cohorts.
-   // Provenance is segmented so tester, forward-demo and live outcomes are never blended.
+   // Research-only campaign report. Partial exit rows are aggregated with the final
+   // close by stable POSITION_IDENTIFIER, so one campaign contributes one outcome.
+   // BUY+BULLISH and SELL+BEARISH are aligned; the reverse combinations are opposed.
+   // Neutral/unavailable states are kept out of both cohorts. Dataset provenance is
+   // segmented so tester, forward-demo and live results are never blended.
    void              ReportVWAPAlignment(const int minimumSamples) const
      {
+      int minCount=minimumSamples;
+      if(minCount<1) minCount=1;
+
+      ulong positionIds[];
+      double campaignNet[];
+      int finalRecordIndex[];
+      if(ArrayResize(positionIds,m_count)!=m_count ||
+         ArrayResize(campaignNet,m_count)!=m_count ||
+         ArrayResize(finalRecordIndex,m_count)!=m_count)
+        {
+         Print("FLIPDEMON VWAP RESEARCH WARNING: campaign aggregation allocation failed; no cohort report produced.");
+         return;
+        }
+
+      int campaignCount=0;
+      for(int i=0;i<m_count;i++)
+        {
+         SAxTradeRecord rec=m_records[i];
+         if(rec.positionIdentifier==0) continue;
+
+         int group=-1;
+         for(int j=0;j<campaignCount;j++)
+           {
+            if(positionIds[j]==rec.positionIdentifier)
+              {
+               group=j;
+               break;
+              }
+           }
+         if(group<0)
+           {
+            group=campaignCount;
+            positionIds[group]=rec.positionIdentifier;
+            campaignNet[group]=0.0;
+            finalRecordIndex[group]=-1;
+            campaignCount++;
+           }
+
+         // Partial and final deal rows are slices of one broker position. Sum each
+         // persisted slice once, but count only after a durable non-partial close exists.
+         campaignNet[group]+=rec.netProfit;
+         if(!rec.isPartial)
+           {
+            int priorFinal=finalRecordIndex[group];
+            if(priorFinal<0 || rec.exitTime>=m_records[priorFinal].exitTime)
+               finalRecordIndex[group]=i;
+           }
+        }
+
       int samples[12],wins[12],losses[12],rSamples[12];
       double net[12],grossWins[12],grossLosses[12],rTotal[12];
       ArrayInitialize(samples,0);
@@ -713,49 +763,63 @@ public:
       ArrayInitialize(grossLosses,0.0);
       ArrayInitialize(rTotal,0.0);
 
-      for(int i=0;i<m_count;i++)
+      for(int g=0;g<campaignCount;g++)
         {
-         SAxTradeRecord rec=m_records[i];
-         if(rec.isPartial) continue;
+         int finalIndex=finalRecordIndex[g];
+         if(finalIndex<0) continue; // partial-only/open campaigns are not closed outcomes
+         SAxTradeRecord finalRec=m_records[finalIndex];
 
          int provenance=3;
-         if(rec.provenance==AX_PROVENANCE_BACKTEST) provenance=0;
-         else if(rec.provenance==AX_PROVENANCE_FORWARD_DEMO) provenance=1;
-         else if(rec.provenance==AX_PROVENANCE_LIVE) provenance=2;
+         if(finalRec.provenance==AX_PROVENANCE_BACKTEST) provenance=0;
+         else if(finalRec.provenance==AX_PROVENANCE_FORWARD_DEMO) provenance=1;
+         else if(finalRec.provenance==AX_PROVENANCE_LIVE) provenance=2;
 
          int cohort=2;
-         if(rec.vwapStateAtEntry=="BULLISH" || rec.vwapStateAtEntry=="BEARISH")
+         if(finalRec.vwapStateAtEntry=="BULLISH" || finalRec.vwapStateAtEntry=="BEARISH")
            {
-            bool aligned=(rec.direction==AX_DIR_BUY && rec.vwapStateAtEntry=="BULLISH") ||
-                         (rec.direction==AX_DIR_SELL && rec.vwapStateAtEntry=="BEARISH");
+            bool aligned=(finalRec.direction==AX_DIR_BUY && finalRec.vwapStateAtEntry=="BULLISH") ||
+                         (finalRec.direction==AX_DIR_SELL && finalRec.vwapStateAtEntry=="BEARISH");
             cohort=aligned ? 0 : 1;
            }
 
          int slot=provenance*3+cohort;
+         double campaignResult=campaignNet[g];
          samples[slot]++;
-         net[slot]+=rec.netProfit;
-         if(rec.netProfit>0.0)
+         net[slot]+=campaignResult;
+         if(campaignResult>0.0)
            {
             wins[slot]++;
-            grossWins[slot]+=rec.netProfit;
+            grossWins[slot]+=campaignResult;
            }
-         else if(rec.netProfit<0.0)
+         else if(campaignResult<0.0)
            {
             losses[slot]++;
-            grossLosses[slot]+=MathAbs(rec.netProfit);
+            grossLosses[slot]+=MathAbs(campaignResult);
            }
-         if(rec.rMultiple!=EMPTY_VALUE && MathIsValidNumber(rec.rMultiple))
+
+         // The final-slice R value shares the original campaign-risk denominator.
+         // Recover that denominator to express the aggregated campaign P/L in R.
+         // If the final slice is exactly breakeven or R is unavailable, report no R
+         // observation rather than manufacturing a denominator.
+         if(finalRec.rMultiple!=EMPTY_VALUE && MathIsValidNumber(finalRec.rMultiple) &&
+            MathAbs(finalRec.rMultiple)>0.0000001 && MathAbs(finalRec.netProfit)>0.0000001)
            {
-            rSamples[slot]++;
-            rTotal[slot]+=rec.rMultiple;
+            double originalRiskMoney=finalRec.netProfit/finalRec.rMultiple;
+            if(MathIsValidNumber(originalRiskMoney) && originalRiskMoney>0.0)
+              {
+               double campaignR=campaignResult/originalRiskMoney;
+               if(MathIsValidNumber(campaignR))
+                 {
+                  rSamples[slot]++;
+                  rTotal[slot]+=campaignR;
+                 }
+              }
            }
         }
 
       string provenanceNames[4]={"BACKTEST","FORWARD_DEMO","LIVE","UNKNOWN_PROVENANCE"};
       string cohortNames[3]={"ALIGNED","OPPOSED","NEUTRAL_OR_UNAVAILABLE"};
-      int minCount=minimumSamples;
-      if(minCount<1) minCount=1;
-      PrintFormat("FLIPDEMON VWAP RESEARCH | symbol-scoped closed-trade cohorts | minimum sample threshold=%d | partial slices excluded | no execution or sizing changes",
+      PrintFormat("FLIPDEMON VWAP RESEARCH | symbol-scoped closed campaigns | minimum sample threshold=%d | partial exits aggregated | no execution or sizing changes",
                   minCount);
       for(int p=0;p<4;p++)
         {
@@ -773,7 +837,7 @@ public:
                             : "N/A";
             string sampleState=(samples[slot]>=minCount)
                                ? "SAMPLE_THRESHOLD_MET" : "INSUFFICIENT_SAMPLE";
-            PrintFormat("FLIPDEMON VWAP COHORT | provenance=%s cohort=%s n=%d wins=%d losses=%d winRate=%.1f%% net=%.2f PF=%s avgR=%s validR=%d/%d status=%s",
+            PrintFormat("FLIPDEMON VWAP COHORT | provenance=%s cohort=%s campaigns=%d wins=%d losses=%d winRate=%.1f%% net=%.2f PF=%s avgCampaignR=%s validR=%d/%d status=%s",
                         provenanceNames[p],cohortNames[c],samples[slot],wins[slot],
                         losses[slot],winRate,net[slot],pfText,avgRText,
                         rSamples[slot],samples[slot],sampleState);
