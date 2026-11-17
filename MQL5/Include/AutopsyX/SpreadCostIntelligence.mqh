@@ -26,6 +26,9 @@ struct SAxSpreadCostAssessment
    double medianSpreadPts;
    double percentileRank;
    double spreadToAtr;
+   double effectiveSlippagePerSidePts;
+   int    empiricalSlippageSamples;
+   bool   usedEmpiricalSlippage;
    double estimatedRoundTripCost;
    double expectedGrossProfit;
    double costToGrossRatio;
@@ -36,8 +39,11 @@ class CSpreadCostIntelligence
   {
 private:
    double            m_spreads[AX_SCI_BUFFER_SIZE];
+   double            m_fillSlippage[AX_SCI_BUFFER_SIZE];
    int               m_count;
    int               m_head;
+   int               m_fillCount;
+   int               m_fillHead;
    int               m_minSamples;
    double            m_maxCostToGross;
    double            m_maxSpreadToAtr;
@@ -78,7 +84,13 @@ public:
      {
       m_count=0;
       m_head=-1;
-      for(int i=0;i<AX_SCI_BUFFER_SIZE;i++) m_spreads[i]=0.0;
+      m_fillCount=0;
+      m_fillHead=-1;
+      for(int i=0;i<AX_SCI_BUFFER_SIZE;i++)
+        {
+         m_spreads[i]=0.0;
+         m_fillSlippage[i]=0.0;
+        }
      }
 
    void              Configure(const int minSamples,
@@ -109,6 +121,40 @@ public:
 
    int               SampleCount(void) const { return(m_count); }
 
+   // Only broker-confirmed fills are admitted. The EA supplies absolute adverse
+   // price deviation in points; rejected/ambiguous requests never enter this sample.
+   bool              ObserveFillSlippage(const double slippagePts)
+     {
+      if(!MathIsValidNumber(slippagePts) || slippagePts<0.0) return(false);
+      m_fillHead=(m_fillHead+1)%AX_SCI_BUFFER_SIZE;
+      m_fillSlippage[m_fillHead]=slippagePts;
+      if(m_fillCount<AX_SCI_BUFFER_SIZE) m_fillCount++;
+      return(true);
+     }
+
+   int               FillSlippageSampleCount(void) const { return(m_fillCount); }
+
+   // Entry-fill observations are used as a conservative per-side proxy for the
+   // round trip. Until the configured warm-up sample count is reached, retain
+   // the explicit configured allowance rather than claiming a measured baseline.
+   double            FillSlippagePercentile(const double percentile) const
+     {
+      if(m_fillCount<=0 || !MathIsValidNumber(percentile)) return(0.0);
+      double sorted[];
+      if(ArrayResize(sorted,m_fillCount)!=m_fillCount) return(0.0);
+      for(int i=0;i<m_fillCount;i++)
+        {
+         int idx=m_fillHead-i;
+         if(idx<0) idx+=AX_SCI_BUFFER_SIZE;
+         sorted[i]=m_fillSlippage[idx];
+        }
+      SortValues(sorted,m_fillCount);
+      double bounded=MathMax(0.0,MathMin(1.0,percentile));
+      int index=(int)MathCeil((m_fillCount-1)*bounded);
+      index=(int)MathMax(0,MathMin(m_fillCount-1,index));
+      return(sorted[index]);
+     }
+
    // Estimates full round-trip cost and compares it with a gross target
    // expressed in points. commissionRoundTripPerLot is account-currency
    // commission for opening AND closing one lot, sourced from broker data.
@@ -126,6 +172,9 @@ public:
       out.medianSpreadPts=0.0;
       out.percentileRank=0.0;
       out.spreadToAtr=0.0;
+      out.effectiveSlippagePerSidePts=0.0;
+      out.empiricalSlippageSamples=m_fillCount;
+      out.usedEmpiricalSlippage=false;
       out.estimatedRoundTripCost=0.0;
       out.expectedGrossProfit=0.0;
       out.costToGrossRatio=0.0;
@@ -180,9 +229,26 @@ public:
          if(sorted[i]<=out.currentSpreadPts) belowOrEqual++;
       out.percentileRank=100.0*(double)belowOrEqual/(double)m_count;
 
+      // Use the greater of the configured floor and observed p95 entry slippage.
+      // The empirical entry sample is a conservative proxy for each side, not a
+      // claim that exit slippage has been independently measured.
+      out.effectiveSlippagePerSidePts=slippagePerSidePts;
+      if(m_fillCount>=m_minSamples)
+        {
+         double observedP95=FillSlippagePercentile(0.95);
+         if(!MathIsValidNumber(observedP95) || observedP95<0.0)
+           {
+            out.status=AX_SCI_INVALID_COST_INPUT;
+            out.reason="Empirical fill-slippage estimate unavailable";
+            return(false);
+           }
+         out.effectiveSlippagePerSidePts=MathMax(slippagePerSidePts,observedP95);
+         out.usedEmpiricalSlippage=true;
+        }
+
       // Convert price points into account currency using broker tick metadata.
       double valuePerPointPerLot=(point/tickSize)*tickValue;
-      double roundTripPoints=out.currentSpreadPts+(2.0*slippagePerSidePts);
+      double roundTripPoints=out.currentSpreadPts+(2.0*out.effectiveSlippagePerSidePts);
       out.estimatedRoundTripCost=
          (roundTripPoints*valuePerPointPerLot*lots)+
          (commissionRoundTripPerLot*lots);
