@@ -122,7 +122,10 @@ public:
       m_riskPercent               = AxClampD(riskPercent,0.05,2.0);   // hard ceiling: never >2% (spec section 2)
       m_dailyLossLimitPercent     = dailyLossLimitPercent;
       m_maxConsecutiveLosses      = maxConsecutiveLosses;
-      m_maxOpenPositions          = maxOpenPositions;
+      // Zero disables the software position-count ceiling. Negative values are
+      // normalized to zero as well. Aggregate stop-risk, margin, broker volume,
+      // execution reservations and per-position lifecycle checks remain mandatory.
+      m_maxOpenPositions          = MathMax(0,maxOpenPositions);
       m_maxFlipsPerDay            = maxFlipsPerDay;
       m_maxTradesPerRollingPeriod = maxTradesPerRollingPeriod;
       m_rollingPeriodSec          = rollingPeriodSec;
@@ -130,7 +133,8 @@ public:
       m_maxSlippagePts            = maxSlippagePts;
       m_minFreeMarginPercent      = minFreeMarginPercent;
       m_weeklyLossLimitPercent    = weeklyLossLimitPercent;
-      m_maxPositionsPerSymbol     = maxPositionsPerSymbol;
+      // Zero disables the per-symbol count ceiling, not symbol volume/risk controls.
+      m_maxPositionsPerSymbol     = MathMax(0,maxPositionsPerSymbol);
       m_maxMarginUsagePercent     = maxMarginUsagePercent;
       m_maxExecutionFailures      = maxExecutionFailures;
      }
@@ -333,8 +337,10 @@ public:
       if(ConsecutiveLossLimitBreached()) { reason="Max consecutive losses reached - session paused"; return(false); }
       if(ExecutionFailureLimitBreached())
         { reason=StringFormat("Max consecutive execution failures reached (%d)",m_consecutiveExecutionFailures); return(false); }
-      if(openPositions>=m_maxOpenPositions) { reason="Max open positions reached"; return(false); }
-      if(posForSymbol>=m_maxPositionsPerSymbol) { reason="Max positions for this symbol reached"; return(false); }
+      if(m_maxOpenPositions>0 && openPositions>=m_maxOpenPositions)
+        { reason="Max open positions reached"; return(false); }
+      if(m_maxPositionsPerSymbol>0 && posForSymbol>=m_maxPositionsPerSymbol)
+        { reason="Max positions for this symbol reached"; return(false); }
       // A zero limit disables the frequency cap. Valid opportunities remain governed by all
       // Independent signal, exposure, loss, margin, spread and account-risk controls remain active.
       if(m_maxFlipsPerDay>0 && m_flipsToday>=m_maxFlipsPerDay)
