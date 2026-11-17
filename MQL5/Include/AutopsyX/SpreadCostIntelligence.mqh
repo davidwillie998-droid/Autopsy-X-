@@ -29,6 +29,8 @@ struct SAxSpreadCostAssessment
    double effectiveSlippagePerSidePts;
    int    empiricalSlippageSamples;
    bool   usedEmpiricalSlippage;
+   int    empiricalExitSlippageSamples;
+   bool   usedEmpiricalExitSlippage;
    double estimatedRoundTripCost;
    double expectedGrossProfit;
    double costToGrossRatio;
@@ -40,10 +42,13 @@ class CSpreadCostIntelligence
 private:
    double            m_spreads[AX_SCI_BUFFER_SIZE];
    double            m_fillSlippage[AX_SCI_BUFFER_SIZE];
+   double            m_exitSlippage[AX_SCI_BUFFER_SIZE];
    int               m_count;
    int               m_head;
    int               m_fillCount;
    int               m_fillHead;
+   int               m_exitCount;
+   int               m_exitHead;
    int               m_minSamples;
    double            m_maxCostToGross;
    double            m_maxSpreadToAtr;
@@ -86,10 +91,13 @@ public:
       m_head=-1;
       m_fillCount=0;
       m_fillHead=-1;
+      m_exitCount=0;
+      m_exitHead=-1;
       for(int i=0;i<AX_SCI_BUFFER_SIZE;i++)
         {
          m_spreads[i]=0.0;
          m_fillSlippage[i]=0.0;
+         m_exitSlippage[i]=0.0;
         }
      }
 
@@ -134,6 +142,38 @@ public:
 
    int               FillSlippageSampleCount(void) const { return(m_fillCount); }
 
+   // Exit observations are admitted only after broker history confirms the close.
+   bool              ObserveExitSlippage(const double slippagePts)
+     {
+      if(!MathIsValidNumber(slippagePts) || slippagePts<0.0) return(false);
+      m_exitHead=(m_exitHead+1)%AX_SCI_BUFFER_SIZE;
+      m_exitSlippage[m_exitHead]=slippagePts;
+      if(m_exitCount<AX_SCI_BUFFER_SIZE) m_exitCount++;
+      return(true);
+     }
+
+   int               ExitSlippageSampleCount(void) const { return(m_exitCount); }
+
+   bool              ExitSlippagePercentile(const double percentile,double &valueOut) const
+     {
+      valueOut=0.0;
+      if(m_exitCount<=0 || !MathIsValidNumber(percentile)) return(false);
+      double sorted[];
+      if(ArrayResize(sorted,m_exitCount)!=m_exitCount) return(false);
+      for(int i=0;i<m_exitCount;i++)
+        {
+         int idx=m_exitHead-i;
+         if(idx<0) idx+=AX_SCI_BUFFER_SIZE;
+         sorted[i]=m_exitSlippage[idx];
+        }
+      SortValues(sorted,m_exitCount);
+      double bounded=MathMax(0.0,MathMin(1.0,percentile));
+      int index=(int)MathCeil((m_exitCount-1)*bounded);
+      index=(int)MathMax(0,MathMin(m_exitCount-1,index));
+      valueOut=sorted[index];
+      return(MathIsValidNumber(valueOut) && valueOut>=0.0);
+     }
+
    // Entry-fill observations are used as a conservative per-side proxy for the
    // round trip. Until the configured warm-up sample count is reached, retain
    // the explicit configured allowance rather than claiming a measured baseline.
@@ -177,6 +217,8 @@ public:
       out.effectiveSlippagePerSidePts=0.0;
       out.empiricalSlippageSamples=m_fillCount;
       out.usedEmpiricalSlippage=false;
+      out.empiricalExitSlippageSamples=m_exitCount;
+      out.usedEmpiricalExitSlippage=false;
       out.estimatedRoundTripCost=0.0;
       out.expectedGrossProfit=0.0;
       out.costToGrossRatio=0.0;
@@ -231,9 +273,8 @@ public:
          if(sorted[i]<=out.currentSpreadPts) belowOrEqual++;
       out.percentileRank=100.0*(double)belowOrEqual/(double)m_count;
 
-      // Use the greater of the configured floor and observed p95 entry slippage.
-      // The empirical entry sample is a conservative proxy for each side, not a
-      // claim that exit slippage has been independently measured.
+      // Use the greater of the configured floor and independently observed
+      // entry/exit p95 values. Each side has its own rolling sample distribution.
       out.effectiveSlippagePerSidePts=slippagePerSidePts;
       if(m_fillCount>=m_minSamples)
         {
@@ -244,8 +285,20 @@ public:
             out.reason="Empirical fill-slippage estimate unavailable";
             return(false);
            }
-         out.effectiveSlippagePerSidePts=MathMax(slippagePerSidePts,observedP95);
+         out.effectiveSlippagePerSidePts=MathMax(out.effectiveSlippagePerSidePts,observedP95);
          out.usedEmpiricalSlippage=true;
+        }
+      if(m_exitCount>=m_minSamples)
+        {
+         double observedExitP95=0.0;
+         if(!ExitSlippagePercentile(0.95,observedExitP95))
+           {
+            out.status=AX_SCI_INVALID_COST_INPUT;
+            out.reason="Empirical exit-slippage estimate unavailable";
+            return(false);
+           }
+         out.effectiveSlippagePerSidePts=MathMax(out.effectiveSlippagePerSidePts,observedExitP95);
+         out.usedEmpiricalExitSlippage=true;
         }
 
       // Convert price points into account currency using broker tick metadata.
