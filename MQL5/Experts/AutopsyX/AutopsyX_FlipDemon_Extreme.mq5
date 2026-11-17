@@ -136,7 +136,8 @@ input int             InpVWAPTokyoHour       = 0;      // Tokyo session open, br
 input int             InpVWAPLondonHour      = 8;      // London session open, broker server time hour
 input int             InpVWAPNewYorkHour     = 13;      // New York session open, broker server time hour
 input double          InpVWAPDeadbandATRMult = 0.1;    // Deadband around VWAP, as a multiple of ATR, before a trend read is BULLISH/BEARISH rather than NEUTRAL
-input bool            InpUseVWAPExit         = false;  // Opt-in mechanical exit: close if a bar closes on the wrong side of VWAP from the position's direction - see InpVWAPExitMode for exactly when it fires
+input bool            InpRequireVWAPDirection = true;   // Paper rule: only enter BUY above VWAP and SELL below VWAP; unavailable/neutral VWAP blocks fresh entries
+input bool            InpUseVWAPExit         = true;   // Paper rule: arm the confirmed closed-bar exit when price crosses VWAP against the position
 input ENUM_AX_VWAP_EXIT_MODE InpVWAPExitMode  = AX_VWAP_EXIT_CONFIRMED_CROSS; // Only relevant when InpUseVWAPExit is on. CONFIRMED_CROSS is the original/default behavior (closed-bar confirmation) - see ExitEngine.mqh for all four modes
 input double          InpVWAPAlignmentBonus  = 1.15;   // Sizing bonus applied ONLY when InpUseVWAPExit is on and this signal agrees with VWAP trend - see AdaptiveFlipEngine.mqh for how this is bounded
 
@@ -2143,6 +2144,23 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       if(InpVerboseLogging) Print("AUTOPSY X: entry blocked (anti-chop cooldown)");
       return(false);
      }
+   // Zarattini-Aziz directional rule: VWAP is a trade-direction constraint, not merely another
+   // weighted vote. A BUY requires a valid bullish closed-bar VWAP read; a SELL requires bearish.
+   // Neutral/deadband or unavailable VWAP is not permission to guess. This filter is entry-only;
+   // existing positions remain under their already-armed exit and broker protection.
+   if(InpRequireVWAPDirection)
+     {
+      bool vwapDirectionAligned=(dir==AX_DIR_BUY && g_vwapValue>0.0 && g_vwapTrend=="BULLISH") ||
+                                (dir==AX_DIR_SELL && g_vwapValue>0.0 && g_vwapTrend=="BEARISH");
+      if(!vwapDirectionAligned)
+        {
+         if(InpVerboseLogging)
+            PrintFormat("AUTOPSY X: VWAP directional rule blocked %s (VWAP=%.10f trend=%s; valid aligned trend required).",
+                        AxDirToString(dir),g_vwapValue,g_vwapTrend);
+         return(false);
+        }
+     }
+
    string compositeReason="";
    bool compositeSpreadOk=g_micro.SpreadAcceptable(InpMaxSpreadPoints);
    ENUM_AX_COMPOSITE_DIRECTION compositeDirection=g_compositeDirection.Evaluate(
@@ -4074,7 +4092,10 @@ void AxProcessTick(void)
             bool trigger=(quoteOk && g_pyramidEngine.TierTriggerReached(
                campaign.dir,AX_PYRAMID_ATR_GAP,campaign.lastTierFillPrice,
                pyramidTick.bid,pyramidTick.ask,requiredGap,closedH1));
-            bool eligible=(trendRead && atrRead && closedTrend==campaign.dir &&
+            bool pyramidVwapAligned=(!InpRequireVWAPDirection) ||
+                                    (campaign.dir==AX_DIR_BUY && g_vwapValue>0.0 && g_vwapTrend=="BULLISH") ||
+                                    (campaign.dir==AX_DIR_SELL && g_vwapValue>0.0 && g_vwapTrend=="BEARISH");
+            bool eligible=(trendRead && atrRead && closedTrend==campaign.dir && pyramidVwapAligned &&
                            basketProfit>=InpPyramidMinProfitMoney &&
                            candidateLots>=volMin && candidateLots>campaign.lastTierFilledLots+volStep*0.25 &&
                            candidateLots<=volMax && trigger &&
