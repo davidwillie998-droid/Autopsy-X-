@@ -3601,7 +3601,7 @@ int OnInit(void)
 
    g_accountFlip.Configure(InpEnableAccountFlipEngine,InpAccountFlipStartingEquity,
                            InpAccountFlipTargetEquity);
-   if(!g_accountFlip.Init(_Symbol,InpMagicNumber))
+   if(!g_accountFlip.Init(InpMagicNumber))
       Print("FLIPDEMON ACCOUNT GROWTH: invalid equity configuration or persistent state unavailable; new entries will fail closed.");
 
    g_vwap.Configure(InpVWAPMode,InpVWAPRollingBars,InpVWAPSydneyHour,InpVWAPTokyoHour,
