@@ -42,6 +42,7 @@
 #include <AutopsyX/TradeLifecycle.mqh>
 #include <AutopsyX/ExecutionEngine.mqh>
 #include <AutopsyX/ExecutionLatencyProfiler.mqh>
+#include <AutopsyX/ExecutionQualityJournal.mqh>
 #include <AutopsyX/ExitEngine.mqh>
 #include <AutopsyX/SniperEngine.mqh>
 #include <AutopsyX/OrderFlow.mqh>
@@ -296,6 +297,8 @@ CExecutionEligibility g_executionEligibility;
 CTradeLifecycle        g_tradeLifecycle;
 CExecutionEngine      g_exec;
 CExecutionLatencyProfiler g_executionLatency;
+CExecutionQualityJournal g_executionQualityJournal;
+bool g_executionQualityJournalReady=false;
 CExitEngine           g_exit;
 CSniperEngine         g_sniper;
 COrderFlowEngine      g_orderFlow;
@@ -799,7 +802,23 @@ bool AxCloseAndRecord(const ENUM_AX_EXIT_REASON reason)
                                     ?MathMax(0.0,(exitBenchmarkPrice-closePrice)/g_md.Point())
                                     :MathMax(0.0,(closePrice-exitBenchmarkPrice)/g_md.Point());
       if(MathIsValidNumber(adverseExitSlippagePts))
+        {
          g_spreadCost.ObserveExitSlippage(adverseExitSlippagePts);
+         if(g_executionQualityJournalReady)
+           {
+            double exitAtrPoints=(g_volatilityReady && g_md.Point()>0.0)
+                                 ?g_volatility.CurrentAtr()/g_md.Point():0.0;
+            if(!g_executionQualityJournal.Record(TimeCurrent(),"EXIT",(int)g_posState.dir,
+                                                 exitBenchmarkTick.bid,exitBenchmarkTick.ask,
+                                                 g_md.Point(),exitAtrPoints,(int)g_regime.Regime(),
+                                                 (int)g_volatility.State(),adverseExitSlippagePts,0))
+              {
+               g_executionQualityJournalReady=g_executionQualityJournal.IsPersisting();
+               if(!g_executionQualityJournalReady)
+                  Print("FLIPDEMON EXECUTION JOURNAL WARNING: persistence lost; telemetry disabled, trading decisions unchanged.");
+              }
+           }
+        }
      }
    AxFinalizeTrade(closePrice,grossProfit,commission,swap,closeTime,reason,lastTicket);
    return(true);
@@ -1943,6 +1962,24 @@ void AxRegisterFillQuality(const double slippagePts,const int latencyMs)
    g_fillCount++;
    // This function is called only after exact broker fill confirmation.
    g_spreadCost.ObserveFillSlippage(slippagePts);
+   if(g_executionQualityJournalReady)
+     {
+      MqlTick fillObservationTick;
+      ZeroMemory(fillObservationTick);
+      if(SymbolInfoTick(_Symbol,fillObservationTick) && g_md.Point()>0.0)
+        {
+         double fillAtrPoints=(g_volatilityReady)?g_volatility.CurrentAtr()/g_md.Point():0.0;
+         if(!g_executionQualityJournal.Record(TimeCurrent(),"ENTRY",(int)g_posState.dir,
+                                              fillObservationTick.bid,fillObservationTick.ask,
+                                              g_md.Point(),fillAtrPoints,(int)g_regime.Regime(),
+                                              (int)g_volatility.State(),slippagePts,latencyMs))
+           {
+            g_executionQualityJournalReady=g_executionQualityJournal.IsPersisting();
+            if(!g_executionQualityJournalReady)
+               Print("FLIPDEMON EXECUTION JOURNAL WARNING: persistence lost; telemetry disabled, trading decisions unchanged.");
+           }
+        }
+     }
 
    bool poor = !g_risk.SlippageAcceptable(slippagePts) || (latencyMs>InpMaxFillLatencyMs);
    if(poor)
@@ -3416,6 +3453,11 @@ int OnInit(void)
      }
    g_spreadCost.Configure(InpSpreadCostMinSamples,InpSpreadCostMaxCostToGross,
                           InpSpreadCostMaxSpreadToAtr);
+   g_executionQualityJournalReady=g_executionQualityJournal.Init(_Symbol,InpMagicNumber);
+   if(!g_executionQualityJournalReady)
+      Print("FLIPDEMON EXECUTION JOURNAL WARNING: durable execution telemetry unavailable; trading decisions are unchanged.");
+   else
+      PrintFormat("FLIPDEMON EXECUTION JOURNAL: ready file=%s",g_executionQualityJournal.FileName());
    if(!g_regime.Init(_Symbol,InpRegimeTimeframe))
      {
       Print("AUTOPSY X: failed to initialize regime engine (ATR handle)");
@@ -3650,6 +3692,7 @@ int OnInit(void)
 void OnDeinit(const int reason)
   {
    g_executionLatency.Report();
+   g_executionQualityJournal.Deinit();
    g_distributedRiskCoordinator.Shutdown();
    if(!g_accountRiskCoordinator.Release())
       Print("FLIPDEMON COORDINATION ERROR: account mutex release failed during deinitialization.");
