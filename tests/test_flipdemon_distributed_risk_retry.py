@@ -277,9 +277,14 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         self.assertIn("g_distributedRecoveryPending=true", entry)
 
     def test_ambiguous_entry_keeps_reservation_and_locks_new_entries(self):
+        # The EA records the broker call result first, then branches on the
+        # returned status. Anchor the contract to that current control flow
+        # rather than the obsolete inline `if(!g_exec.OpenMarket(...))` form.
+        order_call = self.expert.index("bool orderCallReturned=g_exec.OpenMarket")
+        failure_branch = self.expert.index("if(!orderCallReturned)", order_call)
         entry = self.expert[
-            self.expert.index("if(!g_exec.OpenMarket"):
-            self.expert.index("g_consecutiveExecFailures = 0;", self.expert.index("if(!g_exec.OpenMarket"))
+            failure_branch:
+            self.expert.index("g_consecutiveExecFailures = 0;", failure_branch)
         ]
         ambiguous = entry[entry.index("if(distributedReservationActive && entryOutcomeUncertain)"):
                           entry.index("else if(distributedReservationActive)")]
