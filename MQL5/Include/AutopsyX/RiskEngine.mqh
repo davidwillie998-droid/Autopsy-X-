@@ -336,7 +336,7 @@ public:
       if(openPositions>=m_maxOpenPositions) { reason="Max open positions reached"; return(false); }
       if(posForSymbol>=m_maxPositionsPerSymbol) { reason="Max positions for this symbol reached"; return(false); }
       // A zero limit disables the frequency cap. Valid opportunities remain governed by all
-      //      // independent signal, exposure, loss, margin, spread and account-risk controls.
+      // Independent signal, exposure, loss, margin, spread and account-risk controls remain active.
       if(m_maxFlipsPerDay>0 && m_flipsToday>=m_maxFlipsPerDay)
          { reason="Max flips per day reached"; return(false); }
       if(m_maxTradesPerRollingPeriod>0 && TradesInRollingWindow()>=m_maxTradesPerRollingPeriod)
