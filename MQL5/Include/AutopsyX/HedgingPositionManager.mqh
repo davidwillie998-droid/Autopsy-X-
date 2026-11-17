@@ -9,8 +9,6 @@
 
 #include "Defs.mqh"
 
-#define AX_HEDGING_POSITION_MAX 64
-
 struct SAxManagedPosition
   {
    ulong       ticket;              // refreshed broker ticket, may change after service actions
@@ -30,12 +28,11 @@ struct SAxManagedPosition
 class CHedgingPositionManager
   {
 private:
-   SAxManagedPosition m_positions[AX_HEDGING_POSITION_MAX];
+   SAxManagedPosition m_positions[];
    int                m_count;
    bool               m_complete;
    bool               m_allProtected;
    bool               m_duplicateIdentity;
-   bool               m_capacityExceeded;
    string             m_failureReason;
 
    bool ValidNumber(const double value) const
@@ -55,7 +52,7 @@ public:
       m_complete=false;
       m_allProtected=true;
       m_duplicateIdentity=false;
-      m_capacityExceeded=false;
+      ArrayResize(m_positions,0);
       m_failureReason="";
      }
 
@@ -89,13 +86,6 @@ public:
          if(PositionGetString(POSITION_SYMBOL)!=symbol ||
             (ulong)PositionGetInteger(POSITION_MAGIC)!=magic)
             continue;
-
-         if(m_count>=AX_HEDGING_POSITION_MAX)
-           {
-            m_capacityExceeded=true;
-            m_failureReason="POSITION_CAPACITY_EXCEEDED";
-            return(false);
-           }
 
          SAxManagedPosition p;
          p.ticket=(ulong)PositionGetInteger(POSITION_TICKET);
@@ -141,6 +131,12 @@ public:
                return(false);
               }
 
+         int nextCount=m_count+1;
+         if(ArrayResize(m_positions,nextCount)!=nextCount)
+           {
+            m_failureReason="POSITION_SNAPSHOT_ALLOCATION_FAILED";
+            return(false);
+           }
          m_positions[m_count]=p;
          m_count++;
         }
@@ -155,7 +151,6 @@ public:
    bool IsComplete(void) const { return(m_complete); }
    bool AllProtected(void) const { return(m_allProtected); }
    bool HasDuplicateIdentity(void) const { return(m_duplicateIdentity); }
-   bool CapacityExceeded(void) const { return(m_capacityExceeded); }
    string FailureReason(void) const { return(m_failureReason); }
    bool HasMultiplePositions(void) const { return(m_count>1); }
 
