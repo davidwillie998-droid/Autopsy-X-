@@ -78,7 +78,7 @@ public:
       long login=AccountInfoInteger(ACCOUNT_LOGIN);
       // MT5 terminal Global Variable names are limited to 63 characters.
       // Account + magic + a bounded symbol prefix keeps this key within that limit.
-      m_persistKey=StringFormat("AXFP_%I64d_%I64u_%s",login,magic,StringSubstr(symbol,0,10));
+      m_persistKey=StringFormat("AXFP_%I64d_%I64u_%s",login,magic,StringSubstr(symbol,0,17));
       m_currentEquity=AccountInfoDouble(ACCOUNT_EQUITY);
       if(m_startingEquity<=0.0 || m_targetEquity<=m_startingEquity ||
          !MathIsValidNumber(m_currentEquity) || m_currentEquity<=0.0)
