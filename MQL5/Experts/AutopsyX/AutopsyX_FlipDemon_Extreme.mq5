@@ -62,6 +62,7 @@
 #include <AutopsyX/PyramidEngine.mqh>
 #include <AutopsyX/PyramidCampaignRegistry.mqh>
 #include <AutopsyX/HedgingPositionManager.mqh>
+#include <AutopsyX/PositionStateRegistry.mqh>
 #include <AutopsyX/Dashboard.mqh>
 
 //====================================================================
@@ -326,6 +327,7 @@ CVirtualExitRegistry   g_virtualExitRegistry;
 CPyramidEngine         g_pyramidEngine; // calculation engine; campaign execution remains disabled until lifecycle integration
 CPyramidCampaignRegistry g_pyramidCampaignRegistry; // durable campaign state; execution integration is not active yet
 CHedgingPositionManager g_hedgingPositionManager;
+CPositionStateRegistry g_positionStateRegistry; // dynamic per-position state store; not yet used for execution
 bool g_hedgingLifecycleLock=false; // sticky fail-closed lock after multiple live legs are detected
 bool                   g_virtualExitInitialized = false;
 bool                   g_virtualExitReady = false; // persistence and broker-state reconciliation must both be verified
