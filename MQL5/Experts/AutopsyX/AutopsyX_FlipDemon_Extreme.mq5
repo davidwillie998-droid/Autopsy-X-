@@ -53,6 +53,7 @@
 #include <AutopsyX/TradeAutopsy.mqh>
 #include <AutopsyX/Statistics.mqh>
 #include <AutopsyX/AdaptiveFlipEngine.mqh>
+#include <AutopsyX/AccountFlipEngine.mqh>
 #include <AutopsyX/VWAPEngine.mqh>
 #include <AutopsyX/EmergencyControls.mqh>
 #include <AutopsyX/TradeReconciliation.mqh>
@@ -69,6 +70,11 @@
 input group "=== MODE ===";
 input ENUM_AX_MODE   InpMode                    = AX_MODE_AGGRESSIVE; // Aggression mode
 input double         InpExtremeRiskPercent      = 2.0;                // EXTREME mode risk % per trade (hard-capped at 2.0)
+
+input group "=== ACCOUNT FLIP GROWTH ===";
+input bool            InpEnableAccountFlipEngine = true;   // Milestone sizing only scales risk down; never overrides the 2% aggregate ceiling
+input double          InpAccountFlipStartingEquity = 100.0; // Starting account equity, in deposit currency
+input double          InpAccountFlipTargetEquity = 10000.0; // Initial target; compounding may continue beyond this level
 
 input group "=== PYRAMID CAMPAIGN (DECISION LAYER) ===";
 input bool            InpEnablePyramidDecision    = true;   // Evaluate profitable continuation adds; order execution remains separately gated
@@ -308,6 +314,7 @@ CFootprintEngine      g_footprint;
 CPulseEngine          g_pulse;
 CHeatmapEngine        g_heatmap;
 CAdaptiveFlipEngine   g_afe;
+CAccountFlipEngine    g_accountFlip;
 CVWAPEngine           g_vwap;
 CTradeAutopsy         g_autopsy;
 CStatistics           g_stats;
@@ -2225,6 +2232,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    SAxRiskSizingDecision sizingDecision;
    double lots = g_risk.CalculateLotSize(g_md,intendedPrice,slPrice,dir,sizingDecision);
    if(InpVerboseLogging) PrintFormat("FLIPDEMON SIZING | equity=%.2f budget=%.2f raw=%.5f lots=%.5f risk=%.2f%% reason=%s",sizingDecision.equity,sizingDecision.riskBudgetMoney,sizingDecision.rawLots,sizingDecision.normalizedLots,sizingDecision.projectedRiskPercent,sizingDecision.rejectionReason);
+   if(InpVerboseLogging) PrintFormat("ACCOUNT FLIP | baseline=%.2f target=%.2f peak=%.2f progress=%.2fx milestone=%d targetReached=%s scaler=%.2f",g_accountFlip.StartingEquity(),g_accountFlip.TargetEquity(),g_accountFlip.PeakEquity(),g_accountFlip.ProgressMultiple(),g_accountFlip.Milestone(),g_accountFlip.TargetReached()?"YES":"NO",g_accountFlip.RiskMultiplier());
 
    // A broker minimum lot can otherwise force a position larger than the configured
    // account-risk budget. Fail closed instead of allowing the minimum volume to
@@ -2289,9 +2297,11 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    // that falls below half a volume step must be treated as "AFE wants this skipped", not silently
    // promoted back up to the broker minimum - that would defeat DEFENSIVE/CAUTION sizing outright
    // on small accounts where the base lot size already sits near the minimum.
-   if(afeRiskMultiplier<1.0)
+   double accountFlipRiskMultiplier=g_accountFlip.RiskMultiplier();
+   double combinedRiskMultiplier=MathMin(afeRiskMultiplier,accountFlipRiskMultiplier);
+   if(combinedRiskMultiplier<1.0)
      {
-      double scaledLots = lots*afeRiskMultiplier;
+      double scaledLots = lots*combinedRiskMultiplier;
       // the real trigger for the up-clamp defeat is scaledLots < VolumeMin() - anything below that
       // floors to (or below) the broker minimum inside NormalizeVolume and gets forced back up to
       // volMin by its own clamp, regardless of how close it is to volMin. A base lot size that's
@@ -3589,6 +3599,11 @@ int OnInit(void)
                     InpVWAPAlignmentBonus);
    g_afe.Init(_Symbol,InpMagicNumber);
 
+   g_accountFlip.Configure(InpEnableAccountFlipEngine,InpAccountFlipStartingEquity,
+                           InpAccountFlipTargetEquity);
+   if(!g_accountFlip.Init(_Symbol,InpMagicNumber))
+      Print("FLIPDEMON ACCOUNT GROWTH: invalid equity configuration or persistent state unavailable; new entries will fail closed.");
+
    g_vwap.Configure(InpVWAPMode,InpVWAPRollingBars,InpVWAPSydneyHour,InpVWAPTokyoHour,
                      InpVWAPLondonHour,InpVWAPNewYorkHour,InpVWAPDeadbandATRMult);
 
@@ -3742,6 +3757,7 @@ void AxProcessTick(void)
    g_newsDefense.Update(false);
    g_risk.OnTickHousekeeping();
    g_afe.OnTickHousekeeping();
+   g_accountFlip.OnTickHousekeeping();
 
    // Refresh broker tickets each valid tick. Never run the legacy single-position
    // exit manager against an arbitrary leg in a multi-position hedging campaign.
