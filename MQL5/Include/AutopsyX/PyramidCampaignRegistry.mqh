@@ -9,9 +9,7 @@
 
 #include "Defs.mqh"
 
-#define AX_PYRAMID_CAMPAIGN_MAX 32
 #define AX_PYRAMID_CAMPAIGN_FIELD_COUNT 17
-#define AX_PYRAMID_CAMPAIGN_MAX_TIERS 10
 
 struct SAxPyramidCampaignRecord
   {
@@ -38,7 +36,7 @@ private:
    long                      m_accountLogin;
    ulong                     m_magic;
    string                    m_symbol;
-   SAxPyramidCampaignRecord  m_records[AX_PYRAMID_CAMPAIGN_MAX];
+   SAxPyramidCampaignRecord  m_records[];
    int                       m_count;
    bool                      m_persistOk;
 
@@ -54,7 +52,7 @@ private:
      {
       if(record.ticket==0 || record.positionIdentifier==0 || record.symbol!=m_symbol ||
          (record.dir!=AX_DIR_BUY && record.dir!=AX_DIR_SELL) ||
-         record.tierCount<1 || record.tierCount>AX_PYRAMID_CAMPAIGN_MAX_TIERS ||
+         record.tierCount<1 ||
          record.baseTierLots<=0.0 || record.lastTierFillPrice<=0.0 ||
          record.lastTierFilledLots<=0.0 || record.campaignStartTime<=0 ||
          record.lastTriggerBarTime<0 ||
@@ -99,7 +97,7 @@ private:
       long active=StringToInteger(fields[16]);
       if(positionId<=0 || ticket<=0 || lastDeal<0 ||
          (dir!=(long)AX_DIR_BUY && dir!=(long)AX_DIR_SELL) ||
-         tiers<1 || tiers>AX_PYRAMID_CAMPAIGN_MAX_TIERS ||
+         tiers<1 || tiers>2147483647 ||
          (active!=0 && active!=1))
          return(false);
 
@@ -179,6 +177,12 @@ public:
       m_magic=magic;
       m_symbol=symbol;
       m_count=0;
+      if(ArrayResize(m_records,0)!=0)
+        {
+         m_persistOk=false;
+         Print("FLIPDEMON PYRAMID ERROR: campaign registry could not initialize dynamic storage.");
+         return(false);
+        }
       if(StringLen(eaName)==0 || StringLen(symbol)==0 || m_accountLogin<=0 || magic==0)
         {
          m_persistOk=false;
@@ -205,12 +209,6 @@ public:
         {
          string line=FileReadString(handle);
          if(StringLen(line)==0) continue;
-         if(m_count>=AX_PYRAMID_CAMPAIGN_MAX)
-           {
-            valid=false;
-            Print("FLIPDEMON PYRAMID ERROR: campaign registry capacity exceeded; refusing to truncate.");
-            break;
-           }
          SAxPyramidCampaignRecord parsed;
          if(!ParseRecord(line,parsed))
            {
@@ -226,6 +224,13 @@ public:
                break;
               }
          if(!valid) break;
+         int nextCount=m_count+1;
+         if(ArrayResize(m_records,nextCount)!=nextCount)
+           {
+            valid=false;
+            Print("FLIPDEMON PYRAMID ERROR: campaign registry memory allocation failed; entries remain blocked.");
+            break;
+           }
          m_records[m_count]=parsed;
          m_count++;
         }
@@ -233,6 +238,7 @@ public:
       if(!valid)
         {
          m_count=0;
+         ArrayResize(m_records,0);
          m_persistOk=false;
          return(false);
         }
@@ -261,12 +267,12 @@ public:
          return(false);
       if(!HistorySelectByPosition((long)positionId)) return(false);
 
-      ulong orderIds[AX_PYRAMID_CAMPAIGN_MAX_TIERS];
-      double orderVolumes[AX_PYRAMID_CAMPAIGN_MAX_TIERS];
-      double orderPriceValues[AX_PYRAMID_CAMPAIGN_MAX_TIERS];
-      ArrayInitialize(orderIds,0);
-      ArrayInitialize(orderVolumes,0.0);
-      ArrayInitialize(orderPriceValues,0.0);
+      ulong orderIds[];
+      double orderVolumes[];
+      double orderPriceValues[];
+      ArrayResize(orderIds,0);
+      ArrayResize(orderVolumes,0);
+      ArrayResize(orderPriceValues,0);
       int tierCount=0;
       int lastOrderIndex=-1;
       ulong lastDealTicket=0;
@@ -311,9 +317,15 @@ public:
                if(orderIds[j]==order) { orderIndex=j; break; }
             if(orderIndex<0)
               {
-               if(tierCount>=AX_PYRAMID_CAMPAIGN_MAX_TIERS) return(false);
                orderIndex=tierCount;
+               int nextTierCount=tierCount+1;
+               if(ArrayResize(orderIds,nextTierCount)!=nextTierCount ||
+                  ArrayResize(orderVolumes,nextTierCount)!=nextTierCount ||
+                  ArrayResize(orderPriceValues,nextTierCount)!=nextTierCount)
+                  return(false);
                orderIds[orderIndex]=order;
+               orderVolumes[orderIndex]=0.0;
+               orderPriceValues[orderIndex]=0.0;
                tierCount++;
               }
             orderVolumes[orderIndex]+=volume;
@@ -426,10 +438,11 @@ public:
          return(false);
         }
 
-      if(m_count>=AX_PYRAMID_CAMPAIGN_MAX)
+      int nextCount=m_count+1;
+      if(ArrayResize(m_records,nextCount)!=nextCount)
         {
          m_persistOk=false;
-         Print("FLIPDEMON PYRAMID ERROR: campaign registry full; refusing new campaign.");
+         Print("FLIPDEMON PYRAMID ERROR: campaign registry memory allocation failed; new campaign rejected.");
          return(false);
         }
       m_records[m_count]=record;
