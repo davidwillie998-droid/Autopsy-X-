@@ -1783,7 +1783,7 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
 
       if(!campaign.active || campaign.positionIdentifier!=live.positionIdentifier ||
          campaign.symbol!=live.symbol || campaign.dir!=live.direction ||
-         campaign.tierCount<1 || campaign.tierCount>AX_PYRAMID_CAMPAIGN_MAX_TIERS ||
+         campaign.tierCount<1 ||
          campaign.lastTierDealTicket==0 || campaign.lastTierFillPrice<=0.0 ||
          campaign.lastTierFilledLots<=0.0 || campaign.campaignStartTime<=0)
         {
