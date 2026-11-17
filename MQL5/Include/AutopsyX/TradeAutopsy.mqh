@@ -752,9 +752,11 @@ public:
         }
 
       string provenanceNames[4]={"BACKTEST","FORWARD_DEMO","LIVE","UNKNOWN_PROVENANCE"};
-      string cohortNames[3]={"ALIGNED","OPPOSED","VWAP_STATE_UNAVAILABLE"};
+      string cohortNames[3]={"ALIGNED","OPPOSED","NEUTRAL_OR_UNAVAILABLE"};
+      int minCount=minimumSamples;
+      if(minCount<1) minCount=1;
       PrintFormat("FLIPDEMON VWAP RESEARCH | symbol-scoped closed-trade cohorts | minimum sample threshold=%d | partial slices excluded | no execution or sizing changes",
-                  MathMax(1,minimumSamples));
+                  minCount);
       for(int p=0;p<4;p++)
         {
          for(int c=0;c<3;c++)
@@ -769,7 +771,7 @@ public:
             string avgRText=(rSamples[slot]>0)
                             ? DoubleToString(rTotal[slot]/rSamples[slot],3)
                             : "N/A";
-            string sampleState=(samples[slot]>=MathMax(1,minimumSamples))
+            string sampleState=(samples[slot]>=minCount)
                                ? "SAMPLE_THRESHOLD_MET" : "INSUFFICIENT_SAMPLE";
             PrintFormat("FLIPDEMON VWAP COHORT | provenance=%s cohort=%s n=%d wins=%d losses=%d winRate=%.1f%% net=%.2f PF=%s avgR=%s validR=%d/%d status=%s",
                         provenanceNames[p],cohortNames[c],samples[slot],wins[slot],
