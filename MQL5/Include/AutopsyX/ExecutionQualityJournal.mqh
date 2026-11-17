@@ -134,7 +134,7 @@ public:
      {
       if(!m_persistenceHealthy || m_handle==INVALID_HANDLE) return(false);
       if(timestamp<=0 || (eventType!="ENTRY" && eventType!="EXIT") ||
-         direction<0 || direction>2 ||
+         direction< -1 || direction>1 ||
          !MathIsValidNumber(bid) || !MathIsValidNumber(ask) ||
          !MathIsValidNumber(point) || !MathIsValidNumber(atrPoints) ||
          !MathIsValidNumber(adverseSlippagePts) ||
