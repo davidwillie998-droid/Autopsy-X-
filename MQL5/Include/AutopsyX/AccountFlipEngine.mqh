@@ -6,7 +6,7 @@
 //+------------------------------------------------------------------+
 #property strict
 #ifndef AX_ACCOUNTFLIPENGINE_MQH
-#define AX_ACCOUNTF LIPENGINE_MQH
+#define AX_ACCOUNTFLIPENGINE_MQH
 
 class CAccountFlipEngine
   {
@@ -95,7 +95,12 @@ public:
          m_riskMultiplier=0.0;
          return(false);
         }
-      GlobalVariableSet(m_persistKey,m_peakEquity);
+      if(GlobalVariableSet(m_persistKey,m_peakEquity)==0)
+        {
+         m_dataValid=false;
+         m_riskMultiplier=0.0;
+         return(false);
+        }
       m_dataValid=true;
       OnTickHousekeeping();
       return(true);
@@ -163,4 +168,4 @@ public:
    bool              Enabled(void) const { return(m_enabled); }
   };
 
-#endif // AX_ACCOUNTF LIPENGINE_MQH
+#endif // AX_ACCOUNTFLIPENGINE_MQH
