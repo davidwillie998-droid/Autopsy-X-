@@ -707,10 +707,11 @@ public:
       if(minCount<1) minCount=1;
 
       ulong positionIds[];
-      double campaignNet[];
-      int finalRecordIndex[];
+      double campaignNet[],campaignCommission[];
+      int finalRecordIndex[],campaignOrder[];
       if(ArrayResize(positionIds,m_count)!=m_count ||
          ArrayResize(campaignNet,m_count)!=m_count ||
+         ArrayResize(campaignCommission,m_count)!=m_count ||
          ArrayResize(finalRecordIndex,m_count)!=m_count)
         {
          Print("FLIPDEMON VWAP RESEARCH WARNING: campaign aggregation allocation failed; no cohort report produced.");
@@ -737,6 +738,7 @@ public:
             group=campaignCount;
             positionIds[group]=rec.positionIdentifier;
             campaignNet[group]=0.0;
+            campaignCommission[group]=0.0;
             finalRecordIndex[group]=-1;
             campaignCount++;
            }
@@ -744,6 +746,7 @@ public:
          // Partial and final deal rows are slices of one broker position. Sum each
          // persisted slice once, but count only after a durable non-partial close exists.
          campaignNet[group]+=rec.netProfit;
+         campaignCommission[group]+=rec.commission;
          if(!rec.isPartial)
            {
             int priorFinal=finalRecordIndex[group];
@@ -752,8 +755,36 @@ public:
            }
         }
 
+      if(ArrayResize(campaignOrder,campaignCount)!=campaignCount)
+        {
+         Print("FLIPDEMON VWAP RESEARCH WARNING: campaign ordering allocation failed; no cohort report produced.");
+         return;
+        }
+      for(int i=0;i<campaignCount;i++) campaignOrder[i]=i;
+      // Journal recovery can load legacy and current schemas in separate passes.
+      // Sort closed campaigns by their final exit timestamp before calculating drawdown.
+      for(int i=1;i<campaignCount;i++)
+        {
+         int key=campaignOrder[i];
+         datetime keyTime=(finalRecordIndex[key]>=0)
+                          ? m_records[finalRecordIndex[key]].exitTime : 0;
+         int j=i-1;
+         while(j>=0)
+           {
+            int prior=campaignOrder[j];
+            datetime priorTime=(finalRecordIndex[prior]>=0)
+                               ? m_records[finalRecordIndex[prior]].exitTime : 0;
+            if(priorTime<=keyTime) break;
+            campaignOrder[j+1]=prior;
+            j--;
+           }
+         campaignOrder[j+1]=key;
+        }
+
       int samples[12],wins[12],losses[12],rSamples[12];
       double net[12],grossWins[12],grossLosses[12],rTotal[12];
+      double mfeTotal[12],maeTotal[12],spreadTotal[12],slippageTotal[12],commissionTotal[12];
+      double runningPnl[12],peakPnl[12],maxClosedPnlDd[12];
       ArrayInitialize(samples,0);
       ArrayInitialize(wins,0);
       ArrayInitialize(losses,0);
@@ -762,9 +793,18 @@ public:
       ArrayInitialize(grossWins,0.0);
       ArrayInitialize(grossLosses,0.0);
       ArrayInitialize(rTotal,0.0);
+      ArrayInitialize(mfeTotal,0.0);
+      ArrayInitialize(maeTotal,0.0);
+      ArrayInitialize(spreadTotal,0.0);
+      ArrayInitialize(slippageTotal,0.0);
+      ArrayInitialize(commissionTotal,0.0);
+      ArrayInitialize(runningPnl,0.0);
+      ArrayInitialize(peakPnl,0.0);
+      ArrayInitialize(maxClosedPnlDd,0.0);
 
-      for(int g=0;g<campaignCount;g++)
+      for(int orderIndex=0;orderIndex<campaignCount;orderIndex++)
         {
+         int g=campaignOrder[orderIndex];
          int finalIndex=finalRecordIndex[g];
          if(finalIndex<0) continue; // partial-only/open campaigns are not closed outcomes
          SAxTradeRecord finalRec=m_records[finalIndex];
@@ -786,6 +826,11 @@ public:
          double campaignResult=campaignNet[g];
          samples[slot]++;
          net[slot]+=campaignResult;
+         runningPnl[slot]+=campaignResult;
+         if(runningPnl[slot]>peakPnl[slot]) peakPnl[slot]=runningPnl[slot];
+         double currentDd=peakPnl[slot]-runningPnl[slot];
+         if(currentDd>maxClosedPnlDd[slot]) maxClosedPnlDd[slot]=currentDd;
+
          if(campaignResult>0.0)
            {
             wins[slot]++;
@@ -797,8 +842,14 @@ public:
             grossLosses[slot]+=MathAbs(campaignResult);
            }
 
+         mfeTotal[slot]+=finalRec.mfe;
+         maeTotal[slot]+=finalRec.mae;
+         spreadTotal[slot]+=finalRec.spreadAtEntry;
+         slippageTotal[slot]+=finalRec.slippagePts;
+         commissionTotal[slot]+=campaignCommission[g];
+
          // The final-slice R value shares the original campaign-risk denominator.
-         // Recover that denominator to express the aggregated campaign P/L in R.
+         // Recover that denominator to express aggregated campaign P/L in R.
          // If the final slice is exactly breakeven or R is unavailable, report no R
          // observation rather than manufacturing a denominator.
          if(finalRec.rMultiple!=EMPTY_VALUE && MathIsValidNumber(finalRec.rMultiple) &&
@@ -819,7 +870,7 @@ public:
 
       string provenanceNames[4]={"BACKTEST","FORWARD_DEMO","LIVE","UNKNOWN_PROVENANCE"};
       string cohortNames[3]={"ALIGNED","OPPOSED","NEUTRAL_OR_UNAVAILABLE"};
-      PrintFormat("FLIPDEMON VWAP RESEARCH | symbol-scoped closed campaigns | minimum sample threshold=%d | partial exits aggregated | no execution or sizing changes",
+      PrintFormat("FLIPDEMON VWAP RESEARCH | symbol-scoped closed campaigns | minimum sample threshold=%d | partial exits aggregated | closed-PnL drawdown is account-currency, not percent",
                   minCount);
       for(int p=0;p<4;p++)
         {
@@ -837,10 +888,14 @@ public:
                             : "N/A";
             string sampleState=(samples[slot]>=minCount)
                                ? "SAMPLE_THRESHOLD_MET" : "INSUFFICIENT_SAMPLE";
-            PrintFormat("FLIPDEMON VWAP COHORT | provenance=%s cohort=%s campaigns=%d wins=%d losses=%d winRate=%.1f%% net=%.2f PF=%s avgCampaignR=%s validR=%d/%d status=%s",
+            double divisor=(double)samples[slot];
+            PrintFormat("FLIPDEMON VWAP COHORT | provenance=%s cohort=%s campaigns=%d wins=%d losses=%d winRate=%.1f%% net=%.2f PF=%s meanR=%s validR=%d/%d maxClosedPnlDD=%.2f avgMFE=%.2f avgMAE=%.2f avgSpreadPts=%.1f avgEntrySlipPts=%.1f avgCommission=%.2f status=%s",
                         provenanceNames[p],cohortNames[c],samples[slot],wins[slot],
                         losses[slot],winRate,net[slot],pfText,avgRText,
-                        rSamples[slot],samples[slot],sampleState);
+                        rSamples[slot],samples[slot],maxClosedPnlDd[slot],
+                        mfeTotal[slot]/divisor,maeTotal[slot]/divisor,
+                        spreadTotal[slot]/divisor,slippageTotal[slot]/divisor,
+                        commissionTotal[slot]/divisor,sampleState);
            }
         }
      }
