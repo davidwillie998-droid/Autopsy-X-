@@ -41,6 +41,7 @@
 #include <AutopsyX/ExecutionEligibility.mqh>
 #include <AutopsyX/TradeLifecycle.mqh>
 #include <AutopsyX/ExecutionEngine.mqh>
+#include <AutopsyX/ExecutionLatencyProfiler.mqh>
 #include <AutopsyX/ExitEngine.mqh>
 #include <AutopsyX/SniperEngine.mqh>
 #include <AutopsyX/OrderFlow.mqh>
@@ -294,6 +295,7 @@ CEntryEngine          g_entryEngine;
 CExecutionEligibility g_executionEligibility;
 CTradeLifecycle        g_tradeLifecycle;
 CExecutionEngine      g_exec;
+CExecutionLatencyProfiler g_executionLatency;
 CExitEngine           g_exit;
 CSniperEngine         g_sniper;
 COrderFlowEngine      g_orderFlow;
@@ -2442,7 +2444,10 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
                   lifecycleSetupId,g_tradeLifecycle.LastError());
       return(false);
      }
-   if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr,fillLatencyMs,actualLots,entryOutcomeUncertain))
+   ulong orderCallStartUs=GetMicrosecondCount();
+   bool orderCallReturned=g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr,fillLatencyMs,actualLots,entryOutcomeUncertain);
+   g_executionLatency.RecordOrderCall(GetMicrosecondCount()-orderCallStartUs);
+   if(!orderCallReturned)
      {
       if(!entryOutcomeUncertain && g_tradeLifecycle.State()==AX_LIFECYCLE_ORDER_SUBMITTED)
          g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_FAILED);
@@ -3619,6 +3624,7 @@ int OnInit(void)
 
 void OnDeinit(const int reason)
   {
+   g_executionLatency.Report();
    g_distributedRiskCoordinator.Shutdown();
    if(!g_accountRiskCoordinator.Release())
       Print("FLIPDEMON COORDINATION ERROR: account mutex release failed during deinitialization.");
@@ -3641,7 +3647,7 @@ void OnDeinit(const int reason)
 //====================================================================
 // MAIN TICK LOOP: SCAN -> SCORE -> ATTACK -> MANAGE -> FLIP -> EXIT -> REASSESS
 //====================================================================
-void OnTick(void)
+void AxProcessTick(void)
   {
    if(!g_md.OnTickUpdate()) return;
    g_spreadCost.Observe(g_md.CurrentBid(),g_md.CurrentAsk(),g_md.Point());
@@ -4273,6 +4279,15 @@ void OnTick(void)
            }
         }
      }
+  }
+
+// Native event wrapper records the complete handler duration even when the
+// processing function exits early. No logging, sorting or file I/O occurs here.
+void OnTick(void)
+  {
+   ulong tickStartUs=GetMicrosecondCount();
+   AxProcessTick();
+   g_executionLatency.RecordTick(GetMicrosecondCount()-tickStartUs);
   }
 
 //====================================================================
