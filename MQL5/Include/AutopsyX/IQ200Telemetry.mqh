@@ -88,7 +88,7 @@ private:
    string Quote(const string value) const
      {
       string escaped=value;
-      StringReplace(escaped,"\"",""\""");
+      StringReplace(escaped,"\\\"","\\\"\\\"");
       return("\""+escaped+"\"");
      }
 
@@ -170,7 +170,7 @@ public:
      {
       Deinit();
       if(StringLen(symbol)==0 || magic==0) return(false);
-      m_sessionId=StringFormat("%I64u_%I64d_%I64u",ChartID(),(long)TimeLocal(),GetTickCount64());
+      m_sessionId=StringFormat("%I64u_%I64d_%I64u",ChartID(),(long)TimeLocal(),GetTickCount());
       m_fileName=StringFormat("AX_IQ200_%s_%I64u.csv",symbol,magic);
       m_handle=FileOpen(m_fileName,FILE_READ|FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_SHARE_READ);
       if(m_handle==INVALID_HANDLE) return(false);
