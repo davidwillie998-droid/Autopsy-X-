@@ -1213,6 +1213,73 @@ bool AxSaveVirtualExitState(const bool allowEmergencyUpdate=false,const bool isN
    return(true);
   }
 
+// Recover interrupted stop-modification actions only from a complete live
+// broker snapshot. The durable emergency SL is the pre-request baseline.
+// An unchanged stop proves no broker-side change; a strictly tighter stop is
+// adopted only when its action-specific invariants are satisfied.
+bool AxRecoverLockedStopAction(const SAxManagedPosition &live,
+                               SAxVirtualExitRecord &saved)
+  {
+   if(!saved.actionLocked || (saved.actionCode!=1 && saved.actionCode!=2) ||
+      saved.positionIdentifier!=live.positionIdentifier ||
+      saved.ticket==0 || saved.symbol!=live.symbol || saved.dir!=live.direction ||
+      saved.emergencySlPrice<=0.0 || !live.hasValidBrokerStop)
+      return(false);
+
+   double tickSize=SymbolInfoDouble(live.symbol,SYMBOL_TRADE_TICK_SIZE);
+   if(tickSize<=0.0 || !MathIsValidNumber(live.stopLoss) ||
+      !MathIsValidNumber(saved.emergencySlPrice))
+      return(false);
+
+   bool unchanged=(MathAbs(live.stopLoss-saved.emergencySlPrice)<=tickSize*0.5);
+   if(unchanged)
+     {
+      if(!g_virtualExitRegistry.ResolveAction(live.positionIdentifier,saved.actionCode) ||
+         !g_virtualExitRegistry.IsPersisting())
+         return(false);
+      PrintFormat("FLIPDEMON STOP ACTION RECOVERY: action=%d had no broker-side stop change; stale lock safely resolved for identifier=%I64u.",
+                  saved.actionCode,live.positionIdentifier);
+      return(true);
+     }
+
+   bool tighter=(live.direction==AX_DIR_BUY)
+                ?(live.stopLoss>saved.emergencySlPrice+tickSize*0.5)
+                :(live.direction==AX_DIR_SELL)
+                  ?(live.stopLoss<saved.emergencySlPrice-tickSize*0.5):false;
+   if(!tighter) return(false);
+
+   bool stateRecorded=false;
+   if(saved.actionCode==1)
+     {
+      // A break-even action must be confirmed on or beyond entry.
+      bool atBreakEven=(live.direction==AX_DIR_BUY)
+                       ?(live.stopLoss+tickSize*0.5>=live.openPrice)
+                       :(live.direction==AX_DIR_SELL)
+                         ?(live.stopLoss-tickSize*0.5<=live.openPrice):false;
+      if(!atBreakEven) return(false);
+      stateRecorded=g_virtualExitRegistry.RecordBreakEven(live.positionIdentifier,
+                                                            live.stopLoss);
+     }
+   else
+     {
+      // Trailing is only allowed after the durable break-even milestone.
+      if(!saved.breakEvenDone) return(false);
+      stateRecorded=g_virtualExitRegistry.RecordTrailingStop(live.positionIdentifier,
+                                                              live.stopLoss);
+     }
+
+   if(!stateRecorded || !g_virtualExitRegistry.IsPersisting())
+      return(false);
+   if(!g_virtualExitRegistry.ResolveAction(live.positionIdentifier,saved.actionCode) ||
+      !g_virtualExitRegistry.IsPersisting())
+      return(false);
+
+   PrintFormat("FLIPDEMON STOP ACTION RECOVERY: broker-confirmed tighter stop adopted for action=%d ticket=%I64u identifier=%I64u stop=%.*f.",
+               saved.actionCode,live.ticket,live.positionIdentifier,
+               (int)SymbolInfoInteger(live.symbol,SYMBOL_DIGITS),live.stopLoss);
+   return(true);
+  }
+
 // Reconcile every persisted virtual-exit row against a complete broker snapshot.
 // POSITION_IDENTIFIER is authoritative; tickets are refreshed, never used as primary keys.
 // Missing state for a live leg is not fabricated from a possibly-trailing broker stop.
@@ -1245,14 +1312,34 @@ bool AxReconcileVirtualExitTickets(const bool removeStaleRecords)
          return(false);
         }
 
-      // An action lock surviving restart means the broker outcome may be
-      // unresolved. Do not infer success or clear it from a position snapshot.
+      // Stop modifications are idempotent at the broker level. On restart,
+      // compare the exact live stop with the persisted pre-request baseline.
+      // Partial-close actions remain under deal-history reconciliation below.
+      if(saved.actionLocked && (saved.actionCode==1 || saved.actionCode==2))
+        {
+         if(!AxRecoverLockedStopAction(live,saved))
+           {
+            g_virtualExitReady=false;
+            g_hedgingLifecycleLock=true;
+            g_engineState=AX_ENGINE_PAUSED;
+            PrintFormat("FLIPDEMON VIRTUAL EXIT QUARANTINE: stop action=%d cannot be proven from broker state for identifier=%I64u; no retry or lock release.",
+                        saved.actionCode,live.positionIdentifier);
+            return(false);
+           }
+         if(!g_virtualExitRegistry.Find(live.positionIdentifier,saved))
+           {
+            g_virtualExitReady=false;
+            g_hedgingLifecycleLock=true;
+            g_engineState=AX_ENGINE_PAUSED;
+            return(false);
+           }
+        }
       if(saved.actionLocked)
         {
          g_virtualExitReady=false;
          g_hedgingLifecycleLock=true;
          g_engineState=AX_ENGINE_PAUSED;
-         PrintFormat("FLIPDEMON VIRTUAL EXIT QUARANTINE: unresolved action=%d started=%s identifier=%I64u; manual/history reconciliation required.",
+         PrintFormat("FLIPDEMON VIRTUAL EXIT QUARANTINE: unresolved action=%d started=%s identifier=%I64u; deal-history/manual reconciliation required.",
                      saved.actionCode,TimeToString(saved.actionStartedAt,TIME_DATE|TIME_SECONDS),
                      live.positionIdentifier);
          return(false);
