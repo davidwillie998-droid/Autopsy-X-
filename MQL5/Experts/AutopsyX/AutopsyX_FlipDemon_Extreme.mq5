@@ -4881,7 +4881,9 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
          g_iq200Telemetry.Enqueue(telemetryEvent);
         }
       else if(trans.type==TRADE_TRANSACTION_DEAL_ADD && trans.deal>0 &&
-              HistoryDealSelect(trans.deal) && g_iq200Telemetry.MarkDealTicketSeen(trans.deal))
+              HistoryDealSelect(trans.deal) &&
+              HistoryDealGetInteger(trans.deal,DEAL_ENTRY)==DEAL_ENTRY_IN &&
+              g_iq200Telemetry.MarkDealTicketSeen(trans.deal))
         {
          // Capture the current deal before selecting the complete position history.
          ulong dealOrder=(ulong)HistoryDealGetInteger(trans.deal,DEAL_ORDER);
@@ -4964,6 +4966,38 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
             markoutBasis.confirmedVolume=dealVolume;
             g_iq200Telemetry.ScheduleMarkouts(markoutBasis);
            }
+        }
+      else if(trans.type==TRADE_TRANSACTION_DEAL_ADD && trans.deal>0 &&
+              HistoryDealSelect(trans.deal) &&
+              (HistoryDealGetInteger(trans.deal,DEAL_ENTRY)==DEAL_ENTRY_OUT ||
+               HistoryDealGetInteger(trans.deal,DEAL_ENTRY)==DEAL_ENTRY_OUT_BY) &&
+              trans.position>0 && !PositionSelectByTicket(trans.position) &&
+              g_iq200Telemetry.MarkDealTicketSeen(trans.deal))
+        {
+         // A position-close event is emitted only after the broker position ticket
+         // is absent. Partial exits are not mislabeled as completed campaigns.
+         ulong closeOrder=(ulong)HistoryDealGetInteger(trans.deal,DEAL_ORDER);
+         ulong positionId=(ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID);
+         double closeVolume=HistoryDealGetDouble(trans.deal,DEAL_VOLUME);
+         double closePrice=HistoryDealGetDouble(trans.deal,DEAL_PRICE);
+         long closeType=HistoryDealGetInteger(trans.deal,DEAL_TYPE);
+         long closeTimeMsc=HistoryDealGetInteger(trans.deal,DEAL_TIME_MSC);
+         g_iq200Telemetry.NewEvent(telemetryEvent,AX_IQ200_POSITION_CLOSED,symbol,magic);
+         telemetryEvent.orderTicket=closeOrder;
+         telemetryEvent.dealTicket=trans.deal;
+         telemetryEvent.positionIdentifier=positionId;
+         telemetryEvent.decisionId=g_iq200Telemetry.DecisionIdForOrder(closeOrder);
+         telemetryEvent.intentId=telemetryEvent.decisionId;
+         telemetryEvent.direction=(closeType==DEAL_TYPE_SELL)?1:-1;
+         telemetryEvent.confirmedVolume=closeVolume;
+         telemetryEvent.fillPrice=closePrice;
+         telemetryEvent.pointSize=SymbolInfoDouble(symbol,SYMBOL_POINT);
+         telemetryEvent.tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+         telemetryEvent.eventTimeMsc=closeTimeMsc;
+         telemetryEvent.timeSource=1;
+         if(closeVolume<=0.0 || closePrice<=0.0)
+            telemetryEvent.missingMask|=4;
+         g_iq200Telemetry.Enqueue(telemetryEvent);
         }
       else if(trans.type==TRADE_TRANSACTION_HISTORY_ADD && trans.order>0 && HistoryOrderSelect(trans.order))
         {
