@@ -132,6 +132,47 @@ private:
                           e.markoutPoints,e.missingMask));
      }
 
+   void ResetEvent(SAxIQ200Event &e)
+     {
+      e.schemaVersion=AX_IQ200_SCHEMA_VERSION;
+      e.eventId=0;
+      e.eventType=AX_IQ200_DECISION;
+      e.eventTimeMsc=0;
+      e.timeSource=0;
+      e.sessionId="";
+      e.decisionId="";
+      e.intentId="";
+      e.campaignId="";
+      e.orderTicket=0;
+      e.dealTicket=0;
+      e.positionIdentifier=0;
+      e.symbol="";
+      e.magic=0;
+      e.direction=0;
+      e.orderType=0;
+      e.requestedVolume=0.0;
+      e.confirmedVolume=0.0;
+      e.requestedPrice=0.0;
+      e.fillPrice=0.0;
+      e.bid=0.0;
+      e.ask=0.0;
+      e.pointSize=0.0;
+      e.tickSize=0.0;
+      e.atrPoints=0.0;
+      e.spreadPercentile=0.0;
+      e.slippagePoints=0.0;
+      e.localElapsedUs=0;
+      e.retcode=0;
+      e.retcodeExternal=0;
+      e.reasonCode=0;
+      e.featureMask=0;
+      e.modelVersion="";
+      e.reservedRiskAmount=0.0;
+      e.markoutHorizonMs=0;
+      e.markoutPoints=0.0;
+      e.missingMask=0;
+     }
+
    bool WriteLine(const string line)
      {
       if(m_handle==INVALID_HANDLE || !m_healthy) return(false);
@@ -265,7 +306,7 @@ public:
       if(m_overflowPending && m_count<AX_IQ200_QUEUE_CAPACITY)
         {
          SAxIQ200Event overflow;
-         ZeroMemory(overflow);
+         ResetEvent(overflow);
          overflow.eventType=AX_IQ200_QUEUE_OVERFLOW;
          overflow.reasonCode=(int)MathMin((double)m_droppedEvents,2147483647.0);
          overflow.missingMask=1;
