@@ -4956,7 +4956,14 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
          if(requestedOrderVolume<=0.0)
             telemetryEvent.missingMask|=1;
          if(g_iq200Telemetry.Enqueue(telemetryEvent))
-            g_iq200Telemetry.ScheduleMarkouts(telemetryEvent);
+           {
+            // Measure each confirmed deal at its own execution price and volume.
+            // The CSV fill event above retains the cumulative order VWAP separately.
+            SAxIQ200Event markoutBasis=telemetryEvent;
+            markoutBasis.fillPrice=dealPrice;
+            markoutBasis.confirmedVolume=dealVolume;
+            g_iq200Telemetry.ScheduleMarkouts(markoutBasis);
+           }
         }
       else if(trans.type==TRADE_TRANSACTION_HISTORY_ADD && trans.order>0 && HistoryOrderSelect(trans.order))
         {
