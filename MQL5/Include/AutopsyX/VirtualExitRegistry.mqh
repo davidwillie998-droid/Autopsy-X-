@@ -33,6 +33,8 @@ struct SAxVirtualExitRecord
    double      actionBaselineVolume;
    datetime    entryTime;
    datetime    updatedAt;
+   double      entryPrice;       // broker-confirmed original POSITION_PRICE_OPEN
+   double      entryVolume;      // original broker volume, not current remaining volume
   };
 
 class CVirtualExitRegistry
@@ -193,6 +195,8 @@ public:
             (actionLock==0 && (actionCode!=0 || actionStarted>0)) ||
             (actionLock==1 && (actionCode<=0 || actionStarted<=0)) ||
             actionBaseline<0.0 ||
+            persistedEntryPrice<0.0 || persistedEntryVolume<0.0 ||
+            !MathIsValidNumber(persistedEntryPrice) || !MathIsValidNumber(persistedEntryVolume) ||
             (actionLock==0 && actionBaseline>0.0) ||
             entry<=0 || updated<=0 || initialSl<=0 || emergencySl<=0 ||
             virtualSl<=0 || riskDistance<=0 || virtualTp<0)
@@ -237,6 +241,8 @@ public:
          r.actionBaselineVolume=actionBaseline;
          r.entryTime=entry;
          r.updatedAt=updated;
+         r.entryPrice=persistedEntryPrice;
+         r.entryVolume=persistedEntryVolume;
          m_records[m_count]=r;
          m_count++;
         }
