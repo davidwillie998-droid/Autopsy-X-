@@ -31,6 +31,14 @@ private:
       return(-1);
      }
 
+   int FindTicketIndex(const ulong ticket) const
+     {
+      if(ticket==0) return(-1);
+      for(int i=0;i<m_count;i++)
+         if(m_records[i].ticket==ticket) return(i);
+      return(-1);
+     }
+
 public:
    CPositionStateRegistry(void)
      {
@@ -58,6 +66,12 @@ public:
          return(false);
         }
       int index=FindIndex(id);
+      int ticketIndex=FindTicketIndex(ticket);
+      if(ticketIndex>=0 && ticketIndex!=index)
+        {
+         m_failureReason="BROKER_TICKET_OWNERSHIP_CONFLICT";
+         return(false);
+        }
       if(index>=0)
         {
          if(m_records[index].symbol!=symbol || m_records[index].magic!=magic)
