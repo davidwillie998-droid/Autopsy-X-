@@ -135,6 +135,18 @@ private:
          m_state.dealingRangeMid=(m_state.lastSwingHigh+m_state.lastSwingLow)*0.5;
      }
 
+   void RefreshCurrentDayContext(void)
+     {
+      m_state.currentDayOpen=iOpen(m_symbol,PERIOD_D1,0);
+      MqlTick tick;
+      if(SymbolInfoTick(m_symbol,tick))
+         m_state.currentPrice=(tick.bid+tick.ask)*0.5;
+      m_state.acceptedAboveDayOpen=(m_state.currentDayOpen>0.0 &&
+                                    m_state.currentPrice>m_state.currentDayOpen);
+      m_state.acceptedBelowDayOpen=(m_state.currentDayOpen>0.0 &&
+                                    m_state.currentPrice<m_state.currentDayOpen);
+     }
+
    void EvaluateClosedDay(const MqlRates &rates[],const int count)
      {
       m_state.lastClosedDayTime=rates[0].time;
@@ -180,13 +192,8 @@ private:
       if(m_state.bearishDisplacement) m_state.bearishEvidence++;
       if(m_state.sellSideSweep) m_state.bullishEvidence++;
       if(m_state.buySideSweep) m_state.bearishEvidence++;
-      if(m_state.currentDayOpen>0.0 && m_state.currentPrice>m_state.currentDayOpen)
-         m_state.bullishEvidence++;
-      if(m_state.currentDayOpen>0.0 && m_state.currentPrice<m_state.currentDayOpen)
-         m_state.bearishEvidence++;
-
-      m_state.acceptedAboveDayOpen=(m_state.currentDayOpen>0.0 && m_state.currentPrice>m_state.currentDayOpen);
-      m_state.acceptedBelowDayOpen=(m_state.currentDayOpen>0.0 && m_state.currentPrice<m_state.currentDayOpen);
+      // Forming-day position relative to the open is context only. It never
+      // changes the closed-bar D1 structural bias or creates a reversal signal.
 
       // A sweep by itself never flips D1. An opposing CHoCH must mature into MSS/structure.
       if((bearishChoch || (m_state.buySideSweep && m_state.bearishDisplacement)) &&
@@ -237,6 +244,8 @@ public:
       if(!m_initialized) { ResetSnapshot(); return(false); }
       datetime closedDay=iTime(m_symbol,PERIOD_D1,1);
       if(closedDay<=0) { ResetSnapshot(); m_state.reason="D1_CLOSED_BAR_TIME_UNAVAILABLE"; return(false); }
+      // Keep live open/price context fresh without recalculating the completed-bar structure.
+      RefreshCurrentDayContext();
       if(!force && closedDay==m_lastProcessedClosedDay)
          return(m_state.bias!=AX_D1_DATA_UNAVAILABLE);
 
@@ -253,10 +262,7 @@ public:
       m_structure.Update();
       ResetSnapshot();
       m_state.bias=AX_D1_NEUTRAL;
-      m_state.currentDayOpen=iOpen(m_symbol,PERIOD_D1,0);
-      MqlTick tick;
-      if(SymbolInfoTick(m_symbol,tick))
-         m_state.currentPrice=(tick.bid+tick.ask)*0.5;
+      RefreshCurrentDayContext();
       EvaluateClosedDay(rates,copied);
       m_lastProcessedClosedDay=closedDay;
       return(m_state.bias!=AX_D1_DATA_UNAVAILABLE);
