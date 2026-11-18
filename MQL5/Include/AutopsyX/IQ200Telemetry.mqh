@@ -361,8 +361,10 @@ public:
 
    // Called from OnTimer. Markout is executable-side price movement, not realized P/L:
    // BUY is valued at bid; SELL is valued at ask. Missing quotes are retained as missing.
-   int ProcessDueMarkouts(void)
+   int ProcessDueMarkouts(double &markoutPoints[],bool &markoutValid[])
      {
+      ArrayResize(markoutPoints,0);
+      ArrayResize(markoutValid,0);
       ulong now=GetTickCount64();
       int processed=0;
       for(int i=m_markoutCount-1;i>=0;i--)
@@ -393,6 +395,11 @@ public:
             sample.markoutPoints=0.0;
             sample.missingMask|=2;
            }
+         int outputIndex=ArraySize(markoutPoints);
+         ArrayResize(markoutPoints,outputIndex+1);
+         ArrayResize(markoutValid,outputIndex+1);
+         markoutPoints[outputIndex]=sample.markoutPoints;
+         markoutValid[outputIndex]=quoteReady;
          Enqueue(sample);
          m_markoutEvents[i]=m_markoutEvents[m_markoutCount-1];
          m_markoutDueMs[i]=m_markoutDueMs[m_markoutCount-1];
@@ -401,6 +408,13 @@ public:
          processed++;
         }
       return(processed);
+     }
+
+   int ProcessDueMarkouts(void)
+     {
+      double values[];
+      bool valid[];
+      return(ProcessDueMarkouts(values,valid));
      }
 
    // Call only from OnTimer or another controlled non-hot-path callback.
