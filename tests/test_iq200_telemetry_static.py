@@ -131,6 +131,7 @@ def test_iq200_markout_scheduler_is_bounded_and_uses_three_horizons():
     assert "horizons[2]=30000" in source
     assert "GetTickCount64()+(ulong)horizons[h]" in source
     assert "sample.direction>0)?tick.bid:tick.ask" in source
+    assert "sample.fillPrice>0.0 && sample.pointSize>0.0" in source
     assert "(double)sample.direction*" in source
     assert "sample.missingMask|=2" in source
     assert "int ProcessDueMarkouts(void)" in source
@@ -144,7 +145,9 @@ def test_iq200_markouts_run_from_timer_not_hot_callbacks():
     assert ea.index("g_iq200Telemetry.ProcessDueMarkouts();") < ea.index(
         "g_iq200Telemetry.Flush(64);"
     )
-    assert "g_iq200Telemetry.ScheduleMarkouts(telemetryEvent);" in ea
+    assert "markoutBasis.fillPrice=dealPrice;" in ea
+    assert "markoutBasis.confirmedVolume=dealVolume;" in ea
+    assert "g_iq200Telemetry.ScheduleMarkouts(markoutBasis);" in ea
     assert "telemetryEvent.pointSize=SymbolInfoDouble(symbol,SYMBOL_POINT);" in ea
 
 
