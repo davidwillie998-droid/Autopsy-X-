@@ -18,6 +18,7 @@ private:
    int               m_confirmCount;
    ENUM_AX_DIR       m_pendingDir;
    int               m_flipGeneration;
+   datetime          m_lastConfirmationBar;
 
 public:
                      CFlipEngine(void)
@@ -27,6 +28,7 @@ public:
       m_confirmCount = 0;
       m_pendingDir   = AX_DIR_NONE;
       m_flipGeneration = 0;
+      m_lastConfirmationBar = 0;
      }
 
    void              Configure(const int requiredConfirmations,const double minFlipConfidence)
@@ -45,9 +47,11 @@ public:
    //--- returns true exactly once the flip is fully confirmed ---
    bool              Evaluate(const ENUM_AX_DIR heldDir,const SAxScore &score,
                                const CMomentumEngine &mom,const CMicrostructureEngine &micro,
-                               const bool spreadOk)
+                               const bool spreadOk,const bool higherTimeframeConfirms,
+                               const datetime closedBarTime)
      {
-      if(heldDir==AX_DIR_NONE) { Reset(); return(false); }
+      if(heldDir==AX_DIR_NONE || !higherTimeframeConfirms || closedBarTime<=0)
+        { Reset(); return(false); }
 
       ENUM_AX_DIR opposite = (heldDir==AX_DIR_BUY) ? AX_DIR_SELL : AX_DIR_BUY;
 
@@ -72,12 +76,17 @@ public:
 
       if(tickConfirms && opposite==m_pendingDir)
         {
-         m_confirmCount++;
+         if(closedBarTime!=m_lastConfirmationBar)
+           {
+            m_confirmCount++;
+            m_lastConfirmationBar=closedBarTime;
+           }
         }
       else if(tickConfirms)
         {
          m_pendingDir   = opposite;
          m_confirmCount = 1;
+         m_lastConfirmationBar=closedBarTime;
         }
       else
         {
