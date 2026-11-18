@@ -51,5 +51,16 @@ class HedgingStopActionRecoveryTests(unittest.TestCase):
         self.assertLess(recover, normal_compare)
 
 
+    def test_existing_partial_close_recovery_remains_a_real_function(self):
+        self.assertIn("bool AxRecoverLockedPartialCloseActions(void)", EA)
+        self.assertNotIn("//bool AxRecoverLockedPartialCloseActions(void)", EA)
+        self.assertIn("if(AxRecoverLockedPartialCloseActions())", EA)
+
+    def test_startup_runs_locked_action_recovery_before_normal_trading(self):
+        recovery = EA.index("if(AxRecoverLockedPartialCloseActions())")
+        init_tail = EA.index("void AxProcessTick(void)")
+        self.assertLess(recovery, init_tail)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
