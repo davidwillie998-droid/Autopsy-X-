@@ -4884,7 +4884,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
             telemetryEvent.orderTicket=trans.order;
             telemetryEvent.orderType=(int)HistoryOrderGetInteger(trans.order,ORDER_TYPE);
             telemetryEvent.requestedVolume=HistoryOrderGetDouble(trans.order,ORDER_VOLUME_INITIAL);
-            telemetryEvent.confirmedVolume=HistoryOrderGetDouble(trans.order,ORDER_VOLUME_CURRENT);
+            double remainingVolume=HistoryOrderGetDouble(trans.order,ORDER_VOLUME_CURRENT);
+            telemetryEvent.confirmedVolume=MathMax(0.0,telemetryEvent.requestedVolume-remainingVolume);
             telemetryEvent.reasonCode=(int)observedState;
             g_iq200Telemetry.Enqueue(telemetryEvent);
            }
