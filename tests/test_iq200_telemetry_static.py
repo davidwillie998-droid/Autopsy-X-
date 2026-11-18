@@ -100,3 +100,33 @@ def test_iq200_is_flushed_only_from_timer_and_controlled_shutdown():
     assert "g_iq200Telemetry.Enqueue(telemetryEvent);" in ea
     assert "g_iq200Telemetry.Init(_Symbol,InpMagicNumber)" in ea
     assert "EventSetTimer(1);" in ea
+
+
+def test_iq200_decision_route_and_submission_events_are_correlated():
+    ea = (ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(
+        encoding="utf-8"
+    )
+    execution = (ROOT / "MQL5/Include/AutopsyX/ExecutionEngine.mqh").read_text(
+        encoding="utf-8"
+    )
+    assert "decisionEvent.decisionId=lifecycleSetupId;" in ea
+    assert "routeEvent.decisionId=lifecycleSetupId;" in ea
+    assert "g_exec.OpenMarket(" in ea
+    assert "g_iq200Telemetry,lifecycleSetupId" in ea
+    assert "telemetry.NewEvent(submittedEvent,AX_IQ200_ORDER_SUBMITTED" in execution
+    assert "telemetry.Enqueue(submittedEvent);" in execution
+    assert execution.index("telemetry.Enqueue(submittedEvent);") < execution.index("m_trade.Buy(lots")
+    assert execution.index("telemetry.Enqueue(submittedEvent);") < execution.index("m_trade.Sell(lots")
+
+
+def test_iq200_deal_events_distinguish_partial_from_cumulative_full_fill():
+    ea = (ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(
+        encoding="utf-8"
+    )
+    telemetry = _source()
+    assert "MarkDealTicketSeen(trans.deal)" in ea
+    assert "cumulativeEntryVolume" in ea
+    assert "orderFullyFilled" in ea
+    assert "AX_IQ200_DEAL_PARTIAL" in ea
+    assert "AX_IQ200_DEAL_FILLED" in ea
+    assert "bool MarkDealTicketSeen(const ulong dealTicket)" in telemetry
