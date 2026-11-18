@@ -471,6 +471,7 @@ public:
                    :m_trade.Sell(lots,symbol,0.0,alignedSl,alignedTp,comment);
          uint retcode=m_trade.ResultRetcode();
          ulong orderTicket=m_trade.ResultOrder();
+         telemetry.BindOrderDecision(orderTicket,decisionId);
          latencyMsOut=(int)(GetTickCount()-startTick);
 
          // CTrade's bool is only the local request/result-structure status. The
