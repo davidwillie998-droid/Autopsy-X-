@@ -2606,7 +2606,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       decisionEvent.tickSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
       decisionEvent.atrPoints=(decisionEvent.pointSize>0.0 && g_regime.CurrentAtr()>0.0)
                               ?g_regime.CurrentAtr()/decisionEvent.pointSize:0.0;
-      decisionEvent.reasonCode=(int)AX_EXEC_MARKET;
+      decisionEvent.reasonCode=(int)0;
       g_iq200Telemetry.Enqueue(decisionEvent);
 
       SAxIQ200Event routeEvent;
@@ -2619,7 +2619,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       routeEvent.requestedPrice=marginPrice;
       routeEvent.bid=marginTick.bid;
       routeEvent.ask=marginTick.ask;
-      routeEvent.reasonCode=(int)AX_EXEC_MARKET;
+      routeEvent.reasonCode=(int)0;
       g_iq200Telemetry.Enqueue(routeEvent);
      }
    ulong orderCallStartUs=GetMicrosecondCount();
