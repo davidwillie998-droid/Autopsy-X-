@@ -156,7 +156,7 @@ def test_iq200_only_entry_deals_create_fill_events_and_markouts():
     ea = (ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(
         encoding="utf-8"
     )
-    entry_branch = ea.index("HistoryDealGetInteger(trans.deal,DEAL_ENTRY)==DEAL_ENTRY_IN")
+    entry_branch = ea.index("HistoryDealSelect(trans.deal) &&\n              HistoryDealGetInteger(trans.deal,DEAL_ENTRY)==DEAL_ENTRY_IN &&")
     entry_body_end = ea.index("else if(trans.type==TRADE_TRANSACTION_DEAL_ADD", entry_branch)
     entry_body = ea[entry_branch:entry_body_end]
     assert "g_iq200Telemetry.ScheduleMarkouts(markoutBasis);" in entry_body
