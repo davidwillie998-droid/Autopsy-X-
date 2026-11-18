@@ -29,6 +29,7 @@
 #include <AutopsyX/RegimeResearchJournal.mqh>
 #include <AutopsyX/StructureEngine.mqh>
 #include <AutopsyX/W1InstitutionalDirection.mqh>
+#include <AutopsyX/D1InstitutionalLevels.mqh>
 #include <AutopsyX/CompositeDirection.mqh>
 #include <AutopsyX/VPMACD.mqh>
 #include <AutopsyX/NewsDefense.mqh>
@@ -288,6 +289,7 @@ bool                  g_volatilityReady = false;
 bool                  g_regimeClassificationAvailable = false;
 CStructureEngine      g_structure;
 CW1InstitutionalDirection g_w1Institutional;
+CD1InstitutionalLevels g_d1Institutional;
 CCompositeDirectionEngine g_compositeDirection;
 CVPMACDEngine         g_vpMacd;
 CNewsDefenseEngine    g_newsDefense;
@@ -1911,6 +1913,15 @@ bool AxHtfConfluenceOk(const ENUM_AX_DIR dir)
                      AxDirToString(dir),g_w1Institutional.Summary());
       return(false);
      }
+   // D1 structure and liquidity map confirms the weekly direction. This gate is
+   // deliberately independent of the optional legacy H1 regression filter.
+   if(!g_d1Institutional.AllowsDirection(dir))
+     {
+      if(InpVerboseLogging)
+         PrintFormat("AUTOPSY X: D1 institutional confirmation blocked %s (%s)",
+                     AxDirToString(dir),g_d1Institutional.Summary());
+      return(false);
+     }
    if(!InpRequireHtfConfluence) return(true);
    if(g_regimeHtf.R2() < InpHtfMinR2ToBlock) return(true);
    double slope = g_regimeHtf.Slope();
@@ -2219,6 +2230,11 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
      {
       bool wantHighLevel = (dir==AX_DIR_SELL); // SELL stops sit above a recent high, BUY below a recent low
       double levelPrice = g_liq.GetNearestLevel(wantHighLevel,intendedPrice);
+      double d1SwingLevel = g_d1Institutional.NearestValidSwingLevel(wantHighLevel,intendedPrice);
+      bool existingLevelCorrectSide=(dir==AX_DIR_BUY) ? (levelPrice<intendedPrice) : (levelPrice>intendedPrice);
+      if(d1SwingLevel>0.0 &&
+         (!existingLevelCorrectSide || MathAbs(intendedPrice-d1SwingLevel)<MathAbs(intendedPrice-levelPrice)))
+         levelPrice=d1SwingLevel;
       // NearestLevel only picks the geometrically closest level of the requested side - it does NOT
       // guarantee that level is on the correct side of price, e.g. a stale/lagging "low" fractal that
       // now sits above the current ask after a fast reversal. A stop must sit strictly on the loss
@@ -2393,7 +2409,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    // authoritative and are deliberately retained after this additional eligibility check.
    // One identifier follows the setup through broker fill, recovery and autopsy.
    // Ambiguous sends remain ORDER_SUBMITTED until broker reconciliation resolves them.
-   string entryReason = AxBuildEntryReason(score,dir)+" "+tag;
+   string entryReason = AxBuildEntryReason(score,dir)+" "+tag+" "+g_d1Institutional.Summary();
    string lifecycleSetupId = AxGenerateSetupId(_Symbol,dir);
    g_tradeLifecycle.Begin(lifecycleSetupId);
    bool lifecycleReady =
@@ -2749,6 +2765,13 @@ bool AxAttemptPyramidNettingAdd(SAxPyramidCampaignRecord &campaign,
       if(InpVerboseLogging)
          PrintFormat("FLIPDEMON PYRAMID BLOCKED BY W1 AUTHORITY: direction=%s state=%s",
                      AxDirToString(campaign.dir),g_w1Institutional.Summary());
+      return(false);
+     }
+   if(!g_d1Institutional.AllowsDirection(campaign.dir))
+     {
+      if(InpVerboseLogging)
+         PrintFormat("FLIPDEMON PYRAMID BLOCKED BY D1 STRUCTURE: direction=%s state=%s",
+                     AxDirToString(campaign.dir),g_d1Institutional.Summary());
       return(false);
      }
    string gateReason="";
@@ -3546,6 +3569,9 @@ int OnInit(void)
    if(!g_w1Institutional.Init(_Symbol,260,30))
       PrintFormat("AUTOPSY X: W1 institutional data unavailable at startup; all new directional entries remain blocked (%s).",
                   g_w1Institutional.Summary());
+   if(!g_d1Institutional.Init(_Symbol,180,30))
+      PrintFormat("AUTOPSY X: D1 institutional data unavailable at startup; all new directional entries remain blocked (%s).",
+                  g_d1Institutional.Summary());
    if(!g_vpMacd.Init(_Symbol,InpRegimeTimeframe,InpVPMACDFastPeriod,InpVPMACDSlowPeriod,InpVPMACDSignalPeriod))
       Print("AUTOPSY X: VP-MACD initialization failed; its vote will remain unavailable.");
    else if(!g_vpMacd.Update())
@@ -3561,6 +3587,7 @@ int OnInit(void)
    g_regimeHtf.Update();
    g_structure.Update();
    g_w1Institutional.Update(true);
+   g_d1Institutional.Update(true);
    g_vpMacd.Update();
    // Respect the calendar engine's refresh interval after the forced startup read.
    g_newsDefense.Update(false);
@@ -3779,6 +3806,7 @@ void AxProcessTick(void)
    // Check the weekly close timestamp before any entry or pyramid decision.
    // Update() performs no history copy unless a new W1 candle has closed.
    g_w1Institutional.Update();
+   g_d1Institutional.Update();
    g_spreadCost.Observe(g_md.CurrentBid(),g_md.CurrentAsk(),g_md.Point());
    // Calendar refresh is internally throttled, never queried on every tick.
    g_newsDefense.Update(false);
@@ -4001,6 +4029,7 @@ void AxProcessTick(void)
         }
       g_structure.Update();
       g_w1Institutional.Update();
+      g_d1Institutional.Update();
       g_vpMacd.Update();
       g_liq.RefreshLevels();
       g_volProfile.Refresh();
