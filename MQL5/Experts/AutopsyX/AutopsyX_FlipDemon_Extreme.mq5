@@ -519,6 +519,79 @@ bool AxBrokerMarginPreflight(const double requiredMargin,
 //--- with no double count. Filtering by ticket (not DEAL_TIME) matters: MT5 deal time only has    ---
 //--- 1-second resolution, so a fast scalper's entry-to-exit could land in the same wall-clock      ---
 //--- second - deal tickets are strictly increasing in chronological order regardless.              ---
+// Position-scoped close history reader. Unlike the legacy single-campaign wrapper,
+// this function has no dependency on g_posState or g_positionIdentifier and can
+// reconcile each hedging/pyramid leg independently by stable broker identity.
+bool AxFetchCloseFinancialsByIdentifier(const ulong positionIdentifier,
+                                        const string expectedSymbol,const ulong expectedMagic,
+                                        const ENUM_AX_DIR expectedDirection,
+                                        const ulong sinceTicketExclusive,
+                                        double &closePrice,double &grossProfit,
+                                        double &commission,double &swap,datetime &closeTime,
+                                        ulong &lastDealTicketOut,double &closedVolumeOut)
+  {
+   closePrice=0.0;
+   grossProfit=0.0;
+   commission=0.0;
+   swap=0.0;
+   closeTime=0;
+   lastDealTicketOut=sinceTicketExclusive;
+   closedVolumeOut=0.0;
+   if(positionIdentifier==0 || expectedSymbol=="" || expectedMagic==0 ||
+      (expectedDirection!=AX_DIR_BUY && expectedDirection!=AX_DIR_SELL) ||
+      !HistorySelectByPosition((long)positionIdentifier))
+      return(false);
+
+   const long expectedCloseType=(expectedDirection==AX_DIR_BUY)?DEAL_TYPE_SELL:DEAL_TYPE_BUY;
+   double weightedCloseValue=0.0;
+   bool found=false;
+   const int total=HistoryDealsTotal();
+   for(int i=0;i<total;i++)
+     {
+      const ulong dealTicket=HistoryDealGetTicket(i);
+      if(dealTicket==0 || dealTicket<=sinceTicketExclusive) continue;
+      if((ulong)HistoryDealGetInteger(dealTicket,DEAL_POSITION_ID)!=positionIdentifier)
+         return(false);
+      if(HistoryDealGetString(dealTicket,DEAL_SYMBOL)!=expectedSymbol ||
+         (ulong)HistoryDealGetInteger(dealTicket,DEAL_MAGIC)!=expectedMagic)
+         return(false);
+
+      const long entryType=HistoryDealGetInteger(dealTicket,DEAL_ENTRY);
+      // A reversal deal mixes closing and opening volume. Its close allocation
+      // cannot be inferred from DEAL_VOLUME, so force explicit reconciliation.
+      if(entryType==DEAL_ENTRY_INOUT) return(false);
+      if(entryType!=DEAL_ENTRY_OUT && entryType!=DEAL_ENTRY_OUT_BY) continue;
+      if(HistoryDealGetInteger(dealTicket,DEAL_TYPE)!=expectedCloseType)
+         return(false);
+
+      const double dealVolume=HistoryDealGetDouble(dealTicket,DEAL_VOLUME);
+      const double dealPrice=HistoryDealGetDouble(dealTicket,DEAL_PRICE);
+      const double dealProfit=HistoryDealGetDouble(dealTicket,DEAL_PROFIT);
+      const double dealCommission=HistoryDealGetDouble(dealTicket,DEAL_COMMISSION);
+      const double dealSwap=HistoryDealGetDouble(dealTicket,DEAL_SWAP);
+      if(!MathIsValidNumber(dealVolume) || dealVolume<=0.0 ||
+         !MathIsValidNumber(dealPrice) || dealPrice<=0.0 ||
+         !MathIsValidNumber(dealProfit) || !MathIsValidNumber(dealCommission) ||
+         !MathIsValidNumber(dealSwap))
+         return(false);
+
+      grossProfit+=dealProfit;
+      commission+=dealCommission;
+      swap+=dealSwap;
+      closedVolumeOut+=dealVolume;
+      weightedCloseValue+=dealPrice*dealVolume;
+      if(dealTicket>lastDealTicketOut)
+        {
+         lastDealTicketOut=dealTicket;
+         closeTime=(datetime)HistoryDealGetInteger(dealTicket,DEAL_TIME);
+        }
+      found=true;
+     }
+   if(!found || closedVolumeOut<=0.0) return(false);
+   closePrice=weightedCloseValue/closedVolumeOut;
+   return(MathIsValidNumber(closePrice) && closePrice>0.0);
+  }
+
 bool AxFetchCloseFinancials(const ulong posTicket,const ulong sinceTicketExclusive,double &closePrice,
                              double &grossProfit,double &commission,double &swap,datetime &closeTime,
                              ulong &lastDealTicketOut,double &closedVolumeOut)
