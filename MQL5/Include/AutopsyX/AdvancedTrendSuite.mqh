@@ -110,13 +110,13 @@ public:
          CopyBuffer(m_mfiHandle,0,1,1,mfi)!=1 ||
          !MathIsValidNumber(atr[0]) || atr[0]<=0 ||
          !MathIsValidNumber(mfi[0]) || rates[0].close<=0)
-        { Reset(); return(false); }
+        { m_seeded=false; m_alpha=0.0; Reset(); return(false); }
       double lower=rates[0].low-atr[0]*m_multiplier;
       double upper=rates[0].high+atr[0]*m_multiplier;
       if(!m_seeded) { m_alpha=(mfi[0]>=50.0)?lower:upper; m_seeded=true; }
       else if(mfi[0]>=50.0) m_alpha=MathMax(lower,m_alpha);
       else m_alpha=MathMin(upper,m_alpha);
-      if(!MathIsValidNumber(m_alpha) || m_alpha<=0) { Reset(); return(false); }
+      if(!MathIsValidNumber(m_alpha) || m_alpha<=0) { m_seeded=false; m_alpha=0.0; Reset(); return(false); }
       m_lastBar=bar; m_read.available=true; m_read.barTime=bar; m_read.value=m_alpha;
       m_read.direction=(rates[0].close>m_alpha)?AX_DIR_BUY:(rates[0].close<m_alpha)?AX_DIR_SELL:AX_DIR_NONE;
       m_read.state=(m_read.direction==AX_DIR_BUY)?"BULLISH":(m_read.direction==AX_DIR_SELL)?"BEARISH":"NEUTRAL";
@@ -205,7 +205,10 @@ public:
      }
    bool Stop(const ENUM_AX_DIR direction,double &value) const
      {
-      value=0; if(direction!=m_direction || m_stop<=0 || !MathIsValidNumber(m_stop)) return(false);
+      value=0;
+      datetime latestClosedBar=iTime(m_symbol,m_tf,1);
+      if(direction!=m_direction || m_stop<=0 || !MathIsValidNumber(m_stop) ||
+         latestClosedBar<=0 || latestClosedBar!=m_lastBar) return(false);
       value=m_stop; return(true);
      }
   };
