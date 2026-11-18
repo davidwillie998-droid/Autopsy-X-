@@ -3825,6 +3825,8 @@ void OnDeinit(const int reason)
    EventKillTimer();
    g_executionLatency.Report();
    g_executionQualityJournal.Deinit();
+   if(g_iq200TelemetryReady)
+      g_iq200Telemetry.Flush(AX_IQ200_QUEUE_CAPACITY);
    g_iq200Telemetry.Deinit();
    g_distributedRiskCoordinator.Shutdown();
    if(!g_accountRiskCoordinator.Release())
