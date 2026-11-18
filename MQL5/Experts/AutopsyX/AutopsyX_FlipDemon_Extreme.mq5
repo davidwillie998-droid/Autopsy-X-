@@ -1598,7 +1598,7 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
    return(true);
   }
 
-//bool AxRecoverLockedPartialCloseActions(void)
+bool AxRecoverLockedPartialCloseActions(void)
   {
    if(!g_virtualExitInitialized || !g_virtualExitRegistry.IsPersisting() ||
       !g_hedgingPositionManager.IsComplete())
