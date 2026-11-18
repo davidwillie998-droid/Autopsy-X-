@@ -9,6 +9,7 @@
 #include <Trade/Trade.mqh>
 #include "Defs.mqh"
 #include "MarketData.mqh"
+#include "IQ200Telemetry.mqh"
 
 class CExecutionEngine
   {
@@ -413,7 +414,8 @@ public:
                                  const double slPrice,const double tpPrice,const string comment,
                                  ulong &ticketOut,double &fillPriceOut,string &errorReason,
                                  int &latencyMsOut,double &actualLotsOut,
-                                 bool &outcomeUncertain)
+                                 bool &outcomeUncertain,
+                                 CAxIQ200Telemetry &telemetry,const string decisionId)
      {
       uint startTick=GetTickCount();
       latencyMsOut=0;
@@ -447,6 +449,22 @@ public:
          double alignedSl=slPrice,alignedTp=tpPrice;
          if(!PrepareProtectionPrices(symbol,dir,alignedSl,alignedTp,false,0.0,0.0,errorReason))
             return(false);
+
+         // Record the actual request boundary immediately before CTrade submits it.
+         // This event is observational and cannot change the request or its outcome.
+         SAxIQ200Event submittedEvent;
+         telemetry.NewEvent(submittedEvent,AX_IQ200_ORDER_SUBMITTED,symbol,m_magic);
+         submittedEvent.decisionId=decisionId;
+         submittedEvent.intentId=decisionId;
+         submittedEvent.direction=(dir==AX_DIR_BUY)?1:-1;
+         submittedEvent.orderType=(int)((dir==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL);
+         submittedEvent.requestedVolume=lots;
+         submittedEvent.requestedPrice=(dir==AX_DIR_BUY)?freshAsk:freshBid;
+         submittedEvent.bid=freshBid;
+         submittedEvent.ask=freshAsk;
+         submittedEvent.pointSize=SymbolInfoDouble(symbol,SYMBOL_POINT);
+         submittedEvent.tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+         telemetry.Enqueue(submittedEvent);
 
          bool sent=(dir==AX_DIR_BUY)
                    ?m_trade.Buy(lots,symbol,0.0,alignedSl,alignedTp,comment)
