@@ -413,13 +413,13 @@ public:
       if(record.dir==AX_DIR_BUY)
         {
          if(confirmedStop<record.initialSlPrice) return(false);
-         if(record.breakEvenDone && confirmedStop<record.openPrice) return(false);
+         if(record.breakEvenDone && confirmedStop<record.initialSlPrice+record.originalRiskDistance) return(false);
          if(record.trailingActive && confirmedStop<record.trailingStopPrice) return(false);
         }
       else if(record.dir==AX_DIR_SELL)
         {
          if(confirmedStop>record.initialSlPrice) return(false);
-         if(record.breakEvenDone && confirmedStop>record.openPrice) return(false);
+         if(record.breakEvenDone && confirmedStop>record.initialSlPrice-record.originalRiskDistance) return(false);
          if(record.trailingActive && confirmedStop>record.trailingStopPrice) return(false);
         }
       else
