@@ -171,9 +171,9 @@ private:
            }
         }
 
-      // Operational OB definition: the nearest opposing candle in the 8 completed
-      // weeks preceding a confirmed directional displacement. This is a zone candidate,
-      // not proof of institutional order placement.
+      // First-pass opposing-candle zone candidates from recent completed weeks.
+      // These are not yet displacement-linked, validated order blocks, and are never
+      // treated as proof of institutional order placement.
       for(int i=1;i<MathMin(count,10);i++)
         {
          if(m_state.bullishObLow==0.0 && rates[i].close<rates[i].open)
