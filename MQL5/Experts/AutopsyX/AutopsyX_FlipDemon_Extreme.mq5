@@ -4857,6 +4857,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
          g_iq200Telemetry.NewEvent(telemetryEvent,AX_IQ200_BROKER_ACK,symbol,magic);
          telemetryEvent.orderTicket=result.order;
          telemetryEvent.dealTicket=result.deal;
+         telemetryEvent.decisionId=g_iq200Telemetry.DecisionIdForOrder(result.order);
+         telemetryEvent.intentId=telemetryEvent.decisionId;
          telemetryEvent.retcode=result.retcode;
          telemetryEvent.retcodeExternal=result.retcode_external;
          telemetryEvent.requestedVolume=request.volume;
@@ -4929,6 +4931,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
          g_iq200Telemetry.NewEvent(telemetryEvent,fillEventType,symbol,magic);
          telemetryEvent.orderTicket=dealOrder;
          telemetryEvent.dealTicket=trans.deal;
+         telemetryEvent.decisionId=g_iq200Telemetry.DecisionIdForOrder(dealOrder);
+         telemetryEvent.intentId=telemetryEvent.decisionId;
          telemetryEvent.positionIdentifier=positionId;
          telemetryEvent.requestedVolume=requestedOrderVolume;
          telemetryEvent.confirmedVolume=(cumulativeEntryVolume>0.0)?cumulativeEntryVolume:dealVolume;
@@ -4959,6 +4963,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
            {
             g_iq200Telemetry.NewEvent(telemetryEvent,observedEvent,symbol,magic);
             telemetryEvent.orderTicket=trans.order;
+            telemetryEvent.decisionId=g_iq200Telemetry.DecisionIdForOrder(trans.order);
+            telemetryEvent.intentId=telemetryEvent.decisionId;
             telemetryEvent.orderType=(int)HistoryOrderGetInteger(trans.order,ORDER_TYPE);
             telemetryEvent.requestedVolume=HistoryOrderGetDouble(trans.order,ORDER_VOLUME_INITIAL);
             double remainingVolume=HistoryOrderGetDouble(trans.order,ORDER_VOLUME_CURRENT);
