@@ -8,7 +8,7 @@
 #include "Defs.mqh"
 
 #define AX_VIRTUAL_EXIT_LEGACY_FIELD_COUNT 12
-#define AX_VIRTUAL_EXIT_FIELD_COUNT 21
+#define AX_VIRTUAL_EXIT_FIELD_COUNT 23
 
 struct SAxVirtualExitRecord
   {
@@ -149,7 +149,7 @@ public:
          string f[];
          int fieldCount=StringSplit(line,'|',f);
          if(fieldCount!=AX_VIRTUAL_EXIT_LEGACY_FIELD_COUNT &&
-            fieldCount!=20 && fieldCount!=AX_VIRTUAL_EXIT_FIELD_COUNT)
+            fieldCount!=20 && fieldCount!=21 && fieldCount!=AX_VIRTUAL_EXIT_FIELD_COUNT)
            {
             valid=false;
             Print("FLIPDEMON VIRTUAL EXIT ERROR: malformed state row; recovery refused.");
@@ -173,6 +173,9 @@ public:
          double actionBaseline=baselineFormat ? StringToDouble(f[18]) : 0.0;
          int entryIndex=legacyFormat ? 10 : (baselineFormat ? 19 : 18);
          int updatedIndex=legacyFormat ? 11 : (baselineFormat ? 20 : 19);
+          bool entryMetadataFormat=(fieldCount==AX_VIRTUAL_EXIT_FIELD_COUNT);
+          double persistedEntryPrice=entryMetadataFormat ? StringToDouble(f[21]) : 0.0;
+          double persistedEntryVolume=entryMetadataFormat ? StringToDouble(f[22]) : 0.0;
          datetime entry=StringToTime(f[entryIndex]);
          datetime updated=StringToTime(f[updatedIndex]);
          double initialSl=StringToDouble(f[4]);
@@ -261,7 +264,9 @@ public:
          (record.actionLocked && (record.actionCode<=0 || record.actionStartedAt<=0)) ||
          (!record.actionLocked && (record.actionCode!=0 || record.actionStartedAt>0 ||
                                    record.actionBaselineVolume>0.0)) ||
-         record.actionBaselineVolume<0.0 || record.entryTime<=0)
+         record.actionBaselineVolume<0.0 || record.entryTime<=0 ||
+          record.entryPrice<0.0 || record.entryVolume<0.0 ||
+          !MathIsValidNumber(record.entryPrice) || !MathIsValidNumber(record.entryVolume))
         {
          Print("FLIPDEMON VIRTUAL EXIT ERROR: invalid record rejected.");
          return(false);
