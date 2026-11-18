@@ -169,7 +169,7 @@ public:
          int actionLock=legacyFormat ? 0 : (int)StringToInteger(f[15]);
          int actionCode=legacyFormat ? 0 : (int)StringToInteger(f[16]);
          datetime actionStarted=legacyFormat ? 0 : StringToTime(f[17]);
-         bool baselineFormat=(fieldCount==AX_VIRTUAL_EXIT_FIELD_COUNT);
+         bool baselineFormat=(fieldCount==21 || fieldCount==AX_VIRTUAL_EXIT_FIELD_COUNT);
          double actionBaseline=baselineFormat ? StringToDouble(f[18]) : 0.0;
          int entryIndex=legacyFormat ? 10 : (baselineFormat ? 19 : 18);
          int updatedIndex=legacyFormat ? 11 : (baselineFormat ? 20 : 19);
