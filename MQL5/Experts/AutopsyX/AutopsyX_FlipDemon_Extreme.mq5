@@ -28,6 +28,7 @@
 #include <AutopsyX/RegimeClassifierEngine.mqh>
 #include <AutopsyX/RegimeResearchJournal.mqh>
 #include <AutopsyX/StructureEngine.mqh>
+#include <AutopsyX/W1InstitutionalDirection.mqh>
 #include <AutopsyX/CompositeDirection.mqh>
 #include <AutopsyX/VPMACD.mqh>
 #include <AutopsyX/NewsDefense.mqh>
@@ -286,6 +287,7 @@ bool                  g_regimeJournalReady = false;
 bool                  g_volatilityReady = false;
 bool                  g_regimeClassificationAvailable = false;
 CStructureEngine      g_structure;
+CW1InstitutionalDirection g_w1Institutional;
 CCompositeDirectionEngine g_compositeDirection;
 CVPMACDEngine         g_vpMacd;
 CNewsDefenseEngine    g_newsDefense;
@@ -1900,6 +1902,15 @@ void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double l
 //--- not a requirement that HTF agree outright. ---
 bool AxHtfConfluenceOk(const ENUM_AX_DIR dir)
   {
+   // W1 institutional direction is the non-bypassable directional authority.
+   // Neutral, reversal-pending and unavailable weekly states all fail closed.
+   if(!g_w1Institutional.AllowsDirection(dir))
+     {
+      if(InpVerboseLogging)
+         PrintFormat("AUTOPSY X: W1 institutional authority blocked %s (%s)",
+                     AxDirToString(dir),g_w1Institutional.Summary());
+      return(false);
+     }
    if(!InpRequireHtfConfluence) return(true);
    if(g_regimeHtf.R2() < InpHtfMinR2ToBlock) return(true);
    double slope = g_regimeHtf.Slope();
@@ -2733,6 +2744,13 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
 bool AxAttemptPyramidNettingAdd(SAxPyramidCampaignRecord &campaign,
                                const double requestedLots,const datetime triggerBar)
   {
+   if(!g_w1Institutional.AllowsDirection(campaign.dir))
+     {
+      if(InpVerboseLogging)
+         PrintFormat("FLIPDEMON PYRAMID BLOCKED BY W1 AUTHORITY: direction=%s state=%s",
+                     AxDirToString(campaign.dir),g_w1Institutional.Summary());
+      return(false);
+     }
    string gateReason="";
    if(!g_emergency.CanEnterDirection(campaign.dir,gateReason))
      {
@@ -3525,6 +3543,9 @@ int OnInit(void)
       Print("AUTOPSY X: failed to initialize closed-bar structure engine");
       return(INIT_FAILED);
      }
+   if(!g_w1Institutional.Init(_Symbol,260,30))
+      PrintFormat("AUTOPSY X: W1 institutional data unavailable at startup; all new directional entries remain blocked (%s).",
+                  g_w1Institutional.Summary());
    if(!g_vpMacd.Init(_Symbol,InpRegimeTimeframe,InpVPMACDFastPeriod,InpVPMACDSlowPeriod,InpVPMACDSignalPeriod))
       Print("AUTOPSY X: VP-MACD initialization failed; its vote will remain unavailable.");
    else if(!g_vpMacd.Update())
@@ -3539,6 +3560,7 @@ int OnInit(void)
    g_regime.Update();
    g_regimeHtf.Update();
    g_structure.Update();
+   g_w1Institutional.Update(true);
    g_vpMacd.Update();
    // Respect the calendar engine's refresh interval after the forced startup read.
    g_newsDefense.Update(false);
@@ -3975,6 +3997,7 @@ void AxProcessTick(void)
            }
         }
       g_structure.Update();
+      g_w1Institutional.Update();
       g_vpMacd.Update();
       g_liq.RefreshLevels();
       g_volProfile.Refresh();
