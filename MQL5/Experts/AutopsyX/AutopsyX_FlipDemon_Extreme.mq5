@@ -1878,7 +1878,7 @@ bool AxRecoverLockedPartialCloseActions(void)
    return(true);
   }
 
-//bool AxReconcilePyramidCampaignTickets(const bool removeStaleRecords)
+bool AxReconcilePyramidCampaignTickets(const bool removeStaleRecords)
   {
    if(!g_hedgingPositionManager.IsComplete() ||
       !g_pyramidCampaignRegistry.IsPersisting())
