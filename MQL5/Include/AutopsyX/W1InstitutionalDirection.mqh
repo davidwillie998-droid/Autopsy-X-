@@ -105,7 +105,7 @@ private:
       double highs[2]; double lows[2];
       datetime highTimes[2]; datetime lowTimes[2];
       int highCount=0,lowCount=0;
-      for(int i=wing;i<count-wing;i++)
+      for(int i=count-1-wing;i>=wing;i--)
         {
          if(IsSwingHigh(rates,i,wing,count))
            {
@@ -328,7 +328,7 @@ public:
      }
 
    ENUM_AX_W1_BIAS Bias(void) const { return(m_state.bias); }
-   const SAxW1Snapshot &Snapshot(void) const { return(m_state); }
+   SAxW1Snapshot Snapshot(void) const { return(m_state); }
    bool AllowsDirection(const ENUM_AX_DIR direction) const
      {
       if(m_state.bias==AX_W1_BULLISH) return(direction==AX_DIR_BUY);
