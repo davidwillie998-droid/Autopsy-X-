@@ -51,6 +51,7 @@
 #include <AutopsyX/IQ200Telemetry.mqh>
 #include <AutopsyX/ExitEngine.mqh>
 #include <AutopsyX/SniperEngine.mqh>
+#include <AutopsyX/PrecisionEntryEngine.mqh>
 #include <AutopsyX/OrderFlow.mqh>
 #include <AutopsyX/VolumeProfile.mqh>
 #include <AutopsyX/Footprint.mqh>
@@ -90,6 +91,12 @@ input double          InpPyramidLotMultiplier     = 1.5;    // Each tier must ex
 input double          InpPyramidAtrGapMultiplier  = 0.75;   // Minimum favorable continuation distance from the last confirmed tier fill
 input double          InpPyramidMinProfitMoney    = 0.01;   // Require positive broker-reported floating P/L plus swap before considering an add
 input bool            InpEnablePyramidExecution    = false;  // Explicit opt-in; ANALYSIS_ONLY remains the default
+
+input group "=== M15 PRECISION DISPLACEMENT CONFIRMATION ===";
+input ENUM_TIMEFRAMES InpPrecisionTimeframe = PERIOD_M15;
+input double InpPrecisionMinBodyRatio = 0.45;
+input double InpPrecisionMinRangeAtr = 0.35;
+input double InpPrecisionCloseLocation = 0.72;
 
 input group "=== SNIPER ENTRY (PRECISION TIMING) ===";
 input bool            InpUseSniperEntry           = true; // Wait for a precise pullback-then-resume before entering, instead of firing immediately
@@ -344,6 +351,8 @@ CAxIQ200Telemetry g_iq200Telemetry;
 bool g_iq200TelemetryReady=false;
 CExitEngine           g_exit;
 CSniperEngine         g_sniper;
+CPrecisionEntryEngine g_precisionEntry;
+bool g_precisionEntryReady=false;
 COrderFlowEngine      g_orderFlow;
 CVolumeProfileEngine  g_volProfile;
 CFootprintEngine      g_footprint;
@@ -1963,6 +1972,14 @@ bool AxHtfConfluenceOk(const ENUM_AX_DIR dir)
                      AxDirToString(dir),g_h4TrendBreakout.Summary());
       return(false);
      }
+   // M15 confirmation is mandatory even when the legacy regression filter is disabled.
+   // It uses only the last completed candle, never a forming-bar signal.
+   if(!g_precisionEntryReady || !g_precisionEntry.AllowsDirection(dir))
+     {
+      if(InpVerboseLogging)
+         PrintFormat("AUTOPSY X: M15 precision displacement confirmation blocked %s.",AxDirToString(dir));
+      return(false);
+     }
    if(!InpRequireHtfConfluence) return(true);
    if(g_regimeHtf.R2() < InpHtfMinR2ToBlock) return(true);
    double slope = g_regimeHtf.Slope();
@@ -2976,7 +2993,8 @@ bool AxAttemptPyramidNettingAdd(SAxPyramidCampaignRecord &campaign,
    double lockedAtr=0.0;
    MqlTick lockedQuote;
    double lockedGap=0.0;
-   bool lockedTrigger=(g_pyramidEngine.ReadClosedTrend(_Symbol,lockedTrend,lockedCross) &&
+   bool lockedTrigger=(g_precisionEntryReady && g_precisionEntry.AllowsDirection(campaign.dir) &&
+                       g_pyramidEngine.ReadClosedTrend(_Symbol,lockedTrend,lockedCross) &&
                        g_pyramidEngine.ReadClosedAtr(lockedAtr) &&
                        SymbolInfoTick(_Symbol,lockedQuote) &&
                        lockedQuote.bid>0.0 && lockedQuote.ask>=lockedQuote.bid);
@@ -3848,6 +3866,11 @@ int OnInit(void)
    // prepares the durable ledger; scale-in execution remains separately gated.
    bool pyramidRegistryReady=g_pyramidCampaignRegistry.Init("FlipDemon_Extreme_HFT",_Symbol,InpMagicNumber);
    bool pyramidEngineReady=g_pyramidEngine.Init(_Symbol,PERIOD_H1,MODE_EMA,100);
+   g_precisionEntryReady=g_precisionEntry.Init(_Symbol,InpPrecisionTimeframe,20,50,14,
+                                                InpPrecisionMinBodyRatio,InpPrecisionMinRangeAtr,
+                                                InpPrecisionCloseLocation);
+   if(!g_precisionEntryReady)
+      Print("FLIPDEMON PRECISION: M15 confirmation data unavailable; fresh entries and pyramid adds remain blocked.");
    int pyramidPositions=0,pyramidRecovered=0,pyramidUnresolved=0;
    if(pyramidRegistryReady && pyramidEngineReady)
      {
@@ -3915,6 +3938,7 @@ void OnDeinit(const int reason)
    g_mfi.Deinit();
    g_slingshot.Deinit();
    g_chandelier.Deinit();
+   g_precisionEntry.Release();
    g_pyramidEngine.Release();
    g_pyramidCampaignRegistry.Deinit();
   }
@@ -4337,7 +4361,8 @@ void AxProcessTick(void)
             bool pyramidVwapAligned=(!InpRequireVWAPDirection) ||
                                     (campaign.dir==AX_DIR_BUY && g_vwapValue>0.0 && g_vwapTrend=="BULLISH") ||
                                     (campaign.dir==AX_DIR_SELL && g_vwapValue>0.0 && g_vwapTrend=="BEARISH");
-            bool eligible=(trendRead && atrRead && closedTrend==campaign.dir && pyramidVwapAligned &&
+            bool eligible=(g_precisionEntryReady && g_precisionEntry.AllowsDirection(campaign.dir) &&
+                           trendRead && atrRead && closedTrend==campaign.dir && pyramidVwapAligned &&
                            basketProfit>=InpPyramidMinProfitMoney &&
                            candidateLots>=volMin && candidateLots>campaign.lastTierFilledLots+volStep*0.25 &&
                            candidateLots<=volMax && trigger &&
