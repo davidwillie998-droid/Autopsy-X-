@@ -4146,7 +4146,16 @@ void AxProcessTick(void)
 
       bool spreadOk = g_micro.SpreadAcceptable(InpMaxSpreadPoints);
 
-      bool flipTriggered = g_flip.Evaluate(g_posState.dir,score,g_mom,g_micro,spreadOk);
+      ENUM_AX_DIR oppositeDirection=(g_posState.dir==AX_DIR_BUY)?AX_DIR_SELL:AX_DIR_BUY;
+      ENUM_AX_DIR confirmedH1Direction=AX_DIR_NONE;
+      bool h1Crossed=false;
+      datetime confirmedH1Bar=iTime(_Symbol,PERIOD_H1,1);
+      bool h1TrendRead=(g_pyramidReady &&
+                        g_pyramidEngine.ReadClosedTrend(_Symbol,confirmedH1Direction,h1Crossed));
+      bool higherTimeframeReversalConfirmed=(h1TrendRead &&
+                                              confirmedH1Direction==oppositeDirection);
+      bool flipTriggered = g_flip.Evaluate(g_posState.dir,score,g_mom,g_micro,spreadOk,
+                                            higherTimeframeReversalConfirmed,confirmedH1Bar);
       if(flipTriggered)
         {
          ENUM_AX_DIR newDir  = (g_posState.dir==AX_DIR_BUY) ? AX_DIR_SELL : AX_DIR_BUY;
