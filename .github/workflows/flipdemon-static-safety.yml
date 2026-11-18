@@ -20,6 +20,7 @@ on:
       - 'tests/test_flipdemon_score_evidence_contract.py'
       - 'tests/test_iq200_telemetry_static.py'
       - 'tests/test_advanced_trend_suite_static.py'
+      - 'tests/test_advanced_trend_suite_static.py'
       - '.github/workflows/flipdemon-static-safety.yml'
   pull_request:
     paths:
