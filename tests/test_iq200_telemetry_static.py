@@ -89,3 +89,14 @@ def test_iq200_csv_header_and_serializer_have_matching_field_count():
     assert format_match
     placeholders = re.findall(r"%(?:I64)?(?:u|d|s)|%\.\d+f", format_match.group(1))
     assert len(placeholders) == header_count
+
+
+def test_iq200_is_flushed_only_from_timer_and_controlled_shutdown():
+    ea = (ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(
+        encoding="utf-8"
+    )
+    assert "g_iq200Telemetry.Flush(64);" in ea
+    assert "g_iq200Telemetry.Flush(AX_IQ200_QUEUE_CAPACITY);" in ea
+    assert "g_iq200Telemetry.Enqueue(telemetryEvent);" in ea
+    assert "g_iq200Telemetry.Init(_Symbol,InpMagicNumber)" in ea
+    assert "EventSetTimer(1);" in ea
