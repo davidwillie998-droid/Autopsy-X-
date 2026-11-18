@@ -310,3 +310,72 @@ class Mql5SourceHygieneTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class D1InstitutionalDirectionTests(unittest.TestCase):
+    """Static contract checks for the closed-bar D1 institutional layer."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.d1_path = MQL_ROOT / "Include" / "AutopsyX" / "D1InstitutionalLevels.mqh"
+        cls.ea_path = MQL_ROOT / "Experts" / "AutopsyX" / "AutopsyX_FlipDemon_Extreme.mq5"
+        cls.d1 = cls.d1_path.read_text(encoding="utf-8-sig")
+        cls.ea = cls.ea_path.read_text(encoding="utf-8-sig")
+
+    def test_d1_structure_uses_completed_bars_only(self):
+        self.assertIn("CopyRates(m_symbol,PERIOD_D1,1,m_lookback,rates)", self.d1)
+        self.assertIn("iTime(m_symbol,PERIOD_D1,1)", self.d1)
+        self.assertIn("m_structure.Update();", self.d1)
+        self.assertIn("LastEventTime()==rates[0].time", self.d1)
+
+    def test_forming_day_price_is_context_not_structural_bias_evidence(self):
+        refresh = self.d1.index("void RefreshCurrentDayContext(void)")
+        evaluate = self.d1.index("void EvaluateClosedDay(")
+        update = self.d1.index("bool Update(const bool force=false)")
+        self.assertLess(refresh, evaluate)
+        self.assertIn("RefreshCurrentDayContext();", self.d1[update:])
+        evidence_start = self.d1.index("m_state.bullishEvidence=0;", evaluate)
+        evidence_end = self.d1.index("// A sweep by itself never flips D1.", evidence_start)
+        evidence = self.d1[evidence_start:evidence_end]
+        self.assertNotIn("currentDayOpen", evidence)
+        self.assertNotIn("currentPrice", evidence)
+
+    def test_daily_liquidity_and_imbalance_levels_are_calculated(self):
+        for token in (
+            "previousDayHigh=rates[0].high",
+            "previousDayLow=rates[0].low",
+            "buySideSweep=(rates[0].high>rates[1].high",
+            "sellSideSweep=(rates[0].low<rates[1].low",
+            "equalHighLevel=",
+            "equalLowLevel=",
+            "bullishFvgLow=",
+            "bearishFvgLow=",
+            "dealingRangeMid=",
+        ):
+            self.assertIn(token, self.d1)
+
+    def test_sweep_alone_cannot_confirm_a_d1_reversal(self):
+        self.assertIn("!bearishMss && m_state.structureTrend!=AX_STRUCT_TREND_BEARISH", self.d1)
+        self.assertIn("!bullishMss && m_state.structureTrend!=AX_STRUCT_TREND_BULLISH", self.d1)
+        self.assertIn("AX_D1_REVERSAL_PENDING", self.d1)
+
+    def test_w1_and_d1_are_non_bypassable_entry_authorities(self):
+        start = self.ea.index("bool AxHtfConfluenceOk(const ENUM_AX_DIR dir)")
+        end = self.ea.index("//--- blends order flow", start)
+        gate = self.ea[start:end]
+        self.assertIn("g_w1Institutional.AllowsDirection(dir)", gate)
+        self.assertIn("g_d1Institutional.AllowsDirection(dir)", gate)
+        self.assertLess(gate.index("g_d1Institutional.AllowsDirection(dir)"),
+                        gate.index("if(!InpRequireHtfConfluence)"))
+
+    def test_pyramid_adds_obey_both_weekly_and_daily_authority(self):
+        start = self.ea.index("bool AxAttemptPyramidNettingAdd(")
+        end = self.ea.index("//--- self-tuning:", start)
+        gate = self.ea[start:end]
+        self.assertIn("g_w1Institutional.AllowsDirection(campaign.dir)", gate)
+        self.assertIn("g_d1Institutional.AllowsDirection(campaign.dir)", gate)
+
+    def test_daily_swing_is_available_for_valid_side_structural_stops(self):
+        self.assertIn("NearestValidSwingLevel", self.d1)
+        self.assertIn("g_d1Institutional.NearestValidSwingLevel(wantHighLevel,intendedPrice)", self.ea)
+        self.assertIn("bool correctSide", self.ea)
