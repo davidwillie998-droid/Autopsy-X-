@@ -151,6 +151,31 @@ def test_iq200_markouts_run_from_timer_not_hot_callbacks():
     assert "telemetryEvent.pointSize=SymbolInfoDouble(symbol,SYMBOL_POINT);" in ea
 
 
+
+def test_iq200_only_entry_deals_create_fill_events_and_markouts():
+    ea = (ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(
+        encoding="utf-8"
+    )
+    entry_branch = ea.index("HistoryDealGetInteger(trans.deal,DEAL_ENTRY)==DEAL_ENTRY_IN")
+    entry_body_end = ea.index("else if(trans.type==TRADE_TRANSACTION_DEAL_ADD", entry_branch)
+    entry_body = ea[entry_branch:entry_body_end]
+    assert "g_iq200Telemetry.ScheduleMarkouts(markoutBasis);" in entry_body
+    assert "DEAL_ENTRY_OUT" not in entry_body
+    assert "DEAL_ENTRY_OUT_BY" not in entry_body
+
+
+def test_iq200_position_closed_event_requires_confirmed_flat_position():
+    ea = (ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(
+        encoding="utf-8"
+    )
+    close_branch = ea.index("AX_IQ200_POSITION_CLOSED")
+    close_body = ea[close_branch-800:close_branch+1400]
+    assert "DEAL_ENTRY_OUT" in close_body
+    assert "DEAL_ENTRY_OUT_BY" in close_body
+    assert "trans.position>0 && !PositionSelectByTicket(trans.position)" in close_body
+    assert "g_iq200Telemetry.MarkDealTicketSeen(trans.deal)" in close_body
+    assert "telemetryEvent.positionIdentifier=positionId;" in close_body
+
 def test_iq200_deal_events_distinguish_partial_from_cumulative_full_fill():
     ea = (ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(
         encoding="utf-8"
