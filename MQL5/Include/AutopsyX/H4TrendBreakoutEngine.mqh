@@ -142,8 +142,8 @@ public:
 
       m_emaValue=ema[0];
       m_atrValue=atr[0];
-      double priorHigh=-DBL_MAX;
-      double priorLow=DBL_MAX;
+      double priorHigh=-1.0e100;
+      double priorLow=1.0e100;
       for(int i=1;i<=m_rangeLookback;i++)
         {
          priorHigh=MathMax(priorHigh,rates[i].high);
