@@ -4128,6 +4128,200 @@ bool AxManageHedgingBreakEvenTickets(void)
    return(true);
   }
 
+// Advance each hedging leg's trailing stop independently. This manager only
+// tightens an existing broker stop and records progress after exact-ticket
+// broker confirmation. Ambiguous outcomes retain the durable action lock.
+bool AxManageHedgingTrailingTickets(void)
+  {
+   if(!g_hedgingPositionManager.IsComplete() ||
+      !g_virtualExitInitialized || !g_virtualExitRegistry.IsPersisting())
+      return(false);
+
+   double point=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
+   double tickSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+   long digits=SymbolInfoInteger(_Symbol,SYMBOL_DIGITS);
+   long stopsLevel=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL);
+   long freezeLevel=SymbolInfoInteger(_Symbol,SYMBOL_TRADE_FREEZE_LEVEL);
+   if(point<=0.0 || tickSize<=0.0 || digits<0 || stopsLevel<0 || freezeLevel<0 ||
+      InpTrailStartPoints<=0.0 || InpTrailDistancePoints<=0.0)
+     {
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_engineState=AX_ENGINE_PAUSED;
+      Print("FLIPDEMON HEDGING TRAIL: invalid symbol metadata or trail configuration; campaign quarantined.");
+      return(false);
+     }
+
+   for(int i=0;i<g_hedgingPositionManager.Count();i++)
+     {
+      SAxManagedPosition live;
+      if(!g_hedgingPositionManager.GetAt(i,live))
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING TRAIL: broker snapshot row %d unavailable; campaign quarantined.",i);
+         return(false);
+        }
+
+      SAxVirtualExitRecord saved;
+      if(!g_virtualExitRegistry.Find(live.positionIdentifier,saved) ||
+         saved.actionLocked || saved.symbol!=live.symbol ||
+         saved.dir!=live.direction || saved.ticket!=live.ticket ||
+         saved.originalRiskDistance<=0.0 || !live.hasValidBrokerStop)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING TRAIL: durable state mismatch or unresolved action, ticket=%I64u id=%I64u; campaign quarantined.",
+                     live.ticket,live.positionIdentifier);
+         return(false);
+        }
+
+      MqlTick quote;
+      if(!SymbolInfoTick(live.symbol,quote) || quote.bid<=0.0 ||
+         quote.ask<quote.bid || quote.ask<=0.0)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING TRAIL: quote unavailable for ticket=%I64u; campaign quarantined.",live.ticket);
+         return(false);
+        }
+
+      double exitPrice=(live.direction==AX_DIR_BUY)?quote.bid:quote.ask;
+      double favorablePoints=(live.direction==AX_DIR_BUY)
+                             ?(exitPrice-live.openPrice)/point
+                             :(live.openPrice-exitPrice)/point;
+      if(!MathIsValidNumber(favorablePoints) ||
+         favorablePoints<InpTrailStartPoints)
+         continue;
+
+      double rawCandidate=(live.direction==AX_DIR_BUY)
+                          ?quote.bid-InpTrailDistancePoints*point
+                          :quote.ask+InpTrailDistancePoints*point;
+      double candidate=(live.direction==AX_DIR_BUY)
+                       ?MathFloor(rawCandidate/tickSize+1e-10)*tickSize
+                       :MathCeil(rawCandidate/tickSize-1e-10)*tickSize;
+      candidate=NormalizeDouble(candidate,(int)digits);
+      if(!MathIsValidNumber(candidate) || candidate<=0.0)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING TRAIL: invalid candidate for ticket=%I64u; campaign quarantined.",live.ticket);
+         return(false);
+        }
+
+      // The trail must only move in the favorable direction. It may never
+      // loosen the broker stop, the break-even stop, or a prior trail.
+      if(live.direction==AX_DIR_BUY)
+        {
+         if(candidate<=live.stopLoss+tickSize*0.5) continue;
+         if(saved.breakEvenDone && candidate<live.openPrice+InpBreakEvenLockPoints*point-tickSize*0.5)
+            continue;
+         if(saved.trailingActive && candidate<=saved.trailingStopPrice+tickSize*0.5)
+            continue;
+         if(candidate>=quote.bid ||
+            quote.bid-candidate+tickSize*1e-8<(double)stopsLevel*point)
+            continue;
+        }
+      else if(live.direction==AX_DIR_SELL)
+        {
+         if(candidate>=live.stopLoss-tickSize*0.5) continue;
+         if(saved.breakEvenDone && candidate>live.openPrice-InpBreakEvenLockPoints*point+tickSize*0.5)
+            continue;
+         if(saved.trailingActive && candidate>=saved.trailingStopPrice-tickSize*0.5)
+            continue;
+         if(candidate<=quote.ask ||
+            candidate-quote.ask+tickSize*1e-8<(double)stopsLevel*point)
+            continue;
+        }
+      else
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING TRAIL: unsupported direction for ticket=%I64u; campaign quarantined.",live.ticket);
+         return(false);
+        }
+
+      double reference=(live.direction==AX_DIR_BUY)?quote.bid:quote.ask;
+      double freezeDistance=(double)freezeLevel*point;
+      if(freezeDistance>0.0 &&
+         MathAbs(reference-live.stopLoss)<=freezeDistance)
+         continue;
+
+      // Action code 2 is reserved for ticket-specific trailing modifications.
+      if(!g_virtualExitRegistry.BeginAction(live.positionIdentifier,2) ||
+         !g_virtualExitRegistry.IsPersisting())
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING TRAIL: could not persist action lock, ticket=%I64u; no broker request sent.",live.ticket);
+         return(false);
+        }
+
+      string modifyError="";
+      if(!g_exec.ModifyStopsByTicket(live.symbol,live.ticket,live.positionIdentifier,
+                                     live.magic,candidate,live.takeProfit,modifyError))
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING TRAIL UNCERTAIN: ticket=%I64u id=%I64u; action lock retained (%s).",
+                     live.ticket,live.positionIdentifier,modifyError);
+         return(false);
+        }
+
+      if(!PositionSelectByTicket(live.ticket) ||
+         PositionGetString(POSITION_SYMBOL)!=live.symbol ||
+         (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=live.positionIdentifier ||
+         (ulong)PositionGetInteger(POSITION_MAGIC)!=live.magic)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING TRAIL: accepted request but exact position identity could not be reverified, ticket=%I64u; action lock retained.",live.ticket);
+         return(false);
+        }
+
+      double confirmedSl=PositionGetDouble(POSITION_SL);
+      double confirmedTp=PositionGetDouble(POSITION_TP);
+      bool stopConfirmed=(live.direction==AX_DIR_BUY)
+                         ?(confirmedSl+tickSize*0.5>=candidate &&
+                           confirmedSl>live.stopLoss)
+                         :(confirmedSl-tickSize*0.5<=candidate &&
+                           confirmedSl<live.stopLoss);
+      bool tpPreserved=MathAbs(confirmedTp-live.takeProfit)<=tickSize*0.5;
+      if(!stopConfirmed || !tpPreserved ||
+         !g_virtualExitRegistry.RecordTrailingStop(live.positionIdentifier,confirmedSl) ||
+         !g_virtualExitRegistry.IsPersisting())
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING TRAIL: broker result failed stop/TP or durable-state verification, ticket=%I64u; action lock retained.",live.ticket);
+         return(false);
+        }
+
+      if(!g_virtualExitRegistry.ResolveAction(live.positionIdentifier,2) ||
+         !g_virtualExitRegistry.IsPersisting())
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING TRAIL: confirmed stop but action lock release failed, ticket=%I64u; campaign quarantined.",live.ticket);
+         return(false);
+        }
+
+      PrintFormat("FLIPDEMON HEDGING TRAIL CONFIRMED: ticket=%I64u id=%I64u stop=%.*f.",
+                  live.ticket,live.positionIdentifier,(int)digits,confirmedSl);
+     }
+   return(true);
+  }
+
 //====================================================================
 // MAIN TICK LOOP: SCAN -> SCORE -> ATTACK -> MANAGE -> FLIP -> EXIT -> REASSESS
 //====================================================================
