@@ -84,6 +84,9 @@ private:
    ulong    m_rowsWritten;
    bool     m_healthy;
    bool     m_overflowPending;
+   ulong    m_seenDealTickets[512];
+   int      m_seenDealCount;
+   int      m_seenDealNext;
 
    string Quote(const string value) const
      {
@@ -205,6 +208,9 @@ public:
       m_rowsWritten=0;
       m_healthy=false;
       m_overflowPending=false;
+      m_seenDealCount=0;
+      m_seenDealNext=0;
+      for(int i=0;i<512;i++) m_seenDealTickets[i]=0;
      }
 
    bool Init(const string symbol,const ulong magic)
@@ -324,6 +330,19 @@ public:
          if(Enqueue(overflow)) m_overflowPending=false;
         }
       return(writtenRows);
+     }
+
+   // Transaction callbacks can be repeated while the terminal reconciles broker state.
+   // Suppress duplicate deal tickets within this terminal session.
+   bool MarkDealTicketSeen(const ulong dealTicket)
+     {
+      if(dealTicket==0) return(false);
+      for(int i=0;i<m_seenDealCount;i++)
+         if(m_seenDealTickets[i]==dealTicket) return(false);
+      m_seenDealTickets[m_seenDealNext]=dealTicket;
+      m_seenDealNext=(m_seenDealNext+1)%512;
+      if(m_seenDealCount<512) m_seenDealCount++;
+      return(true);
      }
 
    bool IsHealthy(void) const { return(m_healthy); }
