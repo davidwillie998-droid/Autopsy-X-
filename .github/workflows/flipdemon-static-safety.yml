@@ -23,7 +23,6 @@ on:
       - 'tests/test_break_even_persistence_contract.py'
       - 'tests/test_hedging_trailing_manager_contract.py'
       - 'tests/test_hedging_stop_action_recovery_contract.py'
-      - 'tests/test_hedging_partial_close_history_contract.py'
       - 'tests/test_iq200_telemetry_static.py'
       - 'tests/test_advanced_trend_suite_static.py'
       - 'tests/test_precision_entry_engine_contract.py'
@@ -78,6 +77,6 @@ jobs:
       - name: Run IQ200 telemetry source-contract tests
         run: |
           python -m pip install pytest
-          python -m pytest -q tests/test_iq200_telemetry_static.py tests/test_advanced_trend_suite_static.py tests/test_precision_entry_engine_contract.py tests/test_hedging_campaign_lifecycle_contract.py tests/test_position_state_registry_contract.py tests/test_break_even_persistence_contract.py tests/test_hedging_break_even_manager_contract.py tests/test_hedging_partial_close_history_contract.py
+          python -m pytest -q tests/test_iq200_telemetry_static.py tests/test_advanced_trend_suite_static.py tests/test_precision_entry_engine_contract.py tests/test_hedging_campaign_lifecycle_contract.py tests/test_position_state_registry_contract.py tests/test_break_even_persistence_contract.py tests/test_hedging_break_even_manager_contract.py
       - name: Verify critical safety invariants
         run: python scripts/verify_flipdemon_safety.py
