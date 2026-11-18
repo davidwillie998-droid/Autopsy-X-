@@ -4161,9 +4161,22 @@ void AxProcessTick(void)
 
    // Every hedging leg receives its own durable, ticket-specific break-even
    // evaluation before the multi-position quarantine blocks further execution.
-   if(g_hedgingPositionManager.HasMultiplePositions() &&
-      !AxManageHedgingBreakEvenTickets())
-      return;
+   if(g_hedgingPositionManager.HasMultiplePositions())
+     {
+      if(!AxManageHedgingBreakEvenTickets())
+         return;
+      // Stop modifications invalidate the earlier broker snapshot. Refresh it
+      // before campaign audit or any downstream risk/execution decision.
+      if(!g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber) ||
+         !AxReconcileVirtualExitTickets(false))
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         Print("FLIPDEMON HEDGING BREAK-EVEN: post-modification broker reconciliation failed; campaign quarantined.");
+         return;
+        }
+     }
 
    // Audit every leg against its own durable exit and campaign records. This is
    // telemetry/validation only; multi-leg execution remains quarantined until a
