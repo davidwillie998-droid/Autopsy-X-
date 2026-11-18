@@ -4149,8 +4149,7 @@ void AxProcessTick(void)
                                          g_regimeIntelSnapshot,g_regimeClassification))
               {
                g_regimeClassificationAvailable = g_regimeClassification.dataQualityOk;
-               if(g_regimeClassificationAvailable)
-                  g_adaptiveMarketRegime.Update(g_regimeClassification);
+               g_adaptiveMarketRegime.Update(g_regimeClassification);
                if(InpEnableRegimeResearchJournal && g_regimeJournalReady)
                  {
                   if(!g_regimeJournal.Record(g_regimeClassification,g_regimeIntelSnapshot,g_regime,g_volatility))
