@@ -4159,6 +4159,12 @@ void AxProcessTick(void)
    if(!AxReconcileVirtualExitTickets(false)) return;
    if(!AxReconcilePyramidCampaignTickets(false)) return;
 
+   // Every hedging leg receives its own durable, ticket-specific break-even
+   // evaluation before the multi-position quarantine blocks further execution.
+   if(g_hedgingPositionManager.HasMultiplePositions() &&
+      !AxManageHedgingBreakEvenTickets())
+      return;
+
    // Audit every leg against its own durable exit and campaign records. This is
    // telemetry/validation only; multi-leg execution remains quarantined until a
    // ticket-specific manager owns every exit, partial close and recovery action.
