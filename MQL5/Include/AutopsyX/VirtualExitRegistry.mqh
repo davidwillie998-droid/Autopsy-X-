@@ -406,14 +406,24 @@ public:
    // new stop. Stop progression is monotonic in the position's favorable side.
    bool RecordTrailingStop(const ulong positionIdentifier,const double confirmedStop)
      {
-      if(positionIdentifier==0 || confirmedStop<=0.0) return(false);
+      if(positionIdentifier==0 || confirmedStop<=0.0 ||
+         !MathIsValidNumber(confirmedStop)) return(false);
       SAxVirtualExitRecord record;
       if(!Find(positionIdentifier,record)) return(false);
-      if(record.trailingActive)
+      if(record.dir==AX_DIR_BUY)
         {
-         if(record.dir==AX_DIR_BUY && confirmedStop<record.trailingStopPrice) return(false);
-         if(record.dir==AX_DIR_SELL && confirmedStop>record.trailingStopPrice) return(false);
+         if(confirmedStop<record.initialSlPrice) return(false);
+         if(record.breakEvenDone && confirmedStop<record.openPrice) return(false);
+         if(record.trailingActive && confirmedStop<record.trailingStopPrice) return(false);
         }
+      else if(record.dir==AX_DIR_SELL)
+        {
+         if(confirmedStop>record.initialSlPrice) return(false);
+         if(record.breakEvenDone && confirmedStop>record.openPrice) return(false);
+         if(record.trailingActive && confirmedStop>record.trailingStopPrice) return(false);
+        }
+      else
+         return(false);
       record.trailingActive=true;
       record.trailingStopPrice=confirmedStop;
       record.emergencySlPrice=confirmedStop;
