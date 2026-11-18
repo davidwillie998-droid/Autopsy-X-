@@ -254,6 +254,17 @@ public:
       return(true);
      }
 
+   void NewEvent(SAxIQ200Event &event,const int eventType,const string symbol,const ulong magic)
+     {
+      ResetEvent(event);
+      event.eventType=eventType;
+      event.symbol=symbol;
+      event.magic=magic;
+      event.eventTimeMsc=(long)TimeLocal()*1000;
+      event.timeSource=0;
+      event.sessionId=m_sessionId;
+     }
+
    bool Enqueue(const SAxIQ200Event &source)
      {
       if(!m_healthy || m_count>=AX_IQ200_QUEUE_CAPACITY)
