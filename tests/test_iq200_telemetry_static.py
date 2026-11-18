@@ -142,7 +142,7 @@ def test_iq200_markouts_run_from_timer_not_hot_callbacks():
         encoding="utf-8"
     )
     assert "g_iq200Telemetry.ProcessDueMarkouts(markoutValues,markoutValid);" in ea
-    assert ea.index("g_iq200Telemetry.ProcessDueMarkouts();") < ea.index(
+    assert ea.index("g_iq200Telemetry.ProcessDueMarkouts(markoutValues,markoutValid);") < ea.index(
         "g_iq200Telemetry.Flush(64);"
     )
     assert "markoutBasis.fillPrice=dealPrice;" in ea
