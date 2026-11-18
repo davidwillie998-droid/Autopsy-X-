@@ -4875,17 +4875,61 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
            }
          g_iq200Telemetry.Enqueue(telemetryEvent);
         }
-      else if(trans.type==TRADE_TRANSACTION_DEAL_ADD && trans.deal>0 && HistoryDealSelect(trans.deal))
+      else if(trans.type==TRADE_TRANSACTION_DEAL_ADD && trans.deal>0 &&
+              HistoryDealSelect(trans.deal) && g_iq200Telemetry.MarkDealTicketSeen(trans.deal))
         {
-         g_iq200Telemetry.NewEvent(telemetryEvent,AX_IQ200_DEAL_FILLED,symbol,magic);
-         telemetryEvent.orderTicket=trans.order;
+         // Capture the current deal before selecting the complete position history.
+         ulong dealOrder=(ulong)HistoryDealGetInteger(trans.deal,DEAL_ORDER);
+         ulong positionId=(ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID);
+         double dealVolume=HistoryDealGetDouble(trans.deal,DEAL_VOLUME);
+         double dealPrice=HistoryDealGetDouble(trans.deal,DEAL_PRICE);
+         long dealType=HistoryDealGetInteger(trans.deal,DEAL_TYPE);
+         long dealTimeMsc=HistoryDealGetInteger(trans.deal,DEAL_TIME_MSC);
+
+         // Reconcile cumulative entry volume for this exact order. A DEAL_ADD callback
+         // is one execution slice, not proof that the whole order has filled.
+         double cumulativeEntryVolume=0.0;
+         double requestedOrderVolume=0.0;
+         if(dealOrder>0 && HistoryOrderSelect(dealOrder))
+            requestedOrderVolume=HistoryOrderGetDouble(dealOrder,ORDER_VOLUME_INITIAL);
+         if(positionId>0 && HistorySelectByPosition((long)positionId))
+           {
+            int positionDeals=HistoryDealsTotal();
+            for(int dealIndex=0;dealIndex<positionDeals;dealIndex++)
+              {
+               ulong historyDeal=HistoryDealGetTicket(dealIndex);
+               if(historyDeal==0 ||
+                  (ulong)HistoryDealGetInteger(historyDeal,DEAL_ORDER)!=dealOrder ||
+                  HistoryDealGetInteger(historyDeal,DEAL_ENTRY)!=DEAL_ENTRY_IN ||
+                  HistoryDealGetString(historyDeal,DEAL_SYMBOL)!=symbol ||
+                  (ulong)HistoryDealGetInteger(historyDeal,DEAL_MAGIC)!=magic)
+                  continue;
+               long historyType=HistoryDealGetInteger(historyDeal,DEAL_TYPE);
+               if((dealType==DEAL_TYPE_BUY && historyType!=DEAL_TYPE_BUY) ||
+                  (dealType==DEAL_TYPE_SELL && historyType!=DEAL_TYPE_SELL))
+                  continue;
+               double historyVolume=HistoryDealGetDouble(historyDeal,DEAL_VOLUME);
+               if(historyVolume>0.0 && MathIsValidNumber(historyVolume))
+                  cumulativeEntryVolume+=historyVolume;
+              }
+           }
+         double volumeStep=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+         double volumeTolerance=MathMax(volumeStep*0.51,0.00000001);
+         bool orderFullyFilled=(requestedOrderVolume>0.0 &&
+                                cumulativeEntryVolume>0.0 &&
+                                cumulativeEntryVolume+volumeTolerance>=requestedOrderVolume);
+         int fillEventType=orderFullyFilled?AX_IQ200_DEAL_FILLED:AX_IQ200_DEAL_PARTIAL;
+
+         g_iq200Telemetry.NewEvent(telemetryEvent,fillEventType,symbol,magic);
+         telemetryEvent.orderTicket=dealOrder;
          telemetryEvent.dealTicket=trans.deal;
-         telemetryEvent.positionIdentifier=(ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID);
-         telemetryEvent.confirmedVolume=HistoryDealGetDouble(trans.deal,DEAL_VOLUME);
-         telemetryEvent.fillPrice=HistoryDealGetDouble(trans.deal,DEAL_PRICE);
-         telemetryEvent.direction=(HistoryDealGetInteger(trans.deal,DEAL_TYPE)==DEAL_TYPE_BUY)?1:
-                                  (HistoryDealGetInteger(trans.deal,DEAL_TYPE)==DEAL_TYPE_SELL)?-1:0;
-         telemetryEvent.eventTimeMsc=(long)HistoryDealGetInteger(trans.deal,DEAL_TIME_MSC);
+         telemetryEvent.positionIdentifier=positionId;
+         telemetryEvent.requestedVolume=requestedOrderVolume;
+         telemetryEvent.confirmedVolume=(cumulativeEntryVolume>0.0)?cumulativeEntryVolume:dealVolume;
+         telemetryEvent.fillPrice=dealPrice;
+         telemetryEvent.direction=(dealType==DEAL_TYPE_BUY)?1:
+                                  (dealType==DEAL_TYPE_SELL)?-1:0;
+         telemetryEvent.eventTimeMsc=dealTimeMsc;
          telemetryEvent.timeSource=1;
          MqlTick fillTick;
          if(SymbolInfoTick(symbol,fillTick))
@@ -4893,6 +4937,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
             telemetryEvent.bid=fillTick.bid;
             telemetryEvent.ask=fillTick.ask;
            }
+         if(requestedOrderVolume<=0.0)
+            telemetryEvent.missingMask|=1;
          g_iq200Telemetry.Enqueue(telemetryEvent);
         }
       else if(trans.type==TRADE_TRANSACTION_HISTORY_ADD && trans.order>0 && HistoryOrderSelect(trans.order))
