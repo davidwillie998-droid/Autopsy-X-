@@ -67,12 +67,16 @@ class DistributedRiskRestartJournalTests(unittest.TestCase):
         self.assertIn("g_distributedRecoveryPending=true", init)
         self.assertIn("LOCKED RECOVERY MODE", init)
         self.assertNotIn("unresolved prior reservation; LIVE mode refused", init)
-        self.assertIn("if(InpShowDashboard || g_distributedRecoveryPending)", init)
+        # The one-second timer is always active for broker recovery and IQ200 telemetry,
+        # even when the optional dashboard is hidden.
+        self.assertIn("EventSetTimer(1);", init)
+        self.assertNotIn("if(InpShowDashboard || g_distributedRecoveryPending)", init)
 
     def test_timer_retries_recovery_without_dashboard(self):
         timer = self.expert[self.expert.index("void OnTimer(void)"):self.expert.index("//====================================================================\n// CHART EVENTS")]
         self.assertLess(timer.index("g_distributedRiskCoordinator.RecoverPending("), timer.index("if(!InpShowDashboard) return;"))
-        self.assertIn("EventKillTimer();", timer)
+        self.assertIn("g_iq200Telemetry.Flush(64);", timer)
+        self.assertNotIn("EventKillTimer();", timer)
 
     def test_pending_recovery_blocks_new_entries(self):
         expert = self.expert
