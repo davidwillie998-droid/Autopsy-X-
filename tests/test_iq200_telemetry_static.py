@@ -115,6 +115,9 @@ def test_iq200_decision_route_and_submission_events_are_correlated():
     assert "g_iq200Telemetry,lifecycleSetupId" in ea
     assert "telemetry.NewEvent(submittedEvent,AX_IQ200_ORDER_SUBMITTED" in execution
     assert "telemetry.Enqueue(submittedEvent);" in execution
+    assert "telemetry.BindOrderDecision(orderTicket,decisionId);" in execution
+    assert "DecisionIdForOrder(result.order)" in ea
+    assert "DecisionIdForOrder(dealOrder)" in ea
     assert execution.index("telemetry.Enqueue(submittedEvent);") < execution.index("m_trade.Buy(lots")
     assert execution.index("telemetry.Enqueue(submittedEvent);") < execution.index("m_trade.Sell(lots")
 
