@@ -3776,6 +3776,9 @@ void OnDeinit(const int reason)
 void AxProcessTick(void)
   {
    if(!g_md.OnTickUpdate()) return;
+   // Check the weekly close timestamp before any entry or pyramid decision.
+   // Update() performs no history copy unless a new W1 candle has closed.
+   g_w1Institutional.Update();
    g_spreadCost.Observe(g_md.CurrentBid(),g_md.CurrentAsk(),g_md.Point());
    // Calendar refresh is internally throttled, never queried on every tick.
    g_newsDefense.Update(false);
