@@ -203,8 +203,8 @@ input double         InpBreakEvenTriggerPoints  = 150;     // Favorable move req
 input double         InpBreakEvenLockPoints     = 20;      // Points locked in beyond entry at break-even
 input double         InpTrailStartPoints        = 220;     // Favorable move required to start trailing
 input double         InpTrailDistancePoints     = 120;     // Trailing distance, points
-input int            InpMaxHoldSeconds          = 900;     // Max holding time, seconds
-input double         InpMaxHoldExtensionMultiplier = 2.0;  // Let a still-profitable, still-trending position run up to this multiple of InpMaxHoldSeconds before the unconditional cutoff (1.0 = exact old behavior)
+input int            InpMaxHoldSeconds          = 0;       // 0 = no time-based exit; trend, structure and protective exits govern holding duration
+input double         InpMaxHoldExtensionMultiplier = 2.0;  // Optional extension multiplier when a positive maximum holding time is configured
 input double         InpSpreadAbnormalMultiplier= 2.2;     // Spread-abnormal exit multiplier vs average
 input double         InpOpposingExitConfidence  = 55.0;    // Confidence required for a defensive opposite-signal exit
 input bool           InpUseAtrStops             = true;    // Widen the emergency SL by ATR when volatility warrants it
