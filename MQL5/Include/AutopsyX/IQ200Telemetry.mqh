@@ -216,6 +216,9 @@ public:
    bool Init(const string symbol,const ulong magic)
      {
       Deinit();
+      m_seenDealCount=0;
+      m_seenDealNext=0;
+      for(int i=0;i<512;i++) m_seenDealTickets[i]=0;
       if(StringLen(symbol)==0 || magic==0) return(false);
       m_sessionId=StringFormat("%I64u_%I64d_%I64u",(ulong)ChartID(),(long)TimeLocal(),(ulong)GetTickCount());
       m_fileName=StringFormat("AX_IQ200_%s_%I64u.csv",symbol,magic);
