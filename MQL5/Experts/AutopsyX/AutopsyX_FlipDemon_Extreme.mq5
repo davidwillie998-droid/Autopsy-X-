@@ -4359,6 +4359,8 @@ void AxProcessTick(void)
      {
       if(!AxManageHedgingBreakEvenTickets())
          return;
+      if(!AxManageHedgingTrailingTickets())
+         return;
       // Stop modifications invalidate the earlier broker snapshot. Refresh it
       // before campaign audit or any downstream risk/execution decision.
       if(!g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber) ||
