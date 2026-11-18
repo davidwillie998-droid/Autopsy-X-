@@ -1274,6 +1274,12 @@ bool AxSaveVirtualExitState(const bool allowEmergencyUpdate=false,const bool isN
       record.actionBaselineVolume=0.0;
      }
    record.entryTime=(datetime)PositionGetInteger(POSITION_TIME);
+    record.entryPrice=entry;
+    // Preserve original filled volume across refreshes and scale-outs.
+    // Legacy rows lack a trustworthy initial-volume baseline.
+    record.entryVolume=(found ? existing.entryVolume : 0.0);
+    if(!found && isNewFill)
+       record.entryVolume=PositionGetDouble(POSITION_VOLUME);
    record.updatedAt=TimeCurrent();
 
    if(!g_virtualExitRegistry.Save(record) || !g_virtualExitRegistry.IsPersisting())
