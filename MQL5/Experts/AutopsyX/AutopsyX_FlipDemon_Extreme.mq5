@@ -31,6 +31,8 @@
 #include <AutopsyX/W1InstitutionalDirection.mqh>
 #include <AutopsyX/D1InstitutionalLevels.mqh>
 #include <AutopsyX/H4TrendBreakoutEngine.mqh>
+#include <AutopsyX/ShadowRiverEngine.mqh>
+#include <AutopsyX/AdvancedTrendSuite.mqh>
 #include <AutopsyX/CompositeDirection.mqh>
 #include <AutopsyX/VPMACD.mqh>
 #include <AutopsyX/NewsDefense.mqh>
@@ -269,6 +271,20 @@ input double          InpRegimePersistenceStability = 70.0; // Direction-sign st
 input double          InpRegimePersistenceMomentum = 0.70; // Existing momentum persistence floor
 input double          InpRegimeShockAccelPct = 60.0; // ATR acceleration threshold for volatility-shock classification
 
+input group "=== ADVANCED TREND SUITE (ANALYSIS ONLY) ===";
+input bool            InpEnableAdvancedTrendSuite = true;
+input ENUM_TIMEFRAMES InpAdvancedSignalTimeframe = PERIOD_H1;
+input int             InpAlphaTrendPeriod = 14;
+input double          InpAlphaTrendMultiplier = 1.0;
+input int             InpMfiPeriod = 14;
+input int             InpSlingshotFastEMA = 38;
+input int             InpSlingshotSlowEMA = 62;
+input int             InpChandelierLookback = 22;
+input int             InpChandelierAtrPeriod = 22;
+input double          InpChandelierAtrMultiplier = 3.0;
+input double          InpShadowRiverSensitivityPoints = 100.0;
+input double          InpShadowRiverReversalMultiplier = 2.0;
+
 //====================================================================
 // GLOBAL ENGINE OBJECTS
 //====================================================================
@@ -285,6 +301,14 @@ CMacroRegimeEngine    g_macroRegime;
 CVolatilityEngine     g_volatility;
 CRegimeIntelligenceEngine g_regimeIntelligence;
 CRegimeClassifierEngine g_regimeClassifier;
+CShadowRiverEngine g_shadowRiver;
+CAlphaTrendEngine g_alphaTrend;
+CMFIEngine g_mfi;
+CSlingshotEMAEngine g_slingshot;
+CChandelierExitEngine g_chandelier;
+CUltimateTrendAlphaEngine g_ultimateTrendAlpha;
+CAdaptiveMarketRegimeEngine g_adaptiveMarketRegime;
+CExecutionFeedbackEngine g_executionFeedback;
 SAxRegimeIntelligence g_regimeIntelSnapshot;
 SAxRegimeClassification g_regimeClassification;
 CRegimeResearchJournal g_regimeJournal;
@@ -352,6 +376,7 @@ bool                   g_accountRiskReconciliationPending = false; // any broker
 bool                   g_pyramidReady = false; // broker history and durable campaign registry must reconcile before any future scale-in path
 bool                   g_pyramidReconcilePending = false; // a confirmed entry deal waits for live-position and protective-stop reconciliation
 datetime               g_lastPyramidDecisionBar = 0; // one evaluation per completed H1 bar, never one per tick
+datetime               g_lastAdvancedSignalBar = 0;
 
 SAxPositionState      g_posState;
 bool                  g_haveOpenPosition = false;
@@ -3584,6 +3609,27 @@ int OnInit(void)
       Print("AUTOPSY X: failed to initialize market data for ",_Symbol);
       return(INIT_FAILED);
      }
+   if(InpEnableAdvancedTrendSuite)
+     {
+      bool shadowReady=g_shadowRiver.ConfigurePoints(InpShadowRiverSensitivityPoints,g_md.Point(),
+                                                       InpShadowRiverReversalMultiplier);
+      bool alphaReady=g_alphaTrend.Init(_Symbol,InpAdvancedSignalTimeframe,
+                                        InpAlphaTrendPeriod,InpAlphaTrendMultiplier);
+      bool mfiReady=g_mfi.Init(_Symbol,InpAdvancedSignalTimeframe,InpMfiPeriod);
+      bool slingReady=g_slingshot.Init(_Symbol,InpAdvancedSignalTimeframe,
+                                       InpSlingshotFastEMA,InpSlingshotSlowEMA);
+      bool chandelierReady=g_chandelier.Init(_Symbol,InpAdvancedSignalTimeframe,
+                                             InpChandelierLookback,InpChandelierAtrPeriod,
+                                             InpChandelierAtrMultiplier);
+      g_executionFeedback.Configure(0.10);
+      g_alphaTrend.Update(true);
+      g_mfi.Update(true);
+      g_slingshot.Update(true);
+      PrintFormat("AUTOPSY X ADVANCED SUITE: ShadowRiver=%s AlphaTrend=%s MFI=%s EMA38/62=%s Chandelier=%s. Analysis-only.",
+                  shadowReady?"READY":"UNAVAILABLE",alphaReady?"READY":"UNAVAILABLE",
+                  mfiReady?"READY":"UNAVAILABLE",slingReady?"READY":"UNAVAILABLE",
+                  chandelierReady?"READY":"UNAVAILABLE");
+     }
    g_spreadCost.Configure(InpSpreadCostMinSamples,InpSpreadCostMaxCostToGross,
                           InpSpreadCostMaxSpreadToAtr);
    g_executionQualityJournalReady=g_executionQualityJournal.Init(_Symbol,InpMagicNumber);
@@ -3865,6 +3911,10 @@ void OnDeinit(const int reason)
    g_volatility.Deinit();
    g_macroRegime.Deinit();
    g_heatmap.Deinit();
+   g_alphaTrend.Deinit();
+   g_mfi.Deinit();
+   g_slingshot.Deinit();
+   g_chandelier.Deinit();
    g_pyramidEngine.Release();
    g_pyramidCampaignRegistry.Deinit();
   }
@@ -4041,6 +4091,24 @@ void AxProcessTick(void)
    //--- SCAN: cheap per-tick microstructure/momentum update ---
    g_mom.Update(g_md);
    g_micro.Update(g_md,g_mom);
+   if(InpEnableAdvancedTrendSuite)
+     {
+      ENUM_AX_SHADOW_EVENT shadowEvent=g_shadowRiver.Update(g_md.CurrentMid(),TimeCurrent());
+      if(InpVerboseLogging && shadowEvent!=AX_SHADOW_NONE)
+         PrintFormat("AUTOPSY X SHADOW RIVER: event=%d direction=%d extreme=%.10f events=%I64u",
+                     (int)shadowEvent,g_shadowRiver.Direction(),g_shadowRiver.ExtremePrice(),
+                     g_shadowRiver.EventCount());
+      datetime advancedBar=iTime(_Symbol,InpAdvancedSignalTimeframe,0);
+      if(advancedBar>0 && advancedBar!=g_lastAdvancedSignalBar)
+        {
+         g_lastAdvancedSignalBar=advancedBar;
+         g_alphaTrend.Update();
+         g_mfi.Update();
+         g_slingshot.Update();
+        }
+      if(g_haveOpenPosition)
+         g_chandelier.Update(g_posState.dir);
+     }
 
    //--- order flow: session CVD + rolling imbalance/absorption, every tick (O(window) scan, same ---
    //--- performance category as Microstructure's own per-tick loop above) ---
@@ -4081,6 +4149,8 @@ void AxProcessTick(void)
                                          g_regimeIntelSnapshot,g_regimeClassification))
               {
                g_regimeClassificationAvailable = g_regimeClassification.dataQualityOk;
+               if(g_regimeClassificationAvailable)
+                  g_adaptiveMarketRegime.Update(g_regimeClassification);
                if(InpEnableRegimeResearchJournal && g_regimeJournalReady)
                  {
                   if(!g_regimeJournal.Record(g_regimeClassification,g_regimeIntelSnapshot,g_regime,g_volatility))
@@ -4144,6 +4214,31 @@ void AxProcessTick(void)
 
    //--- SCORE ---
    SAxScore score = g_scorer.Evaluate(g_md,g_mom,g_micro,g_liq,g_regime);
+   if(InpEnableAdvancedTrendSuite)
+     {
+      SAxAdvancedReading alphaRead=g_alphaTrend.Read();
+      SAxAdvancedReading mfiRead=g_mfi.Read();
+      SAxAdvancedReading slingRead=g_slingshot.Read();
+      g_ultimateTrendAlpha.Evaluate(
+         g_w1Institutional.AllowsDirection(AX_DIR_BUY),
+         g_w1Institutional.AllowsDirection(AX_DIR_SELL),
+         g_d1Institutional.AllowsDirection(AX_DIR_BUY),
+         g_d1Institutional.AllowsDirection(AX_DIR_SELL),
+         g_h4TrendBreakout.Bias(),alphaRead,mfiRead,slingRead,g_shadowRiver.Direction());
+      if(InpVerboseLogging && isNewBarThisTick)
+        {
+         SAxUltimateTrendAlpha alphaSnapshot=g_ultimateTrendAlpha.Last();
+         SAxAdaptiveRegimePosture regimePosture=g_adaptiveMarketRegime.Read();
+         double chandelierStop=0.0;
+         bool chandelierAvailable=g_haveOpenPosition && g_chandelier.Stop(g_posState.dir,chandelierStop);
+         PrintFormat("AUTOPSY X ULTIMATE TREND ALPHA: available=%s direction=%s score(B/S)=%.1f/%.1f confidence=%.1f | adaptive regime=%s research multiplier=%.2f | Chandelier=%s %.10f",
+                     alphaSnapshot.available?"YES":"NO",
+                     alphaSnapshot.direction==AX_DIR_BUY?"BUY":alphaSnapshot.direction==AX_DIR_SELL?"SELL":"NONE",
+                     alphaSnapshot.buyScore,alphaSnapshot.sellScore,alphaSnapshot.confidence,
+                     regimePosture.label,regimePosture.researchMultiplier,
+                     chandelierAvailable?"READY":"UNAVAILABLE",chandelierStop);
+        }
+     }
    AxApplyOrderFlowBonus(score);
    AxApplyH4BreakoutBonus(score);
    g_lastScore = score; // dashboard reads this, not g_scorer.Last(), so it shows the blended score
@@ -4606,7 +4701,12 @@ void OnTimer(void)
 
    if(g_iq200TelemetryReady)
      {
-      g_iq200Telemetry.ProcessDueMarkouts();
+      double markoutValues[];
+      bool markoutValid[];
+      g_iq200Telemetry.ProcessDueMarkouts(markoutValues,markoutValid);
+      for(int markoutIndex=0;markoutIndex<ArraySize(markoutValues);markoutIndex++)
+         if(markoutIndex<ArraySize(markoutValid) && markoutValid[markoutIndex])
+            g_executionFeedback.RecordMarkout(markoutValues[markoutIndex]);
       g_iq200Telemetry.Flush(64);
      }
 
@@ -4892,6 +4992,20 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
          double dealPrice=HistoryDealGetDouble(trans.deal,DEAL_PRICE);
          long dealType=HistoryDealGetInteger(trans.deal,DEAL_TYPE);
          long dealTimeMsc=HistoryDealGetInteger(trans.deal,DEAL_TIME_MSC);
+         // Feed measured adverse execution slippage into the observational feedback engine.
+         // If the broker does not retain a valid requested order price, skip the sample.
+         double requestedOrderPrice=0.0;
+         double symbolPoint=SymbolInfoDouble(symbol,SYMBOL_POINT);
+         if(dealOrder>0 && HistoryOrderSelect(dealOrder))
+            requestedOrderPrice=HistoryOrderGetDouble(dealOrder,ORDER_PRICE_OPEN);
+         if(requestedOrderPrice>0.0 && symbolPoint>0.0 &&
+            MathIsValidNumber(requestedOrderPrice) && MathIsValidNumber(dealPrice))
+           {
+            double signedSlippage=(dealType==DEAL_TYPE_BUY)
+                                  ?(dealPrice-requestedOrderPrice)/symbolPoint
+                                  :(requestedOrderPrice-dealPrice)/symbolPoint;
+            g_executionFeedback.RecordFill(MathMax(0.0,signedSlippage));
+           }
 
          // Reconcile cumulative entry volume for this exact order. A DEAL_ADD callback
          // is one execution slice, not proof that the whole order has filled.
