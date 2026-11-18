@@ -69,6 +69,7 @@
 #include <AutopsyX/PyramidEngine.mqh>
 #include <AutopsyX/PyramidCampaignRegistry.mqh>
 #include <AutopsyX/HedgingPositionManager.mqh>
+#include <AutopsyX/HedgingCampaignLifecycle.mqh>
 #include <AutopsyX/PositionStateRegistry.mqh>
 #include <AutopsyX/Dashboard.mqh>
 
@@ -371,6 +372,7 @@ CVirtualExitRegistry   g_virtualExitRegistry;
 CPyramidEngine         g_pyramidEngine; // calculation engine; campaign execution remains disabled until lifecycle integration
 CPyramidCampaignRegistry g_pyramidCampaignRegistry; // durable campaign state; execution integration is not active yet
 CHedgingPositionManager g_hedgingPositionManager;
+CHedgingCampaignLifecycle g_hedgingCampaignLifecycle;
 CPositionStateRegistry g_positionStateRegistry; // dynamic per-position state store; not yet used for execution
 bool g_hedgingLifecycleLock=false; // sticky fail-closed lock after multiple live legs are detected
 bool                   g_virtualExitInitialized = false;
@@ -3973,6 +3975,23 @@ void AxProcessTick(void)
      }
    if(!AxReconcileVirtualExitTickets(false)) return;
    if(!AxReconcilePyramidCampaignTickets(false)) return;
+
+   // Audit every leg against its own durable exit and campaign records. This is
+   // telemetry/validation only; multi-leg execution remains quarantined until a
+   // ticket-specific manager owns every exit, partial close and recovery action.
+   SAxHedgingCampaignSnapshot hedgingSnapshot;
+   if(!g_hedgingCampaignLifecycle.Evaluate(g_hedgingPositionManager,
+                                            g_virtualExitRegistry,
+                                            g_pyramidCampaignRegistry,
+                                            hedgingSnapshot))
+     {
+      g_hedgingLifecycleLock=true;
+      g_pyramidReady=false;
+      g_engineState=AX_ENGINE_PAUSED;
+      PrintFormat("FLIPDEMON HEDGING LIFECYCLE AUDIT FAILED: %s; all new execution remains blocked.",
+                  hedgingSnapshot.failureReason);
+      return;
+     }
    if(g_hedgingPositionManager.HasMultiplePositions())
      {
       g_hedgingLifecycleLock=true;
