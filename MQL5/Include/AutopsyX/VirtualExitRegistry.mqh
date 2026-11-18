@@ -423,9 +423,26 @@ public:
 
    bool RecordBreakEven(const ulong positionIdentifier,const double confirmedStop)
      {
-      if(positionIdentifier==0 || confirmedStop<=0.0) return(false);
+      if(positionIdentifier==0 || confirmedStop<=0.0 ||
+         !MathIsValidNumber(confirmedStop)) return(false);
       SAxVirtualExitRecord record;
       if(!Find(positionIdentifier,record)) return(false);
+
+      // Break-even persistence may only tighten the original protective stop.
+      // It must never overwrite a more favorable trailing stop.
+      if(record.dir==AX_DIR_BUY)
+        {
+         if(confirmedStop<record.initialSlPrice) return(false);
+         if(record.trailingActive && confirmedStop<record.trailingStopPrice) return(false);
+        }
+      else if(record.dir==AX_DIR_SELL)
+        {
+         if(confirmedStop>record.initialSlPrice) return(false);
+         if(record.trailingActive && confirmedStop>record.trailingStopPrice) return(false);
+        }
+      else
+         return(false);
+
       record.breakEvenDone=true;
       record.emergencySlPrice=confirmedStop;
       record.virtualSlPrice=confirmedStop;
