@@ -122,6 +122,32 @@ def test_iq200_decision_route_and_submission_events_are_correlated():
     assert execution.index("telemetry.Enqueue(submittedEvent);") < execution.index("m_trade.Sell(lots")
 
 
+def test_iq200_markout_scheduler_is_bounded_and_uses_three_horizons():
+    source = _source()
+    assert "SAxIQ200Event m_markoutEvents[128]" in source
+    assert "m_markoutDueMs[128]" in source
+    assert "horizons[0]=1000" in source
+    assert "horizons[1]=5000" in source
+    assert "horizons[2]=30000" in source
+    assert "GetTickCount64()+(ulong)horizons[h]" in source
+    assert "sample.direction>0)?tick.bid:tick.ask" in source
+    assert "(double)sample.direction*" in source
+    assert "sample.missingMask|=2" in source
+    assert "int ProcessDueMarkouts(void)" in source
+
+
+def test_iq200_markouts_run_from_timer_not_hot_callbacks():
+    ea = (ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(
+        encoding="utf-8"
+    )
+    assert "g_iq200Telemetry.ProcessDueMarkouts();" in ea
+    assert ea.index("g_iq200Telemetry.ProcessDueMarkouts();") < ea.index(
+        "g_iq200Telemetry.Flush(64);"
+    )
+    assert "g_iq200Telemetry.ScheduleMarkouts(telemetryEvent);" in ea
+    assert "telemetryEvent.pointSize=SymbolInfoDouble(symbol,SYMBOL_POINT);" in ea
+
+
 def test_iq200_deal_events_distinguish_partial_from_cumulative_full_fill():
     ea = (ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(
         encoding="utf-8"
