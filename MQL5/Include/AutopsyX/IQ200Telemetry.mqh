@@ -87,6 +87,10 @@ private:
    ulong    m_seenDealTickets[512];
    int      m_seenDealCount;
    int      m_seenDealNext;
+   ulong    m_orderTickets[256];
+   string   m_orderDecisionIds[256];
+   int      m_orderMapCount;
+   int      m_orderMapNext;
 
    string Quote(const string value) const
      {
@@ -211,6 +215,13 @@ public:
       m_seenDealCount=0;
       m_seenDealNext=0;
       for(int i=0;i<512;i++) m_seenDealTickets[i]=0;
+      m_orderMapCount=0;
+      m_orderMapNext=0;
+      for(int i=0;i<256;i++)
+        {
+         m_orderTickets[i]=0;
+         m_orderDecisionIds[i]="";
+        }
      }
 
    bool Init(const string symbol,const ulong magic)
@@ -219,6 +230,13 @@ public:
       m_seenDealCount=0;
       m_seenDealNext=0;
       for(int i=0;i<512;i++) m_seenDealTickets[i]=0;
+      m_orderMapCount=0;
+      m_orderMapNext=0;
+      for(int i=0;i<256;i++)
+        {
+         m_orderTickets[i]=0;
+         m_orderDecisionIds[i]="";
+        }
       if(StringLen(symbol)==0 || magic==0) return(false);
       m_sessionId=StringFormat("%I64u_%I64d_%I64u",(ulong)ChartID(),(long)TimeLocal(),(ulong)GetTickCount());
       m_fileName=StringFormat("AX_IQ200_%s_%I64u.csv",symbol,magic);
@@ -333,6 +351,34 @@ public:
          if(Enqueue(overflow)) m_overflowPending=false;
         }
       return(writtenRows);
+     }
+
+   // Bind broker order identifiers to the strategy-approved setup identifier.
+   // This is called after CTrade returns; MT5 transaction callbacks are then correlated
+   // by exact order ticket, never by symbol alone.
+   void BindOrderDecision(const ulong orderTicket,const string decisionId)
+     {
+      if(orderTicket==0 || StringLen(decisionId)==0) return;
+      for(int i=0;i<m_orderMapCount;i++)
+        {
+         if(m_orderTickets[i]==orderTicket)
+           {
+            m_orderDecisionIds[i]=decisionId;
+            return;
+           }
+        }
+      m_orderTickets[m_orderMapNext]=orderTicket;
+      m_orderDecisionIds[m_orderMapNext]=decisionId;
+      m_orderMapNext=(m_orderMapNext+1)%256;
+      if(m_orderMapCount<256) m_orderMapCount++;
+     }
+
+   string DecisionIdForOrder(const ulong orderTicket) const
+     {
+      if(orderTicket==0) return("");
+      for(int i=0;i<m_orderMapCount;i++)
+         if(m_orderTickets[i]==orderTicket) return(m_orderDecisionIds[i]);
+      return("");
      }
 
    // Transaction callbacks can be repeated while the terminal reconciles broker state.
