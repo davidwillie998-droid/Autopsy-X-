@@ -30,6 +30,7 @@
 #include <AutopsyX/StructureEngine.mqh>
 #include <AutopsyX/W1InstitutionalDirection.mqh>
 #include <AutopsyX/D1InstitutionalLevels.mqh>
+#include <AutopsyX/H4TrendBreakoutEngine.mqh>
 #include <AutopsyX/CompositeDirection.mqh>
 #include <AutopsyX/VPMACD.mqh>
 #include <AutopsyX/NewsDefense.mqh>
@@ -221,6 +222,8 @@ input group "=== HIGHER-TIMEFRAME CONFLUENCE ===";
 input ENUM_TIMEFRAMES InpHtfTimeframe           = PERIOD_H1; // Higher timeframe used for the confluence filter
 input bool            InpRequireHtfConfluence   = true;      // Block entries that fight a clear HTF trend
 input double          InpHtfMinR2ToBlock        = 0.35;      // HTF R^2 below this = no clear HTF opinion, don't block
+input bool            InpRequireH4TrendFilter    = true;      // Require closed H4 price/EMA400 slope agreement with W1/D1
+input double          InpH4BreakoutScoreBonus     = 8.0;       // Bounded score bonus for a confirmed H4 20-bar range breakout
 
 input group "=== SESSION / ROLLOVER FILTER ===";
 input int             InpSessionStartHour       = 0;   // Broker-time session start hour (0-23); equal to end = no restriction
@@ -290,6 +293,7 @@ bool                  g_regimeClassificationAvailable = false;
 CStructureEngine      g_structure;
 CW1InstitutionalDirection g_w1Institutional;
 CD1InstitutionalLevels g_d1Institutional;
+CH4TrendBreakoutEngine g_h4TrendBreakout;
 CCompositeDirectionEngine g_compositeDirection;
 CVPMACDEngine         g_vpMacd;
 CNewsDefenseEngine    g_newsDefense;
@@ -1922,6 +1926,15 @@ bool AxHtfConfluenceOk(const ENUM_AX_DIR dir)
                      AxDirToString(dir),g_d1Institutional.Summary());
       return(false);
      }
+   // H4 EMA400 is a directional regime filter, not a replacement for W1/D1.
+   // Missing H4 history fails closed when this filter is enabled.
+   if(InpRequireH4TrendFilter && !g_h4TrendBreakout.AllowsDirection(dir))
+     {
+      if(InpVerboseLogging)
+         PrintFormat("AUTOPSY X: H4 trend filter blocked %s (%s)",
+                     AxDirToString(dir),g_h4TrendBreakout.Summary());
+      return(false);
+     }
    if(!InpRequireHtfConfluence) return(true);
    if(g_regimeHtf.R2() < InpHtfMinR2ToBlock) return(true);
    double slope = g_regimeHtf.Slope();
@@ -1980,6 +1993,28 @@ void AxApplyOrderFlowBonus(SAxScore &score)
      {
       if(score.buyScore>score.sellScore && score.buyScore>=InpMinScoreToAct)       score.action = AX_DIR_BUY;
       else if(score.sellScore>score.buyScore && score.sellScore>=InpMinScoreToAct) score.action = AX_DIR_SELL;
+     }
+  }
+
+//--- H4 breakout is a bounded confirmation bonus, never an independent order signal.
+void AxApplyH4BreakoutBonus(SAxScore &score)
+  {
+   if(InpH4BreakoutScoreBonus<=0.0 || score.action==AX_DIR_NONE) return;
+   if(g_h4TrendBreakout.BullishBreakout())
+      score.buyScore=AxClampD(score.buyScore+InpH4BreakoutScoreBonus,0.0,100.0);
+   if(g_h4TrendBreakout.BearishBreakout())
+      score.sellScore=AxClampD(score.sellScore+InpH4BreakoutScoreBonus,0.0,100.0);
+
+   double gap=MathAbs(score.buyScore-score.sellScore);
+   score.scoreGap=gap;
+   score.confidence=AxClampD(gap*1.15,0.0,100.0);
+   score.action=AX_DIR_NONE;
+   if(gap>=score.minimumGapToAct)
+     {
+      if(score.buyScore>score.sellScore && score.buyScore>=score.minimumScoreToAct)
+         score.action=AX_DIR_BUY;
+      else if(score.sellScore>score.buyScore && score.sellScore>=score.minimumScoreToAct)
+         score.action=AX_DIR_SELL;
      }
   }
 
@@ -3572,6 +3607,9 @@ int OnInit(void)
    if(!g_d1Institutional.Init(_Symbol,180,30))
       PrintFormat("AUTOPSY X: D1 institutional data unavailable at startup; all new directional entries remain blocked (%s).",
                   g_d1Institutional.Summary());
+   if(!g_h4TrendBreakout.Init(_Symbol,PERIOD_H4,400,20))
+      PrintFormat("AUTOPSY X: H4 EMA400/range breakout data unavailable; H4 filter will fail closed when required (%s).",
+                  g_h4TrendBreakout.Summary());
    if(!g_vpMacd.Init(_Symbol,InpRegimeTimeframe,InpVPMACDFastPeriod,InpVPMACDSlowPeriod,InpVPMACDSignalPeriod))
       Print("AUTOPSY X: VP-MACD initialization failed; its vote will remain unavailable.");
    else if(!g_vpMacd.Update())
@@ -3588,6 +3626,7 @@ int OnInit(void)
    g_structure.Update();
    g_w1Institutional.Update(true);
    g_d1Institutional.Update(true);
+   g_h4TrendBreakout.Update(true);
    g_vpMacd.Update();
    // Respect the calendar engine's refresh interval after the forced startup read.
    g_newsDefense.Update(false);
@@ -3807,6 +3846,7 @@ void AxProcessTick(void)
    // Update() performs no history copy unless a new W1 candle has closed.
    g_w1Institutional.Update();
    g_d1Institutional.Update();
+   g_h4TrendBreakout.Update(); // internally throttled to the latest completed H4 bar
    g_spreadCost.Observe(g_md.CurrentBid(),g_md.CurrentAsk(),g_md.Point());
    // Calendar refresh is internally throttled, never queried on every tick.
    g_newsDefense.Update(false);
@@ -4072,6 +4112,7 @@ void AxProcessTick(void)
    //--- SCORE ---
    SAxScore score = g_scorer.Evaluate(g_md,g_mom,g_micro,g_liq,g_regime);
    AxApplyOrderFlowBonus(score);
+   AxApplyH4BreakoutBonus(score);
    g_lastScore = score; // dashboard reads this, not g_scorer.Last(), so it shows the blended score
    g_accuracy.OnTickUpdate(g_md.CurrentMid());
    //--- sample into the accuracy engine on signal-direction change or at most once/second -   ---
