@@ -4605,7 +4605,10 @@ void OnTimer(void)
      }
 
    if(g_iq200TelemetryReady)
+     {
+      g_iq200Telemetry.ProcessDueMarkouts();
       g_iq200Telemetry.Flush(64);
+     }
 
    if(!InpShowDashboard) return;
 
@@ -4943,6 +4946,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
          telemetryEvent.eventTimeMsc=dealTimeMsc;
          telemetryEvent.timeSource=1;
          MqlTick fillTick;
+         telemetryEvent.pointSize=SymbolInfoDouble(symbol,SYMBOL_POINT);
+         telemetryEvent.tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
          if(SymbolInfoTick(symbol,fillTick))
            {
             telemetryEvent.bid=fillTick.bid;
@@ -4950,7 +4955,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
            }
          if(requestedOrderVolume<=0.0)
             telemetryEvent.missingMask|=1;
-         g_iq200Telemetry.Enqueue(telemetryEvent);
+         if(g_iq200Telemetry.Enqueue(telemetryEvent))
+            g_iq200Telemetry.ScheduleMarkouts(telemetryEvent);
         }
       else if(trans.type==TRADE_TRANSACTION_HISTORY_ADD && trans.order>0 && HistoryOrderSelect(trans.order))
         {
