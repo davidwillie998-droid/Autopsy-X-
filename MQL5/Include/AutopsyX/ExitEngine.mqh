@@ -253,29 +253,24 @@ public:
          if(triggered) { d.shouldExit=true; d.reason=AX_EXIT_VWAP_TREND_FLIP; return(d); }
         }
 
-      //--- maximum holding time - Patnaik & Thomas (2004) find momentum profits RISE with holding ---
-      //--- period once formation is short (their Table 6: profits at a 250-day hold run 3-4x those ---
-      //--- at a 25-day hold, for the same short formation window this EA's tick-level lookback      ---
-      //--- mirrors). An unconditional clock cutoff throws away exactly the trades that finding says ---
-      //--- are worth holding. So: a SOFT cutoff at m_maxHoldSeconds is skippable, but only while the ---
-      //--- position is both currently in profit AND momentum is still persistent/not exhausted in   ---
-      //--- its own direction - every other defensive check below (momentum collapse, micro reversal,---
-      //--- opposing signal, abnormal spread) stays fully active regardless, so a position that's     ---
-      //--- actually turning still gets cut fast. A HARD backstop at                                  ---
-      //--- m_maxHoldSeconds*m_maxHoldExtensionMultiplier fires unconditionally no matter what, so    ---
-      //--- this can never become an unbounded hold - m_maxHoldExtensionMultiplier=1.0 (the default)  ---
-      //--- collapses soft==hard and restores the exact prior unconditional-cutoff behavior. ---
-      int heldSec = (int)(TimeCurrent()-st.entryTime);
-      int hardHoldCutoff = (int)((double)m_maxHoldSeconds*m_maxHoldExtensionMultiplier);
-      if(heldSec>=hardHoldCutoff) { d.shouldExit=true; d.reason=AX_EXIT_MAX_HOLD_TIME; return(d); }
-      if(heldSec>=m_maxHoldSeconds)
+      //--- Time-based exit is optional. Zero disables the clock entirely, allowing a valid
+      //--- directional campaign to remain open for days or weeks. Protective stops, structure,
+      //--- trend deterioration, opposing confirmation and abnormal-spread exits remain active.
+      if(m_maxHoldSeconds>0)
         {
-         double curPrice = (st.dir==AX_DIR_BUY) ? md.CurrentBid() : md.CurrentAsk();
-         bool inProfit = (st.dir==AX_DIR_BUY) ? (curPrice>st.entryPrice) : (curPrice<st.entryPrice);
-         bool stillTrending = (st.dir==AX_DIR_BUY) ? (mom.PersistentBull() && !mom.IsExhausted())
-                                                    : (mom.PersistentBear() && !mom.IsExhausted());
-         if(!(inProfit && stillTrending)) { d.shouldExit=true; d.reason=AX_EXIT_MAX_HOLD_TIME; return(d); }
-         // else: still favorable and still trending - fall through to every check below unchanged
+         int heldSec = (int)(TimeCurrent()-st.entryTime);
+         int hardHoldCutoff = (int)((double)m_maxHoldSeconds*m_maxHoldExtensionMultiplier);
+         if(heldSec>=hardHoldCutoff)
+           { d.shouldExit=true; d.reason=AX_EXIT_MAX_HOLD_TIME; return(d); }
+         if(heldSec>=m_maxHoldSeconds)
+           {
+            double curPrice = (st.dir==AX_DIR_BUY) ? md.CurrentBid() : md.CurrentAsk();
+            bool inProfit = (st.dir==AX_DIR_BUY) ? (curPrice>st.entryPrice) : (curPrice<st.entryPrice);
+            bool stillTrending = (st.dir==AX_DIR_BUY) ? (mom.PersistentBull() && !mom.IsExhausted())
+                                                       : (mom.PersistentBear() && !mom.IsExhausted());
+            if(!(inProfit && stillTrending))
+              { d.shouldExit=true; d.reason=AX_EXIT_MAX_HOLD_TIME; return(d); }
+           }
         }
 
       //--- abnormal spread: preserve capital, don't trade through bad liquidity ---
