@@ -270,9 +270,19 @@ public:
       if(m_state.bias==AX_D1_BEARISH) return(direction==AX_DIR_SELL);
       return(false); // neutral, reversal-pending and unavailable all fail closed
      }
-   double NearestSwingLevel(const bool wantHigh,const double referencePrice) const
+   double NearestValidSwingLevel(const bool wantHigh,const double referencePrice) const
      {
-      return(m_structure.NearestSwingLevel(wantHigh,referencePrice));
+      double best=0.0,bestDistance=DBL_MAX;
+      for(int i=0;i<m_structure.SwingCount();i++)
+        {
+         SAxSwingPoint swing;
+         if(!m_structure.GetSwing(i,swing) || swing.isHigh!=wantHigh) continue;
+         bool correctSide=wantHigh ? (swing.price>referencePrice) : (swing.price<referencePrice);
+         if(!correctSide) continue;
+         double distance=MathAbs(swing.price-referencePrice);
+         if(distance<bestDistance) { bestDistance=distance; best=swing.price; }
+        }
+      return(best);
      }
    string Summary(void) const { return(m_state.reason); }
   };
