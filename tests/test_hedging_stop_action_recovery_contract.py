@@ -60,8 +60,8 @@ class HedgingStopActionRecoveryTests(unittest.TestCase):
         init = EA.index("int OnInit")
         recovery = EA.index("if(AxRecoverLockedPartialCloseActions())")
         tick = EA.index("void AxProcessTick(void)")
-        self.assertLess(tick, init)
         self.assertLess(init, recovery)
+        self.assertLess(recovery, tick)
 
 
 if __name__ == "__main__":
