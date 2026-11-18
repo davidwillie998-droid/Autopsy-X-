@@ -4889,6 +4889,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
          // Reconcile cumulative entry volume for this exact order. A DEAL_ADD callback
          // is one execution slice, not proof that the whole order has filled.
          double cumulativeEntryVolume=0.0;
+         double cumulativeEntryPriceValue=0.0;
          double requestedOrderVolume=0.0;
          if(dealOrder>0 && HistoryOrderSelect(dealOrder))
             requestedOrderVolume=HistoryOrderGetDouble(dealOrder,ORDER_VOLUME_INITIAL);
@@ -4909,8 +4910,13 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
                   (dealType==DEAL_TYPE_SELL && historyType!=DEAL_TYPE_SELL))
                   continue;
                double historyVolume=HistoryDealGetDouble(historyDeal,DEAL_VOLUME);
-               if(historyVolume>0.0 && MathIsValidNumber(historyVolume))
+               double historyPrice=HistoryDealGetDouble(historyDeal,DEAL_PRICE);
+               if(historyVolume>0.0 && historyPrice>0.0 &&
+                  MathIsValidNumber(historyVolume) && MathIsValidNumber(historyPrice))
+                 {
                   cumulativeEntryVolume+=historyVolume;
+                  cumulativeEntryPriceValue+=historyVolume*historyPrice;
+                 }
               }
            }
          double volumeStep=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
@@ -4926,7 +4932,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
          telemetryEvent.positionIdentifier=positionId;
          telemetryEvent.requestedVolume=requestedOrderVolume;
          telemetryEvent.confirmedVolume=(cumulativeEntryVolume>0.0)?cumulativeEntryVolume:dealVolume;
-         telemetryEvent.fillPrice=dealPrice;
+         telemetryEvent.fillPrice=(cumulativeEntryVolume>0.0)
+                                    ?cumulativeEntryPriceValue/cumulativeEntryVolume:dealPrice;
          telemetryEvent.direction=(dealType==DEAL_TYPE_BUY)?1:
                                   (dealType==DEAL_TYPE_SELL)?-1:0;
          telemetryEvent.eventTimeMsc=dealTimeMsc;
