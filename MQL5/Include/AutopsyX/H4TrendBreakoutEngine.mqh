@@ -113,6 +113,9 @@ public:
       if(!force && closedBar==m_lastClosedBar)
          return(m_bias!=AX_DIR_NONE);
 
+      // Throttle failed as well as successful reads to one attempt per completed H4 bar.
+      // Otherwise a missing history block would trigger CopyRates/CopyBuffer on every tick.
+      m_lastClosedBar=closedBar;
       ResetReadings();
       MqlRates rates[];
       ArraySetAsSeries(rates,true);
@@ -171,7 +174,6 @@ public:
       m_bearishBreakout=(bearishRegime && close<priorLow &&
                          bodyRatio>=0.60 && close<=rates[0].low+candleRange*0.20);
 
-      m_lastClosedBar=closedBar;
       m_reason=StringFormat("H4 EMA%d bias=%s close=%.5f ema=%.5f priorHigh=%.5f priorLow=%.5f breakout=%s",
                             m_emaPeriod,
                             m_bias==AX_DIR_BUY?"BUY":(m_bias==AX_DIR_SELL?"SELL":"NEUTRAL"),
