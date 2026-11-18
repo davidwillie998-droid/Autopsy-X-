@@ -88,7 +88,7 @@ private:
    string Quote(const string value) const
      {
       string escaped=value;
-      StringReplace(escaped,"\\\"","\\\"\\\"");
+      StringReplace(escaped,"\"","\"\"");
       return("\""+escaped+"\"");
      }
 
