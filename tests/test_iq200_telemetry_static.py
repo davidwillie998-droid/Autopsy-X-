@@ -127,6 +127,8 @@ def test_iq200_deal_events_distinguish_partial_from_cumulative_full_fill():
     assert "MarkDealTicketSeen(trans.deal)" in ea
     assert "cumulativeEntryVolume" in ea
     assert "orderFullyFilled" in ea
+    assert "cumulativeEntryPriceValue" in ea
+    assert "cumulativeEntryPriceValue/cumulativeEntryVolume" in ea
     assert "AX_IQ200_DEAL_PARTIAL" in ea
     assert "AX_IQ200_DEAL_FILLED" in ea
     assert "bool MarkDealTicketSeen(const ulong dealTicket)" in telemetry
