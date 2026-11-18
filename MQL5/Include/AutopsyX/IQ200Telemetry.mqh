@@ -90,6 +90,11 @@ private:
    ulong    m_orderTickets[256];
    string   m_orderDecisionIds[256];
    int      m_orderMapCount;
+   SAxIQ200Event m_markoutEvents[128];
+   ulong    m_markoutDueMs[128];
+   int      m_markoutHorizons[128];
+   int      m_markoutCount;
+   ulong    m_markoutDropped;
    int      m_orderMapNext;
 
    string Quote(const string value) const
@@ -217,6 +222,8 @@ public:
       for(int i=0;i<512;i++) m_seenDealTickets[i]=0;
       m_orderMapCount=0;
       m_orderMapNext=0;
+      m_markoutCount=0;
+      m_markoutDropped=0;
       for(int i=0;i<256;i++)
         {
          m_orderTickets[i]=0;
@@ -232,6 +239,8 @@ public:
       for(int i=0;i<512;i++) m_seenDealTickets[i]=0;
       m_orderMapCount=0;
       m_orderMapNext=0;
+      m_markoutCount=0;
+      m_markoutDropped=0;
       for(int i=0;i<256;i++)
         {
          m_orderTickets[i]=0;
@@ -322,6 +331,77 @@ public:
       return(true);
      }
 
+   // Schedule three executable-side markout observations from a confirmed entry fill.
+   // The scheduler is bounded and uses a monotonic terminal clock. It never sleeps or polls.
+   bool ScheduleMarkouts(const SAxIQ200Event &fill)
+     {
+      if((fill.eventType!=AX_IQ200_DEAL_PARTIAL && fill.eventType!=AX_IQ200_DEAL_FILLED) ||
+         fill.direction==0 || fill.fillPrice<=0.0 || fill.pointSize<=0.0 ||
+         !MathIsValidNumber(fill.fillPrice) || !MathIsValidNumber(fill.pointSize))
+         return(false);
+      int horizons[3];
+      horizons[0]=1000;
+      horizons[1]=5000;
+      horizons[2]=30000;
+      bool allScheduled=true;
+      for(int h=0;h<3;h++)
+        {
+         if(m_markoutCount>=128)
+           {
+            m_markoutDropped++;
+            allScheduled=false;
+            continue;
+           }
+         int slot=m_markoutCount++;
+         m_markoutEvents[slot]=fill;
+         m_markoutHorizons[slot]=horizons[h];
+         m_markoutDueMs[slot]=GetTickCount64()+(ulong)horizons[h];
+        }
+      return(allScheduled);
+     }
+
+   // Called from OnTimer. Markout is executable-side price movement, not realized P/L:
+   // BUY is valued at bid; SELL is valued at ask. Missing quotes are retained as missing.
+   int ProcessDueMarkouts(void)
+     {
+      ulong now=GetTickCount64();
+      int processed=0;
+      for(int i=m_markoutCount-1;i>=0;i--)
+        {
+         if(now<m_markoutDueMs[i]) continue;
+         SAxIQ200Event sample=m_markoutEvents[i];
+         MqlTick tick;
+         bool quoteReady=SymbolInfoTick(sample.symbol,tick) &&
+                         tick.bid>0.0 && tick.ask>0.0 &&
+                         MathIsValidNumber(tick.bid) && MathIsValidNumber(tick.ask);
+         sample.eventType=AX_IQ200_MARKOUT;
+         sample.markoutHorizonMs=m_markoutHorizons[i];
+         sample.eventTimeMsc=(quoteReady && tick.time_msc>0)
+                             ?(long)tick.time_msc:(long)TimeLocal()*1000;
+         sample.timeSource=quoteReady?1:0;
+         if(quoteReady)
+           {
+            sample.bid=tick.bid;
+            sample.ask=tick.ask;
+            double exitQuote=(sample.direction>0)?tick.bid:tick.ask;
+            sample.markoutPoints=(double)sample.direction*
+                                 (exitQuote-sample.fillPrice)/sample.pointSize;
+           }
+         else
+           {
+            sample.markoutPoints=0.0;
+            sample.missingMask|=2;
+           }
+         Enqueue(sample);
+         m_markoutEvents[i]=m_markoutEvents[m_markoutCount-1];
+         m_markoutDueMs[i]=m_markoutDueMs[m_markoutCount-1];
+         m_markoutHorizons[i]=m_markoutHorizons[m_markoutCount-1];
+         m_markoutCount--;
+         processed++;
+        }
+      return(processed);
+     }
+
    // Call only from OnTimer or another controlled non-hot-path callback.
    // Never call this from OnTick or OnTradeTransaction.
    int Flush(const int maxRows=64)
@@ -397,6 +477,8 @@ public:
    bool IsHealthy(void) const { return(m_healthy); }
    int PendingCount(void) const { return(m_count); }
    ulong DroppedEvents(void) const { return(m_droppedEvents); }
+   int PendingMarkouts(void) const { return(m_markoutCount); }
+   ulong MarkoutDropped(void) const { return(m_markoutDropped); }
    ulong RowsWritten(void) const { return(m_rowsWritten); }
    string FileName(void) const { return(m_fileName); }
    string SessionId(void) const { return(m_sessionId); }
@@ -413,6 +495,7 @@ public:
       m_head=0;
       m_tail=0;
       m_count=0;
+      m_markoutCount=0;
      }
   };
 
