@@ -2589,17 +2589,41 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
         }
      }
 
-   if(!g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_ORDER_SUBMITTED))
+   // IQ200 records the fully approved candidate and the current execution route.
+   // These events are analysis-only and are not consulted by any trading gate.
+   if(g_iq200TelemetryReady)
      {
-      g_accountRiskIntegrityLock=true;
-      g_distributedRecoveryPending=distributedReservationActive;
-      if(!g_accountRiskCoordinator.Release()) g_accountRiskIntegrityLock=true;
-      PrintFormat("FLIPDEMON LIFECYCLE ERROR: setup %s could not enter ORDER_SUBMITTED; broker request withheld (%s).",
-                  lifecycleSetupId,g_tradeLifecycle.LastError());
-      return(false);
+      SAxIQ200Event decisionEvent;
+      g_iq200Telemetry.NewEvent(decisionEvent,AX_IQ200_DECISION,_Symbol,InpMagicNumber);
+      decisionEvent.decisionId=lifecycleSetupId;
+      decisionEvent.intentId=lifecycleSetupId;
+      decisionEvent.direction=(dir==AX_DIR_BUY)?1:-1;
+      decisionEvent.requestedVolume=lots;
+      decisionEvent.requestedPrice=marginPrice;
+      decisionEvent.bid=marginTick.bid;
+      decisionEvent.ask=marginTick.ask;
+      decisionEvent.pointSize=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
+      decisionEvent.tickSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+      decisionEvent.atrPoints=(decisionEvent.pointSize>0.0 && g_regime.CurrentAtr()>0.0)
+                              ?g_regime.CurrentAtr()/decisionEvent.pointSize:0.0;
+      decisionEvent.reasonCode=(int)AX_EXEC_MARKET;
+      g_iq200Telemetry.Enqueue(decisionEvent);
+
+      SAxIQ200Event routeEvent;
+      g_iq200Telemetry.NewEvent(routeEvent,AX_IQ200_ROUTE_PLAN,_Symbol,InpMagicNumber);
+      routeEvent.decisionId=lifecycleSetupId;
+      routeEvent.intentId=lifecycleSetupId;
+      routeEvent.direction=(dir==AX_DIR_BUY)?1:-1;
+      routeEvent.orderType=(int)((dir==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL);
+      routeEvent.requestedVolume=lots;
+      routeEvent.requestedPrice=marginPrice;
+      routeEvent.bid=marginTick.bid;
+      routeEvent.ask=marginTick.ask;
+      routeEvent.reasonCode=(int)AX_EXEC_MARKET;
+      g_iq200Telemetry.Enqueue(routeEvent);
      }
    ulong orderCallStartUs=GetMicrosecondCount();
-   if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr,fillLatencyMs,actualLots,entryOutcomeUncertain))
+   if(!g_exec.OpenMarket(_Symbol,dir,lots,slPrice,tpPrice,"AXFDX",newTicket,fillPrice,execErr,fillLatencyMs,actualLots,entryOutcomeUncertain,g_iq200Telemetry,lifecycleSetupId))
      {
       g_executionLatency.RecordOrderCall(GetMicrosecondCount()-orderCallStartUs);
       if(!entryOutcomeUncertain && g_tradeLifecycle.State()==AX_LIFECYCLE_ORDER_SUBMITTED)
