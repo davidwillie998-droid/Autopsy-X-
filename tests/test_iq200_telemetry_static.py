@@ -141,7 +141,7 @@ def test_iq200_markouts_run_from_timer_not_hot_callbacks():
     ea = (ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(
         encoding="utf-8"
     )
-    assert "g_iq200Telemetry.ProcessDueMarkouts();" in ea
+    assert "g_iq200Telemetry.ProcessDueMarkouts(markoutValues,markoutValid);" in ea
     assert ea.index("g_iq200Telemetry.ProcessDueMarkouts();") < ea.index(
         "g_iq200Telemetry.Flush(64);"
     )
@@ -168,9 +168,11 @@ def test_iq200_position_closed_event_requires_confirmed_flat_position():
     ea = (ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(
         encoding="utf-8"
     )
-    close_branch = ea.index("AX_IQ200_POSITION_CLOSED")
-    close_body = ea[close_branch-800:close_branch+1400]
+    close_condition = ea.index("HistoryDealGetInteger(trans.deal,DEAL_ENTRY)==DEAL_ENTRY_OUT")
+    close_branch = ea.index("AX_IQ200_POSITION_CLOSED", close_condition)
+    close_body = ea[close_condition:close_branch+1400]
     assert "DEAL_ENTRY_OUT" in close_body
+    assert "DEAL_ENTRY_OUT_BY" in close_body
     assert "DEAL_ENTRY_OUT_BY" in close_body
     assert "trans.position>0 && !PositionSelectByTicket(trans.position)" in close_body
     assert "g_iq200Telemetry.MarkDealTicketSeen(trans.deal)" in close_body
