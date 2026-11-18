@@ -336,8 +336,7 @@ public:
    bool ScheduleMarkouts(const SAxIQ200Event &fill)
      {
       if((fill.eventType!=AX_IQ200_DEAL_PARTIAL && fill.eventType!=AX_IQ200_DEAL_FILLED) ||
-         fill.direction==0 || fill.fillPrice<=0.0 || fill.pointSize<=0.0 ||
-         !MathIsValidNumber(fill.fillPrice) || !MathIsValidNumber(fill.pointSize))
+         fill.direction==0)
          return(false);
       int horizons[3];
       horizons[0]=1000;
@@ -372,8 +371,10 @@ public:
          SAxIQ200Event sample=m_markoutEvents[i];
          MqlTick tick;
          bool quoteReady=SymbolInfoTick(sample.symbol,tick) &&
-                         tick.bid>0.0 && tick.ask>0.0 &&
-                         MathIsValidNumber(tick.bid) && MathIsValidNumber(tick.ask);
+                         tick.bid>0.0 && tick.ask>=tick.bid &&
+                         sample.fillPrice>0.0 && sample.pointSize>0.0 &&
+                         MathIsValidNumber(tick.bid) && MathIsValidNumber(tick.ask) &&
+                         MathIsValidNumber(sample.fillPrice) && MathIsValidNumber(sample.pointSize);
          sample.eventType=AX_IQ200_MARKOUT;
          sample.markoutHorizonMs=m_markoutHorizons[i];
          sample.eventTimeMsc=(quoteReady && tick.time_msc>0)
