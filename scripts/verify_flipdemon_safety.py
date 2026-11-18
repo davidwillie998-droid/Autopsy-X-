@@ -566,9 +566,10 @@ require("CTrade" not in pyramid and "PositionOpen" not in pyramid
 require('#include <AutopsyX/PyramidCampaignRegistry.mqh>' in ea
         and "CPyramidCampaignRegistry g_pyramidCampaignRegistry;" in ea,
         "persistent campaign registry is compiled into the EA but not yet activated")
-require("AX_PYRAMID_CAMPAIGN_MAX_TIERS 10" in pyramid_campaign
-        and "AX_PYRAMID_CAMPAIGN_FIELD_COUNT 17" in pyramid_campaign,
-        "campaign persistence has a bounded ten-tier schema with an explicit versioned field count")
+require("AX_PYRAMID_CAMPAIGN_FIELD_COUNT 17" in pyramid_campaign
+        and "record.tierCount<1" in pyramid_campaign
+        and "record.tierCount" in pyramid_campaign,
+        "campaign persistence stores validated tier counts in its versioned 17-field schema without an obsolete hard-coded ten-tier ceiling")
 require("positionIdentifier" in pyramid_campaign
         and "FindIndex(const ulong positionIdentifier)" in pyramid_campaign
         and "ACCOUNT_LOGIN" in pyramid_campaign
