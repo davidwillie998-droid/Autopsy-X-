@@ -46,6 +46,7 @@
 #include <AutopsyX/ExecutionEngine.mqh>
 #include <AutopsyX/ExecutionLatencyProfiler.mqh>
 #include <AutopsyX/ExecutionQualityJournal.mqh>
+#include <AutopsyX/IQ200Telemetry.mqh>
 #include <AutopsyX/ExitEngine.mqh>
 #include <AutopsyX/SniperEngine.mqh>
 #include <AutopsyX/OrderFlow.mqh>
@@ -315,6 +316,8 @@ CExecutionEngine      g_exec;
 CExecutionLatencyProfiler g_executionLatency;
 CExecutionQualityJournal g_executionQualityJournal;
 bool g_executionQualityJournalReady=false;
+CAxIQ200Telemetry g_iq200Telemetry;
+bool g_iq200TelemetryReady=false;
 CExitEngine           g_exit;
 CSniperEngine         g_sniper;
 COrderFlowEngine      g_orderFlow;
@@ -3564,6 +3567,11 @@ int OnInit(void)
       Print("FLIPDEMON EXECUTION JOURNAL WARNING: durable execution telemetry unavailable; trading decisions are unchanged.");
    else
       PrintFormat("FLIPDEMON EXECUTION JOURNAL: ready file=%s",g_executionQualityJournal.FileName());
+   g_iq200TelemetryReady=g_iq200Telemetry.Init(_Symbol,InpMagicNumber);
+   if(!g_iq200TelemetryReady)
+      Print("AX IQ200 TELEMETRY WARNING: event stream unavailable; execution and risk decisions are unchanged.");
+   else
+      PrintFormat("AX IQ200 TELEMETRY: schema v1 ready file=%s",g_iq200Telemetry.FileName());
    if(!g_regime.Init(_Symbol,InpRegimeTimeframe))
      {
       Print("AUTOPSY X: failed to initialize regime engine (ATR handle)");
@@ -3803,8 +3811,8 @@ int OnInit(void)
    if(InpShowDashboard)
       g_dash.Init(_Symbol);
    // Recovery must keep running even when the optional dashboard is disabled.
-   if(InpShowDashboard || g_distributedRecoveryPending)
-      EventSetTimer(1);
+   // IQ200 persistence and recovery require the timer even when the dashboard is hidden.
+   EventSetTimer(1);
 
    g_engineState = AX_ENGINE_ACTIVE;
    PrintFormat("AUTOPSY X FLIPDEMON EXTREME initialized on %s | mode=%d | risk=%.2f%%",
@@ -3814,16 +3822,15 @@ int OnInit(void)
 
 void OnDeinit(const int reason)
   {
+   EventKillTimer();
    g_executionLatency.Report();
    g_executionQualityJournal.Deinit();
+   g_iq200Telemetry.Deinit();
    g_distributedRiskCoordinator.Shutdown();
    if(!g_accountRiskCoordinator.Release())
       Print("FLIPDEMON COORDINATION ERROR: account mutex release failed during deinitialization.");
    if(InpShowDashboard)
-     {
-      EventKillTimer();
       g_dash.RemoveAll();
-     }
    g_regimeJournal.Deinit();
    g_autopsy.ReportVWAPAlignment(InpMinTradesForValidation);
    g_autopsy.Deinit();
@@ -4566,12 +4573,13 @@ void OnTimer(void)
               }
             else
                Print("FLIPDEMON DISTRIBUTED RISK: terminal reservation recovered and broker exposure reconciled.");
-            if(!InpShowDashboard)
-               EventKillTimer();
            }
           }
         }
      }
+
+   if(g_iq200TelemetryReady)
+      g_iq200Telemetry.Flush(64);
 
    if(!InpShowDashboard) return;
 
@@ -4812,6 +4820,72 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
          g_distributedRejectedCallbackPending=true;
          PrintFormat("FLIPDEMON DISTRIBUTED RISK: definitive broker rejection callback received (retcode=%u); deferred snapshot reconciliation queued.",
                      result.retcode);
+        }
+     }
+
+   if(relevant && g_iq200TelemetryReady)
+     {
+      SAxIQ200Event telemetryEvent;
+      if(trans.type==TRADE_TRANSACTION_REQUEST)
+        {
+         g_iq200Telemetry.NewEvent(telemetryEvent,AX_IQ200_BROKER_ACK,symbol,magic);
+         telemetryEvent.orderTicket=result.order;
+         telemetryEvent.dealTicket=result.deal;
+         telemetryEvent.retcode=result.retcode;
+         telemetryEvent.retcodeExternal=result.retcode_external;
+         telemetryEvent.requestedVolume=request.volume;
+         telemetryEvent.requestedPrice=request.price;
+         telemetryEvent.direction=(request.type==ORDER_TYPE_BUY)?1:
+                                  (request.type==ORDER_TYPE_SELL)?-1:0;
+         telemetryEvent.orderType=(int)request.type;
+         telemetryEvent.reasonCode=(int)request.action;
+         MqlTick ackTick;
+         if(SymbolInfoTick(symbol,ackTick))
+           {
+            telemetryEvent.bid=ackTick.bid;
+            telemetryEvent.ask=ackTick.ask;
+            telemetryEvent.eventTimeMsc=(long)ackTick.time_msc;
+            telemetryEvent.timeSource=1;
+           }
+         g_iq200Telemetry.Enqueue(telemetryEvent);
+        }
+      else if(trans.type==TRADE_TRANSACTION_DEAL_ADD && trans.deal>0 && HistoryDealSelect(trans.deal))
+        {
+         g_iq200Telemetry.NewEvent(telemetryEvent,AX_IQ200_DEAL_FILLED,symbol,magic);
+         telemetryEvent.orderTicket=trans.order;
+         telemetryEvent.dealTicket=trans.deal;
+         telemetryEvent.positionIdentifier=(ulong)HistoryDealGetInteger(trans.deal,DEAL_POSITION_ID);
+         telemetryEvent.confirmedVolume=HistoryDealGetDouble(trans.deal,DEAL_VOLUME);
+         telemetryEvent.fillPrice=HistoryDealGetDouble(trans.deal,DEAL_PRICE);
+         telemetryEvent.direction=(HistoryDealGetInteger(trans.deal,DEAL_TYPE)==DEAL_TYPE_BUY)?1:
+                                  (HistoryDealGetInteger(trans.deal,DEAL_TYPE)==DEAL_TYPE_SELL)?-1:0;
+         telemetryEvent.eventTimeMsc=(long)HistoryDealGetInteger(trans.deal,DEAL_TIME_MSC);
+         telemetryEvent.timeSource=1;
+         MqlTick fillTick;
+         if(SymbolInfoTick(symbol,fillTick))
+           {
+            telemetryEvent.bid=fillTick.bid;
+            telemetryEvent.ask=fillTick.ask;
+           }
+         g_iq200Telemetry.Enqueue(telemetryEvent);
+        }
+      else if(trans.type==TRADE_TRANSACTION_HISTORY_ADD && trans.order>0 && HistoryOrderSelect(trans.order))
+        {
+         long observedState=HistoryOrderGetInteger(trans.order,ORDER_STATE);
+         int observedEvent=-1;
+         if(observedState==ORDER_STATE_CANCELED) observedEvent=AX_IQ200_ORDER_CANCELLED;
+         else if(observedState==ORDER_STATE_REJECTED) observedEvent=AX_IQ200_ORDER_REJECTED;
+         else if(observedState==ORDER_STATE_EXPIRED) observedEvent=AX_IQ200_ORDER_EXPIRED;
+         if(observedEvent>=0)
+           {
+            g_iq200Telemetry.NewEvent(telemetryEvent,observedEvent,symbol,magic);
+            telemetryEvent.orderTicket=trans.order;
+            telemetryEvent.orderType=(int)HistoryOrderGetInteger(trans.order,ORDER_TYPE);
+            telemetryEvent.requestedVolume=HistoryOrderGetDouble(trans.order,ORDER_VOLUME_INITIAL);
+            telemetryEvent.confirmedVolume=HistoryOrderGetDouble(trans.order,ORDER_VOLUME_CURRENT);
+            telemetryEvent.reasonCode=(int)observedState;
+            g_iq200Telemetry.Enqueue(telemetryEvent);
+           }
         }
      }
 
