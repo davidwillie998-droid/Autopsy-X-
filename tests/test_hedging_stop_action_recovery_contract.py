@@ -105,3 +105,44 @@ class HedgingPartialCloseHistoryTests(unittest.TestCase):
         self.assertIn("MathIsValidNumber(dealProfit)", self.reader)
         self.assertIn("MathIsValidNumber(dealCommission)", self.reader)
         self.assertIn("MathIsValidNumber(dealSwap)", self.reader)
+
+
+class PerPositionEntryMetadataTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.registry = (ROOT / "MQL5/Include/AutopsyX/VirtualExitRegistry.mqh").read_text(
+            encoding="utf-8-sig"
+        )
+        cls.save_state = EA[EA.index("bool AxSaveVirtualExitState("):EA.index(
+            "bool AxRecoverLockedStopAction("
+        )]
+
+    def test_registry_persists_original_entry_price_and_volume(self):
+        self.assertIn("double      entryPrice", self.registry)
+        self.assertIn("double      entryVolume", self.registry)
+        self.assertIn("Number(r.entryPrice),Number(r.entryVolume)", self.registry)
+        self.assertIn("record.entryPrice<0.0 || record.entryVolume<0.0", self.registry)
+
+    def test_new_registry_format_has_23_fields(self):
+        self.assertIn("#define AX_VIRTUAL_EXIT_FIELD_COUNT 23", self.registry)
+        serializer = self.registry[self.registry.index("string line=StringFormat("):
+                                    self.registry.index("string payload=line", self.registry.index("string line=StringFormat("))]
+        self.assertEqual(serializer.count("%I64u") + serializer.count("%s") + serializer.count("%d"), 23)
+
+    def test_old_registry_formats_remain_readable(self):
+        self.assertIn("fieldCount!=AX_VIRTUAL_EXIT_LEGACY_FIELD_COUNT", self.registry)
+        self.assertIn("fieldCount!=20 && fieldCount!=21", self.registry)
+        self.assertIn("fieldCount==21 || fieldCount==AX_VIRTUAL_EXIT_FIELD_COUNT", self.registry)
+        self.assertIn("entryMetadataFormat=(fieldCount==AX_VIRTUAL_EXIT_FIELD_COUNT)", self.registry)
+
+    def test_legacy_rows_do_not_invent_original_volume(self):
+        self.assertIn("entryMetadataFormat ? StringToDouble(f[22]) : 0.0", self.registry)
+        self.assertIn("record.entryVolume=(found ? existing.entryVolume : 0.0)", self.save_state)
+        self.assertIn("if(!found && isNewFill)", self.save_state)
+
+    def test_entry_price_and_original_volume_are_captured_from_broker_fill(self):
+        self.assertIn("record.entryPrice=entry", self.save_state)
+        self.assertIn("PositionGetDouble(POSITION_VOLUME)", self.save_state)
+        self.assertIn("record.entryVolume=PositionGetDouble(POSITION_VOLUME)", self.save_state)
+
+
