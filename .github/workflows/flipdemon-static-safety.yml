@@ -21,9 +21,10 @@ on:
       - 'tests/test_hedging_campaign_lifecycle_contract.py'
       - 'tests/test_position_state_registry_contract.py'
       - 'tests/test_break_even_persistence_contract.py'
-      - 'tests/test_hedging_break_even_manager_contract.py tests/test_hedging_trailing_manager_contract.py tests/test_hedging_stop_action_recovery_contract.py'
+      - 'tests/test_hedging_break_even_manager_contract.py tests/test_hedging_trailing_manager_contract.py tests/test_hedging_stop_action_recovery_contract.py tests/test_hedging_partial_close_history_contract.py'
       - 'tests/test_hedging_trailing_manager_contract.py'
       - 'tests/test_hedging_stop_action_recovery_contract.py'
+      - 'tests/test_hedging_partial_close_history_contract.py'
       - 'tests/test_iq200_telemetry_static.py'
       - 'tests/test_advanced_trend_suite_static.py'
       - 'tests/test_precision_entry_engine_contract.py'
@@ -46,6 +47,7 @@ on:
       - 'tests/test_hedging_break_even_manager_contract.py'
       - 'tests/test_hedging_trailing_manager_contract.py'
       - 'tests/test_hedging_stop_action_recovery_contract.py'
+      - 'tests/test_hedging_partial_close_history_contract.py'
       - '.github/workflows/flipdemon-static-safety.yml'
 
 permissions:
