@@ -6,6 +6,9 @@ ROOT = Path(__file__).resolve().parents[1]
 LEDGER = (ROOT / "MQL5/Include/AutopsyX/HedgingPartialCloseLedger.mqh").read_text(
     encoding="utf-8-sig"
 )
+EA = (ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(
+    encoding="utf-8-sig"
+)
 
 
 class HedgingPartialCloseLedgerTests(unittest.TestCase):
@@ -50,6 +53,26 @@ class HedgingPartialCloseLedgerTests(unittest.TestCase):
     def test_no_single_position_global_state_dependency(self):
         self.assertNotIn("g_posState", LEDGER)
         self.assertNotIn("g_positionIdentifier", LEDGER)
+
+    def test_ea_initializes_independent_ledger_and_stays_fail_closed(self):
+        self.assertIn('#include <AutopsyX/HedgingPartialCloseLedger.mqh>', EA)
+        self.assertIn("g_hedgingPartialCloseLedger.Init(", EA)
+        self.assertIn("g_hedgingPartialLedgerReady=false", EA)
+        self.assertIn("multi-position partial-close lifecycle remains quarantined", EA)
+
+    def test_per_position_adapter_uses_saved_entry_facts_not_global_position_state(self):
+        start = EA.index("bool AxRecordHedgingPartialCloseLedger(")
+        end = EA.index("bool AxFetchCloseFinancials(", start)
+        adapter = EA[start:end]
+        self.assertIn("saved.positionIdentifier", adapter)
+        self.assertIn("saved.entryPrice", adapter)
+        self.assertIn("saved.entryVolume", adapter)
+        self.assertIn("g_hedgingPartialCloseLedger.Record(record)", adapter)
+        self.assertNotIn("g_posState", adapter)
+        self.assertNotIn("g_positionIdentifier", adapter)
+
+    def test_partial_slice_cannot_be_misclassified_as_full_position_exit(self):
+        self.assertIn("closedVolume>=saved.entryVolume", EA)
 
 
 if __name__ == "__main__":
