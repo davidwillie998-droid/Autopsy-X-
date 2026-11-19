@@ -81,6 +81,15 @@ class HedgingFullCloseLifecycleTests(unittest.TestCase):
         self.assertLess(tick.index("AxRecoverLockedHedgingFullCloseActions"),
                         tick.index("AxReconcileVirtualExitTickets(false)"))
 
+    def test_recovery_revisits_registry_index_after_removing_a_closed_leg(self):
+        body = EA.split("bool AxRecoverLockedHedgingFullCloseActions", 1)[1].split(
+            "bool AxRecoverLockedPartialCloseActions", 1
+        )[0]
+        self.assertIn("g_virtualExitRegistry.Remove", body.split(
+            "bool AxFinalizeHedgingFullClose", 1
+        )[0] if "bool AxFinalizeHedgingFullClose" in body else EA)
+        self.assertIn("i--;", body)
+        
     def test_full_close_ledger_accounts_for_fees_and_is_idempotent(self):
         self.assertIn("double fees", LEDGER)
         self.assertIn("a.fees-b.fees", LEDGER)
