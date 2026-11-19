@@ -136,13 +136,21 @@ class HedgingPartialCloseLedgerTests(unittest.TestCase):
         self.assertIn("no second close request", manager[uncertain:])
 
     def test_multi_position_tick_runs_partial_manager_before_quarantine(self):
-        start = EA.index("void OnTick")
+        start = EA.index("void AxProcessTick(void)")
         end = EA.index("SAxHedgingCampaignSnapshot hedgingSnapshot", start)
         tick = EA[start:end]
         self.assertIn("AxManageHedgingPartialCloseTickets()", tick)
         self.assertLess(tick.index("AxManageHedgingPartialCloseTickets()"),
                         tick.index("g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber)", tick.index("AxManageHedgingPartialCloseTickets()")))
         self.assertIn("AxReconcileVirtualExitTickets(false)", tick)
+
+    def test_runtime_tick_recovers_locked_partial_before_virtual_exit_reconcile(self):
+        start = EA.index("void AxProcessTick(void)")
+        end = EA.index("SAxHedgingCampaignSnapshot hedgingSnapshot", start)
+        tick = EA[start:end]
+        self.assertLess(tick.index("AxRecoverLockedPartialCloseActions()"),
+                        tick.index("AxReconcileVirtualExitTickets(false)"))
+        self.assertIn("AxManageHedgingPartialCloseTickets()", tick)
 
     def test_recovery_handles_ledger_commit_before_virtual_exit_cursor(self):
         start = EA.index("bool AxRecoverHedgingPartialCloseAction(")
