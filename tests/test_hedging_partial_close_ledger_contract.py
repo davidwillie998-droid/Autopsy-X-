@@ -106,6 +106,15 @@ class HedgingPartialCloseLedgerTests(unittest.TestCase):
         self.assertNotIn("g_posState", manager)
         self.assertNotIn("g_positionIdentifier", manager)
 
+    def test_partial_manager_requires_protection_and_validates_completed_slice_ledger(self):
+        start = EA.index("bool AxManageHedgingPartialCloseTickets(void)")
+        end = EA.index("bool AxManageHedgingBreakEvenTickets(void)", start)
+        manager = EA[start:end]
+        self.assertIn("!live.hasValidBrokerStop", manager)
+        self.assertIn("saved.partialCloseCount!=1", manager)
+        self.assertIn("g_hedgingPartialCloseLedger.Find(live.positionIdentifier", manager)
+        self.assertIn("accounted.closedVolume-saved.partialClosedVolume", manager)
+
     def test_partial_close_is_profitable_only_and_broker_volume_grid_safe(self):
         start = EA.index("bool AxManageHedgingPartialCloseTickets(void)")
         end = EA.index("bool AxManageHedgingBreakEvenTickets(void)", start)
