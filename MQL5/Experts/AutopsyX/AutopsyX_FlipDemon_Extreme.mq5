@@ -4392,6 +4392,236 @@ void OnDeinit(const int reason)
 
 // Manage break-even independently for every leg in a hedging campaign.
 // The single-position ExitEngine remains responsible for the one-position path.
+// Execute one profitable-only scale-out per hedging leg. This path is deliberately
+// separate from the legacy g_posState journal and is only called for multi-leg accounts.
+bool AxManageHedgingPartialCloseTickets(void)
+  {
+   if(!g_hedgingPositionManager.IsComplete() ||
+      !g_virtualExitInitialized || !g_virtualExitRegistry.IsPersisting() ||
+      !g_hedgingPartialLedgerReady || !g_hedgingPartialCloseLedger.IsPersisting())
+      return(false);
+   if(!InpEnablePartialTP) return(true);
+   if(InpPartialTriggerRR<=0.0 || InpPartialClosePercent<=0.0 ||
+      InpPartialClosePercent>=100.0)
+     {
+      Print("FLIPDEMON HEDGING PARTIAL: invalid partial-close trigger or percentage; campaign quarantined.");
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_engineState=AX_ENGINE_PAUSED;
+      return(false);
+     }
+
+   const double volumeStep=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP);
+   const double minimumVolume=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN);
+   const double tickSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+   if(volumeStep<=0.0 || minimumVolume<=0.0 || tickSize<=0.0)
+     {
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_engineState=AX_ENGINE_PAUSED;
+      Print("FLIPDEMON HEDGING PARTIAL: broker volume/tick metadata unavailable; campaign quarantined.");
+      return(false);
+     }
+   const double volumeTolerance=MathMax(volumeStep*0.5,0.0000001);
+
+   for(int i=0;i<g_hedgingPositionManager.Count();i++)
+     {
+      SAxManagedPosition live;
+      if(!g_hedgingPositionManager.GetAt(i,live))
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING PARTIAL: broker snapshot row %d unavailable; campaign quarantined.",i);
+         return(false);
+        }
+
+      SAxVirtualExitRecord saved;
+      if(!g_virtualExitRegistry.Find(live.positionIdentifier,saved) ||
+         saved.actionLocked || saved.symbol!=live.symbol || saved.dir!=live.direction ||
+         saved.ticket!=live.ticket || saved.entryTime<=0 || saved.entryPrice<=0.0 ||
+         saved.entryVolume<=0.0 || saved.originalRiskDistance<=0.0)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING PARTIAL: durable entry state mismatch or locked action, ticket=%I64u id=%I64u; campaign quarantined.",
+                     live.ticket,live.positionIdentifier);
+         return(false);
+        }
+
+      // This phase deliberately permits one scale-out per leg. Repeated scale-outs
+      // need a journal cursor model that can distinguish each new action from old deals.
+      if(saved.partialCloseCount>0 || saved.partialClosedVolume>volumeTolerance ||
+         saved.partialLastDealTicket>0)
+         continue;
+
+      if(!PositionSelectByTicket(live.ticket) ||
+         (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=live.positionIdentifier ||
+         (ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber ||
+         PositionGetString(POSITION_SYMBOL)!=live.symbol)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING PARTIAL: exact position identity unavailable, ticket=%I64u; campaign quarantined.",live.ticket);
+         return(false);
+        }
+
+      const double brokerVolume=PositionGetDouble(POSITION_VOLUME);
+      if(MathAbs(brokerVolume-live.volume)>volumeTolerance ||
+         MathAbs(brokerVolume-saved.entryVolume)>volumeTolerance ||
+         MathAbs(PositionGetDouble(POSITION_PRICE_OPEN)-saved.entryPrice)>tickSize*0.51)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING PARTIAL: live volume/entry differs from durable baseline, ticket=%I64u; campaign quarantined.",live.ticket);
+         return(false);
+        }
+
+      MqlTick quote;
+      if(!SymbolInfoTick(live.symbol,quote) || quote.bid<=0.0 ||
+         quote.ask<quote.bid || quote.ask<=0.0)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING PARTIAL: quote unavailable for ticket=%I64u; campaign quarantined.",live.ticket);
+         return(false);
+        }
+
+      const double executablePrice=(live.direction==AX_DIR_BUY)?quote.bid:quote.ask;
+      const double favorableMove=(live.direction==AX_DIR_BUY)
+                                 ?executablePrice-saved.entryPrice
+                                 :saved.entryPrice-executablePrice;
+      const double achievedRR=favorableMove/saved.originalRiskDistance;
+      if(!MathIsValidNumber(achievedRR) || achievedRR<InpPartialTriggerRR)
+         continue;
+
+      const double requestedRaw=brokerVolume*InpPartialClosePercent/100.0;
+      double closeVolume=MathFloor(requestedRaw/volumeStep+1e-9)*volumeStep;
+      closeVolume=NormalizeDouble(closeVolume,8);
+      const double residualVolume=brokerVolume-closeVolume;
+      if(closeVolume<minimumVolume || residualVolume<minimumVolume ||
+         !MathIsValidNumber(closeVolume) || closeVolume<=0.0)
+        {
+         if(InpVerboseLogging)
+            PrintFormat("FLIPDEMON HEDGING PARTIAL: scale-out skipped for ticket=%I64u; broker minimum would be violated (close=%.8f residual=%.8f min=%.8f).",
+                        live.ticket,closeVolume,residualVolume,minimumVolume);
+         continue;
+        }
+
+      if(!g_virtualExitRegistry.BeginPartialCloseAction(live.positionIdentifier,brokerVolume) ||
+         !g_virtualExitRegistry.IsPersisting())
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING PARTIAL: durable action lock failed for ticket=%I64u; no broker request sent.",live.ticket);
+         return(false);
+        }
+
+      string closeError="";
+      bool outcomeUncertain=false;
+      if(!g_exec.ClosePartial(live.symbol,live.ticket,live.positionIdentifier,
+                              live.magic,closeVolume,closeError,outcomeUncertain))
+        {
+         if(!outcomeUncertain)
+           {
+            // A definite rejection may release only its own lock. Do not keep
+            // retrying in this tick; a later fresh quote can re-evaluate it.
+            if(!g_virtualExitRegistry.ResolveAction(live.positionIdentifier,3) ||
+               !g_virtualExitRegistry.IsPersisting())
+              {
+               g_virtualExitReady=false;
+               g_hedgingLifecycleLock=true;
+               g_engineState=AX_ENGINE_PAUSED;
+               PrintFormat("FLIPDEMON HEDGING PARTIAL: rejected request lock could not be cleared, ticket=%I64u.",live.ticket);
+               return(false);
+              }
+            if(InpVerboseLogging)
+               PrintFormat("FLIPDEMON HEDGING PARTIAL: broker rejected ticket=%I64u scale-out (%s).",
+                           live.ticket,closeError);
+            return(true);
+           }
+
+         // Ambiguous outcomes retain actionCode=3. Startup/tick recovery must
+         // reconcile the exact stable identifier and deal history before retry.
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_recoveryReady=false;
+         g_accountRiskReconciliationPending=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING PARTIAL QUARANTINE: ticket=%I64u id=%I64u outcome uncertain; no second close request (%s).",
+                     live.ticket,live.positionIdentifier,closeError);
+         return(false);
+        }
+
+      if(!PositionSelectByTicket(live.ticket) ||
+         (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=live.positionIdentifier ||
+         (ulong)PositionGetInteger(POSITION_MAGIC)!=live.magic ||
+         PositionGetString(POSITION_SYMBOL)!=live.symbol)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_recoveryReady=false;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING PARTIAL QUARANTINE: accepted scale-out lost exact live ticket identity=%I64u; action lock retained.",
+                     live.positionIdentifier);
+         return(false);
+        }
+
+      const double remainingVolume=PositionGetDouble(POSITION_VOLUME);
+      const double actualClosed=brokerVolume-remainingVolume;
+      double closePrice=0.0,grossProfit=0.0,commission=0.0,swap=0.0,historyClosedVolume=0.0;
+      datetime closeTime=0;
+      ulong lastDeal=saved.partialLastDealTicket;
+      if(remainingVolume<=0.0 || actualClosed<=volumeTolerance ||
+         MathAbs(actualClosed-closeVolume)>volumeTolerance ||
+         !AxFetchCloseFinancialsByIdentifier(live.positionIdentifier,live.symbol,live.magic,
+                                             live.direction,saved.partialLastDealTicket,
+                                             closePrice,grossProfit,commission,swap,
+                                             closeTime,lastDeal,historyClosedVolume) ||
+         lastDeal<=saved.partialLastDealTicket || closeTime<saved.actionStartedAt ||
+         MathAbs(historyClosedVolume-actualClosed)>volumeTolerance ||
+         saved.partialClosedVolume+historyClosedVolume>=saved.entryVolume-volumeTolerance)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_recoveryReady=false;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING PARTIAL QUARANTINE: broker reduction/history mismatch for id=%I64u; durable action lock retained.",
+                     live.positionIdentifier);
+         return(false);
+        }
+
+      if(!AxRecordHedgingPartialCloseLedger(saved,closePrice,grossProfit,commission,swap,
+                                             closeTime,lastDeal,historyClosedVolume) ||
+         !g_virtualExitRegistry.RecordPartialClose(live.positionIdentifier,historyClosedVolume,lastDeal) ||
+         !g_virtualExitRegistry.IsPersisting() ||
+         !g_virtualExitRegistry.ResolveAction(live.positionIdentifier,3) ||
+         !g_virtualExitRegistry.IsPersisting())
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_recoveryReady=false;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING PARTIAL QUARANTINE: ledger/registry commit incomplete for id=%I64u; action lock retained for recovery.",
+                     live.positionIdentifier);
+         return(false);
+        }
+
+      PrintFormat("FLIPDEMON HEDGING PARTIAL: ticket=%I64u id=%I64u RR=%.2f closed=%.8f remaining=%.8f deal=%I64u; per-leg ledger durable.",
+                  live.ticket,live.positionIdentifier,achievedRR,historyClosedVolume,
+                  remainingVolume,lastDeal);
+      // One scale-out per leg per lifecycle phase. The caller refreshes the full
+      // broker snapshot after this manager returns.
+      return(true);
+     }
+   return(true);
+  }
+
 bool AxManageHedgingBreakEvenTickets(void)
   {
    if(!g_hedgingPositionManager.IsComplete() ||
