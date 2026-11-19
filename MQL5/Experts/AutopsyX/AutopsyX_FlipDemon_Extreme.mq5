@@ -2054,6 +2054,9 @@ bool AxRecoverLockedHedgingFullCloseActions(void)
                      saved.positionIdentifier);
          return(false);
         }
+      // Finalization removes this registry row. Revisit the same index because
+      // the next locked record shifts into its place.
+      i--;
      }
    return(true);
   }
