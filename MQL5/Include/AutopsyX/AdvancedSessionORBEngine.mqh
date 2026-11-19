@@ -251,13 +251,14 @@ private:
    void AggregateReading(const double volumeRatio)
      {
       ZeroMemory(m_reading);
-      m_reading.available=true;
+      m_reading.available=false;
       m_reading.volumeRatio=volumeRatio;
       string bullishNames="";
       string bearishNames="";
       for(int i=0;i<3;i++)
         {
          if(!m_sessions[i].rangeReady) continue;
+         m_reading.available=true;
          ENUM_AX_ORB_SIGNAL signal=m_sessions[i].signal;
          if(signal==AX_ORB_BREAKOUT_BUY || signal==AX_ORB_RETEST_BUY)
            {
@@ -302,7 +303,7 @@ private:
          m_reading.status="CONFLICTING_SESSION_BREAKOUTS";
         }
       else if(StringLen(m_reading.status)==0)
-         m_reading.status="NO_CONFIRMED_BREAKOUT";
+         m_reading.status=m_reading.available?"NO_CONFIRMED_BREAKOUT":"NO_COMPLETED_OPENING_RANGE";
      }
 
 public:
