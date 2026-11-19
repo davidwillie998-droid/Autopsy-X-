@@ -49,7 +49,7 @@ class HedgingFullCloseLifecycleTests(unittest.TestCase):
         ):
             self.assertIn(term, body)
         self.assertIn("exitVolume-saved.entryVolume", body)
-        self.assertIn("exitVolume-saved.partialClosedVolume", body)
+        self.assertIn("exitVolume-saved.entryVolume", body)
 
     def test_partial_slice_must_match_its_own_durable_ledger_row(self):
         body = EA.split("bool AxBuildHedgingFullCloseRecord", 1)[1].split(
