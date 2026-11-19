@@ -4450,7 +4450,7 @@ bool AxManageHedgingPartialCloseTickets(void)
       if(!g_virtualExitRegistry.Find(live.positionIdentifier,saved) ||
          saved.actionLocked || saved.symbol!=live.symbol || saved.dir!=live.direction ||
          saved.ticket!=live.ticket || saved.entryTime<=0 || saved.entryPrice<=0.0 ||
-         saved.entryVolume<=0.0 || saved.originalRiskDistance<=0.0)
+         saved.entryVolume<=0.0 || saved.originalRiskDistance<=0.0 || !live.hasValidBrokerStop)
         {
          g_virtualExitReady=false;
          g_hedgingLifecycleLock=true;
@@ -4460,11 +4460,31 @@ bool AxManageHedgingPartialCloseTickets(void)
          return(false);
         }
 
-      // This phase deliberately permits one scale-out per leg. Repeated scale-outs
-      // need a journal cursor model that can distinguish each new action from old deals.
+      // This phase deliberately permits one scale-out per leg. A completed slice
+      // must still match its independent ledger row before it is treated as settled.
       if(saved.partialCloseCount>0 || saved.partialClosedVolume>volumeTolerance ||
          saved.partialLastDealTicket>0)
+        {
+         SAxPartialCloseLedgerRecord accounted;
+         if(saved.partialCloseCount!=1 || saved.partialLastDealTicket==0 ||
+            !g_hedgingPartialCloseLedger.Find(live.positionIdentifier,
+                                               saved.partialLastDealTicket,accounted) ||
+            accounted.symbol!=saved.symbol || accounted.magic!=live.magic ||
+            accounted.direction!=saved.dir ||
+            MathAbs(accounted.entryPrice-saved.entryPrice)>tickSize*0.51 ||
+            MathAbs(accounted.entryVolume-saved.entryVolume)>volumeTolerance ||
+            MathAbs(accounted.closedVolume-saved.partialClosedVolume)>volumeTolerance ||
+            accounted.closedVolume<=0.0 || accounted.closedVolume>=saved.entryVolume)
+           {
+            g_virtualExitReady=false;
+            g_hedgingLifecycleLock=true;
+            g_engineState=AX_ENGINE_PAUSED;
+            PrintFormat("FLIPDEMON HEDGING PARTIAL: completed slice does not match per-leg ledger for id=%I64u; campaign quarantined.",
+                        live.positionIdentifier);
+            return(false);
+           }
          continue;
+        }
 
       if(!PositionSelectByTicket(live.ticket) ||
          (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=live.positionIdentifier ||
