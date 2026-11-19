@@ -198,7 +198,11 @@ public:
       if(!SymbolInfoTick(m_symbol,tick) || tick.bid<=0.0 ||
          tick.ask<tick.bid || tick.ask<=0.0)
         {
-         for(int i=0;i<5;i++) ResetSlot(i,"VALID_QUOTE_UNAVAILABLE");
+         for(int i=0;i<5;i++)
+           {
+            ResetSlot(i,"VALID_QUOTE_UNAVAILABLE");
+            m_lastClosedBar[i]=0;
+           }
          return(false);
         }
       double price=(tick.bid+tick.ask)*0.5;
