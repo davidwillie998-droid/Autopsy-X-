@@ -472,17 +472,20 @@ require("g_accountRiskReconciliationPending=false" in ea
 require('#include <AutopsyX/VirtualExitRegistry.mqh>' in ea
         and "CVirtualExitRegistry   g_virtualExitRegistry;" in ea,
         "virtual-exit registry is included and instantiated by the EA")
-require("AX_VIRTUAL_EXIT_FIELD_COUNT 21" in virtual_exit
+require("AX_VIRTUAL_EXIT_FIELD_COUNT 23" in virtual_exit
         and "AX_VIRTUAL_EXIT_LEGACY_FIELD_COUNT 12" in virtual_exit
         and "fieldCount!=20" in virtual_exit
+        and "fieldCount!=21" in virtual_exit
         and "positionIdentifier" in virtual_exit
         and "FindIndex(record.positionIdentifier)" in virtual_exit,
-        "virtual-exit persistence reads legacy 12/20-field rows and writes the 21-field identity record")
+        "virtual-exit persistence reads legacy 12/20/21-field rows and writes the 23-field identity record")
 virtual_format = re.search(r'string line=StringFormat\("([^"]+)"', virtual_exit)
 require(virtual_format is not None
-        and len(re.findall(r"%I64u|%d|%s", virtual_format.group(1))) == 21
-        and "Number(r.actionBaselineVolume)" in virtual_exit,
-        "21-field virtual-exit serializer persists the pre-action broker volume baseline")
+        and len(re.findall(r"%I64u|%d|%s", virtual_format.group(1))) == 23
+        and "Number(r.actionBaselineVolume)" in virtual_exit
+        and "Number(r.entryPrice)" in virtual_exit
+        and "Number(r.entryVolume)" in virtual_exit,
+        "23-field virtual-exit serializer persists the action baseline and original entry facts")
 require("BeginPartialCloseAction" in virtual_exit
         and "record.actionBaselineVolume=baselineVolume" in virtual_exit
         and "record.actionBaselineVolume=0.0" in virtual_exit,
