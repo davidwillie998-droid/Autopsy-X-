@@ -81,6 +81,38 @@ class AdvancedSessionORBContractTests(unittest.TestCase):
         self.assertIn("latestClosedBar==m_lastUpdateBar", ORB)
         self.assertIn("m_lastUpdateBar=recent[0].time", ORB)
 
+
+    def test_chart_diagnostics_draw_overlapping_session_ranges_and_htf_levels(self):
+        self.assertIn("OBJ_RECTANGLE", ORB)
+        self.assertIn('EnsureRectangle(key+"_RANGE"', ORB)
+        self.assertIn('EnsureTrend(key+"_HIGH"', ORB)
+        self.assertIn('EnsureTrend(key+"_LOW"', ORB)
+        self.assertIn('"PDH"', ORB)
+        self.assertIn('"PDL"', ORB)
+        self.assertIn('"PWH"', ORB)
+        self.assertIn('"PWL"', ORB)
+        self.assertIn("ChartRedraw(m_chartId)", ORB)
+
+    def test_breakout_retest_and_failed_breakout_markers_use_signal_bar(self):
+        self.assertIn("datetime signalBar", ORB)
+        self.assertIn("OBJ_ARROW", ORB)
+        self.assertIn("FAILED", ORB)
+        self.assertIn("session.signalBar", ORB)
+        self.assertIn("m_sessions[index].signalBar=latest.time", ORB)
+
+    def test_chart_object_namespace_is_scoped_and_cleaned_on_deinit(self):
+        self.assertIn('m_objectPrefix="AXORB_"', ORB)
+        self.assertIn("ObjectsDeleteAll(m_chartId,m_objectPrefix)", ORB)
+        self.assertIn("g_advancedSessionOrb.SetChartIdentity(_Symbol,InpMagicNumber)", EA)
+        self.assertIn("g_advancedSessionOrb.Cleanup()", EA)
+        self.assertIn("void OnDeinit", EA)
+
+    def test_chart_diagnostics_are_visual_only(self):
+        self.assertIn("void DrawDiagnostics", ORB)
+        self.assertIn("DrawDiagnostics(symbol)", ORB)
+        for forbidden in ("OrderSend(", "PositionOpen(", "Buy(", "Sell("):
+            self.assertNotIn(forbidden, ORB)
+
     def test_engine_refreshes_using_server_time_and_symbol_point(self):
         self.assertIn("TimeTradeServer()", EA)
         self.assertIn("g_advancedSessionOrb.Update(_Symbol,orbServerTime,g_md.Point())", EA)
