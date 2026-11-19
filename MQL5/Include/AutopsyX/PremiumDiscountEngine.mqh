@@ -89,6 +89,7 @@ private:
          ResetSlot(slot,"CLOSED_BAR_TIME_UNAVAILABLE");
          return(false);
         }
+      m_lastClosedBar[slot]=closedTime;
 
       MqlRates rates[];
       ArraySetAsSeries(rates,true);
