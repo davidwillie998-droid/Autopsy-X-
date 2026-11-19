@@ -35,6 +35,7 @@ private:
    SAxPartialCloseLedgerRecord m_records[];
    int m_count;
    bool m_persistOk;
+   long m_accountLogin;
 
    int FindIndex(const ulong positionIdentifier,const ulong dealTicket) const
      {
@@ -144,10 +145,11 @@ public:
 
    bool Init(const string eaName,const string symbol,const ulong magic)
      {
-      if(StringLen(eaName)==0 || StringLen(symbol)==0 || magic==0)
+      m_accountLogin=AccountInfoInteger(ACCOUNT_LOGIN);
+      if(StringLen(eaName)==0 || StringLen(symbol)==0 || magic==0 || m_accountLogin<=0)
          return(false);
-      m_fileName=StringFormat("%s_%s_%I64u_HedgingPartialCloses_v1.csv",
-                              eaName,symbol,magic);
+      m_fileName=StringFormat("%s_%s_%I64d_%I64u_HedgingPartialCloses_v1.csv",
+                              eaName,symbol,m_accountLogin,magic);
       m_count=0;
       if(ArrayResize(m_records,0)!=0) return(false);
       int handle=FileOpen(m_fileName,FILE_READ|FILE_TXT|FILE_ANSI|FILE_SHARE_READ);
