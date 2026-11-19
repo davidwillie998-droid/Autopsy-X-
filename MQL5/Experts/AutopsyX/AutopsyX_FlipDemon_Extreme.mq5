@@ -4045,6 +4045,19 @@ int OnInit(void)
       PrintFormat("FLIPDEMON VIRTUAL EXIT: registry loaded (%d records); virtual execution remains disabled in this phase.",g_virtualExitRegistry.Count());
      }
 
+   // This ledger is independent of the legacy single-position trade journal.
+   // It is required before ticket-specific hedging partial-close accounting can run.
+   g_hedgingPartialLedgerReady=g_hedgingPartialCloseLedger.Init(
+                                  "FlipDemon_Extreme_HFT",_Symbol,InpMagicNumber);
+   if(!g_hedgingPartialLedgerReady || !g_hedgingPartialCloseLedger.IsPersisting())
+     {
+      g_hedgingPartialLedgerReady=false;
+      Print("FLIPDEMON HEDGING PARTIAL LEDGER ERROR: durable per-position ledger unavailable; multi-position partial-close lifecycle remains quarantined.");
+     }
+   else
+      PrintFormat("FLIPDEMON HEDGING PARTIAL LEDGER: loaded %d durable slices.",
+                  g_hedgingPartialCloseLedger.Count());
+
    g_risk.OnTickHousekeeping();
    AxReconcileExistingPosition();
 
