@@ -26,6 +26,7 @@ struct SAxOrbSessionState
    datetime start;
    datetime rangeEnd;
    datetime lastProcessedBar;
+   datetime signalBar;
    double rangeHigh;
    double rangeLow;
    double rangeWidthPoints;
@@ -153,12 +154,12 @@ private:
    void DrawSignal(const string symbol,const int index,const datetime dayEnd)
      {
       SAxOrbSessionState session=m_sessions[index];
-      if(!session.rangeReady || session.lastProcessedBar<=0 ||
+      if(!session.rangeReady || session.signalBar<=0 ||
          session.signal==AX_ORB_SIGNAL_NONE)
          return;
 
       string key=m_objectPrefix+IntegerToString(m_dayKey)+"_S"+
-                 IntegerToString(index)+"_B"+IntegerToString((int)session.lastProcessedBar);
+                 IntegerToString(index)+"_B"+IntegerToString((int)session.signalBar);
       bool bullish=(session.signal==AX_ORB_BREAKOUT_BUY ||
                     session.signal==AX_ORB_RETEST_BUY ||
                     session.signal==AX_ORB_FAILED_BULLISH);
@@ -172,15 +173,15 @@ private:
                      "BREAKOUT "+session.name;
       string markerName=key+"_MARK";
       if(ObjectFind(m_chartId,markerName)<0)
-         ObjectCreate(m_chartId,markerName,OBJ_ARROW,0,session.lastProcessedBar,price);
+         ObjectCreate(m_chartId,markerName,OBJ_ARROW,0,session.signalBar,price);
       else
-         ObjectMove(m_chartId,markerName,0,session.lastProcessedBar,price);
+         ObjectMove(m_chartId,markerName,0,session.signalBar,price);
       ObjectSetInteger(m_chartId,markerName,OBJPROP_ARROWCODE,failed?251:(bullish?233:234));
       ObjectSetInteger(m_chartId,markerName,OBJPROP_COLOR,markerColor);
       ObjectSetInteger(m_chartId,markerName,OBJPROP_WIDTH,1);
       ObjectSetInteger(m_chartId,markerName,OBJPROP_SELECTABLE,false);
       ObjectSetInteger(m_chartId,markerName,OBJPROP_HIDDEN,true);
-      EnsureText(key+"_LABEL",session.lastProcessedBar,price,caption,markerColor,8);
+      EnsureText(key+"_LABEL",session.signalBar,price,caption,markerColor,8);
      }
 
    void DrawDiagnostics(const string symbol)
@@ -248,6 +249,7 @@ private:
       m_sessions[index].start=start;
       m_sessions[index].rangeEnd=start+(datetime)(m_rangeMinutes*60);
       m_sessions[index].lastProcessedBar=0;
+      m_sessions[index].signalBar=0;
       m_sessions[index].rangeHigh=0.0;
       m_sessions[index].rangeLow=0.0;
       m_sessions[index].rangeWidthPoints=0.0;
@@ -337,6 +339,7 @@ private:
             m_sessions[index].signal=AX_ORB_RETEST_BUY;
          else
             m_sessions[index].signal=AX_ORB_BREAKOUT_BUY;
+         m_sessions[index].signalBar=latest.time;
          return;
         }
 
@@ -347,15 +350,22 @@ private:
             m_sessions[index].signal=AX_ORB_RETEST_SELL;
          else
             m_sessions[index].signal=AX_ORB_BREAKOUT_SELL;
+         m_sessions[index].signalBar=latest.time;
          return;
         }
 
       // A close back inside the range invalidates the previous directional
       // breakout. It is recorded as a failure, never auto-traded in reverse.
       if(previous.close>high && latest.close<=high)
+        {
          m_sessions[index].signal=AX_ORB_FAILED_BULLISH;
+         m_sessions[index].signalBar=latest.time;
+        }
       else if(previous.close<low && latest.close>=low)
+        {
          m_sessions[index].signal=AX_ORB_FAILED_BEARISH;
+         m_sessions[index].signalBar=latest.time;
+        }
      }
 
    void PopulateHigherTimeframeLevels(const string symbol,const double price)
@@ -568,7 +578,8 @@ public:
    void SetChartIdentity(const string symbol,const ulong magic)
      {
       m_chartId=ChartID();
-      m_objectPrefix="AXORB_"+IntegerToString((int)m_chartId)+"_"+symbol+"_"+
+      m_objectPrefix="AXORB_"+StringFormat("%I64d",m_chartId)+"_"+symbol+"_";
+      m_objectPrefix+=
                      StringFormat("%I64u",magic)+"_";
      }
 
