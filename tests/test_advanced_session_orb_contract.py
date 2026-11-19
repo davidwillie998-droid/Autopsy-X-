@@ -50,6 +50,16 @@ class AdvancedSessionORBContractTests(unittest.TestCase):
         self.assertIn("CONFLICTING_SESSION_BREAKOUTS", ORB)
         self.assertIn("m_reading.direction=AX_DIR_NONE", ORB)
 
+    def test_each_session_range_and_previous_d1_w1_levels_are_exposed(self):
+        self.assertIn("bool GetSessionAt", ORB)
+        self.assertIn("iHigh(symbol,PERIOD_D1,1)", ORB)
+        self.assertIn("iLow(symbol,PERIOD_D1,1)", ORB)
+        self.assertIn("iHigh(symbol,PERIOD_W1,1)", ORB)
+        self.assertIn("iLow(symbol,PERIOD_W1,1)", ORB)
+        self.assertIn("nearestResistance", ORB)
+        self.assertIn("nearestSupport", ORB)
+        self.assertIn("InpORBMinRoomToHTFLevelPoints", EA)
+
     def test_orb_is_advisory_and_cannot_override_w1_d1_authority(self):
         self.assertIn("AxApplyAdvancedORBScoreBonus(score)", EA)
         self.assertIn("g_w1Institutional.AllowsDirection(orb.direction)", EA)
