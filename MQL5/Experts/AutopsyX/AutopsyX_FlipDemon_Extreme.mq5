@@ -4525,10 +4525,11 @@ int OnInit(void)
      }
    if(g_virtualExitInitialized && g_virtualExitRegistry.IsPersisting())
      {
-      if(AxRecoverLockedPartialCloseActions())
+      if(AxRecoverLockedHedgingFullCloseActions() &&
+         AxRecoverLockedPartialCloseActions())
          AxReconcileVirtualExitTickets(true);
       else
-         Print("FLIPDEMON VIRTUAL EXIT: unresolved action recovery blocked startup reconciliation; broker protection remains active.");
+         Print("FLIPDEMON VIRTUAL EXIT: unresolved full/partial close recovery blocked startup reconciliation; broker protection remains active.");
      }
 
    // Recover campaign tiers only from broker-confirmed position deals. This
@@ -4615,6 +4616,99 @@ void OnDeinit(const int reason)
 
 // Manage break-even independently for every leg in a hedging campaign.
 // The single-position ExitEngine remains responsible for the one-position path.
+// Exact-ticket full liquidation entry point for the campaign exit controller.
+// It is intentionally not called by the signal path until campaign exit policy ships.
+bool AxCloseHedgingPositionByTicket(const SAxManagedPosition &live)
+  {
+   if(!g_hedgingPositionManager.IsComplete() ||
+      !g_virtualExitInitialized || !g_virtualExitRegistry.IsPersisting() ||
+      !g_hedgingFullCloseLedgerReady || !g_hedgingFullCloseLedger.IsPersisting() ||
+      live.ticket==0 || live.positionIdentifier==0 || live.symbol!=_Symbol ||
+      live.magic!=InpMagicNumber || !PositionSelectByTicket(live.ticket) ||
+      (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=live.positionIdentifier ||
+      (ulong)PositionGetInteger(POSITION_MAGIC)!=live.magic ||
+      PositionGetString(POSITION_SYMBOL)!=live.symbol)
+      return(false);
+
+   SAxVirtualExitRecord saved;
+   if(!g_virtualExitRegistry.Find(live.positionIdentifier,saved) ||
+      saved.actionLocked || saved.ticket!=live.ticket || saved.symbol!=live.symbol ||
+      saved.dir!=live.direction || saved.entryTime<=0 || saved.entryPrice<=0.0 ||
+      saved.entryVolume<=0.0)
+      return(false);
+
+   const double baselineVolume=PositionGetDouble(POSITION_VOLUME);
+   const double volumeStep=SymbolInfoDouble(live.symbol,SYMBOL_VOLUME_STEP);
+   const double volumeTolerance=MathMax(volumeStep*0.51,0.0000001);
+   if(baselineVolume<=0.0 || MathAbs(baselineVolume-live.volume)>volumeTolerance)
+      return(false);
+
+   if(!g_virtualExitRegistry.BeginFullCloseAction(live.positionIdentifier,baselineVolume) ||
+      !g_virtualExitRegistry.IsPersisting())
+      return(false);
+   SAxVirtualExitRecord actionState;
+   if(!g_virtualExitRegistry.Find(live.positionIdentifier,actionState) ||
+      !actionState.actionLocked || actionState.actionCode!=4 ||
+      MathAbs(actionState.actionBaselineVolume-baselineVolume)>volumeTolerance ||
+      actionState.actionStartedAt<=0)
+      return(false);
+
+   string closeError="";
+   bool outcomeUncertain=false;
+   if(!g_exec.ClosePositionByTicket(live.symbol,live.ticket,live.positionIdentifier,
+                                    live.magic,closeError,outcomeUncertain))
+     {
+      if(!outcomeUncertain)
+        {
+         if(!g_virtualExitRegistry.ResolveAction(live.positionIdentifier,4) ||
+            !g_virtualExitRegistry.IsPersisting())
+           {
+            g_virtualExitReady=false;
+            g_hedgingLifecycleLock=true;
+            g_engineState=AX_ENGINE_PAUSED;
+            return(false);
+           }
+         PrintFormat("FLIPDEMON HEDGING FULL CLOSE: broker definitively rejected ticket=%I64u (%s).",
+                     live.ticket,closeError);
+         return(true);
+        }
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_recoveryReady=false;
+      g_accountRiskReconciliationPending=true;
+      g_engineState=AX_ENGINE_PAUSED;
+      PrintFormat("FLIPDEMON HEDGING FULL-CLOSE QUARANTINE: ticket=%I64u id=%I64u outcome uncertain; action lock retained, no retry (%s).",
+                  live.ticket,live.positionIdentifier,closeError);
+      return(false);
+     }
+
+   if(!g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber))
+      return(false);
+   SAxManagedPosition stillLive;
+   if(g_hedgingPositionManager.FindByIdentifier(live.positionIdentifier,stillLive))
+     {
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_recoveryReady=false;
+      g_engineState=AX_ENGINE_PAUSED;
+      PrintFormat("FLIPDEMON HEDGING FULL-CLOSE QUARANTINE: broker reported success but exact position id=%I64u is still present.",
+                  live.positionIdentifier);
+      return(false);
+     }
+
+   if(!AxFinalizeHedgingFullClose(actionState))
+     {
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_recoveryReady=false;
+      g_engineState=AX_ENGINE_PAUSED;
+      PrintFormat("FLIPDEMON HEDGING FULL-CLOSE QUARANTINE: final journal/registry commit incomplete for id=%I64u; action evidence retained.",
+                  live.positionIdentifier);
+      return(false);
+     }
+   return(true);
+  }
+
 // Execute one profitable-only scale-out per hedging leg. This path is deliberately
 // separate from the legacy g_posState journal and is only called for multi-leg accounts.
 bool AxManageHedgingPartialCloseTickets(void)
@@ -5279,8 +5373,9 @@ void AxProcessTick(void)
                      g_hedgingPositionManager.FailureReason());
       return;
      }
-   // Resolve any actionCode=3 request whose broker response was uncertain before
-   // ordinary reconciliation sees the still-locked row. No broker request is resent.
+   // Recover full-liquidation actionCode=4 first, then partial actionCode=3.
+   // Both paths reconcile broker history and never resend an uncertain request.
+   if(!AxRecoverLockedHedgingFullCloseActions()) return;
    if(!AxRecoverLockedPartialCloseActions()) return;
    if(!AxReconcileVirtualExitTickets(false)) return;
    if(!AxReconcilePyramidCampaignTickets(false)) return;
