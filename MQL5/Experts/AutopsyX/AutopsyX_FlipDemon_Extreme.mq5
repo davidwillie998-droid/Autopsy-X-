@@ -72,6 +72,7 @@
 #include <AutopsyX/HedgingPositionManager.mqh>
 #include <AutopsyX/HedgingCampaignLifecycle.mqh>
 #include <AutopsyX/PositionStateRegistry.mqh>
+#include <AutopsyX/AdvancedSessionORBEngine.mqh>
 #include <AutopsyX/Dashboard.mqh>
 
 //====================================================================
@@ -162,6 +163,21 @@ input bool            InpRequireVWAPDirection = true;   // Paper rule: only ente
 input bool            InpUseVWAPExit         = true;   // Paper rule: arm the confirmed closed-bar exit when price crosses VWAP against the position
 input ENUM_AX_VWAP_EXIT_MODE InpVWAPExitMode  = AX_VWAP_EXIT_CONFIRMED_CROSS; // Only relevant when InpUseVWAPExit is on. CONFIRMED_CROSS is the original/default behavior (closed-bar confirmation) - see ExitEngine.mqh for all four modes
 input double          InpVWAPAlignmentBonus  = 1.15;   // Sizing bonus applied ONLY when InpUseVWAPExit is on and this signal agrees with VWAP trend - see AdaptiveFlipEngine.mqh for how this is bounded
+
+input group "=== ADVANCED MULTI-SESSION ORB ===";
+input bool            InpEnableAdvancedSessionORB = false; // Opt in only after broker-server session hours are verified
+input int             InpORBRangeMinutes = 15;             // Opening range duration
+input ENUM_TIMEFRAMES InpORBBreakoutTimeframe = PERIOD_M5; // Closed-bar breakout/retest confirmation timeframe
+input int             InpORBAsiaServerHour = 0;            // Broker server time, not local or exchange time
+input int             InpORBLondonServerHour = 8;           // Adjust for broker/DST session mapping
+input int             InpORBNewYorkServerHour = 13;         // Adjust for broker/DST session mapping
+input double          InpORBBufferPoints = 5.0;             // Close must clear the range boundary by this buffer
+input double          InpORBMinBodyRatio = 0.45;            // Minimum breakout candle body/range
+input double          InpORBMinCloseLocation = 0.72;        // Bull close near high; bear close near low
+input double          InpORBMinVolumeRatio = 1.20;          // Breakout tick volume / preceding 20-bar average
+input double          InpORBMinRangePoints = 0.0;           // 0 disables minimum range filter
+input double          InpORBMaxRangePoints = 0.0;           // 0 disables maximum range filter
+input double          InpORBScoreBonus = 8.0;               // Bounded directional evidence bonus, not an independent entry
 
 input group "=== SPREAD COST INTELLIGENCE ===";
 input bool   InpUseSpreadCostIntelligence = true;
@@ -363,6 +379,8 @@ CHeatmapEngine        g_heatmap;
 CAdaptiveFlipEngine   g_afe;
 CAccountFlipEngine    g_accountFlip;
 CVWAPEngine           g_vwap;
+CAdvancedSessionORBEngine g_advancedSessionOrb;
+datetime g_lastOrbDiagnosticBar=0;
 CTradeAutopsy         g_autopsy;
 CStatistics           g_stats;
 CAccuracyEngine       g_accuracy;
@@ -2387,6 +2405,53 @@ void AxApplyOrderFlowBonus(SAxScore &score)
   }
 
 //--- H4 breakout is a bounded confirmation bonus, never an independent order signal.
+void AxApplyAdvancedORBScoreBonus(SAxScore &score)
+  {
+   if(!InpEnableAdvancedSessionORB || InpORBScoreBonus<=0.0 ||
+      !g_regime.TradingAllowed())
+      return;
+
+   SAxAdvancedOrbReading orb=g_advancedSessionOrb.Read();
+   if(!orb.available || orb.direction==AX_DIR_NONE || orb.sessionCount<=0)
+      return;
+
+   // ORB is confirmation evidence only. It cannot override the weekly
+   // institutional authority or the daily structure direction.
+   if(!g_w1Institutional.AllowsDirection(orb.direction) ||
+      !g_d1Institutional.AllowsDirection(orb.direction))
+      return;
+
+   double multiplier=1.0+0.5*(double)MathMax(0,orb.sessionCount-1);
+   double bonus=MathMin(InpORBScoreBonus*2.0,InpORBScoreBonus*multiplier);
+   if(orb.direction==AX_DIR_BUY)
+      score.buyScore=AxClampD(score.buyScore+bonus,0.0,100.0);
+   else if(orb.direction==AX_DIR_SELL)
+      score.sellScore=AxClampD(score.sellScore+bonus,0.0,100.0);
+
+   double gap=MathAbs(score.buyScore-score.sellScore);
+   score.scoreGap=gap;
+   score.confidence=AxClampD(gap*1.15,0.0,100.0);
+   score.action=AX_DIR_NONE;
+   if(gap>=score.minimumGapToAct)
+     {
+      if(score.buyScore>score.sellScore && score.buyScore>=score.minimumScoreToAct)
+         score.action=AX_DIR_BUY;
+      else if(score.sellScore>score.buyScore && score.sellScore>=score.minimumScoreToAct)
+         score.action=AX_DIR_SELL;
+     }
+
+   if(InpVerboseLogging && orb.signalBar>0 && orb.signalBar!=g_lastOrbDiagnosticBar)
+     {
+      g_lastOrbDiagnosticBar=orb.signalBar;
+      PrintFormat("AUTOPSY X ADVANCED ORB: %s direction=%s sessions=%d [%s] range=%.*f-%.*f width=%.1fpts volumeRatio=%.2f bonus=%.1f",
+                  orb.status,AxDirToString(orb.direction),orb.sessionCount,orb.sessionNames,
+                  (int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS),orb.rangeLow,
+                  (int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS),orb.rangeHigh,
+                  orb.rangeWidthPoints,orb.volumeRatio,bonus);
+     }
+  }
+
+//--- H4 breakout is a bounded confirmation bonus, never an independent order signal.
 void AxApplyH4BreakoutBonus(SAxScore &score)
   {
    if(InpH4BreakoutScoreBonus<=0.0 || score.action==AX_DIR_NONE) return;
@@ -4080,6 +4145,16 @@ int OnInit(void)
    if(InpUseHeatmap) g_heatmap.Init(_Symbol);
 
    g_scorer.Configure(InpMinScoreToAct,InpMinGapToAct);
+   g_advancedSessionOrb.Configure(InpEnableAdvancedSessionORB,InpORBRangeMinutes,
+                                  InpORBBreakoutTimeframe,InpORBAsiaServerHour,
+                                  InpORBLondonServerHour,InpORBNewYorkServerHour,
+                                  InpORBBufferPoints,InpORBMinBodyRatio,
+                                  InpORBMinCloseLocation,InpORBMinVolumeRatio,
+                                  InpORBMinRangePoints,InpORBMaxRangePoints);
+   PrintFormat("AUTOPSY X ADVANCED ORB: %s | range=%dmin | breakoutTF=%s | server sessions=%02d/%02d/%02d",
+               InpEnableAdvancedSessionORB?"ENABLED":"DISABLED",
+               InpORBRangeMinutes,EnumToString(InpORBBreakoutTimeframe),
+               InpORBAsiaServerHour,InpORBLondonServerHour,InpORBNewYorkServerHour);
    g_flip.Configure(InpFlipRequiredConfirmations,InpFlipMinConfidence);
    g_chop.Configure(InpAntiChopBaseCooldownSec,InpAntiChopMaxCooldownSec);
    g_risk.Configure(AxRiskPercentForMode(),InpDailyLossLimitPercent,InpMaxConsecutiveLosses,
@@ -5007,6 +5082,9 @@ void AxProcessTick(void)
       g_regimeHtf.Update();
      }
    g_liq.UpdateTick(g_md.CurrentBid(),g_md.CurrentAsk(),g_mom.DisplacementPts(),g_md.Point());
+   datetime orbServerTime=TimeTradeServer();
+   if(orbServerTime<=0) orbServerTime=TimeCurrent();
+   g_advancedSessionOrb.Update(_Symbol,orbServerTime,g_md.Point());
 
    //--- SCORE ---
    SAxScore score = g_scorer.Evaluate(g_md,g_mom,g_micro,g_liq,g_regime);
@@ -5037,6 +5115,7 @@ void AxProcessTick(void)
      }
    AxApplyOrderFlowBonus(score);
    AxApplyH4BreakoutBonus(score);
+   AxApplyAdvancedORBScoreBonus(score);
    g_lastScore = score; // dashboard reads this, not g_scorer.Last(), so it shows the blended score
    g_accuracy.OnTickUpdate(g_md.CurrentMid());
    //--- sample into the accuracy engine on signal-direction change or at most once/second -   ---
