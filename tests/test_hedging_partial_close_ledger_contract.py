@@ -139,8 +139,9 @@ class HedgingPartialCloseLedgerTests(unittest.TestCase):
         start = EA.index("bool AxManageHedgingPartialCloseTickets(void)")
         end = EA.index("bool AxManageHedgingBreakEvenTickets(void)", start)
         manager = EA[start:end]
-        uncertain = manager.index("if(outcomeUncertain)")
-        self.assertIn("g_virtualExitReady=false", manager[uncertain:])
+        definite_rejection = manager.index("if(!outcomeUncertain)")
+        uncertain = manager.index("g_virtualExitReady=false", definite_rejection)
+        self.assertIn("g_hedgingLifecycleLock=true", manager[uncertain:])
         self.assertIn("g_engineState=AX_ENGINE_PAUSED", manager[uncertain:])
         self.assertIn("no second close request", manager[uncertain:])
 
