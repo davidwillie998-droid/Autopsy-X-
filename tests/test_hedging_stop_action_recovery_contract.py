@@ -52,16 +52,33 @@ class HedgingStopActionRecoveryTests(unittest.TestCase):
 
 
     def test_existing_partial_close_recovery_remains_a_real_function(self):
-        self.assertIn("bool AxRecoverLockedPartialCloseActions(void)", EA)
-        self.assertNotIn("//bool AxRecoverLockedPartialCloseActions(void)", EA)
-        self.assertIn("if(AxRecoverLockedPartialCloseActions())", EA)
+        start = EA.index("bool AxRecoverLockedPartialCloseActions(void)")
+        end = EA.index("\n//", start)
+        recovery = EA[start:end]
+        self.assertIn("if(!g_virtualExitInitialized || !g_virtualExitRegistry.IsPersisting()", recovery)
+        self.assertIn("AxRecoverHedgingPartialCloseAction(hedged)", recovery)
+        self.assertIn("g_hedgingLifecycleLock=true", recovery)
+        self.assertIn("no retry or journal mutation", recovery)
 
-    def test_startup_runs_locked_action_recovery_inside_oninit(self):
-        init = EA.index("int OnInit")
-        recovery = EA.index("if(AxRecoverLockedPartialCloseActions())")
+    def test_startup_recovers_full_close_before_partial_close_before_reconcile(self):
+        init = EA.index("int OnInit(void)")
         tick = EA.index("void AxProcessTick(void)")
-        self.assertLess(init, recovery)
-        self.assertLess(recovery, tick)
+        startup = EA[init:tick]
+        full_close = startup.index("if(AxRecoverLockedHedgingFullCloseActions() &&")
+        partial_close = startup.index("AxRecoverLockedPartialCloseActions()", full_close)
+        reconcile = startup.index("AxReconcileVirtualExitTickets(true)", partial_close)
+        self.assertLess(full_close, partial_close)
+        self.assertLess(partial_close, reconcile)
+        self.assertIn("unresolved full/partial close recovery blocked startup reconciliation", startup)
+
+    def test_tick_retries_full_and_partial_recovery_before_virtual_exit_reconciliation(self):
+        tick = EA.index("void AxProcessTick(void)")
+        tick_body = EA[tick:]
+        full_close = tick_body.index("if(!AxRecoverLockedHedgingFullCloseActions()) return;")
+        partial_close = tick_body.index("if(!AxRecoverLockedPartialCloseActions()) return;", full_close)
+        reconcile = tick_body.index("if(!AxReconcileVirtualExitTickets(false)) return;", partial_close)
+        self.assertLess(full_close, partial_close)
+        self.assertLess(partial_close, reconcile)
 
 
 if __name__ == "__main__":
