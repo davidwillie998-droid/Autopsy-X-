@@ -47,6 +47,14 @@ struct SAxAdvancedOrbReading
    double rangeWidthPoints;
    double volumeRatio;
    datetime signalBar;
+   bool htfLevelsAvailable;
+   double previousDayHigh;
+   double previousDayLow;
+   double previousWeekHigh;
+   double previousWeekLow;
+   double nearestResistance;
+   double nearestSupport;
+   double roomToNextLevelPoints;
   };
 
 class CAdvancedSessionORBEngine
@@ -203,6 +211,43 @@ private:
          m_sessions[index].signal=AX_ORB_FAILED_BEARISH;
      }
 
+   void PopulateHigherTimeframeLevels(const string symbol,const double price)
+     {
+      m_reading.previousDayHigh=iHigh(symbol,PERIOD_D1,1);
+      m_reading.previousDayLow=iLow(symbol,PERIOD_D1,1);
+      m_reading.previousWeekHigh=iHigh(symbol,PERIOD_W1,1);
+      m_reading.previousWeekLow=iLow(symbol,PERIOD_W1,1);
+      m_reading.htfLevelsAvailable=
+         (m_reading.previousDayHigh>0.0 && m_reading.previousDayLow>0.0 &&
+          m_reading.previousWeekHigh>0.0 && m_reading.previousWeekLow>0.0);
+      m_reading.nearestResistance=0.0;
+      m_reading.nearestSupport=0.0;
+      if(price<=0.0) return;
+
+      double resistanceCandidates[2];
+      resistanceCandidates[0]=m_reading.previousDayHigh;
+      resistanceCandidates[1]=m_reading.previousWeekHigh;
+      for(int r=0;r<2;r++)
+         if(resistanceCandidates[r]>price &&
+            (m_reading.nearestResistance<=0.0 ||
+             resistanceCandidates[r]<m_reading.nearestResistance))
+            m_reading.nearestResistance=resistanceCandidates[r];
+
+      double supportCandidates[2];
+      supportCandidates[0]=m_reading.previousDayLow;
+      supportCandidates[1]=m_reading.previousWeekLow;
+      for(int q=0;q<2;q++)
+         if(supportCandidates[q]>0.0 && supportCandidates[q]<price &&
+            (m_reading.nearestSupport<=0.0 ||
+             supportCandidates[q]>m_reading.nearestSupport))
+            m_reading.nearestSupport=supportCandidates[q];
+
+      if(m_reading.direction==AX_DIR_BUY && m_reading.nearestResistance>0.0)
+         m_reading.roomToNextLevelPoints=(m_reading.nearestResistance-price)/m_point;
+      else if(m_reading.direction==AX_DIR_SELL && m_reading.nearestSupport>0.0)
+         m_reading.roomToNextLevelPoints=(price-m_reading.nearestSupport)/m_point;
+     }
+
    void AggregateReading(const double volumeRatio)
      {
       ZeroMemory(m_reading);
@@ -353,12 +398,20 @@ public:
          EvaluateSession(i,recent[0],recent[1],volumeRatio);
         }
       AggregateReading(volumeRatio);
+      PopulateHigherTimeframeLevels(symbol,recent[0].close);
       return(m_reading.available);
      }
 
    SAxAdvancedOrbReading Read(void) const
      {
       return(m_reading);
+     }
+
+   bool GetSessionAt(const int index,SAxOrbSessionState &out) const
+     {
+      if(index<0 || index>=3) return(false);
+      out=m_sessions[index];
+      return(true);
      }
 
    bool IsEnabled(void) const { return(m_enabled); }
