@@ -76,6 +76,153 @@ private:
    datetime m_lastUpdateBar;
    SAxOrbSessionState m_sessions[3];
    SAxAdvancedOrbReading m_reading;
+   long m_chartId;
+   string m_objectPrefix;
+
+   bool EnsureTrend(const string name,const datetime from,const datetime to,
+                    const double price,const color lineColor,const ENUM_LINE_STYLE style)
+     {
+      if(from<=0 || to<=from || price<=0.0) return(false);
+      if(ObjectFind(m_chartId,name)<0)
+        {
+         if(!ObjectCreate(m_chartId,name,OBJ_TREND,0,from,price,to,price))
+            return(false);
+        }
+      else
+        {
+         if(!ObjectMove(m_chartId,name,0,from,price) ||
+            !ObjectMove(m_chartId,name,1,to,price))
+            return(false);
+        }
+      ObjectSetInteger(m_chartId,name,OBJPROP_COLOR,lineColor);
+      ObjectSetInteger(m_chartId,name,OBJPROP_STYLE,style);
+      ObjectSetInteger(m_chartId,name,OBJPROP_WIDTH,1);
+      ObjectSetInteger(m_chartId,name,OBJPROP_RAY_LEFT,false);
+      ObjectSetInteger(m_chartId,name,OBJPROP_RAY_RIGHT,false);
+      ObjectSetInteger(m_chartId,name,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(m_chartId,name,OBJPROP_HIDDEN,true);
+      return(true);
+     }
+
+   bool EnsureText(const string name,const datetime when,const double price,
+                   const string caption,const color textColor,const int fontSize=8)
+     {
+      if(when<=0 || price<=0.0) return(false);
+      if(ObjectFind(m_chartId,name)<0)
+        {
+         if(!ObjectCreate(m_chartId,name,OBJ_TEXT,0,when,price))
+            return(false);
+        }
+      else if(!ObjectMove(m_chartId,name,0,when,price))
+         return(false);
+      ObjectSetString(m_chartId,name,OBJPROP_TEXT,caption);
+      ObjectSetString(m_chartId,name,OBJPROP_FONT,"Arial");
+      ObjectSetInteger(m_chartId,name,OBJPROP_FONTSIZE,fontSize);
+      ObjectSetInteger(m_chartId,name,OBJPROP_COLOR,textColor);
+      ObjectSetInteger(m_chartId,name,OBJPROP_ANCHOR,ANCHOR_LEFT_LOWER);
+      ObjectSetInteger(m_chartId,name,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(m_chartId,name,OBJPROP_HIDDEN,true);
+      return(true);
+     }
+
+   bool EnsureRectangle(const string name,const datetime from,const datetime to,
+                        const double high,const double low,const color fillColor)
+     {
+      if(from<=0 || to<=from || high<=low || low<=0.0) return(false);
+      if(ObjectFind(m_chartId,name)<0)
+        {
+         if(!ObjectCreate(m_chartId,name,OBJ_RECTANGLE,0,from,high,to,low))
+            return(false);
+        }
+      else
+        {
+         if(!ObjectMove(m_chartId,name,0,from,high) ||
+            !ObjectMove(m_chartId,name,1,to,low))
+            return(false);
+        }
+      ObjectSetInteger(m_chartId,name,OBJPROP_COLOR,fillColor);
+      ObjectSetInteger(m_chartId,name,OBJPROP_FILL,true);
+      ObjectSetInteger(m_chartId,name,OBJPROP_BACK,true);
+      ObjectSetInteger(m_chartId,name,OBJPROP_STYLE,STYLE_DOT);
+      ObjectSetInteger(m_chartId,name,OBJPROP_WIDTH,1);
+      ObjectSetInteger(m_chartId,name,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(m_chartId,name,OBJPROP_HIDDEN,true);
+      return(true);
+     }
+
+   void DrawSignal(const string symbol,const int index,const datetime dayEnd)
+     {
+      SAxOrbSessionState session=m_sessions[index];
+      if(!session.rangeReady || session.lastProcessedBar<=0 ||
+         session.signal==AX_ORB_SIGNAL_NONE)
+         return;
+
+      string key=m_objectPrefix+IntegerToString(m_dayKey)+"_S"+
+                 IntegerToString(index)+"_B"+IntegerToString((int)session.lastProcessedBar);
+      bool bullish=(session.signal==AX_ORB_BREAKOUT_BUY ||
+                    session.signal==AX_ORB_RETEST_BUY ||
+                    session.signal==AX_ORB_FAILED_BULLISH);
+      bool failed=(session.signal==AX_ORB_FAILED_BULLISH ||
+                   session.signal==AX_ORB_FAILED_BEARISH);
+      double price=bullish?session.rangeHigh:session.rangeLow;
+      color markerColor=failed?clrTomato:(bullish?clrLimeGreen:clrOrangeRed);
+      string caption=failed?"FAILED "+session.name:
+                     (session.signal==AX_ORB_RETEST_BUY ||
+                      session.signal==AX_ORB_RETEST_SELL)?"RETEST "+session.name:
+                     "BREAKOUT "+session.name;
+      string markerName=key+"_MARK";
+      if(ObjectFind(m_chartId,markerName)<0)
+         ObjectCreate(m_chartId,markerName,OBJ_ARROW,0,session.lastProcessedBar,price);
+      else
+         ObjectMove(m_chartId,markerName,0,session.lastProcessedBar,price);
+      ObjectSetInteger(m_chartId,markerName,OBJPROP_ARROWCODE,failed?251:(bullish?233:234));
+      ObjectSetInteger(m_chartId,markerName,OBJPROP_COLOR,markerColor);
+      ObjectSetInteger(m_chartId,markerName,OBJPROP_WIDTH,1);
+      ObjectSetInteger(m_chartId,markerName,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(m_chartId,markerName,OBJPROP_HIDDEN,true);
+      EnsureText(key+"_LABEL",session.lastProcessedBar,price,caption,markerColor,8);
+     }
+
+   void DrawDiagnostics(const string symbol)
+     {
+      if(!m_enabled || m_chartId<=0 || StringLen(m_objectPrefix)==0)
+         return;
+      datetime dayEnd=(datetime)(m_sessions[0].start+86400);
+      color sessionColors[3]={clrSteelBlue,clrDarkOrange,clrMediumPurple};
+      for(int i=0;i<3;i++)
+        {
+         SAxOrbSessionState session=m_sessions[i];
+         if(!session.rangeReady) continue;
+         string key=m_objectPrefix+IntegerToString(m_dayKey)+"_S"+IntegerToString(i);
+         EnsureRectangle(key+"_RANGE",session.start,dayEnd,
+                         session.rangeHigh,session.rangeLow,sessionColors[i]);
+         EnsureTrend(key+"_HIGH",session.start,dayEnd,session.rangeHigh,
+                     sessionColors[i],STYLE_DASH);
+         EnsureTrend(key+"_LOW",session.start,dayEnd,session.rangeLow,
+                     sessionColors[i],STYLE_DASH);
+         EnsureText(key+"_NAME",session.start,session.rangeHigh,
+                    session.name+" OR",sessionColors[i],8);
+         DrawSignal(symbol,i,dayEnd);
+        }
+
+      if(m_reading.htfLevelsAvailable)
+        {
+         datetime from=m_sessions[0].start;
+         EnsureTrend(m_objectPrefix+"PDH",from,dayEnd,m_reading.previousDayHigh,
+                     clrGoldenrod,STYLE_DOT);
+         EnsureTrend(m_objectPrefix+"PDL",from,dayEnd,m_reading.previousDayLow,
+                     clrGoldenrod,STYLE_DOT);
+         EnsureTrend(m_objectPrefix+"PWH",from,dayEnd,m_reading.previousWeekHigh,
+                     clrMagenta,STYLE_DASHDOT);
+         EnsureTrend(m_objectPrefix+"PWL",from,dayEnd,m_reading.previousWeekLow,
+                     clrMagenta,STYLE_DASHDOT);
+         EnsureText(m_objectPrefix+"PDH_LABEL",from,m_reading.previousDayHigh,"PDH",clrGoldenrod,8);
+         EnsureText(m_objectPrefix+"PDL_LABEL",from,m_reading.previousDayLow,"PDL",clrGoldenrod,8);
+         EnsureText(m_objectPrefix+"PWH_LABEL",from,m_reading.previousWeekHigh,"PWH",clrMagenta,8);
+         EnsureText(m_objectPrefix+"PWL_LABEL",from,m_reading.previousWeekLow,"PWL",clrMagenta,8);
+        }
+      ChartRedraw(m_chartId);
+     }
 
    int DayKey(const datetime when) const
      {
@@ -323,6 +470,8 @@ public:
       m_maxRangePoints=0.0;
       m_dayKey=0;
       m_lastUpdateBar=0;
+      m_chartId=0;
+      m_objectPrefix="";
       for(int i=0;i<3;i++) ResetSession(i,0);
       ZeroMemory(m_reading);
      }
@@ -400,6 +549,7 @@ public:
         }
       AggregateReading(volumeRatio);
       PopulateHigherTimeframeLevels(symbol,recent[0].close);
+      DrawDiagnostics(symbol);
       return(m_reading.available);
      }
 
@@ -413,6 +563,23 @@ public:
       if(index<0 || index>=3) return(false);
       out=m_sessions[index];
       return(true);
+     }
+
+   void SetChartIdentity(const string symbol,const ulong magic)
+     {
+      m_chartId=ChartID();
+      m_objectPrefix="AXORB_"+IntegerToString((int)m_chartId)+"_"+symbol+"_"+
+                     StringFormat("%I64u",magic)+"_";
+     }
+
+   void Cleanup(void)
+     {
+      if(m_chartId>0 && StringLen(m_objectPrefix)>0)
+        {
+         ObjectsDeleteAll(m_chartId,m_objectPrefix);
+         ChartRedraw(m_chartId);
+        }
+      m_objectPrefix="";
      }
 
    bool IsEnabled(void) const { return(m_enabled); }
