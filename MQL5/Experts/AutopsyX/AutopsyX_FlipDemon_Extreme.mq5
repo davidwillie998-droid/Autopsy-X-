@@ -4157,6 +4157,7 @@ int OnInit(void)
    if(InpUseHeatmap) g_heatmap.Init(_Symbol);
 
    g_scorer.Configure(InpMinScoreToAct,InpMinGapToAct);
+   g_advancedSessionOrb.SetChartIdentity(_Symbol,InpMagicNumber);
    g_advancedSessionOrb.Configure(InpEnableAdvancedSessionORB,InpORBRangeMinutes,
                                   InpORBBreakoutTimeframe,InpORBAsiaServerHour,
                                   InpORBLondonServerHour,InpORBNewYorkServerHour,
@@ -4360,6 +4361,7 @@ int OnInit(void)
 
 void OnDeinit(const int reason)
   {
+   g_advancedSessionOrb.Cleanup();
    EventKillTimer();
    g_executionLatency.Report();
    g_executionQualityJournal.Deinit();
