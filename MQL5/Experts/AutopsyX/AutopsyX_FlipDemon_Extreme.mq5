@@ -4503,7 +4503,7 @@ int OnInit(void)
    AxReconcileExistingPosition();
 
    // Establish the complete broker-owned position set before trusting single-position state.
-   // Multiple hedging legs remain quarantined until ticket-specific exits and recovery ship.
+   // Multiple hedging legs remain quarantined from new entries until campaign-level exit orchestration is verified.
    if(!g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber))
      {
       g_hedgingLifecycleLock=true;
@@ -4682,7 +4682,14 @@ bool AxCloseHedgingPositionByTicket(const SAxManagedPosition &live)
      }
 
    if(!g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber))
+     {
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_recoveryReady=false;
+      g_engineState=AX_ENGINE_PAUSED;
+      Print("FLIPDEMON HEDGING FULL-CLOSE: post-request broker snapshot incomplete; action lock retained.");
       return(false);
+     }
    SAxManagedPosition stillLive;
    if(g_hedgingPositionManager.FindByIdentifier(live.positionIdentifier,stillLive))
      {
