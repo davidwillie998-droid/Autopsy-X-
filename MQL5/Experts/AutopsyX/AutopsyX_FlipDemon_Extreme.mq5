@@ -1752,6 +1752,53 @@ bool AxRecoverHedgingPartialCloseAction(const SAxVirtualExitRecord &saved)
       expectedReduction<=tolerance)
       return(false);
 
+   const ulong ledgerHighWater=g_hedgingPartialCloseLedger.LastDealTicket(saved.positionIdentifier);
+   if(ledgerHighWater>saved.partialLastDealTicket)
+      return(false);
+
+   // Crash window: the per-leg ledger and virtual-exit cursor may both be
+   // durable while clearing actionCode=3 was interrupted. Verify that exact
+   // final deal and the persisted slice match this action before unlocking.
+   if(saved.partialLastDealTicket>0 && ledgerHighWater==saved.partialLastDealTicket)
+     {
+      SAxPartialCloseLedgerRecord accounted;
+      if(!g_hedgingPartialCloseLedger.Find(saved.positionIdentifier,
+                                            saved.partialLastDealTicket,accounted) ||
+         accounted.symbol!=saved.symbol || accounted.magic!=InpMagicNumber ||
+         accounted.direction!=saved.dir ||
+         MathAbs(accounted.entryPrice-saved.entryPrice)>0.00000001 ||
+         MathAbs(accounted.entryVolume-saved.entryVolume)>0.00000001 ||
+         MathAbs(accounted.closedVolume-expectedReduction)>tolerance ||
+         accounted.closeTime<saved.actionStartedAt ||
+         !HistorySelectByPosition((long)saved.positionIdentifier))
+         return(false);
+
+      bool finalDealVerified=false;
+      for(int d=0;d<HistoryDealsTotal();d++)
+        {
+         ulong deal=HistoryDealGetTicket(d);
+         if(deal!=saved.partialLastDealTicket) continue;
+         long closeType=(saved.dir==AX_DIR_BUY)?DEAL_TYPE_SELL:DEAL_TYPE_BUY;
+         long entry=HistoryDealGetInteger(deal,DEAL_ENTRY);
+         datetime dealTime=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
+         if((ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID)==saved.positionIdentifier &&
+            HistoryDealGetString(deal,DEAL_SYMBOL)==saved.symbol &&
+            (ulong)HistoryDealGetInteger(deal,DEAL_MAGIC)==InpMagicNumber &&
+            HistoryDealGetInteger(deal,DEAL_TYPE)==closeType &&
+            (entry==DEAL_ENTRY_OUT || entry==DEAL_ENTRY_OUT_BY) &&
+            dealTime==accounted.closeTime)
+            finalDealVerified=true;
+         break;
+        }
+      if(!finalDealVerified ||
+         !g_virtualExitRegistry.ResolveAction(saved.positionIdentifier,3) ||
+         !g_virtualExitRegistry.IsPersisting())
+         return(false);
+      PrintFormat("FLIPDEMON HEDGING PARTIAL RECOVERY: identifier=%I64u verified previously committed slice %.8f; action lock cleared.",
+                  saved.positionIdentifier,accounted.closedVolume);
+      return(true);
+     }
+
    double closePrice=0.0,grossProfit=0.0,commission=0.0,swap=0.0,closedVolume=0.0;
    datetime closeTime=0;
    ulong lastDeal=saved.partialLastDealTicket;
@@ -1767,7 +1814,6 @@ bool AxRecoverHedgingPartialCloseAction(const SAxVirtualExitRecord &saved)
 
    // The ledger write is idempotent by (position identifier, final deal ticket).
    // Only after it is durable may the virtual-exit cursor advance and unlock.
-   const ulong ledgerHighWater=g_hedgingPartialCloseLedger.LastDealTicket(saved.positionIdentifier);
    if(ledgerHighWater>lastDeal)
       return(false);
    if(!AxRecordHedgingPartialCloseLedger(saved,closePrice,grossProfit,commission,swap,

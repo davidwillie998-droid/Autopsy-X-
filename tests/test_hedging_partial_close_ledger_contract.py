@@ -96,6 +96,16 @@ class HedgingPartialCloseLedgerTests(unittest.TestCase):
         self.assertIn("AxRecoverHedgingPartialCloseAction(hedged)", recovery)
         self.assertIn("g_engineState=AX_ENGINE_PAUSED", recovery)
 
+    def test_recovery_resolves_crash_after_ledger_and_registry_commit(self):
+        start = EA.index("bool AxRecoverHedgingPartialCloseAction(")
+        end = EA.index("bool AxRecoverLockedPartialCloseActions(", start)
+        recovery = EA[start:end]
+        self.assertIn("g_hedgingPartialCloseLedger.Find(saved.positionIdentifier", recovery)
+        self.assertIn("accounted.closeTime<saved.actionStartedAt", recovery)
+        self.assertIn("HistorySelectByPosition((long)saved.positionIdentifier)", recovery)
+        self.assertIn("dealTime==accounted.closeTime", recovery)
+        self.assertIn("ResolveAction(saved.positionIdentifier,3)", recovery)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
