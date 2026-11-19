@@ -113,6 +113,12 @@ class AdvancedSessionORBContractTests(unittest.TestCase):
         for forbidden in ("OrderSend(", "PositionOpen(", "Buy(", "Sell("):
             self.assertNotIn(forbidden, ORB)
 
+    def test_aggregate_reading_preserves_actual_signal_event_time(self):
+        aggregate = ORB.split("void AggregateReading", 1)[1].split("public:", 1)[0]
+        self.assertIn("m_sessions[i].signalBar>m_reading.signalBar", aggregate)
+        self.assertIn("m_reading.signalBar=m_sessions[i].signalBar", aggregate)
+        self.assertNotIn("m_reading.signalBar=m_sessions[i].lastProcessedBar", aggregate)
+
     def test_engine_refreshes_using_server_time_and_symbol_point(self):
         self.assertIn("TimeTradeServer()", EA)
         self.assertIn("g_advancedSessionOrb.Update(_Symbol,orbServerTime,g_md.Point())", EA)
