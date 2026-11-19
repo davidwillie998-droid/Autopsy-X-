@@ -66,6 +66,7 @@
 #include <AutopsyX/TradeReconciliation.mqh>
 #include <AutopsyX/RestartRecovery.mqh>
 #include <AutopsyX/VirtualExitRegistry.mqh>
+#include <AutopsyX/HedgingPartialCloseLedger.mqh>
 #include <AutopsyX/PyramidEngine.mqh>
 #include <AutopsyX/PyramidCampaignRegistry.mqh>
 #include <AutopsyX/HedgingPositionManager.mqh>
@@ -369,6 +370,8 @@ CDashboard            g_dash;
 CTradeReconciler       g_tradeReconciler;
 CRestartRecovery       g_restartRecovery;
 CVirtualExitRegistry   g_virtualExitRegistry;
+CHedgingPartialCloseLedger g_hedgingPartialCloseLedger;
+bool g_hedgingPartialLedgerReady=false;
 CPyramidEngine         g_pyramidEngine; // calculation engine; campaign execution remains disabled until lifecycle integration
 CPyramidCampaignRegistry g_pyramidCampaignRegistry; // durable campaign state; execution integration is not active yet
 CHedgingPositionManager g_hedgingPositionManager;
@@ -590,6 +593,49 @@ bool AxFetchCloseFinancialsByIdentifier(const ulong positionIdentifier,
    if(!found || closedVolumeOut<=0.0) return(false);
    closePrice=weightedCloseValue/closedVolumeOut;
    return(MathIsValidNumber(closePrice) && closePrice>0.0);
+  }
+
+// Persist one reconciled partial-exit slice without consulting single-position globals.
+// The caller must supply the durable position snapshot and broker-history aggregates.
+bool AxRecordHedgingPartialCloseLedger(const SAxVirtualExitRecord &saved,
+                                       const double closePrice,const double grossProfit,
+                                       const double commission,const double swap,
+                                       const datetime closeTime,const ulong lastDealTicket,
+                                       const double closedVolume)
+  {
+   if(!g_hedgingPartialLedgerReady || !g_hedgingPartialCloseLedger.IsPersisting() ||
+      saved.positionIdentifier==0 || saved.symbol=="" ||
+      saved.entryTime<=0 || saved.entryPrice<=0.0 || saved.entryVolume<=0.0 ||
+      lastDealTicket==0 || closeTime<=0 || closePrice<=0.0 ||
+      closedVolume<=0.0 || closedVolume>=saved.entryVolume ||
+      !MathIsValidNumber(closePrice) || !MathIsValidNumber(grossProfit) ||
+      !MathIsValidNumber(commission) || !MathIsValidNumber(swap) ||
+      !MathIsValidNumber(closedVolume))
+      return(false);
+
+   SAxPartialCloseLedgerRecord record;
+   record.positionIdentifier=saved.positionIdentifier;
+   record.dealTicket=lastDealTicket;
+   record.symbol=saved.symbol;
+   record.magic=InpMagicNumber;
+   record.direction=saved.dir;
+   record.entryTime=saved.entryTime;
+   record.entryPrice=saved.entryPrice;
+   record.entryVolume=saved.entryVolume;
+   record.closeTime=closeTime;
+   record.closePrice=closePrice;
+   record.closedVolume=closedVolume;
+   record.grossProfit=grossProfit;
+   record.commission=commission;
+   record.swap=swap;
+   if(!g_hedgingPartialCloseLedger.Record(record) ||
+      !g_hedgingPartialCloseLedger.IsPersisting())
+     {
+      PrintFormat("FLIPDEMON HEDGING PARTIAL LEDGER ERROR: durable slice rejected for identifier=%I64u deal=%I64u; action lock must remain held.",
+                  saved.positionIdentifier,lastDealTicket);
+      return(false);
+     }
+   return(true);
   }
 
 bool AxFetchCloseFinancials(const ulong posTicket,const ulong sinceTicketExclusive,double &closePrice,
