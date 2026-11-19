@@ -65,6 +65,7 @@ private:
    double m_minRangePoints;
    double m_maxRangePoints;
    int m_dayKey;
+   datetime m_lastUpdateBar;
    SAxOrbSessionState m_sessions[3];
    SAxAdvancedOrbReading m_reading;
 
@@ -158,7 +159,7 @@ private:
       return((double)signalBar.tick_volume/average);
      }
 
-   void EvaluateSession(const string symbol,const int index,
+   void EvaluateSession(const int index,
                         const MqlRates &latest,const MqlRates &previous,
                         const double volumeRatio)
      {
@@ -275,6 +276,7 @@ public:
       m_minRangePoints=0.0;
       m_maxRangePoints=0.0;
       m_dayKey=0;
+      m_lastUpdateBar=0;
       for(int i=0;i<3;i++) ResetSession(i,0);
       ZeroMemory(m_reading);
      }
@@ -289,7 +291,9 @@ public:
       m_enabled=enabled;
       m_rangeMinutes=(int)MathMax(5,MathMin(rangeMinutes,60));
       m_breakoutTimeframe=breakoutTimeframe;
-      m_hours[0]=asiaHour; m_hours[1]=londonHour; m_hours[2]=newYorkHour;
+      m_hours[0]=(int)MathMax(0,MathMin(asiaHour,23));
+      m_hours[1]=(int)MathMax(0,MathMin(londonHour,23));
+      m_hours[2]=(int)MathMax(0,MathMin(newYorkHour,23));
       m_bufferPoints=MathMax(0.0,bufferPoints);
       m_minBodyRatio=AxClampD(minBodyRatio,0.10,0.95);
       m_minCloseLocation=AxClampD(minCloseLocation,0.55,0.95);
@@ -297,6 +301,7 @@ public:
       m_minRangePoints=MathMax(0.0,minRangePoints);
       m_maxRangePoints=MathMax(0.0,maxRangePoints);
       m_dayKey=0;
+      m_lastUpdateBar=0;
       ZeroMemory(m_reading);
      }
 
@@ -320,9 +325,16 @@ public:
       if(key!=m_dayKey)
         {
          m_dayKey=key;
+         m_lastUpdateBar=0;
          for(int i=0;i<3;i++)
             ResetSession(i,SessionStart(serverTime,m_hours[i]));
         }
+
+      datetime latestClosedBar=iTime(symbol,m_breakoutTimeframe,1);
+      if(latestClosedBar<=0) return(false);
+      // The engine is intentionally bar-clocked. Do not copy M1/M5 history
+      // repeatedly on every incoming tick of the same breakout candle.
+      if(latestClosedBar==m_lastUpdateBar) return(true);
 
       MqlRates recent[];
       ArraySetAsSeries(recent,true);
@@ -332,12 +344,13 @@ public:
          m_reading.status="BREAKOUT_HISTORY_UNAVAILABLE";
          return(false);
         }
+      m_lastUpdateBar=recent[0].time;
       double volumeRatio=VolumeRatio(symbol,recent[0]);
       for(int i=0;i<3;i++)
         {
          if(serverTime<m_sessions[i].rangeEnd) continue;
          if(!m_sessions[i].rangeReady && !BuildOpeningRange(symbol,i)) continue;
-         EvaluateSession(symbol,i,recent[0],recent[1],volumeRatio);
+         EvaluateSession(i,recent[0],recent[1],volumeRatio);
         }
       AggregateReading(volumeRatio);
       return(m_reading.available);
