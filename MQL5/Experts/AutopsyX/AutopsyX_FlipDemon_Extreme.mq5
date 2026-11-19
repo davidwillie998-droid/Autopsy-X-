@@ -5072,9 +5072,9 @@ void AxProcessTick(void)
         }
      }
 
-   // Audit every leg against its own durable exit and campaign records. This is
-   // telemetry/validation only; multi-leg execution remains quarantined until a
-   // ticket-specific manager owns every exit, partial close and recovery action.
+   // Audit every leg against its durable exit and campaign records. Ticket-specific
+   // break-even, trailing and one-shot partial-close actions are active; full-close
+   // journaling and campaign-level exit orchestration remain quarantined.
    SAxHedgingCampaignSnapshot hedgingSnapshot;
    if(!g_hedgingCampaignLifecycle.Evaluate(g_hedgingPositionManager,
                                             g_virtualExitRegistry,
@@ -5094,7 +5094,7 @@ void AxProcessTick(void)
       g_pyramidReady=false;
       g_engineState=AX_ENGINE_PAUSED;
       if(InpVerboseLogging)
-         PrintFormat("FLIPDEMON HEDGING QUARANTINE: %d live legs. Legacy single-position exits are bypassed; broker SL/TP remain the only active per-leg protection until ticket lifecycle support is complete.",
+         PrintFormat("FLIPDEMON HEDGING QUARANTINE: %d live legs. Legacy single-position exits are bypassed; ticket-specific break-even, trailing and partial-close managers are active, while full-close lifecycle remains blocked.",
                      g_hedgingPositionManager.Count());
       return;
      }
