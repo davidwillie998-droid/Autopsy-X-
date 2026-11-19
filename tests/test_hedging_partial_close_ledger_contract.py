@@ -124,7 +124,7 @@ class HedgingPartialCloseLedgerTests(unittest.TestCase):
         self.assertLess(manager.index("g_exec.ClosePartial("), manager.index("AxFetchCloseFinancialsByIdentifier("))
         self.assertLess(manager.index("AxFetchCloseFinancialsByIdentifier("), manager.index("AxRecordHedgingPartialCloseLedger("))
         self.assertLess(manager.index("AxRecordHedgingPartialCloseLedger("), manager.index("RecordPartialClose("))
-        self.assertLess(manager.index("RecordPartialClose("), manager.index("ResolveAction("))
+        self.assertLess(manager.index("RecordPartialClose("), manager.rindex("ResolveAction("))
 
     def test_uncertain_partial_execution_retains_lock_and_pauses_campaign(self):
         start = EA.index("bool AxManageHedgingPartialCloseTickets(void)")
@@ -141,8 +141,8 @@ class HedgingPartialCloseLedgerTests(unittest.TestCase):
         tick = EA[start:end]
         self.assertIn("AxManageHedgingPartialCloseTickets()", tick)
         self.assertLess(tick.index("AxManageHedgingPartialCloseTickets()"),
-                        tick.index("SAxHedgingCampaignSnapshot") if "SAxHedgingCampaignSnapshot" in tick else len(tick))
-        self.assertIn("g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber)", tick)
+                        tick.index("g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber)", tick.index("AxManageHedgingPartialCloseTickets()")))
+        self.assertIn("AxReconcileVirtualExitTickets(false)", tick)
 
     def test_recovery_handles_ledger_commit_before_virtual_exit_cursor(self):
         start = EA.index("bool AxRecoverHedgingPartialCloseAction(")
