@@ -86,6 +86,3 @@ class PremiumDiscountSourceContractTests(unittest.TestCase):
         self.assertIn("g_w1Institutional.AllowsDirection(AX_DIR_SELL)", body)
         self.assertIn("g_d1Institutional.AllowsDirection(AX_DIR_SELL)", body)
 
-
-if __tool__:
-    pass
