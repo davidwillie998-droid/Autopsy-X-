@@ -1963,7 +1963,6 @@ bool AxBuildHedgingFullCloseRecord(const SAxVirtualExitRecord &saved,
       MathAbs(entryVolume-saved.entryVolume)>volumeTolerance ||
       MathAbs(entryValue/entryVolume-saved.entryPrice)>priceTolerance ||
       MathAbs(exitVolume-saved.entryVolume)>volumeTolerance ||
-      MathAbs(exitVolume-saved.partialClosedVolume)>volumeTolerance ||
       lastExitTime<=0 || (saved.actionStartedAt>0 && lastExitTime<saved.actionStartedAt))
       return(false);
 
