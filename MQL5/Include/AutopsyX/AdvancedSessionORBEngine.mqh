@@ -435,10 +435,13 @@ private:
             m_reading.bearishSessionCount++;
             if(StringLen(bearishNames)>0) bearishNames+=",";
             bearishNames+=m_sessions[i].name;
-            m_reading.rangeHigh=m_sessions[i].rangeHigh;
-            m_reading.rangeLow=m_sessions[i].rangeLow;
-            m_reading.rangeWidthPoints=m_sessions[i].rangeWidthPoints;
-            m_reading.signalBar=m_sessions[i].lastProcessedBar;
+            if(m_sessions[i].signalBar>m_reading.signalBar)
+              {
+               m_reading.rangeHigh=m_sessions[i].rangeHigh;
+               m_reading.rangeLow=m_sessions[i].rangeLow;
+               m_reading.rangeWidthPoints=m_sessions[i].rangeWidthPoints;
+               m_reading.signalBar=m_sessions[i].signalBar;
+              }
            }
          else if(signal==AX_ORB_FAILED_BULLISH || signal==AX_ORB_FAILED_BEARISH)
             m_reading.status="FAILED_BREAKOUT";
