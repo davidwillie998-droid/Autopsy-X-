@@ -422,10 +422,13 @@ private:
             m_reading.bullishSessionCount++;
             if(StringLen(bullishNames)>0) bullishNames+=",";
             bullishNames+=m_sessions[i].name;
-            m_reading.rangeHigh=m_sessions[i].rangeHigh;
-            m_reading.rangeLow=m_sessions[i].rangeLow;
-            m_reading.rangeWidthPoints=m_sessions[i].rangeWidthPoints;
-            m_reading.signalBar=m_sessions[i].lastProcessedBar;
+            if(m_sessions[i].signalBar>m_reading.signalBar)
+              {
+               m_reading.rangeHigh=m_sessions[i].rangeHigh;
+               m_reading.rangeLow=m_sessions[i].rangeLow;
+               m_reading.rangeWidthPoints=m_sessions[i].rangeWidthPoints;
+               m_reading.signalBar=m_sessions[i].signalBar;
+              }
            }
          else if(signal==AX_ORB_BREAKOUT_SELL || signal==AX_ORB_RETEST_SELL)
            {
