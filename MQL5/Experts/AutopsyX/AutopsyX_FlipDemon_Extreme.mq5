@@ -1863,6 +1863,202 @@ bool AxRecoverHedgingPartialCloseAction(const SAxVirtualExitRecord &saved)
    return(true);
   }
 
+// Rebuild the immutable final-liquidation record from the complete position
+// history. This deliberately aggregates prior scale-outs and the final exit.
+bool AxBuildHedgingFullCloseRecord(const SAxVirtualExitRecord &saved,
+                                   SAxFullCloseLedgerRecord &recordOut)
+  {
+   if(!g_hedgingFullCloseLedgerReady || !g_hedgingFullCloseLedger.IsPersisting() ||
+      !g_hedgingPartialLedgerReady || !g_hedgingPartialCloseLedger.IsPersisting() ||
+      saved.positionIdentifier==0 || saved.symbol=="" || saved.entryTime<=0 ||
+      saved.entryPrice<=0.0 || saved.entryVolume<=0.0 ||
+      (saved.dir!=AX_DIR_BUY && saved.dir!=AX_DIR_SELL) ||
+      !g_hedgingPositionManager.IsComplete() ||
+      !HistorySelectByPosition((long)saved.positionIdentifier))
+      return(false);
+
+   SAxManagedPosition live;
+   if(g_hedgingPositionManager.FindByIdentifier(saved.positionIdentifier,live))
+      return(false); // never journal a position that still has live broker volume
+
+   const long entryTypeExpected=(saved.dir==AX_DIR_BUY)?DEAL_TYPE_BUY:DEAL_TYPE_SELL;
+   const long exitTypeExpected=(saved.dir==AX_DIR_BUY)?DEAL_TYPE_SELL:DEAL_TYPE_BUY;
+   double entryVolume=0.0,entryValue=0.0,exitVolume=0.0,exitValue=0.0;
+   double gross=0.0,commission=0.0,swap=0.0,fees=0.0;
+   datetime lastExitTime=0;
+   ulong firstEntryDeal=0,lastExitDeal=0;
+   int exitCount=0;
+   bool historyValid=true;
+   for(int i=0;i<HistoryDealsTotal();i++)
+     {
+      const ulong deal=HistoryDealGetTicket(i);
+      if(deal==0 ||
+         (ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID)!=saved.positionIdentifier ||
+         HistoryDealGetString(deal,DEAL_SYMBOL)!=saved.symbol ||
+         (ulong)HistoryDealGetInteger(deal,DEAL_MAGIC)!=InpMagicNumber)
+        {
+         historyValid=false;
+         break;
+        }
+      const long entry=HistoryDealGetInteger(deal,DEAL_ENTRY);
+      const long type=HistoryDealGetInteger(deal,DEAL_TYPE);
+      const double volume=HistoryDealGetDouble(deal,DEAL_VOLUME);
+      const double price=HistoryDealGetDouble(deal,DEAL_PRICE);
+      const double profit=HistoryDealGetDouble(deal,DEAL_PROFIT);
+      const double dealCommission=HistoryDealGetDouble(deal,DEAL_COMMISSION);
+      const double dealSwap=HistoryDealGetDouble(deal,DEAL_SWAP);
+      const double dealFees=HistoryDealGetDouble(deal,DEAL_FEE);
+      const datetime dealTime=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
+      if(entry==DEAL_ENTRY_INOUT || !MathIsValidNumber(volume) ||
+         volume<=0.0 || !MathIsValidNumber(price) || price<=0.0 ||
+         !MathIsValidNumber(profit) || !MathIsValidNumber(dealCommission) ||
+         !MathIsValidNumber(dealSwap) || !MathIsValidNumber(dealFees) || dealTime<=0)
+        {
+         historyValid=false;
+         break;
+        }
+      gross+=profit;
+      commission+=dealCommission;
+      swap+=dealSwap;
+      fees+=dealFees;
+      if(entry==DEAL_ENTRY_IN)
+        {
+         if(type!=entryTypeExpected)
+           {
+            historyValid=false;
+            break;
+           }
+         entryVolume+=volume;
+         entryValue+=volume*price;
+         if(firstEntryDeal==0 || deal<firstEntryDeal) firstEntryDeal=deal;
+        }
+      else if(entry==DEAL_ENTRY_OUT || entry==DEAL_ENTRY_OUT_BY)
+        {
+         if(type!=exitTypeExpected)
+           {
+            historyValid=false;
+            break;
+           }
+         exitVolume+=volume;
+         exitValue+=volume*price;
+         exitCount++;
+         if(deal>lastExitDeal)
+           {
+            lastExitDeal=deal;
+            lastExitTime=dealTime;
+           }
+        }
+      else
+        {
+         historyValid=false;
+         break;
+        }
+     }
+   const double volumeStep=SymbolInfoDouble(saved.symbol,SYMBOL_VOLUME_STEP);
+   const double volumeTolerance=MathMax(volumeStep*0.51,0.0000001);
+   const double tickSize=SymbolInfoDouble(saved.symbol,SYMBOL_TRADE_TICK_SIZE);
+   const double priceTolerance=MathMax(tickSize*0.51,0.00000001);
+   if(!historyValid || firstEntryDeal==0 || lastExitDeal==0 || exitCount<=0 ||
+      entryVolume<=0.0 || exitVolume<=0.0 || exitValue<=0.0 ||
+      MathAbs(entryVolume-saved.entryVolume)>volumeTolerance ||
+      MathAbs(entryValue/entryVolume-saved.entryPrice)>priceTolerance ||
+      MathAbs(exitVolume-saved.entryVolume)>volumeTolerance ||
+      MathAbs(exitVolume-saved.partialClosedVolume)>volumeTolerance ||
+      lastExitTime<=0 || (saved.actionStartedAt>0 && lastExitTime<saved.actionStartedAt))
+      return(false);
+
+   // A final close may only be journalled if the already committed partial
+   // slice agrees with broker history and the durable registry cursor.
+   if(saved.partialClosedVolume>volumeTolerance)
+     {
+      SAxPartialCloseLedgerRecord partial;
+      if(saved.partialCloseCount!=1 || saved.partialLastDealTicket==0 ||
+         !g_hedgingPartialCloseLedger.Find(saved.positionIdentifier,
+                                            saved.partialLastDealTicket,partial) ||
+         MathAbs(partial.closedVolume-saved.partialClosedVolume)>volumeTolerance ||
+         partial.symbol!=saved.symbol || partial.magic!=InpMagicNumber ||
+         partial.direction!=saved.dir)
+         return(false);
+     }
+   else if(saved.partialCloseCount!=0 || saved.partialLastDealTicket!=0)
+      return(false);
+
+   ZeroMemory(recordOut);
+   recordOut.positionIdentifier=saved.positionIdentifier;
+   recordOut.finalDealTicket=lastExitDeal;
+   recordOut.lastExitDealTicket=lastExitDeal;
+   recordOut.symbol=saved.symbol;
+   recordOut.magic=InpMagicNumber;
+   recordOut.direction=saved.dir;
+   recordOut.entryTime=saved.entryTime;
+   recordOut.entryPrice=entryValue/entryVolume;
+   recordOut.entryVolume=entryVolume;
+   recordOut.closeTime=lastExitTime;
+   recordOut.weightedClosePrice=exitValue/exitVolume;
+   recordOut.totalClosedVolume=exitVolume;
+   recordOut.exitDealCount=exitCount;
+   recordOut.grossProfit=gross;
+   recordOut.commission=commission;
+   recordOut.swap=swap;
+   recordOut.fees=fees;
+   recordOut.netProfit=gross+commission+swap+fees;
+   recordOut.partialClosedVolume=saved.partialClosedVolume;
+   return(MathIsValidNumber(recordOut.netProfit) &&
+          recordOut.weightedClosePrice>0.0);
+  }
+
+// The final journal is written before the virtual-exit row is removed. Replaying
+// after a crash is idempotent because the ledger accepts only an identical row.
+bool AxFinalizeHedgingFullClose(const SAxVirtualExitRecord &saved)
+  {
+   SAxFullCloseLedgerRecord finalRecord;
+   if(!AxBuildHedgingFullCloseRecord(saved,finalRecord) ||
+      !g_hedgingFullCloseLedger.Record(finalRecord) ||
+      !g_hedgingFullCloseLedger.IsPersisting())
+      return(false);
+   SAxFullCloseLedgerRecord verified;
+   if(!g_hedgingFullCloseLedger.Find(saved.positionIdentifier,verified) ||
+      verified.finalDealTicket!=finalRecord.finalDealTicket ||
+      MathAbs(verified.totalClosedVolume-finalRecord.totalClosedVolume)>0.0000001 ||
+      MathAbs(verified.netProfit-finalRecord.netProfit)>0.0000001)
+      return(false);
+   if(!g_virtualExitRegistry.Remove(saved.positionIdentifier) ||
+      !g_virtualExitRegistry.IsPersisting())
+      return(false);
+   PrintFormat("FLIPDEMON HEDGING FULL CLOSE: identifier=%I64u final deal=%I64u volume=%.8f net=%.2f; immutable liquidation journal committed.",
+               saved.positionIdentifier,finalRecord.finalDealTicket,
+               finalRecord.totalClosedVolume,finalRecord.netProfit);
+   return(true);
+  }
+
+// Restart/tick recovery for actionCode=4. It never submits another close request.
+// If any live volume remains after an uncertain close, the action stays quarantined.
+bool AxRecoverLockedHedgingFullCloseActions(void)
+  {
+   if(!g_virtualExitInitialized || !g_virtualExitRegistry.IsPersisting() ||
+      !g_hedgingPositionManager.IsComplete() || !g_hedgingFullCloseLedgerReady ||
+      !g_hedgingFullCloseLedger.IsPersisting())
+      return(false);
+   for(int i=0;i<g_virtualExitRegistry.Count();i++)
+     {
+      SAxVirtualExitRecord saved;
+      if(!g_virtualExitRegistry.GetAt(i,saved)) return(false);
+      if(!saved.actionLocked || saved.actionCode!=4) continue;
+      if(saved.actionBaselineVolume<=0.0 || saved.positionIdentifier==0 ||
+         !AxFinalizeHedgingFullClose(saved))
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_recoveryReady=false;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING FULL-CLOSE RECOVERY QUARANTINE: identifier=%I64u remains locked; no close retry issued.",
+                     saved.positionIdentifier);
+         return(false);
+        }
+     }
+   return(true);
+  }
+
 bool AxRecoverLockedPartialCloseActions(void)
   {
    if(!g_virtualExitInitialized || !g_virtualExitRegistry.IsPersisting() ||
