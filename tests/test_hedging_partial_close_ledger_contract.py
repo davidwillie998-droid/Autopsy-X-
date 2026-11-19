@@ -74,6 +74,28 @@ class HedgingPartialCloseLedgerTests(unittest.TestCase):
     def test_partial_slice_cannot_be_misclassified_as_full_position_exit(self):
         self.assertIn("closedVolume>=saved.entryVolume", EA)
 
+    def test_multi_position_recovery_uses_independent_leg_ledger(self):
+        start = EA.index("bool AxRecoverHedgingPartialCloseAction(")
+        end = EA.index("bool AxRecoverLockedPartialCloseActions(", start)
+        recovery = EA[start:end]
+        self.assertIn("FindByIdentifier(saved.positionIdentifier,live)", recovery)
+        self.assertIn("AxFetchCloseFinancialsByIdentifier(", recovery)
+        self.assertIn("AxRecordHedgingPartialCloseLedger(", recovery)
+        self.assertIn("RecordPartialClose(saved.positionIdentifier,closedVolume,lastDeal)", recovery)
+        self.assertIn("ResolveAction(saved.positionIdentifier,3)", recovery)
+        self.assertNotIn("g_posState", recovery)
+        self.assertNotIn("g_positionIdentifier", recovery)
+
+    def test_multi_position_recovery_branches_before_single_position_journal(self):
+        start = EA.index("bool AxRecoverLockedPartialCloseActions(void)")
+        end = EA.index("bool AxReconcilePyramidCampaignTickets(", start)
+        recovery = EA[start:end]
+        multi = recovery.index("if(g_hedgingPositionManager.HasMultiplePositions())")
+        single_journal = recovery.index("g_autopsy.LastAccountedRecord(")
+        self.assertLess(multi, single_journal)
+        self.assertIn("AxRecoverHedgingPartialCloseAction(hedged)", recovery)
+        self.assertIn("g_engineState=AX_ENGINE_PAUSED", recovery)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -46,6 +46,7 @@ on:
       - 'tests/test_hedging_break_even_manager_contract.py'
       - 'tests/test_hedging_trailing_manager_contract.py'
       - 'tests/test_hedging_stop_action_recovery_contract.py'
+      - 'tests/test_hedging_partial_close_ledger_contract.py'
       - '.github/workflows/flipdemon-static-safety.yml'
 
 permissions:

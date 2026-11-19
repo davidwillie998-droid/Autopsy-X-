@@ -1723,11 +1723,96 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
    return(true);
   }
 
+// Recover a locked partial close for one hedging leg without touching the
+// single-position trade journal or global g_posState.
+bool AxRecoverHedgingPartialCloseAction(const SAxVirtualExitRecord &saved)
+  {
+   if(!g_hedgingPartialLedgerReady || !g_hedgingPartialCloseLedger.IsPersisting() ||
+      !g_virtualExitRegistry.IsPersisting() || !saved.actionLocked ||
+      saved.actionCode!=3 || saved.positionIdentifier==0 ||
+      saved.actionBaselineVolume<=0.0 || saved.entryTime<=0 ||
+      saved.entryPrice<=0.0 || saved.entryVolume<=0.0 ||
+      saved.symbol!=_Symbol || saved.partialLastDealTicket==0 && saved.partialCloseCount>0)
+      return(false);
+
+   SAxManagedPosition live;
+   if(!g_hedgingPositionManager.FindByIdentifier(saved.positionIdentifier,live) ||
+      live.positionIdentifier!=saved.positionIdentifier || live.ticket==0 ||
+      live.symbol!=saved.symbol || live.magic!=InpMagicNumber ||
+      live.direction!=saved.dir || !PositionSelectByTicket(live.ticket) ||
+      (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=saved.positionIdentifier ||
+      (ulong)PositionGetInteger(POSITION_MAGIC)!=InpMagicNumber)
+      return(false);
+
+   const double liveVolume=PositionGetDouble(POSITION_VOLUME);
+   const double expectedReduction=saved.actionBaselineVolume-liveVolume;
+   const double step=SymbolInfoDouble(saved.symbol,SYMBOL_VOLUME_STEP);
+   const double tolerance=MathMax(step*0.5,0.0000001);
+   if(step<=0.0 || !MathIsValidNumber(liveVolume) || liveVolume<=0.0 ||
+      expectedReduction<=tolerance)
+      return(false);
+
+   double closePrice=0.0,grossProfit=0.0,commission=0.0,swap=0.0,closedVolume=0.0;
+   datetime closeTime=0;
+   ulong lastDeal=saved.partialLastDealTicket;
+   if(!AxFetchCloseFinancialsByIdentifier(saved.positionIdentifier,saved.symbol,
+                                           InpMagicNumber,saved.dir,
+                                           saved.partialLastDealTicket,
+                                           closePrice,grossProfit,commission,swap,
+                                           closeTime,lastDeal,closedVolume) ||
+      lastDeal<=saved.partialLastDealTicket || closeTime<=0 ||
+      MathAbs(expectedReduction-closedVolume)>tolerance ||
+      saved.partialClosedVolume+closedVolume>=saved.entryVolume-tolerance)
+      return(false);
+
+   // The ledger write is idempotent by (position identifier, final deal ticket).
+   // Only after it is durable may the virtual-exit cursor advance and unlock.
+   const ulong ledgerHighWater=g_hedgingPartialCloseLedger.LastDealTicket(saved.positionIdentifier);
+   if(ledgerHighWater>lastDeal)
+      return(false);
+   if(!AxRecordHedgingPartialCloseLedger(saved,closePrice,grossProfit,commission,swap,
+                                          closeTime,lastDeal,closedVolume))
+      return(false);
+   if(!g_virtualExitRegistry.RecordPartialClose(saved.positionIdentifier,closedVolume,lastDeal) ||
+      !g_virtualExitRegistry.IsPersisting())
+      return(false);
+   if(!g_virtualExitRegistry.ResolveAction(saved.positionIdentifier,3) ||
+      !g_virtualExitRegistry.IsPersisting())
+      return(false);
+
+   PrintFormat("FLIPDEMON HEDGING PARTIAL RECOVERY: identifier=%I64u ticket=%I64u closed=%.8f remaining=%.8f deal=%I64u; per-leg ledger durable.",
+               saved.positionIdentifier,live.ticket,closedVolume,liveVolume,lastDeal);
+   return(true);
+  }
+
 bool AxRecoverLockedPartialCloseActions(void)
   {
    if(!g_virtualExitInitialized || !g_virtualExitRegistry.IsPersisting() ||
       !g_hedgingPositionManager.IsComplete())
       return(false);
+
+   // Multi-position accounts use the independent per-leg ledger. Never route
+   // their partial-close recovery through g_posState or the single-trade journal.
+   if(g_hedgingPositionManager.HasMultiplePositions())
+     {
+      for(int i=0;i<g_virtualExitRegistry.Count();i++)
+        {
+         SAxVirtualExitRecord hedged;
+         if(!g_virtualExitRegistry.GetAt(i,hedged)) return(false);
+         if(!hedged.actionLocked || hedged.actionCode!=3) continue;
+         if(!AxRecoverHedgingPartialCloseAction(hedged))
+           {
+            g_virtualExitReady=false;
+            g_hedgingLifecycleLock=true;
+            g_recoveryReady=false;
+            g_engineState=AX_ENGINE_PAUSED;
+            PrintFormat("FLIPDEMON HEDGING PARTIAL RECOVERY QUARANTINE: identifier=%I64u remains locked; no retry or journal mutation.",
+                        hedged.positionIdentifier);
+            return(false);
+           }
+        }
+      return(true);
+     }
 
    for(int i=0;i<g_virtualExitRegistry.Count();i++)
      {
