@@ -395,6 +395,21 @@ public:
       return(Save(record) && IsPersisting());
      }
 
+   // Full liquidation uses a distinct durable action code. The original
+   // broker volume is persisted before the exact-ticket close request.
+   bool BeginFullCloseAction(const ulong positionIdentifier,const double baselineVolume)
+     {
+      if(positionIdentifier==0 || baselineVolume<=0.0 ||
+         !MathIsValidNumber(baselineVolume)) return(false);
+      SAxVirtualExitRecord record;
+      if(!Find(positionIdentifier,record) || record.actionLocked) return(false);
+      record.actionLocked=true;
+      record.actionCode=4;
+      record.actionStartedAt=TimeCurrent();
+      record.actionBaselineVolume=baselineVolume;
+      return(Save(record) && IsPersisting());
+     }
+
    // Called only after broker deal history and the resulting live volume have
    // been reconciled. Repeated delivery of the same final deal is idempotent.
    bool RecordPartialClose(const ulong positionIdentifier,const double volumeClosed,
