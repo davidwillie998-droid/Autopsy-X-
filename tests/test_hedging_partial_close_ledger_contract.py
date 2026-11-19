@@ -96,6 +96,63 @@ class HedgingPartialCloseLedgerTests(unittest.TestCase):
         self.assertIn("AxRecoverHedgingPartialCloseAction(hedged)", recovery)
         self.assertIn("g_engineState=AX_ENGINE_PAUSED", recovery)
 
+    def test_ticket_partial_close_manager_uses_per_leg_state_and_exact_ticket(self):
+        start = EA.index("bool AxManageHedgingPartialCloseTickets(void)")
+        end = EA.index("bool AxManageHedgingBreakEvenTickets(void)", start)
+        manager = EA[start:end]
+        self.assertIn("g_hedgingPositionManager.GetAt(i,live)", manager)
+        self.assertIn("g_virtualExitRegistry.Find(live.positionIdentifier,saved)", manager)
+        self.assertIn("g_exec.ClosePartial(live.symbol,live.ticket,live.positionIdentifier", manager)
+        self.assertNotIn("g_posState", manager)
+        self.assertNotIn("g_positionIdentifier", manager)
+
+    def test_partial_close_is_profitable_only_and_broker_volume_grid_safe(self):
+        start = EA.index("bool AxManageHedgingPartialCloseTickets(void)")
+        end = EA.index("bool AxManageHedgingBreakEvenTickets(void)", start)
+        manager = EA[start:end]
+        self.assertIn("favorableMove/saved.originalRiskDistance", manager)
+        self.assertIn("achievedRR<InpPartialTriggerRR", manager)
+        self.assertIn("MathFloor(requestedRaw/volumeStep+1e-9)*volumeStep", manager)
+        self.assertIn("residualVolume<minimumVolume", manager)
+        self.assertIn("saved.partialCloseCount>0", manager)
+
+    def test_partial_action_lock_precedes_broker_request_and_ledger_commit(self):
+        start = EA.index("bool AxManageHedgingPartialCloseTickets(void)")
+        end = EA.index("bool AxManageHedgingBreakEvenTickets(void)", start)
+        manager = EA[start:end]
+        self.assertLess(manager.index("BeginPartialCloseAction("), manager.index("g_exec.ClosePartial("))
+        self.assertLess(manager.index("g_exec.ClosePartial("), manager.index("AxFetchCloseFinancialsByIdentifier("))
+        self.assertLess(manager.index("AxFetchCloseFinancialsByIdentifier("), manager.index("AxRecordHedgingPartialCloseLedger("))
+        self.assertLess(manager.index("AxRecordHedgingPartialCloseLedger("), manager.index("RecordPartialClose("))
+        self.assertLess(manager.index("RecordPartialClose("), manager.index("ResolveAction("))
+
+    def test_uncertain_partial_execution_retains_lock_and_pauses_campaign(self):
+        start = EA.index("bool AxManageHedgingPartialCloseTickets(void)")
+        end = EA.index("bool AxManageHedgingBreakEvenTickets(void)", start)
+        manager = EA[start:end]
+        uncertain = manager.index("if(outcomeUncertain)")
+        self.assertIn("g_virtualExitReady=false", manager[uncertain:])
+        self.assertIn("g_engineState=AX_ENGINE_PAUSED", manager[uncertain:])
+        self.assertIn("no second close request", manager[uncertain:])
+
+    def test_multi_position_tick_runs_partial_manager_before_quarantine(self):
+        start = EA.index("void OnTick")
+        end = EA.index("SAxHedgingCampaignSnapshot hedgingSnapshot", start)
+        tick = EA[start:end]
+        self.assertIn("AxManageHedgingPartialCloseTickets()", tick)
+        self.assertLess(tick.index("AxManageHedgingPartialCloseTickets()"),
+                        tick.index("SAxHedgingCampaignSnapshot") if "SAxHedgingCampaignSnapshot" in tick else len(tick))
+        self.assertIn("g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber)", tick)
+
+    def test_recovery_handles_ledger_commit_before_virtual_exit_cursor(self):
+        start = EA.index("bool AxRecoverHedgingPartialCloseAction(")
+        end = EA.index("bool AxRecoverLockedPartialCloseActions(", start)
+        recovery = EA[start:end]
+        self.assertIn("ledgerHighWater>=saved.partialLastDealTicket", recovery)
+        self.assertIn("RecordPartialClose(saved.positionIdentifier,", recovery)
+        self.assertIn("accounted.closeTime<saved.actionStartedAt", recovery)
+        self.assertNotIn("if(ledgerHighWater>saved.partialLastDealTicket)\n      return(false);", recovery)
+
     def test_recovery_resolves_crash_after_ledger_and_registry_commit(self):
         start = EA.index("bool AxRecoverHedgingPartialCloseAction(")
         end = EA.index("bool AxRecoverLockedPartialCloseActions(", start)
