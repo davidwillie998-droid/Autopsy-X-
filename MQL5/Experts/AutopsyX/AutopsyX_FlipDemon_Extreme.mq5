@@ -67,6 +67,7 @@
 #include <AutopsyX/RestartRecovery.mqh>
 #include <AutopsyX/VirtualExitRegistry.mqh>
 #include <AutopsyX/HedgingPartialCloseLedger.mqh>
+#include <AutopsyX/HedgingFullCloseLedger.mqh>
 #include <AutopsyX/PyramidEngine.mqh>
 #include <AutopsyX/PyramidCampaignRegistry.mqh>
 #include <AutopsyX/HedgingPositionManager.mqh>
@@ -391,6 +392,8 @@ CRestartRecovery       g_restartRecovery;
 CVirtualExitRegistry   g_virtualExitRegistry;
 CHedgingPartialCloseLedger g_hedgingPartialCloseLedger;
 bool g_hedgingPartialLedgerReady=false;
+CHedgingFullCloseLedger g_hedgingFullCloseLedger;
+bool g_hedgingFullCloseLedgerReady=false;
 CPyramidEngine         g_pyramidEngine; // calculation engine; campaign execution remains disabled until lifecycle integration
 CPyramidCampaignRegistry g_pyramidCampaignRegistry; // durable campaign state; execution integration is not active yet
 CHedgingPositionManager g_hedgingPositionManager;
@@ -4286,6 +4289,20 @@ int OnInit(void)
    else
       PrintFormat("FLIPDEMON HEDGING PARTIAL LEDGER: loaded %d durable slices.",
                   g_hedgingPartialCloseLedger.Count());
+
+   // Final liquidation accounting is separate from partial slices and the
+   // legacy single-position journal. Full-close recovery remains quarantined
+   // until this account-scoped ledger is available and reconciled.
+   g_hedgingFullCloseLedgerReady=g_hedgingFullCloseLedger.Init(
+                                    "FlipDemon_Extreme_HFT",_Symbol,InpMagicNumber);
+   if(!g_hedgingFullCloseLedgerReady || !g_hedgingFullCloseLedger.IsPersisting())
+     {
+      g_hedgingFullCloseLedgerReady=false;
+      Print("FLIPDEMON HEDGING FULL-CLOSE LEDGER ERROR: durable final-liquidation journal unavailable; multi-position full-close lifecycle remains quarantined.");
+     }
+   else
+      PrintFormat("FLIPDEMON HEDGING FULL-CLOSE LEDGER: loaded %d final position records.",
+                  g_hedgingFullCloseLedger.Count());
 
    g_risk.OnTickHousekeeping();
    AxReconcileExistingPosition();
