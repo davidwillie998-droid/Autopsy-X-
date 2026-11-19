@@ -30,6 +30,7 @@
 #include <AutopsyX/StructureEngine.mqh>
 #include <AutopsyX/W1InstitutionalDirection.mqh>
 #include <AutopsyX/D1InstitutionalLevels.mqh>
+#include <AutopsyX/PremiumDiscountEngine.mqh>
 #include <AutopsyX/H4TrendBreakoutEngine.mqh>
 #include <AutopsyX/ShadowRiverEngine.mqh>
 #include <AutopsyX/AdvancedTrendSuite.mqh>
@@ -123,6 +124,9 @@ input group "=== ORDER FLOW / VOLUME PROFILE / FOOTPRINT / HEATMAP / PULSE ===";
 input bool            InpUseOrderFlow             = true;  // Blend order-flow/footprint/volume-profile into the score (advisory, not a hard gate)
 input bool            InpUseCvdDivergence         = true;  // Include normalized two-window CVD divergence as an advisory order-flow score component
 input double          InpOrderFlowScoreWeight     = 15.0;  // Max points each of order flow / footprint / volume profile can add to a side's score
+input group "=== PREMIUM / EQUILIBRIUM / DISCOUNT LOCATION ===";
+input bool            InpUsePremiumDiscountEngine = true;  // Advisory multi-timeframe dealing-range location; never an independent entry trigger
+input double          InpPremiumDiscountScoreWeight = 12.0; // Maximum score contribution from confirmed H4/H1 premium-discount alignment
 input int             InpVolumeProfileBars        = 120;   // Rolling lookback for the volume profile, bars
 input double          InpVolumeProfileBinPoints   = 5.0;    // Volume profile bin width, points
 input double          InpFootprintBinPoints       = 3.0;    // Footprint level width, points (finer than the volume profile)
@@ -345,6 +349,7 @@ bool                  g_regimeClassificationAvailable = false;
 CStructureEngine      g_structure;
 CW1InstitutionalDirection g_w1Institutional;
 CD1InstitutionalLevels g_d1Institutional;
+CPremiumDiscountEngine g_premiumDiscount;
 CH4TrendBreakoutEngine g_h4TrendBreakout;
 CCompositeDirectionEngine g_compositeDirection;
 CVPMACDEngine         g_vpMacd;
@@ -2616,6 +2621,40 @@ void AxApplyOrderFlowBonus(SAxScore &score)
      }
   }
 
+//--- Premium/discount is location evidence only. W1/D1 remain the directional
+//--- authority, while H4 supplies the primary dealing range and H1 refines it.
+void AxApplyPremiumDiscountScoreBonus(SAxScore &score)
+  {
+   if(!InpUsePremiumDiscountEngine || InpPremiumDiscountScoreWeight<=0.0 ||
+      !g_regime.TradingAllowed())
+      return;
+   double weight=AxClampD(InpPremiumDiscountScoreWeight,0.0,20.0);
+   double buyComponent=g_premiumDiscount.BullishScoreComponent();
+   double sellComponent=g_premiumDiscount.BearishScoreComponent();
+   double buyBonus=0.0,sellBonus=0.0;
+   if(g_w1Institutional.AllowsDirection(AX_DIR_BUY) &&
+      g_d1Institutional.AllowsDirection(AX_DIR_BUY))
+      buyBonus=(buyComponent/100.0)*weight;
+   if(g_w1Institutional.AllowsDirection(AX_DIR_SELL) &&
+      g_d1Institutional.AllowsDirection(AX_DIR_SELL))
+      sellBonus=(sellComponent/100.0)*weight;
+   score.buyScore=AxClampD(score.buyScore+buyBonus,0.0,100.0);
+   score.sellScore=AxClampD(score.sellScore+sellBonus,0.0,100.0);
+   score.scoreGap=MathAbs(score.buyScore-score.sellScore);
+   score.confidence=AxClampD(score.scoreGap*1.15,0.0,100.0);
+   score.action=AX_DIR_NONE;
+   if(score.scoreGap>=InpMinGapToAct)
+     {
+      if(score.buyScore>score.sellScore && score.buyScore>=InpMinScoreToAct)
+         score.action=AX_DIR_BUY;
+      else if(score.sellScore>score.buyScore && score.sellScore>=InpMinScoreToAct)
+         score.action=AX_DIR_SELL;
+     }
+   if(InpVerboseLogging && (buyBonus>0.0 || sellBonus>0.0))
+      PrintFormat("AUTOPSY X PREMIUM/DISCOUNT: BUY +%.1f SELL +%.1f | %s",
+                  buyBonus,sellBonus,g_premiumDiscount.Summary());
+  }
+
 //--- H4 breakout is a bounded confirmation bonus, never an independent order signal.
 void AxApplyAdvancedORBScoreBonus(SAxScore &score)
   {
@@ -4336,6 +4375,8 @@ int OnInit(void)
    if(!g_d1Institutional.Init(_Symbol,180,30))
       PrintFormat("AUTOPSY X: D1 institutional data unavailable at startup; all new directional entries remain blocked (%s).",
                   g_d1Institutional.Summary());
+   if(InpUsePremiumDiscountEngine && !g_premiumDiscount.Init(_Symbol,180,2))
+      Print("AUTOPSY X: premium/discount range history unavailable at startup; location score remains neutral until valid completed-bar ranges form.");
    if(!g_h4TrendBreakout.Init(_Symbol,PERIOD_H4,400,20))
       PrintFormat("AUTOPSY X: H4 EMA400/range breakout data unavailable; H4 filter will fail closed when required (%s).",
                   g_h4TrendBreakout.Summary());
@@ -4355,6 +4396,7 @@ int OnInit(void)
    g_structure.Update();
    g_w1Institutional.Update(true);
    g_d1Institutional.Update(true);
+   if(InpUsePremiumDiscountEngine) g_premiumDiscount.Update(true);
    g_h4TrendBreakout.Update(true);
    g_vpMacd.Update();
    // Respect the calendar engine's refresh interval after the forced startup read.
@@ -5364,6 +5406,7 @@ void AxProcessTick(void)
    // Update() performs no history copy unless a new W1 candle has closed.
    g_w1Institutional.Update();
    g_d1Institutional.Update();
+       if(InpUsePremiumDiscountEngine) g_premiumDiscount.Update();
    g_h4TrendBreakout.Update(); // internally throttled to the latest completed H4 bar
    g_spreadCost.Observe(g_md.CurrentBid(),g_md.CurrentAsk(),g_md.Point());
    // Calendar refresh is internally throttled, never queried on every tick.
@@ -5651,6 +5694,7 @@ void AxProcessTick(void)
       g_structure.Update();
       g_w1Institutional.Update();
       g_d1Institutional.Update();
+       if(InpUsePremiumDiscountEngine) g_premiumDiscount.Update();
       g_vpMacd.Update();
       g_liq.RefreshLevels();
       g_volProfile.Refresh();
@@ -5723,6 +5767,7 @@ void AxProcessTick(void)
    AxApplyOrderFlowBonus(score);
    AxApplyH4BreakoutBonus(score);
    AxApplyAdvancedORBScoreBonus(score);
+   AxApplyPremiumDiscountScoreBonus(score);
    g_lastScore = score; // dashboard reads this, not g_scorer.Last(), so it shows the blended score
    g_accuracy.OnTickUpdate(g_md.CurrentMid());
    //--- sample into the accuracy engine on signal-direction change or at most once/second -   ---
