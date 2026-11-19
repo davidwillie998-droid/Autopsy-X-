@@ -61,6 +61,11 @@ class AdvancedSessionORBContractTests(unittest.TestCase):
         for forbidden in ("OrderSend(", "PositionOpen(", "Buy(", "Sell("):
             self.assertNotIn(forbidden, ORB)
 
+    def test_history_reads_are_throttled_to_new_closed_breakout_bars(self):
+        self.assertIn("iTime(symbol,m_breakoutTimeframe,1)", ORB)
+        self.assertIn("latestClosedBar==m_lastUpdateBar", ORB)
+        self.assertIn("m_lastUpdateBar=recent[0].time", ORB)
+
     def test_engine_refreshes_using_server_time_and_symbol_point(self):
         self.assertIn("TimeTradeServer()", EA)
         self.assertIn("g_advancedSessionOrb.Update(_Symbol,orbServerTime,g_md.Point())", EA)
