@@ -4521,6 +4521,17 @@ bool AxManageHedgingPartialCloseTickets(void)
          PrintFormat("FLIPDEMON HEDGING PARTIAL: durable action lock failed for ticket=%I64u; no broker request sent.",live.ticket);
          return(false);
         }
+      SAxVirtualExitRecord actionState;
+      if(!g_virtualExitRegistry.Find(live.positionIdentifier,actionState) ||
+         !actionState.actionLocked || actionState.actionCode!=3 ||
+         actionState.actionBaselineVolume<=0.0 || actionState.actionStartedAt<=0)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING PARTIAL: persisted action lock could not be reloaded for id=%I64u.",live.positionIdentifier);
+         return(false);
+        }
 
       string closeError="";
       bool outcomeUncertain=false;
@@ -4583,7 +4594,7 @@ bool AxManageHedgingPartialCloseTickets(void)
                                              live.direction,saved.partialLastDealTicket,
                                              closePrice,grossProfit,commission,swap,
                                              closeTime,lastDeal,historyClosedVolume) ||
-         lastDeal<=saved.partialLastDealTicket || closeTime<saved.actionStartedAt ||
+         lastDeal<=saved.partialLastDealTicket || closeTime<actionState.actionStartedAt ||
          MathAbs(historyClosedVolume-actualClosed)>volumeTolerance ||
          saved.partialClosedVolume+historyClosedVolume>=saved.entryVolume-volumeTolerance)
         {
@@ -5036,15 +5047,17 @@ void AxProcessTick(void)
          return;
       if(!AxManageHedgingTrailingTickets())
          return;
-      // Stop modifications invalidate the earlier broker snapshot. Refresh it
-      // before campaign audit or any downstream risk/execution decision.
+      if(!AxManageHedgingPartialCloseTickets())
+         return;
+      // Stop/partial-close requests invalidate the earlier broker snapshot.
+      // Refresh every leg and reconcile durable cursors before campaign audit.
       if(!g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber) ||
          !AxReconcileVirtualExitTickets(false))
         {
          g_virtualExitReady=false;
          g_hedgingLifecycleLock=true;
          g_engineState=AX_ENGINE_PAUSED;
-         Print("FLIPDEMON HEDGING BREAK-EVEN: post-modification broker reconciliation failed; campaign quarantined.");
+         Print("FLIPDEMON HEDGING LIFECYCLE: post-management broker reconciliation failed; campaign quarantined.");
          return;
         }
      }
