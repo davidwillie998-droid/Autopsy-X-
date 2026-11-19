@@ -5046,6 +5046,9 @@ void AxProcessTick(void)
                      g_hedgingPositionManager.FailureReason());
       return;
      }
+   // Resolve any actionCode=3 request whose broker response was uncertain before
+   // ordinary reconciliation sees the still-locked row. No broker request is resent.
+   if(!AxRecoverLockedPartialCloseActions()) return;
    if(!AxReconcileVirtualExitTickets(false)) return;
    if(!AxReconcilePyramidCampaignTickets(false)) return;
 
