@@ -71,6 +71,11 @@ class AdvancedSessionORBContractTests(unittest.TestCase):
         for forbidden in ("OrderSend(", "PositionOpen(", "Buy(", "Sell("):
             self.assertNotIn(forbidden, ORB)
 
+    def test_data_is_not_reported_available_without_a_completed_range(self):
+        self.assertIn("m_reading.available=false", ORB)
+        self.assertIn("m_reading.available=true", ORB)
+        self.assertIn("NO_COMPLETED_OPENING_RANGE", ORB)
+
     def test_history_reads_are_throttled_to_new_closed_breakout_bars(self):
         self.assertIn("iTime(symbol,m_breakoutTimeframe,1)", ORB)
         self.assertIn("latestClosedBar==m_lastUpdateBar", ORB)
