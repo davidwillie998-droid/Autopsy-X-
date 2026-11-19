@@ -177,6 +177,7 @@ input double          InpORBMinCloseLocation = 0.72;        // Bull close near h
 input double          InpORBMinVolumeRatio = 1.20;          // Breakout tick volume / preceding 20-bar average
 input double          InpORBMinRangePoints = 0.0;           // 0 disables minimum range filter
 input double          InpORBMaxRangePoints = 0.0;           // 0 disables maximum range filter
+input double          InpORBMinRoomToHTFLevelPoints = 0.0;   // 0 disables prior D1/W1 level proximity filter
 input double          InpORBScoreBonus = 8.0;               // Bounded directional evidence bonus, not an independent entry
 
 input group "=== SPREAD COST INTELLIGENCE ===";
@@ -2420,6 +2421,17 @@ void AxApplyAdvancedORBScoreBonus(SAxScore &score)
    if(!g_w1Institutional.AllowsDirection(orb.direction) ||
       !g_d1Institutional.AllowsDirection(orb.direction))
       return;
+
+   // Optional room-to-run check against the previous completed D1/W1
+   // extremes. Missing higher-timeframe history fails closed when enabled.
+   if(InpORBMinRoomToHTFLevelPoints>0.0)
+     {
+      if(!orb.htfLevelsAvailable) return;
+      if(orb.direction==AX_DIR_BUY && orb.nearestResistance>0.0 &&
+         orb.roomToNextLevelPoints<InpORBMinRoomToHTFLevelPoints) return;
+      if(orb.direction==AX_DIR_SELL && orb.nearestSupport>0.0 &&
+         orb.roomToNextLevelPoints<InpORBMinRoomToHTFLevelPoints) return;
+     }
 
    double multiplier=1.0+0.5*(double)MathMax(0,orb.sessionCount-1);
    double bonus=MathMin(InpORBScoreBonus*2.0,InpORBScoreBonus*multiplier);
