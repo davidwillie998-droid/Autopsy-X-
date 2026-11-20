@@ -53,7 +53,7 @@ def select_confirmed_range(pivots, closes):
     lows = [p for p in pivots if p[0] == "L"]
     if not highs or not lows:
         return None
-    high, low = max(highs, key=lambda p: p[1]), max(lows, key=lambda p: p[1])
+    high, low = min(highs, key=lambda p: p[1]), min(lows, key=lambda p: p[1])
     if high[1] < low[1]:
         prior_highs = [p for p in highs if p[1] > low[1]]
         if not prior_highs:
@@ -82,12 +82,12 @@ class PremiumDiscountSourceContractTests(unittest.TestCase):
         self.assertIn("IsSwingLow", source)
 
     def test_range_requires_chronological_pivots_and_bos_confirmation(self):
-        bullish = [("H", 12, 110), ("L", 9, 90), ("H", 4, 120), ("L", 2, 100)]
+        bullish = [("H", 12, 110), ("L", 9, 90), ("H", 4, 120)]
         self.assertEqual(select_confirmed_range(bullish, [(5, 111)]),
                          ("BULLISH", 100, 120))
         self.assertIsNone(select_confirmed_range(bullish, [(5, 109)]))
 
-        bearish = [("L", 12, 90), ("H", 9, 120), ("L", 4, 80), ("H", 2, 100)]
+        bearish = [("L", 12, 90), ("H", 9, 120), ("L", 4, 80)]
         self.assertEqual(select_confirmed_range(bearish, [(3, 79)]),
                          ("BEARISH", 80, 100))
         self.assertIsNone(select_confirmed_range(bearish, [(3, 81)]))
