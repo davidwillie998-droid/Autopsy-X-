@@ -61,8 +61,12 @@ public:
       datetime dayStart = TimeCurrent() - (dtNow.hour*3600 + dtNow.min*60 + dtNow.sec);
       if(dayStart!=m_sessionDay) { m_sessionDay=dayStart; m_sessionCvd=0; }
 
-      m_lastTickBuyVol=0; m_lastTickSellVol=0;
+      // Invalidate every rolling-window output before attempting a refresh. A short or
+      // incomplete feed window must never leave yesterday's absorption/imbalance active.
+      m_windowDelta=0; m_windowVolume=0; m_imbalanceRatio=0; m_priceRangePts=0;
+      m_bullAbsorption=false; m_bearAbsorption=false;
       m_bullCvdDivergence=false; m_bearCvdDivergence=false;
+      m_lastTickBuyVol=0; m_lastTickSellVol=0;
 
       SAxTick newest;
       if(!md.GetSample(0,newest)) return;
@@ -78,16 +82,20 @@ public:
 
       double buyVol=0, sellVol=0;
       double hi=-DBL_MAX, lo=DBL_MAX;
+      int validSamples=0;
       for(int i=0;i<n;i++)
         {
          SAxTick t;
-         if(!md.GetSample(i,t)) continue;
+         if(!md.GetSample(i,t)) return; // fail closed: do not score a partial window
+         validSamples++;
          double vol = (double)MathMax((long)1,t.volume);
          if(t.dir>0)      buyVol  += vol;
          else if(t.dir<0) sellVol += vol;
          if(t.mid>hi) hi=t.mid;
          if(t.mid<lo) lo=t.mid;
         }
+      if(validSamples!=n || hi<=-DBL_MAX || lo>=DBL_MAX) return;
+
       m_windowVolume    = buyVol+sellVol;
       m_windowDelta     = buyVol-sellVol;
       m_imbalanceRatio  = (m_windowVolume>0) ? m_windowDelta/m_windowVolume : 0.0;
