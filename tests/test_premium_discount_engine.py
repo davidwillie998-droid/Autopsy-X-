@@ -84,12 +84,12 @@ class PremiumDiscountSourceContractTests(unittest.TestCase):
     def test_range_requires_chronological_pivots_and_bos_confirmation(self):
         bullish = [("H", 12, 110), ("L", 9, 90), ("H", 4, 120)]
         self.assertEqual(select_confirmed_range(bullish, [(5, 111)]),
-                         ("BULLISH", 100, 120))
+                         ("BULLISH", 90, 120))
         self.assertIsNone(select_confirmed_range(bullish, [(5, 109)]))
 
         bearish = [("L", 12, 90), ("H", 9, 120), ("L", 4, 80)]
         self.assertEqual(select_confirmed_range(bearish, [(3, 79)]),
-                         ("BEARISH", 80, 100))
+                         ("BEARISH", 80, 120))
         self.assertIsNone(select_confirmed_range(bearish, [(3, 81)]))
 
     def test_engine_exposes_strong_and_weak_extreme_classification(self):
