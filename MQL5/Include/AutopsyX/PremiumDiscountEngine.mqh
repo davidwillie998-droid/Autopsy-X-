@@ -31,6 +31,8 @@ struct SAxPremiumDiscountSnapshot
    ENUM_AX_PD_RANGE_DIRECTION rangeDirection;
    bool available;
    bool strongExtremeConfirmed;
+   bool strongExtremeProtected;
+   bool protectionBroken;
    double strongExtremePrice;
    double weakExtremePrice;
    datetime strongExtremeTime;
