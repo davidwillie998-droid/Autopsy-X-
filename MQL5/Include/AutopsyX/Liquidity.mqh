@@ -234,8 +234,10 @@ public:
          case AX_LIQ_EVENT_CONTINUATION_BEARISH:  eventName="CONTINUATION_BEARISH"; break;
          default:                                  eventName="NONE"; break;
         }
-      s += StringFormat("levels=%d pdh=%.5f pdl=%.5f event=%s level=%.5f",
-                        m_levelCount,m_pdh,m_pdl,eventName,m_eventLevel);
+      string eventBar=(m_lastClassifiedBarTime>0 ?
+                        TimeToString(m_lastClassifiedBarTime,TIME_DATE|TIME_MINUTES) : "UNAVAILABLE");
+      s += StringFormat("levels=%d pdh=%.5f pdl=%.5f event=%s level=%.5f event_bar=%s",
+                        m_levelCount,m_pdh,m_pdl,eventName,m_eventLevel,eventBar);
       return(s);
      }
 
