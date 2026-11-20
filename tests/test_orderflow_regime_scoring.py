@@ -7,12 +7,36 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 EA = ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5"
+ORDERFLOW = ROOT / "MQL5/Include/AutopsyX/OrderFlow.mqh"
 
 
 class RegimeConditionedOrderFlowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.source = EA.read_text()
+
+
+    def test_orderflow_invalidates_rolling_state_before_refresh(self):
+        source = ORDERFLOW.read_text()
+        update = source.split("void              Update(const CMarketData &md)", 1)[1].split(
+            "double            SessionCvd", 1
+        )[0]
+        reset = update.index("m_windowDelta=0; m_windowVolume=0; m_imbalanceRatio=0; m_priceRangePts=0;")
+        sample_read = update.index("md.GetSample(0,newest)")
+        self.assertLess(reset, sample_read)
+        for flag in ("m_bullAbsorption=false", "m_bearAbsorption=false",
+                     "m_bullCvdDivergence=false", "m_bearCvdDivergence=false"):
+            self.assertIn(flag, update[:sample_read])
+
+    def test_orderflow_rejects_incomplete_rolling_windows(self):
+        source = ORDERFLOW.read_text()
+        update = source.split("void              Update(const CMarketData &md)", 1)[1].split(
+            "double            SessionCvd", 1
+        )[0]
+        self.assertIn("if(n<5) return;", update)
+        self.assertIn("if(!md.GetSample(i,t)) return;", update)
+        self.assertIn("if(validSamples!=n || hi<=-DBL_MAX || lo>=DBL_MAX) return;", update)
+        self.assertNotIn("if(!md.GetSample(i,t)) continue;", update)
 
     def test_regime_weight_function_covers_all_existing_regimes(self):
         body = self.source.split(
