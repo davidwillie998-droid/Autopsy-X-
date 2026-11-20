@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 REQUIRED_COLUMNS = {
+    "record_type",
     "sequence",
     "symbol",
     "magic",
@@ -74,6 +75,15 @@ def audit_snapshot(path: str | Path) -> SnapshotAudit:
         magic: int | None = None
 
         for raw in reader:
+            if raw.get("record_type") == "SUMMARY":
+                try:
+                    reported_dropped_rows = max(reported_dropped_rows, int(raw["sequence"]))
+                except (TypeError, ValueError):
+                    invalid_rows += 1
+                continue
+            if raw.get("record_type") != "TICK":
+                invalid_rows += 1
+                continue
             rows += 1
             try:
                 sequence = int(raw["sequence"])
