@@ -156,6 +156,67 @@ class ShockOutcomeTrackerTests(unittest.TestCase):
             self.assertEqual(ledger2.export_csv(Path(tmp) / "outcomes.csv"), 1)
             ledger2.close()
 
+
+    def test_mql5_snapshot_adapter_feeds_tracker_with_same_bar_timestamp(self):
+        tracker = ShockOutcomeTracker((1,))
+        onset = {
+            "timestamp": 100, "valid": True, "dataQualityOk": True,
+            "shockDetected": True, "shockState": 3, "direction": 1,
+            "persistenceBars": 0, "normalizedMagnitude": 1.8,
+            "eventMagnitudeAtr": 1.8, "confidence": 70,
+            "regimeStrength": 80, "transmissionAvailable": True,
+            "crossAssetConfirmationAvailable": True,
+            "crossAssetConfirmation": True,
+        }
+        self.assertEqual(tracker.update_mql5(
+            symbol="XAUUSD", timeframe="M15", timestamp=100,
+            open_price=100, high=101, low=99, close=100,
+            snapshot_payload=onset,
+        ), [])
+        later = dict(onset, timestamp=200, shockDetected=False, shockState=4,
+                     persistenceBars=1, eventMagnitudeAtr=2.0)
+        result = tracker.update_mql5(
+            symbol="XAUUSD", timeframe="M15", timestamp=200,
+            open_price=100, high=102, low=99, close=101,
+            snapshot_payload=later,
+        )
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].directional_return_pct, 1.0)
+
+    def test_restart_restores_stream_watermark_and_rejects_duplicate_bar(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "watermark.sqlite"
+            ledger = ShockEventLedger(path)
+            tracker = ShockOutcomeTracker((1,), ledger=ledger)
+            onset = Snapshot(shock_detected=True, shock_state=State.ONSET,
+                             direction=1, persistence_bars=0, timestamp=100)
+            bar(tracker, 100, 100, snapshot=onset)
+            ledger.close()
+            ledger2 = ShockEventLedger(path)
+            resumed = ShockOutcomeTracker((1,), ledger=ledger2)
+            self.assertEqual(bar(resumed, 100, 100, snapshot=onset), [])
+            self.assertEqual(resumed.active_event_count, 1)
+            self.assertEqual(bar(resumed, 200, 101), [])
+            self.assertEqual(resumed.active_event_count, 0)
+            ledger2.close()
+
+    def test_duplicate_onset_cannot_reopen_matured_event_after_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "dedupe.sqlite"
+            ledger = ShockEventLedger(path)
+            tracker = ShockOutcomeTracker((1,), ledger=ledger)
+            onset = Snapshot(shock_detected=True, shock_state=State.ONSET,
+                             direction=1, persistence_bars=0, timestamp=100)
+            bar(tracker, 100, 100, snapshot=onset)
+            bar(tracker, 200, 101)
+            ledger.close()
+            ledger2 = ShockEventLedger(path)
+            resumed = ShockOutcomeTracker((1,), ledger=ledger2)
+            # The persisted watermark rejects replay of the old onset bar.
+            self.assertEqual(bar(resumed, 100, 100, snapshot=onset), [])
+            self.assertEqual(resumed.active_event_count, 0)
+            ledger2.close()
+
     def test_mismatched_snapshot_timestamp_is_rejected(self):
         tracker = ShockOutcomeTracker((1,))
         mismatch = Snapshot(shock_detected=True, shock_state=State.ONSET,
