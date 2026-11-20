@@ -5772,6 +5772,15 @@ void AxProcessTick(void)
       g_regimeHtf.Update();
      }
    g_liq.UpdateTick(g_md.CurrentBid(),g_md.CurrentAsk(),g_mom.DisplacementPts(),g_md.Point());
+   // Classification consumes the last CLOSED bar only and is guarded internally against
+   // repeated ticks. It labels reversal, continuation or unconfirmed sweep evidence; it does
+   // not alter the scorer, execution decision or account-risk controls.
+   datetime liquidityClosedBarTime=iTime(_Symbol,InpRegimeTimeframe,1);
+   double liquidityClosedBarClose=iClose(_Symbol,InpRegimeTimeframe,1);
+   if(liquidityClosedBarTime>0 && liquidityClosedBarClose>0.0)
+      g_liq.ClassifyClosedBar(liquidityClosedBarClose,g_mom.DisplacementPts(),
+                              g_structure.IsDisplacement(),g_structure.LastEvent(),
+                              liquidityClosedBarTime);
    datetime orbServerTime=TimeTradeServer();
    if(orbServerTime<=0) orbServerTime=TimeCurrent();
    g_advancedSessionOrb.Update(_Symbol,orbServerTime,g_md.Point());
