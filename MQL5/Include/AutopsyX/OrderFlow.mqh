@@ -126,7 +126,7 @@ public:
          for(int i=split;i<n;i++)
            {
             SAxTick t;
-            if(!md.GetSample(i,t)) continue;
+            if(!md.GetSample(i,t)) return; // fail closed: divergence requires a complete window
             if(t.mid>oldHigh) oldHigh=t.mid;
             if(t.mid<oldLow)  oldLow=t.mid;
             double vol=(double)MathMax((long)1,t.volume);
@@ -137,7 +137,7 @@ public:
          for(int i=0;i<split;i++)
            {
             SAxTick t;
-            if(!md.GetSample(i,t)) continue;
+            if(!md.GetSample(i,t)) return; // fail closed: divergence requires a complete window
             if(t.mid>newHigh) newHigh=t.mid;
             if(t.mid<newLow)  newLow=t.mid;
             double vol=(double)MathMax((long)1,t.volume);
