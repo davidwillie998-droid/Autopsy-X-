@@ -2577,6 +2577,37 @@ bool AxHtfConfluenceOk(const ENUM_AX_DIR dir)
 //--- order-flow read can genuinely turn a sub-threshold score into an actionable one (and vice     ---
 //--- versa a contradicting order-flow read can silently keep a borderline score from firing)       ---
 //--- exactly as if it had been part of the score from the start. ---
+//--- Regime-condition the combined flow/footprint/profile/DOM evidence bundle.
+//--- This is an advisory weight adjustment, not a new trade gate. Trend direction
+//--- comes from the already-updated completed-bar regime engine. Countertrend flow
+//--- remains visible at reduced weight; range/shock regimes cannot dominate the score.
+double AxOrderFlowRegimeMultiplier(const ENUM_AX_DIR direction)
+  {
+   ENUM_AX_REGIME regime=g_regime.Regime();
+   switch(regime)
+     {
+      case AX_REGIME_STRONG_TREND:
+        if(g_regime.Slope()==0.0) return(0.65);
+        return(((direction==AX_DIR_BUY && g_regime.Slope()>0.0) ||
+                (direction==AX_DIR_SELL && g_regime.Slope()<0.0)) ? 1.0 : 0.35);
+      case AX_REGIME_TREND:
+        if(g_regime.Slope()==0.0) return(0.60);
+        return(((direction==AX_DIR_BUY && g_regime.Slope()>0.0) ||
+                (direction==AX_DIR_SELL && g_regime.Slope()<0.0)) ? 0.85 : 0.45);
+      case AX_REGIME_BREAKOUT:
+        if(g_regime.Slope()==0.0) return(0.70);
+        return(((direction==AX_DIR_BUY && g_regime.Slope()>0.0) ||
+                (direction==AX_DIR_SELL && g_regime.Slope()<0.0)) ? 0.90 : 0.30);
+      case AX_REGIME_RANGE:          return(0.55);
+      case AX_REGIME_MEAN_REVERSION: return(0.65);
+      case AX_REGIME_HIGH_VOL:       return(0.50);
+      case AX_REGIME_LOW_VOL:        return(0.70);
+      case AX_REGIME_CHAOTIC:        return(0.20);
+      case AX_REGIME_UNSAFE:         return(0.0);
+     }
+   return(0.0);
+  }
+
 void AxApplyOrderFlowBonus(SAxScore &score)
   {
    if(!InpUseOrderFlow) return;
@@ -2600,8 +2631,16 @@ void AxApplyOrderFlowBonus(SAxScore &score)
       sellBonus += (g_heatmap.BearishScoreComponent()/100.0)*w;
      }
 
-   // Preserve the exact additive evidence used to move the base scorer output.
-   // These fields are diagnostic only and do not alter the score formula.
+   // Regime-conditioned evidence weighting: directional flow aligned with a
+   // confirmed trend keeps its influence; countertrend flow and unstable regimes
+   // are discounted rather than treated as equally predictive.
+   double buyRegimeMultiplier=AxOrderFlowRegimeMultiplier(AX_DIR_BUY);
+   double sellRegimeMultiplier=AxOrderFlowRegimeMultiplier(AX_DIR_SELL);
+   buyBonus*=buyRegimeMultiplier;
+   sellBonus*=sellRegimeMultiplier;
+
+   // Preserve the final additive evidence, including its regime adjustment.
+   // These fields remain diagnostic and do not alter the base score formula.
    score.orderFlowBullBonus=buyBonus;
    score.orderFlowBearBonus=sellBonus;
    score.buyScore  = AxClampD(score.preBonusBuyScore+buyBonus,0,100);
