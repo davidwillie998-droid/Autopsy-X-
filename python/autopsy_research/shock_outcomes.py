@@ -15,6 +15,7 @@ import hashlib
 import json
 import math
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
@@ -175,6 +176,18 @@ class ShockEventLedger:
         """)
         self.connection.commit()
 
+    @contextmanager
+    def transaction(self):
+        """Commit one complete bar update atomically, including its watermark."""
+        self.connection.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+        except Exception:
+            self.connection.rollback()
+            raise
+        else:
+            self.connection.commit()
+
     def load_watermarks(self) -> dict[tuple[str, str], int]:
         rows = self.connection.execute(
             "SELECT symbol,timeframe,last_timestamp FROM stream_watermarks"
@@ -187,14 +200,16 @@ class ShockEventLedger:
             "ON CONFLICT(symbol,timeframe) DO UPDATE SET last_timestamp=MAX(last_timestamp,excluded.last_timestamp)",
             (symbol.upper(), timeframe.upper(), int(timestamp)),
         )
-        self.connection.commit()
+        if not self.connection.in_transaction:
+            self.connection.commit()
 
     def register_event_once(self, event_id: str, timestamp: int) -> bool:
         cursor = self.connection.execute(
             "INSERT OR IGNORE INTO seen_events(event_id,created_timestamp) VALUES(?,?)",
             (event_id, int(timestamp)),
         )
-        self.connection.commit()
+        if not self.connection.in_transaction:
+            self.connection.commit()
         return cursor.rowcount == 1
 
     def save_active(self, event: _TrackedEvent) -> None:
@@ -205,7 +220,8 @@ class ShockEventLedger:
             "ON CONFLICT(event_id) DO UPDATE SET payload=excluded.payload",
             (event.event_id, json.dumps(payload, sort_keys=True)),
         )
-        self.connection.commit()
+        if not self.connection.in_transaction:
+            self.connection.commit()
 
     def delete_active(self, event_id: str) -> None:
         self.connection.execute("DELETE FROM active_events WHERE event_id=?", (event_id,))
@@ -230,7 +246,8 @@ class ShockEventLedger:
              outcome.observation_timestamp, outcome.symbol, outcome.timeframe,
              outcome.direction, payload),
         )
-        self.connection.commit()
+        if not self.connection.in_transaction:
+            self.connection.commit()
 
     def export_csv(self, destination: str | Path) -> int:
         rows = self.connection.execute(
@@ -287,7 +304,7 @@ class ShockOutcomeTracker:
         raw = f"{symbol.upper()}|{timeframe.upper()}|{timestamp}|{direction}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
-    def update(
+    def _update_one_bar(
         self, *, symbol: str, timeframe: str, timestamp: int,
         open_price: float, high: float, low: float, close: float, snapshot: Any,
     ) -> list[ShockOutcome]:
@@ -396,6 +413,24 @@ class ShockOutcomeTracker:
                 if self.ledger:
                     self.ledger.save_active(event)
         return outcomes
+
+
+    def update(
+        self, *, symbol: str, timeframe: str, timestamp: int,
+        open_price: float, high: float, low: float, close: float, snapshot: Any,
+    ) -> list[ShockOutcome]:
+        if self.ledger:
+            with self.ledger.transaction():
+                return self._update_one_bar(
+                    symbol=symbol, timeframe=timeframe, timestamp=timestamp,
+                    open_price=open_price, high=high, low=low, close=close,
+                    snapshot=snapshot,
+                )
+        return self._update_one_bar(
+            symbol=symbol, timeframe=timeframe, timestamp=timestamp,
+            open_price=open_price, high=high, low=low, close=close,
+            snapshot=snapshot,
+        )
 
     def update_mql5(
         self, *, symbol: str, timeframe: str, timestamp: int,
