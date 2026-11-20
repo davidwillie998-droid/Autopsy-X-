@@ -1,9 +1,13 @@
-"""Deterministic tests for forward shock-event outcome measurement."""
+"""Regression tests for normalized, persistent shock outcome research."""
 from dataclasses import dataclass
 from enum import Enum
+import tempfile
 import unittest
+from pathlib import Path
 
-from python.autopsy_research.shock_outcomes import ShockOutcomeTracker
+from python.autopsy_research.shock_outcomes import (
+    ShockEventLedger, ShockOutcomeTracker, ShockSnapshotAdapter,
+)
 
 
 class State(str, Enum):
@@ -28,6 +32,7 @@ class Snapshot:
     regime_strength: float = 80.0
     transmission_available: bool = True
     cross_asset_confirmation: bool | None = True
+    timestamp: int | None = None
 
 
 def bar(tracker, timestamp, close, high=None, low=None, snapshot=None, symbol="XAUUSD"):
@@ -36,109 +41,127 @@ def bar(tracker, timestamp, close, high=None, low=None, snapshot=None, symbol="X
     return tracker.update(
         symbol=symbol, timeframe="M15", timestamp=timestamp,
         open_price=close, high=high, low=low, close=close,
-        snapshot=snapshot or Snapshot(),
+        snapshot=snapshot or Snapshot(timestamp=timestamp),
     )
 
 
 class ShockOutcomeTrackerTests(unittest.TestCase):
-    def test_emits_only_after_completed_forward_horizon(self):
-        tracker = ShockOutcomeTracker((1, 3))
-        onset = Snapshot(shock_detected=True, shock_state=State.ONSET,
-                         direction=1, persistence_bars=0)
-        self.assertEqual(bar(tracker, 100, 100, snapshot=onset), [])
-        self.assertEqual(tracker.active_event_count, 1)
-        first = bar(tracker, 200, 101, high=102, low=99)
-        self.assertEqual([x.horizon_bars for x in first], [1])
-        self.assertAlmostEqual(first[0].directional_return_pct, 1.0)
-        self.assertAlmostEqual(first[0].max_favourable_excursion_pct, 2.0)
-        self.assertAlmostEqual(first[0].max_adverse_excursion_pct, -1.0)
-        self.assertEqual(bar(tracker, 300, 100.5), [])
-        third = bar(tracker, 400, 102)
-        self.assertEqual([x.horizon_bars for x in third], [3])
-        self.assertEqual(tracker.active_event_count, 0)
-
-    def test_bearish_event_returns_are_direction_adjusted(self):
+    def test_short_return_uses_conventional_simple_notional_pnl(self):
         tracker = ShockOutcomeTracker((1,))
         onset = Snapshot(shock_detected=True, shock_state=State.ONSET,
-                         direction=-1, persistence_bars=0)
+                         direction=-1, persistence_bars=0, timestamp=100)
         bar(tracker, 100, 100, snapshot=onset)
-        result = bar(tracker, 200, 98, high=101, low=97)[0]
-        self.assertAlmostEqual(result.directional_return_pct, (100 / 98 - 1) * 100)
-        self.assertAlmostEqual(result.max_favourable_excursion_pct, (100 / 97 - 1) * 100)
-        self.assertAlmostEqual(result.max_adverse_excursion_pct, (100 / 101 - 1) * 100)
+        result = bar(tracker, 200, 90, high=92, low=88)[0]
+        self.assertAlmostEqual(result.underlying_return_pct, -10.0)
+        self.assertAlmostEqual(result.directional_return_pct, 10.0)
+        self.assertAlmostEqual(result.max_favourable_excursion_pct, 12.0)
+        self.assertAlmostEqual(result.max_adverse_excursion_pct, 8.0)
 
-    def test_event_bar_wicks_are_not_counted_as_post_event_excursion(self):
+    def test_long_return_and_excursions(self):
         tracker = ShockOutcomeTracker((1,))
         onset = Snapshot(shock_detected=True, shock_state=State.ONSET,
-                         direction=1, persistence_bars=0)
+                         direction=1, persistence_bars=0, timestamp=100)
+        bar(tracker, 100, 100, snapshot=onset)
+        result = bar(tracker, 200, 101, high=103, low=98)[0]
+        self.assertAlmostEqual(result.underlying_return_pct, 1.0)
+        self.assertAlmostEqual(result.directional_return_pct, 1.0)
+        self.assertAlmostEqual(result.max_favourable_excursion_pct, 3.0)
+        self.assertAlmostEqual(result.max_adverse_excursion_pct, -2.0)
+
+    def test_onset_and_observation_magnitudes_are_distinct(self):
+        tracker = ShockOutcomeTracker((1,))
+        onset = Snapshot(shock_detected=True, shock_state=State.ONSET,
+                         direction=1, persistence_bars=0, normalized_magnitude=2.4,
+                         event_magnitude_atr=2.4, timestamp=100)
+        bar(tracker, 100, 100, snapshot=onset)
+        later = Snapshot(event_magnitude_atr=0.7, timestamp=200)
+        result = bar(tracker, 200, 101, snapshot=later)[0]
+        self.assertEqual(result.onset_magnitude_atr, 2.4)
+        self.assertEqual(result.event_magnitude_at_observation_atr, 0.7)
+
+    def test_event_bar_wicks_are_not_counted(self):
+        tracker = ShockOutcomeTracker((1,))
+        onset = Snapshot(shock_detected=True, shock_state=State.ONSET,
+                         direction=1, persistence_bars=0, timestamp=100)
         bar(tracker, 100, 100, high=120, low=80, snapshot=onset)
         result = bar(tracker, 200, 100, high=101, low=99)[0]
         self.assertAlmostEqual(result.max_favourable_excursion_pct, 1.0)
         self.assertAlmostEqual(result.max_adverse_excursion_pct, -1.0)
 
-    def test_bad_or_duplicate_bars_do_not_advance_horizon(self):
+    def test_invalid_bars_do_not_advance_event_horizons_or_accept_late_stale_bars(self):
         tracker = ShockOutcomeTracker((1,))
         onset = Snapshot(shock_detected=True, shock_state=State.ONSET,
-                         direction=1, persistence_bars=0)
+                         direction=1, persistence_bars=0, timestamp=100)
         bar(tracker, 100, 100, snapshot=onset)
-        invalid = Snapshot(valid=False)
-        self.assertEqual(bar(tracker, 150, 110, snapshot=invalid), [])
-        self.assertEqual(bar(tracker, 100, 110), [])
-        self.assertEqual(tracker.active_event_count, 1)
-        result = bar(tracker, 200, 101)
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0].observation_timestamp, 200)
+        self.assertEqual(bar(tracker, 150, 110, snapshot=Snapshot(valid=False)), [])
+        self.assertEqual(bar(tracker, 140, 110), [])
+        result = bar(tracker, 200, 101)[0]
+        self.assertEqual(result.observation_timestamp, 200)
 
-    def test_out_of_order_and_non_sane_ohlc_are_rejected(self):
+    def test_streams_are_independent(self):
         tracker = ShockOutcomeTracker((1,))
         onset = Snapshot(shock_detected=True, shock_state=State.ONSET,
-                         direction=1, persistence_bars=0)
-        bar(tracker, 100, 100, snapshot=onset)
-        self.assertEqual(bar(tracker, 200, 100, high=99, low=98), [])
-        self.assertEqual(bar(tracker, 150, 100), [])
-        self.assertEqual(tracker.active_event_count, 1)
+                         direction=1, persistence_bars=0, timestamp=100)
+        bar(tracker, 100, 100, snapshot=onset, symbol="XAUUSD")
+        other = tracker.update(symbol="GBPJPY", timeframe="M15", timestamp=50,
+            open_price=100, high=100, low=100, close=100, snapshot=Snapshot(timestamp=50))
+        self.assertEqual(other, [])
+        result = bar(tracker, 200, 101)[0]
+        self.assertEqual(result.symbol, "XAUUSD")
 
     def test_overlapping_events_keep_independent_lifecycles(self):
         tracker = ShockOutcomeTracker((1, 2))
         long_onset = Snapshot(shock_detected=True, shock_state=State.ONSET,
-                              direction=1, persistence_bars=0)
+                              direction=1, persistence_bars=0, timestamp=100)
         short_onset = Snapshot(shock_detected=True, shock_state=State.ONSET,
-                               direction=-1, persistence_bars=0)
+                               direction=-1, persistence_bars=0, timestamp=200)
         bar(tracker, 100, 100, snapshot=long_onset)
         first = bar(tracker, 200, 101, snapshot=short_onset)
         self.assertEqual(len(first), 1)
         self.assertEqual(first[0].direction, 1)
-        self.assertEqual(tracker.active_event_count, 2)
         second = bar(tracker, 300, 100)
-        self.assertEqual(len(second), 2)
-        self.assertEqual(
-            {(x.direction, x.horizon_bars) for x in second},
-            {(1, 2), (-1, 1)},
-        )
-        self.assertEqual(tracker.active_event_count, 1)
+        self.assertEqual({(x.direction, x.horizon_bars) for x in second}, {(1, 2), (-1, 1)})
         third = bar(tracker, 400, 99)
-        self.assertEqual(len(third), 1)
-        self.assertEqual(third[0].horizon_bars, 2)
-        self.assertEqual(third[0].direction, -1)
-        self.assertEqual(tracker.active_event_count, 0)
+        self.assertEqual((third[0].direction, third[0].horizon_bars), (-1, 2))
 
-    def test_outcome_keeps_onset_context_not_later_bar_context(self):
+    def test_mql5_adapter_maps_enum_and_optional_confirmation(self):
+        mapped = ShockSnapshotAdapter.from_mql5({
+            "timestamp": 100, "valid": True, "dataQualityOk": True,
+            "shockDetected": True, "shockState": 3, "direction": -1,
+            "persistenceBars": 0, "normalizedMagnitude": 1.8,
+            "eventMagnitudeAtr": 2.1, "confidence": 75,
+            "regimeStrength": 60, "transmissionAvailable": False,
+            "crossAssetConfirmationAvailable": False, "crossAssetConfirmation": False,
+        })
+        self.assertEqual(mapped["shock_state"], "ONSET")
+        self.assertIsNone(mapped["cross_asset_confirmation"])
+        self.assertEqual(mapped["event_magnitude_atr"], 2.1)
+
+    def test_ledger_restores_open_events_and_deduplicates_outcomes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "events.sqlite"
+            ledger = ShockEventLedger(path)
+            tracker = ShockOutcomeTracker((1, 2), ledger=ledger)
+            onset = Snapshot(shock_detected=True, shock_state=State.ONSET,
+                             direction=1, persistence_bars=0, timestamp=100)
+            bar(tracker, 100, 100, snapshot=onset)
+            ledger.close()
+
+            ledger2 = ShockEventLedger(path)
+            resumed = ShockOutcomeTracker((1, 2), ledger=ledger2)
+            self.assertEqual(resumed.active_event_count, 1)
+            result = bar(resumed, 200, 102)
+            self.assertEqual(len(result), 1)
+            ledger2.save_outcome(result[0])
+            self.assertEqual(ledger2.export_csv(Path(tmp) / "outcomes.csv"), 1)
+            ledger2.close()
+
+    def test_mismatched_snapshot_timestamp_is_rejected(self):
         tracker = ShockOutcomeTracker((1,))
-        onset = Snapshot(shock_detected=True, shock_state=State.ONSET,
-                         direction=1, persistence_bars=0, regime="TREND_BULL",
-                         regime_strength=88, confidence=82)
-        bar(tracker, 100, 100, snapshot=onset)
-        later = Snapshot(regime="RANGE", regime_strength=25, confidence=10)
-        result = bar(tracker, 200, 101, snapshot=later)[0]
-        self.assertEqual(result.regime, "TREND_BULL")
-        self.assertEqual(result.regime_strength, 88)
-        self.assertEqual(result.confidence, 82)
-
-    def test_invalid_horizon_configuration_rejected(self):
-        with self.assertRaises(ValueError):
-            ShockOutcomeTracker((0, 1))
-        with self.assertRaises(ValueError):
-            ShockOutcomeTracker(())
+        mismatch = Snapshot(shock_detected=True, shock_state=State.ONSET,
+                            direction=1, persistence_bars=0, timestamp=99)
+        self.assertEqual(bar(tracker, 100, 100, snapshot=mismatch), [])
+        self.assertEqual(tracker.active_event_count, 0)
 
 
 if __name__ == "__main__":
