@@ -17,11 +17,24 @@ enum ENUM_AX_PD_ZONE
    AX_PD_PREMIUM
   };
 
+enum ENUM_AX_PD_RANGE_DIRECTION
+  {
+   AX_PD_RANGE_UNCONFIRMED=0,
+   AX_PD_RANGE_BULLISH,
+   AX_PD_RANGE_BEARISH
+  };
+
 struct SAxPremiumDiscountSnapshot
   {
    ENUM_TIMEFRAMES timeframe;
    ENUM_AX_PD_ZONE zone;
+   ENUM_AX_PD_RANGE_DIRECTION rangeDirection;
    bool available;
+   bool strongExtremeConfirmed;
+   double strongExtremePrice;
+   double weakExtremePrice;
+   datetime strongExtremeTime;
+   datetime weakExtremeTime;
    bool bullishOte;
    bool bearishOte;
    double rangeHigh;
@@ -102,27 +115,79 @@ private:
 
       double swingHigh=0.0,swingLow=0.0;
       datetime swingHighTime=0,swingLowTime=0;
-      // Series index 0 is the newest completed candle. The first confirmed
-      // pivot found in each direction is therefore the most recent one.
+      int swingHighIndex=-1,swingLowIndex=-1;
+      // Series index 0 is the newest completed candle. Capture the latest
+      // confirmed high and low, retaining their indices for chronology checks.
       for(int i=m_wing;i<copied-m_wing;i++)
         {
-         if(swingHighTime==0 && IsSwingHigh(rates,i,copied))
+         if(swingHighIndex<0 && IsSwingHigh(rates,i,copied))
            {
             swingHigh=rates[i].high;
             swingHighTime=rates[i].time;
+            swingHighIndex=i;
            }
-         if(swingLowTime==0 && IsSwingLow(rates,i,copied))
+         if(swingLowIndex<0 && IsSwingLow(rates,i,copied))
            {
             swingLow=rates[i].low;
             swingLowTime=rates[i].time;
+            swingLowIndex=i;
            }
-         if(swingHighTime>0 && swingLowTime>0) break;
+         if(swingHighIndex>=0 && swingLowIndex>=0) break;
         }
 
-      if(swingHighTime<=0 || swingLowTime<=0 || swingHigh<=swingLow ||
+      if(swingHighIndex<0 || swingLowIndex<0 || swingHigh<=swingLow ||
          price<=0.0 || !MathIsValidNumber(price))
         {
          ResetSlot(slot,"CONFIRMED_SWING_RANGE_UNAVAILABLE");
+         return(false);
+        }
+
+      // The latest opposite-pivot pair must form a chronological impulse.
+      // A bullish impulse is an older low followed by a newer high; bearish
+      // is an older high followed by a newer low. Require a close beyond the
+      // prior opposite swing after the first pivot before calling it confirmed.
+      ENUM_AX_PD_RANGE_DIRECTION rangeDirection=AX_PD_RANGE_UNCONFIRMED;
+      bool structureBreak=false;
+      if(swingLowIndex>swingHighIndex)
+        {
+         double priorHigh=0.0;
+         for(int i=swingLowIndex+1;i<copied-m_wing;i++)
+            if(IsSwingHigh(rates,i,copied))
+              {
+               priorHigh=rates[i].high;
+               break;
+              }
+         if(priorHigh>0.0)
+            for(int i=swingHighIndex;i<swingLowIndex;i++)
+               if(rates[i].close>priorHigh)
+                 {
+                  structureBreak=true;
+                  break;
+                 }
+         if(structureBreak) rangeDirection=AX_PD_RANGE_BULLISH;
+        }
+      else if(swingHighIndex>swingLowIndex)
+        {
+         double priorLow=0.0;
+         for(int i=swingHighIndex+1;i<copied-m_wing;i++)
+            if(IsSwingLow(rates,i,copied))
+              {
+               priorLow=rates[i].low;
+               break;
+              }
+         if(priorLow>0.0)
+            for(int i=swingLowIndex;i<swingHighIndex;i++)
+               if(rates[i].close<priorLow)
+                 {
+                  structureBreak=true;
+                  break;
+                 }
+         if(structureBreak) rangeDirection=AX_PD_RANGE_BEARISH;
+        }
+
+      if(rangeDirection==AX_PD_RANGE_UNCONFIRMED)
+        {
+         ResetSlot(slot,"DEALING_RANGE_LACKS_CHRONOLOGICAL_BOS_CONFIRMATION");
          return(false);
         }
 
@@ -138,6 +203,12 @@ private:
       ZeroMemory(s);
       s.timeframe=tf;
       s.available=true;
+      s.rangeDirection=rangeDirection;
+      s.strongExtremeConfirmed=true;
+      s.strongExtremePrice=(rangeDirection==AX_PD_RANGE_BULLISH ? swingLow : swingHigh);
+      s.weakExtremePrice=(rangeDirection==AX_PD_RANGE_BULLISH ? swingHigh : swingLow);
+      s.strongExtremeTime=(rangeDirection==AX_PD_RANGE_BULLISH ? swingLowTime : swingHighTime);
+      s.weakExtremeTime=(rangeDirection==AX_PD_RANGE_BULLISH ? swingHighTime : swingLowTime);
       s.rangeHigh=swingHigh;
       s.rangeLow=swingLow;
       s.equilibrium=(swingHigh+swingLow)*0.5;
@@ -156,7 +227,9 @@ private:
       // bearish retracement sits in the upper 61.8%-78.6% of the range.
       s.bullishOte=(position>=0.214 && position<=0.382);
       s.bearishOte=(position>=0.618 && position<=0.786);
-      s.reason="CONFIRMED_SWING_RANGE";
+      s.reason=(rangeDirection==AX_PD_RANGE_BULLISH
+                ? "BULLISH_RANGE_CONFIRMED_BY_BOS"
+                : "BEARISH_RANGE_CONFIRMED_BY_BOS");
       m_state[slot]=s;
       m_lastClosedBar[slot]=closedTime;
       return(true);
