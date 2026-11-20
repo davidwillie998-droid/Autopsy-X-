@@ -51,11 +51,11 @@ class ShockOutcomeTrackerTests(unittest.TestCase):
         onset = Snapshot(shock_detected=True, shock_state=State.ONSET,
                          direction=-1, persistence_bars=0, timestamp=100)
         bar(tracker, 100, 100, snapshot=onset)
-        result = bar(tracker, 200, 90, high=92, low=88)[0]
+        result = bar(tracker, 200, 90, high=105, low=88)[0]
         self.assertAlmostEqual(result.underlying_return_pct, -10.0)
         self.assertAlmostEqual(result.directional_return_pct, 10.0)
         self.assertAlmostEqual(result.max_favourable_excursion_pct, 12.0)
-        self.assertAlmostEqual(result.max_adverse_excursion_pct, 8.0)
+        self.assertAlmostEqual(result.max_adverse_excursion_pct, 5.0)
 
     def test_long_return_and_excursions(self):
         tracker = ShockOutcomeTracker((1,))
@@ -66,7 +66,7 @@ class ShockOutcomeTrackerTests(unittest.TestCase):
         self.assertAlmostEqual(result.underlying_return_pct, 1.0)
         self.assertAlmostEqual(result.directional_return_pct, 1.0)
         self.assertAlmostEqual(result.max_favourable_excursion_pct, 3.0)
-        self.assertAlmostEqual(result.max_adverse_excursion_pct, -2.0)
+        self.assertAlmostEqual(result.max_adverse_excursion_pct, 2.0)
 
     def test_onset_and_observation_magnitudes_are_distinct(self):
         tracker = ShockOutcomeTracker((1,))
@@ -130,12 +130,15 @@ class ShockOutcomeTrackerTests(unittest.TestCase):
             "shockDetected": True, "shockState": 3, "direction": -1,
             "persistenceBars": 0, "normalizedMagnitude": 1.8,
             "eventMagnitudeAtr": 2.1, "confidence": 75,
-            "regimeStrength": 60, "transmissionAvailable": False,
-            "crossAssetConfirmationAvailable": False, "crossAssetConfirmation": False,
+            "regime": 5, "regimeStrength": 60, "transmissionState": 6,
+            "transmissionAvailable": False, "crossAssetConfirmationAvailable": False,
+            "crossAssetConfirmation": False,
         })
         self.assertEqual(mapped["shock_state"], "ONSET")
         self.assertIsNone(mapped["cross_asset_confirmation"])
         self.assertEqual(mapped["event_magnitude_atr"], 2.1)
+        self.assertEqual(mapped["regime"], "R5_PERSISTENT_BEARISH_TREND")
+        self.assertEqual(mapped["information_transmission_state"], "DIVERGING")
 
     def test_ledger_restores_open_events_and_deduplicates_outcomes(self):
         with tempfile.TemporaryDirectory() as tmp:
