@@ -61,7 +61,20 @@ class LiquidityEventClassificationTests(unittest.TestCase):
         ea = EA.read_text()
         self.assertIn("g_liq.ClassifyClosedBar", ea)
         self.assertIn("iTime(_Symbol,InpRegimeTimeframe,1)", ea)
+        self.assertIn("iOpen(_Symbol,InpRegimeTimeframe,1)", ea)
         self.assertIn("iClose(_Symbol,InpRegimeTimeframe,1)", ea)
+
+    def test_classifier_uses_signed_closed_bar_body_not_live_tick_momentum(self):
+        ea = EA.read_text()
+        self.assertIn(
+            "double closedBarDisplacementPts=(liquidityClosedBarClose-liquidityClosedBarOpen)/liquidityPoint;",
+            ea,
+        )
+        self.assertIn("g_structure.LastEventTime()==liquidityClosedBarTime", ea)
+        self.assertIn("closedBarStructureEvent=g_structure.LastEvent()", ea)
+        call = ea.split("g_liq.ClassifyClosedBar", 1)[1].split(");", 1)[0]
+        self.assertIn("closedBarDisplacementPts", call)
+        self.assertNotIn("g_mom.DisplacementPts()", call)
 
 
 if __name__ == "__main__":
