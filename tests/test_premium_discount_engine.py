@@ -47,6 +47,32 @@ class PremiumDiscountMathTests(unittest.TestCase):
             classify(100.0, 100.0, 100.0)
 
 
+def select_confirmed_range(pivots, closes):
+    """Reference contract: pivots are (kind, index, price), index 0 is newest."""
+    highs = [p for p in pivots if p[0] == "H"]
+    lows = [p for p in pivots if p[0] == "L"]
+    if not highs or not lows:
+        return None
+    high, low = max(highs, key=lambda p: p[1]), max(lows, key=lambda p: p[1])
+    if high[1] < low[1]:
+        prior_highs = [p for p in highs if p[1] > low[1]]
+        if not prior_highs:
+            return None
+        prior = min(prior_highs, key=lambda p: p[1])
+        if not any(index < low[1] and index >= high[1] and close > prior[2]
+                   for index, close in closes):
+            return None
+        return "BULLISH", low[2], high[2]
+    prior_lows = [p for p in lows if p[1] > high[1]]
+    if not prior_lows:
+        return None
+    prior = min(prior_lows, key=lambda p: p[1])
+    if not any(index < high[1] and index >= low[1] and close < prior[2]
+               for index, close in closes):
+        return None
+    return "BEARISH", low[2], high[2]
+
+
 class PremiumDiscountSourceContractTests(unittest.TestCase):
     def test_engine_uses_completed_bars_only(self):
         source = SOURCE.read_text()
@@ -54,6 +80,25 @@ class PremiumDiscountSourceContractTests(unittest.TestCase):
         self.assertIn("iTime(m_symbol,tf,1)", source)
         self.assertIn("IsSwingHigh", source)
         self.assertIn("IsSwingLow", source)
+
+    def test_range_requires_chronological_pivots_and_bos_confirmation(self):
+        bullish = [("H", 12, 110), ("L", 9, 90), ("H", 4, 120), ("L", 2, 100)]
+        self.assertEqual(select_confirmed_range(bullish, [(5, 111)]),
+                         ("BULLISH", 100, 120))
+        self.assertIsNone(select_confirmed_range(bullish, [(5, 109)]))
+
+        bearish = [("L", 12, 90), ("H", 9, 120), ("L", 4, 80), ("H", 2, 100)]
+        self.assertEqual(select_confirmed_range(bearish, [(3, 79)]),
+                         ("BEARISH", 80, 100))
+        self.assertIsNone(select_confirmed_range(bearish, [(3, 81)]))
+
+    def test_engine_exposes_strong_and_weak_extreme_classification(self):
+        source = SOURCE.read_text()
+        self.assertIn("AX_PD_RANGE_BULLISH", source)
+        self.assertIn("AX_PD_RANGE_BEARISH", source)
+        self.assertIn("DEALING_RANGE_LACKS_CHRONOLOGICAL_BOS_CONFIRMATION", source)
+        self.assertIn("strongExtremeConfirmed", source)
+        self.assertIn("weakExtremePrice", source)
 
     def test_all_five_timeframes_are_configured(self):
         source = SOURCE.read_text()
