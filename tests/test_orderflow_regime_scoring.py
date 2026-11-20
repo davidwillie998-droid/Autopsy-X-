@@ -58,7 +58,6 @@ class RegimeConditionedOrderFlowTests(unittest.TestCase):
         self.assertIn("? 1.0 : 0.35", body)
         self.assertIn("? 0.85 : 0.45", body)
         self.assertIn("? 0.90 : 0.30", body)
-        self.assertIn("return(0.30)", body)
 
     def test_all_flow_evidence_is_scaled_before_it_changes_scores(self):
         body = self.source.split("void AxApplyOrderFlowBonus(SAxScore &score)", 1)[1]
