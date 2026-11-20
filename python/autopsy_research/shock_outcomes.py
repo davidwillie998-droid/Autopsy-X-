@@ -126,6 +126,16 @@ class ShockEventLedger:
                 event_id TEXT PRIMARY KEY,
                 payload TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS stream_watermarks (
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                last_timestamp INTEGER NOT NULL,
+                PRIMARY KEY(symbol,timeframe)
+            );
+            CREATE TABLE IF NOT EXISTS seen_events (
+                event_id TEXT PRIMARY KEY,
+                created_timestamp INTEGER NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS outcomes (
                 event_id TEXT NOT NULL,
                 horizon_bars INTEGER NOT NULL,
@@ -141,6 +151,28 @@ class ShockEventLedger:
                 ON outcomes(symbol, timeframe, horizon_bars);
         """)
         self.connection.commit()
+
+    def load_watermarks(self) -> dict[tuple[str, str], int]:
+        rows = self.connection.execute(
+            "SELECT symbol,timeframe,last_timestamp FROM stream_watermarks"
+        ).fetchall()
+        return {(r["symbol"], r["timeframe"]): int(r["last_timestamp"]) for r in rows}
+
+    def save_watermark(self, symbol: str, timeframe: str, timestamp: int) -> None:
+        self.connection.execute(
+            "INSERT INTO stream_watermarks(symbol,timeframe,last_timestamp) VALUES(?,?,?) "
+            "ON CONFLICT(symbol,timeframe) DO UPDATE SET last_timestamp=MAX(last_timestamp,excluded.last_timestamp)",
+            (symbol.upper(), timeframe.upper(), int(timestamp)),
+        )
+        self.connection.commit()
+
+    def register_event_once(self, event_id: str, timestamp: int) -> bool:
+        cursor = self.connection.execute(
+            "INSERT OR IGNORE INTO seen_events(event_id,created_timestamp) VALUES(?,?)",
+            (event_id, int(timestamp)),
+        )
+        self.connection.commit()
+        return cursor.rowcount == 1
 
     def save_active(self, event: _TrackedEvent) -> None:
         payload = asdict(event)
@@ -212,7 +244,9 @@ class ShockOutcomeTracker:
         self.horizons = normalized
         self.ledger = ledger
         self._active = ledger.load_active() if ledger else []
-        self._last_timestamp_by_stream: dict[tuple[str, str], int] = {}
+        self._last_timestamp_by_stream: dict[tuple[str, str], int] = (
+            ledger.load_watermarks() if ledger else {}
+        )
 
     @staticmethod
     def _get(snapshot: Any, name: str, default: Any = None) -> Any:
@@ -243,6 +277,8 @@ class ShockOutcomeTracker:
         # The watermark advances on every newer timestamp, including rejected
         # observations, so delayed stale data cannot enter later.
         self._last_timestamp_by_stream[stream] = int(timestamp)
+        if self.ledger:
+            self.ledger.save_watermark(stream[0], stream[1], int(timestamp))
 
         prices = (open_price, high, low, close)
         try:
@@ -334,6 +370,19 @@ class ShockOutcomeTracker:
                 if self.ledger:
                     self.ledger.save_active(event)
         return outcomes
+
+    def update_mql5(
+        self, *, symbol: str, timeframe: str, timestamp: int,
+        open_price: float, high: float, low: float, close: float,
+        snapshot_payload: dict[str, Any],
+    ) -> list[ShockOutcome]:
+        """Consume the explicitly mapped SAxShockDNASnapshot field contract."""
+        snapshot = ShockSnapshotAdapter.from_mql5(snapshot_payload)
+        return self.update(
+            symbol=symbol, timeframe=timeframe, timestamp=timestamp,
+            open_price=open_price, high=high, low=low, close=close,
+            snapshot=snapshot,
+        )
 
     @property
     def active_event_count(self) -> int:
