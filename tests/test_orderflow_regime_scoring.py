@@ -1,0 +1,59 @@
+"""Source-contract tests for regime-conditioned order-flow evidence weights.
+
+These tests verify the MQL5 decision contract, not profitability or native compilation.
+"""
+from pathlib import Path
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+EA = ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5"
+
+
+class RegimeConditionedOrderFlowTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.source = EA.read_text()
+
+    def test_regime_weight_function_covers_all_existing_regimes(self):
+        body = self.source.split(
+            "double AxOrderFlowRegimeMultiplier(const ENUM_AX_DIR direction)", 1
+        )[1].split("void AxApplyOrderFlowBonus", 1)[0]
+        for regime in (
+            "AX_REGIME_STRONG_TREND", "AX_REGIME_TREND", "AX_REGIME_BREAKOUT",
+            "AX_REGIME_RANGE", "AX_REGIME_MEAN_REVERSION", "AX_REGIME_HIGH_VOL",
+            "AX_REGIME_LOW_VOL", "AX_REGIME_CHAOTIC", "AX_REGIME_UNSAFE",
+        ):
+            self.assertIn(regime, body)
+
+    def test_trend_weights_distinguish_aligned_and_countertrend_flow(self):
+        body = self.source.split(
+            "double AxOrderFlowRegimeMultiplier(const ENUM_AX_DIR direction)", 1
+        )[1].split("void AxApplyOrderFlowBonus", 1)[0]
+        self.assertIn("g_regime.Slope()>0.0", body)
+        self.assertIn("g_regime.Slope()<0.0", body)
+        self.assertIn("return(1.0)", body)
+        self.assertIn("return(0.35)", body)
+        self.assertIn("return(0.45)", body)
+        self.assertIn("return(0.30)", body)
+
+    def test_all_flow_evidence_is_scaled_before_it_changes_scores(self):
+        body = self.source.split("void AxApplyOrderFlowBonus(SAxScore &score)", 1)[1]
+        self.assertIn("buyBonus*=buyRegimeMultiplier", body)
+        self.assertIn("sellBonus*=sellRegimeMultiplier", body)
+        self.assertLess(body.index("buyBonus*=buyRegimeMultiplier"),
+                        body.index("score.buyScore"))
+        self.assertLess(body.index("sellBonus*=sellRegimeMultiplier"),
+                        body.index("score.sellScore"))
+
+    def test_regime_conditioning_is_not_an_order_trigger_or_risk_override(self):
+        body = self.source.split(
+            "double AxOrderFlowRegimeMultiplier(const ENUM_AX_DIR direction)", 1
+        )[1].split("void AxApplyPremiumDiscountScoreBonus", 1)[0]
+        self.assertNotIn("OrderSend", body)
+        self.assertNotIn("CTrade", body)
+        self.assertIn("if(!g_regime.TradingAllowed()) return", body)
+        self.assertIn("AX_REGIME_UNSAFE", body)
+
+
+if __name__ == "__main__":
+    unittest.main()
