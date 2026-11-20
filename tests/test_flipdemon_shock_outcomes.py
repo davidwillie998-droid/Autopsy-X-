@@ -110,8 +110,14 @@ class ShockOutcomeTrackerTests(unittest.TestCase):
         self.assertEqual(first[0].direction, 1)
         self.assertEqual(tracker.active_event_count, 2)
         second = bar(tracker, 300, 100)
-        self.assertEqual(len(second), 2)
-        self.assertEqual({x.direction for x in second}, {1, -1})
+        self.assertEqual(len(second), 1)
+        self.assertEqual(second[0].horizon_bars, 2)
+        self.assertEqual(second[0].direction, 1)
+        self.assertEqual(tracker.active_event_count, 1)
+        third = bar(tracker, 400, 99)
+        self.assertEqual(len(third), 1)
+        self.assertEqual(third[0].horizon_bars, 2)
+        self.assertEqual(third[0].direction, -1)
         self.assertEqual(tracker.active_event_count, 0)
 
     def test_outcome_keeps_onset_context_not_later_bar_context(self):
