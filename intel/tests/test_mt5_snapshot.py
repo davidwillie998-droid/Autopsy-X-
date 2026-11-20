@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from pathlib import Path
 
 import pytest
 
@@ -105,3 +106,19 @@ def test_terminal_footer_reports_trailing_drops(tmp_path):
     assert audit.rows == 1
     assert audit.reported_dropped_rows == 4
     assert not audit.valid_for_replay_import
+
+
+def test_mql5_snapshot_capture_precedes_downstream_gates_and_attaches_decision():
+    root = Path(__file__).resolve().parents[2]
+    ea = (root / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text()
+    recorder = (root / "MQL5/Include/AutopsyX/MarketSnapshotRecorder.mqh").read_text()
+
+    raw_capture = ea.index("snapshotCaptured=g_marketSnapshotRecorder.Record")
+    first_downstream_update = ea.index("g_w1Institutional.Update();", raw_capture)
+    score_assignment = ea.index("g_lastScore = score")
+    decision_attach = ea.index("g_marketSnapshotRecorder.UpdateLastDecision", score_assignment)
+
+    assert raw_capture < first_downstream_update
+    assert score_assignment < decision_attach
+    assert '"score_updated"' in recorder
+    assert 'FileWrite(m_file,"SUMMARY",m_dropped)' in recorder
