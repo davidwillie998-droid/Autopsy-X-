@@ -355,7 +355,8 @@ class ShockOutcomeTracker:
         ):
             event_id = self._event_id(symbol, timeframe, int(timestamp), direction)
             # Idempotent event creation protects replay/restart from duplicate onset.
-            if not any(e.event_id == event_id for e in self._active):
+            unseen = self.ledger.register_event_once(event_id, int(timestamp)) if self.ledger else True
+            if unseen and not any(e.event_id == event_id for e in self._active):
                 event = _TrackedEvent(
                     event_id=event_id, symbol=symbol, timeframe=timeframe,
                     timestamp=int(timestamp), entry_close=float(close), direction=direction,
