@@ -5447,7 +5447,20 @@ bool AxManageHedgingTrailingTickets(void)
 //====================================================================
 void AxProcessTick(void)
   {
+   bool snapshotCaptured=false;
    if(!g_md.OnTickUpdate()) return;
+
+   // Capture every valid accepted tick before downstream integrity/risk gates can return early.
+   // The decision snapshot is attached later if this tick reaches score evaluation.
+   if(InpEnableMarketSnapshots)
+     {
+      MqlTick rawSnapshotTick;
+      if(SymbolInfoTick(_Symbol,rawSnapshotTick))
+         snapshotCaptured=g_marketSnapshotRecorder.Record(rawSnapshotTick,g_lastScore,
+            (int)g_engineState,g_pendingActive,g_haveOpenPosition,(int)g_posState.dir,
+            AccountInfoDouble(ACCOUNT_EQUITY),AccountInfoDouble(ACCOUNT_BALANCE),
+            AccountInfoDouble(ACCOUNT_MARGIN_FREE),AccountInfoDouble(ACCOUNT_MARGIN_LEVEL));
+     }
    // Check the weekly close timestamp before any entry or pyramid decision.
    // Update() performs no history copy unless a new W1 candle has closed.
    g_w1Institutional.Update();
@@ -5835,16 +5848,12 @@ void AxProcessTick(void)
    AxApplyAdvancedORBScoreBonus(score);
    AxApplyPremiumDiscountScoreBonus(score);
    g_lastScore = score; // dashboard reads this, not g_scorer.Last(), so it shows the blended score
-   // Capture the exact tick and blended score used by this evaluation. Disk writes are deferred to OnTimer.
-   if(InpEnableMarketSnapshots)
-     {
-      MqlTick snapshotTick;
-      if(SymbolInfoTick(_Symbol,snapshotTick))
-         g_marketSnapshotRecorder.Record(snapshotTick,g_lastScore,(int)g_engineState,
-            g_pendingActive,g_haveOpenPosition,(int)g_posState.dir,
-            AccountInfoDouble(ACCOUNT_EQUITY),AccountInfoDouble(ACCOUNT_BALANCE),
-            AccountInfoDouble(ACCOUNT_MARGIN_FREE),AccountInfoDouble(ACCOUNT_MARGIN_LEVEL));
-     }
+   // Attach the exact same-tick blended decision to the raw snapshot captured at handler entry.
+   if(snapshotCaptured)
+      g_marketSnapshotRecorder.UpdateLastDecision(g_lastScore,(int)g_engineState,
+         g_pendingActive,g_haveOpenPosition,(int)g_posState.dir,
+         AccountInfoDouble(ACCOUNT_EQUITY),AccountInfoDouble(ACCOUNT_BALANCE),
+         AccountInfoDouble(ACCOUNT_MARGIN_FREE),AccountInfoDouble(ACCOUNT_MARGIN_LEVEL));
    g_accuracy.OnTickUpdate(g_md.CurrentMid());
    //--- sample into the accuracy engine on signal-direction change or at most once/second -   ---
    //--- registering every tick of a sustained signal would saturate the ring buffer on fast-  ---
