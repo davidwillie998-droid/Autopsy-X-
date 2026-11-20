@@ -88,9 +88,16 @@ class PremiumDiscountSourceContractTests(unittest.TestCase):
         self.assertIsNone(select_confirmed_range(bullish, [(5, 109)]))
 
         bearish = [("L", 12, 90), ("H", 9, 120), ("L", 4, 80)]
-        self.assertEqual(select_confirmed_range(bearish, [(3, 79)]),
+        self.assertEqual(select_confirmed_range(bearish, [(6, 89)]),
                          ("BEARISH", 80, 120))
-        self.assertIsNone(select_confirmed_range(bearish, [(3, 81)]))
+        self.assertIsNone(select_confirmed_range(bearish, [(6, 91)]))
+
+    def test_protected_extreme_requires_closed_bar_break(self):
+        source = SOURCE.read_text()
+        self.assertIn("rates[0].close<swingLow", source)
+        self.assertIn("rates[0].close>swingHigh", source)
+        self.assertIn("STRONG_EXTREME_PROTECTION_BROKEN_BY_CLOSED_BAR", source)
+        self.assertIn("strongExtremeProtected=true", source)
 
     def test_engine_exposes_strong_and_weak_extreme_classification(self):
         source = SOURCE.read_text()
