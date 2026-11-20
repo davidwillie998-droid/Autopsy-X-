@@ -133,7 +133,7 @@ class ShockOutcomeTrackerTests(unittest.TestCase):
         transmission = (root / "MQL5/Include/AutopsyX/InformationTransmissionEngine.mqh").read_text()
 
         def enum_members(source, enum_name, prefix):
-            match = re.search(r"enum\\s+" + enum_name + r"\\s*\\{([^}]*)\\}", source, re.S)
+            match = re.search(r"enum\s+" + enum_name + r"\s*\{([^}]*)\\}", source, re.S)
             self.assertIsNotNone(match, enum_name)
             return re.findall(prefix + r"[A-Z_]+", match.group(1))
 
@@ -158,7 +158,7 @@ class ShockOutcomeTrackerTests(unittest.TestCase):
     def test_mql5_snapshot_struct_contains_all_consumed_adapter_fields(self):
         root = Path(__file__).resolve().parents[1]
         source = (root / "MQL5/Include/AutopsyX/ShockDNAEngine.mqh").read_text()
-        match = re.search(r"struct\\s+SAxShockDNASnapshot\\s*\\{([^}]*)\\}", source, re.S)
+        match = re.search(r"struct\s+SAxShockDNASnapshot\s*\{([^}]*)\\}", source, re.S)
         self.assertIsNotNone(match)
         struct_body = match.group(1)
         for field in (
@@ -168,7 +168,7 @@ class ShockOutcomeTrackerTests(unittest.TestCase):
             "transmissionState", "transmissionAvailable",
             "crossAssetConfirmationAvailable", "crossAssetConfirmation", "confidence",
         ):
-            self.assertRegex(struct_body, r"\\b" + field + r"\\b")
+            self.assertRegex(struct_body, r"\b" + field + r"\b")
 
     def test_mql5_adapter_maps_enum_and_optional_confirmation(self):
         mapped = ShockSnapshotAdapter.from_mql5({
