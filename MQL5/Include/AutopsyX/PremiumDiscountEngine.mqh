@@ -191,6 +191,21 @@ private:
          return(false);
         }
 
+      // A strong low remains protected in a bullish range until a completed
+      // candle closes below it. A strong high remains protected in a bearish
+      // range until a completed candle closes above it. Wicks alone do not
+      // invalidate protection.
+      bool protectionBroken=false;
+      if(rangeDirection==AX_PD_RANGE_BULLISH)
+         protectionBroken=(rates[0].close<swingLow);
+      else if(rangeDirection==AX_PD_RANGE_BEARISH)
+         protectionBroken=(rates[0].close>swingHigh);
+      if(protectionBroken)
+        {
+         ResetSlot(slot,"STRONG_EXTREME_PROTECTION_BROKEN_BY_CLOSED_BAR");
+         return(false);
+        }
+
       double range=swingHigh-swingLow;
       if(range<=SymbolInfoDouble(m_symbol,SYMBOL_TRADE_TICK_SIZE)*2.0)
         {
@@ -205,6 +220,8 @@ private:
       s.available=true;
       s.rangeDirection=rangeDirection;
       s.strongExtremeConfirmed=true;
+      s.strongExtremeProtected=true;
+      s.protectionBroken=false;
       s.strongExtremePrice=(rangeDirection==AX_PD_RANGE_BULLISH ? swingLow : swingHigh);
       s.weakExtremePrice=(rangeDirection==AX_PD_RANGE_BULLISH ? swingHigh : swingLow);
       s.strongExtremeTime=(rangeDirection==AX_PD_RANGE_BULLISH ? swingLowTime : swingHighTime);
