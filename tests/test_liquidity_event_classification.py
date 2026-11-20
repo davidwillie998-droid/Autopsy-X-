@@ -22,18 +22,18 @@ class LiquidityEventClassificationTests(unittest.TestCase):
 
     def test_reversal_requires_reclaim_displacement_and_choch_or_mss(self):
         source = LIQUIDITY.read_text()
-        self.assertIn("m_bullRejectionConfirmed", source)
+        self.assertIn("m_bullClassificationRejected", source)
         self.assertIn("structureEvent==AX_STRUCT_CHOCH_BULLISH || structureEvent==AX_STRUCT_MSS_BULLISH", source)
-        self.assertIn("m_bearRejectionConfirmed", source)
+        self.assertIn("m_bearClassificationRejected", source)
         self.assertIn("structureEvent==AX_STRUCT_CHOCH_BEARISH || structureEvent==AX_STRUCT_MSS_BEARISH", source)
-        self.assertIn("close>m_bullSweepLevel && displacementPts>0.0 && isDisplacement", source)
-        self.assertIn("close<m_bearSweepLevel && displacementPts<0.0 && isDisplacement", source)
+        self.assertIn("close>m_bullClassificationLevel && displacementPts>0.0 && isDisplacement", source)
+        self.assertIn("close<m_bearClassificationLevel && displacementPts<0.0 && isDisplacement", source)
 
     def test_continuation_requires_close_through_level_and_bos(self):
         source = LIQUIDITY.read_text()
-        self.assertIn("close<m_bullSweepLevel && displacementPts<0.0 && isDisplacement", source)
+        self.assertIn("close<m_bullClassificationLevel && displacementPts<0.0 && isDisplacement", source)
         self.assertIn("structureEvent==AX_STRUCT_BOS_BEARISH", source)
-        self.assertIn("close>m_bearSweepLevel && displacementPts>0.0 && isDisplacement", source)
+        self.assertIn("close>m_bearClassificationLevel && displacementPts>0.0 && isDisplacement", source)
         self.assertIn("structureEvent==AX_STRUCT_BOS_BULLISH", source)
 
     def test_ambiguous_opposing_sweeps_remain_unconfirmed(self):
