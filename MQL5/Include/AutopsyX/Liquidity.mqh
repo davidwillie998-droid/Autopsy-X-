@@ -29,6 +29,17 @@
 #define AX_LIQ_EQ_TOL_PTS    3.0
 #define AX_LIQ_MAX_LEVELS    12
 
+// Classification is deliberately descriptive only. It never authorizes an order.
+enum ENUM_AX_LIQUIDITY_EVENT_CLASS
+  {
+   AX_LIQ_EVENT_NONE = 0,
+   AX_LIQ_EVENT_UNCONFIRMED,
+   AX_LIQ_EVENT_REVERSAL_BULLISH,
+   AX_LIQ_EVENT_REVERSAL_BEARISH,
+   AX_LIQ_EVENT_CONTINUATION_BULLISH,
+   AX_LIQ_EVENT_CONTINUATION_BEARISH
+  };
+
 struct SAxLevel
   {
    double price;
@@ -64,6 +75,9 @@ private:
    bool              m_bearRejectionConfirmed;
 
    int               m_sweepExpirySeconds;
+   ENUM_AX_LIQUIDITY_EVENT_CLASS m_eventClass;
+   datetime          m_lastClassifiedBarTime;
+   double            m_eventLevel;
 
 public:
                      CLiquidityEngine(void)
@@ -73,6 +87,9 @@ public:
       m_bullSweepActive=false; m_bearSweepActive=false;
       m_bullRejectionConfirmed=false; m_bearRejectionConfirmed=false;
       m_sweepExpirySeconds=120;
+      m_eventClass=AX_LIQ_EVENT_NONE;
+      m_lastClassifiedBarTime=0;
+      m_eventLevel=0.0;
      }
 
    bool              Init(const string symbol,ENUM_TIMEFRAMES tf=PERIOD_M1)
@@ -195,7 +212,18 @@ public:
       if(m_bullSweepActive)  s += m_bullRejectionConfirmed ? "BULL_SWEEP_REJECTED " : "BULL_SWEEP_PENDING ";
       if(m_bearSweepActive)  s += m_bearRejectionConfirmed ? "BEAR_SWEEP_REJECTED " : "BEAR_SWEEP_PENDING ";
       if(StringLen(s)==0) s="NO_ACTIVE_SWEEP ";
-      s += StringFormat("levels=%d pdh=%.5f pdl=%.5f",m_levelCount,m_pdh,m_pdl);
+      string eventName="NONE";
+      switch(m_eventClass)
+        {
+         case AX_LIQ_EVENT_UNCONFIRMED:           eventName="UNCONFIRMED"; break;
+         case AX_LIQ_EVENT_REVERSAL_BULLISH:      eventName="REVERSAL_BULLISH"; break;
+         case AX_LIQ_EVENT_REVERSAL_BEARISH:      eventName="REVERSAL_BEARISH"; break;
+         case AX_LIQ_EVENT_CONTINUATION_BULLISH:  eventName="CONTINUATION_BULLISH"; break;
+         case AX_LIQ_EVENT_CONTINUATION_BEARISH:  eventName="CONTINUATION_BEARISH"; break;
+         default:                                  eventName="NONE"; break;
+        }
+      s += StringFormat("levels=%d pdh=%.5f pdl=%.5f event=%s level=%.5f",
+                        m_levelCount,m_pdh,m_pdl,eventName,m_eventLevel);
       return(s);
      }
 
@@ -243,6 +271,58 @@ public:
            }
         }
      }
+
+   //--- classify a sweep only once per completed bar. Reversal requires a reclaimed level,
+   //--- directional displacement and opposing CHoCH/MSS. Continuation requires a close through
+   //--- the swept level, directional displacement and BOS. Everything else stays unconfirmed.
+   //--- This is telemetry, not an entry trigger or score override.
+   void              ClassifyClosedBar(const double close,const double displacementPts,
+                                       const bool isDisplacement,
+                                       const ENUM_AX_STRUCTURE_EVENT structureEvent,
+                                       const datetime closedBarTime)
+     {
+      if(closedBarTime<=0 || close<=0.0 || closedBarTime==m_lastClassifiedBarTime) return;
+      m_lastClassifiedBarTime=closedBarTime;
+      m_eventClass=AX_LIQ_EVENT_NONE;
+      m_eventLevel=0.0;
+
+      if(m_bullSweepActive && m_bearSweepActive)
+        {
+         m_eventClass=AX_LIQ_EVENT_UNCONFIRMED;
+         return; // opposing sweeps in one window are ambiguous, never force a directional label
+        }
+
+      if(m_bullSweepActive)
+        {
+         m_eventClass=AX_LIQ_EVENT_UNCONFIRMED;
+         m_eventLevel=m_bullSweepLevel;
+         if(close<m_bullSweepLevel && displacementPts<0.0 && isDisplacement &&
+            structureEvent==AX_STRUCT_BOS_BEARISH)
+            m_eventClass=AX_LIQ_EVENT_CONTINUATION_BEARISH;
+         else if(close>m_bullSweepLevel && displacementPts>0.0 && isDisplacement &&
+                 m_bullRejectionConfirmed &&
+                 (structureEvent==AX_STRUCT_CHOCH_BULLISH || structureEvent==AX_STRUCT_MSS_BULLISH))
+            m_eventClass=AX_LIQ_EVENT_REVERSAL_BULLISH;
+         return;
+        }
+
+      if(m_bearSweepActive)
+        {
+         m_eventClass=AX_LIQ_EVENT_UNCONFIRMED;
+         m_eventLevel=m_bearSweepLevel;
+         if(close>m_bearSweepLevel && displacementPts>0.0 && isDisplacement &&
+            structureEvent==AX_STRUCT_BOS_BULLISH)
+            m_eventClass=AX_LIQ_EVENT_CONTINUATION_BULLISH;
+         else if(close<m_bearSweepLevel && displacementPts<0.0 && isDisplacement &&
+                 m_bearRejectionConfirmed &&
+                 (structureEvent==AX_STRUCT_CHOCH_BEARISH || structureEvent==AX_STRUCT_MSS_BEARISH))
+            m_eventClass=AX_LIQ_EVENT_REVERSAL_BEARISH;
+         return;
+        }
+     }
+
+   ENUM_AX_LIQUIDITY_EVENT_CLASS EventClass(void) const { return(m_eventClass); }
+   double EventLevel(void) const { return(m_eventLevel); }
 
    //--- bullish attack ready = sweep + rejection + displacement in the trade direction ---
    bool              BullishAttackReady(const double displacementPts) const
