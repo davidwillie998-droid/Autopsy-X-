@@ -196,7 +196,9 @@ class ShockOutcomeTrackerTests(unittest.TestCase):
             resumed = ShockOutcomeTracker((1,), ledger=ledger2)
             self.assertEqual(bar(resumed, 100, 100, snapshot=onset), [])
             self.assertEqual(resumed.active_event_count, 1)
-            self.assertEqual(bar(resumed, 200, 101), [])
+            matured = bar(resumed, 200, 101)
+            self.assertEqual(len(matured), 1)
+            self.assertEqual(matured[0].horizon_bars, 1)
             self.assertEqual(resumed.active_event_count, 0)
             ledger2.close()
 
