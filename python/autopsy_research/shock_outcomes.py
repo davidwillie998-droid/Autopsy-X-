@@ -112,6 +112,10 @@ class ShockOutcomeTracker:
             return []
         if self._last_timestamp is not None and timestamp <= self._last_timestamp:
             return []
+        # Advance the ordering watermark even when this observation is rejected.
+        # Otherwise a later-arriving stale bar could be accepted after a newer
+        # malformed/low-quality bar, corrupting the event's chronological stream.
+        self._last_timestamp = int(timestamp)
         prices = (open_price, high, low, close)
         if not all(math.isfinite(float(p)) and float(p) > 0 for p in prices):
             return []
@@ -122,7 +126,6 @@ class ShockOutcomeTracker:
         ):
             return []
 
-        self._last_timestamp = int(timestamp)
         outcomes: list[ShockOutcome] = []
 
         # Existing events are marked using this bar, which is strictly after
