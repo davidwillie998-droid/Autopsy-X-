@@ -110,9 +110,11 @@ class ShockOutcomeTrackerTests(unittest.TestCase):
         self.assertEqual(first[0].direction, 1)
         self.assertEqual(tracker.active_event_count, 2)
         second = bar(tracker, 300, 100)
-        self.assertEqual(len(second), 1)
-        self.assertEqual(second[0].horizon_bars, 2)
-        self.assertEqual(second[0].direction, 1)
+        self.assertEqual(len(second), 2)
+        self.assertEqual(
+            {(x.direction, x.horizon_bars) for x in second},
+            {(1, 2), (-1, 1)},
+        )
         self.assertEqual(tracker.active_event_count, 1)
         third = bar(tracker, 400, 99)
         self.assertEqual(len(third), 1)
