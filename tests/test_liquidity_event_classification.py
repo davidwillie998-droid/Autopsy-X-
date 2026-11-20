@@ -38,10 +38,21 @@ class LiquidityEventClassificationTests(unittest.TestCase):
 
     def test_ambiguous_opposing_sweeps_remain_unconfirmed(self):
         source = LIQUIDITY.read_text()
-        self.assertIn("if(m_bullSweepActive && m_bearSweepActive)", source)
-        body = source.split("if(m_bullSweepActive && m_bearSweepActive)", 1)[1].split("if(m_bullSweepActive)", 1)[0]
+        self.assertIn("if(m_bullClassificationPending && m_bearClassificationPending)", source)
+        body = source.split("if(m_bullClassificationPending && m_bearClassificationPending)", 1)[1].split(
+            "if(m_bullClassificationPending)", 1
+        )[0]
         self.assertIn("AX_LIQ_EVENT_UNCONFIRMED", body)
         self.assertIn("return; // opposing sweeps in one window are ambiguous", body)
+
+    def test_closed_bar_snapshot_survives_legacy_tick_expiry(self):
+        source = LIQUIDITY.read_text()
+        self.assertIn("m_bullClassificationPending=true", source)
+        self.assertIn("m_bearClassificationPending=true", source)
+        self.assertIn("int classificationExpirySeconds=MathMax(120,tfSeconds*2)", source)
+        self.assertIn("m_bullClassificationRejected", source)
+        self.assertIn("m_bearClassificationRejected", source)
+        self.assertIn("m_sweepExpirySeconds=120", source)
 
     def test_classification_runs_once_per_closed_bar_and_is_wired(self):
         source = LIQUIDITY.read_text()
