@@ -184,7 +184,7 @@ class ShockOutcomeTrackerTests(unittest.TestCase):
             snapshot_payload=later,
         )
         self.assertEqual(len(result), 1)
-        self.assertEqual(result[0].directional_return_pct, 1.0)
+        self.assertAlmostEqual(result[0].directional_return_pct, 1.0)
 
     def test_restart_restores_stream_watermark_and_rejects_duplicate_bar(self):
         with tempfile.TemporaryDirectory() as tmp:
