@@ -51,7 +51,7 @@ private:
    bool WriteHeader(void)
      {
       uint written=FileWrite(m_file,
-         "schema_version","sequence","symbol","magic","time_msc",
+         "record_type","schema_version","sequence","symbol","magic","time_msc",
          "bid","ask","last","tick_volume","real_volume","flags",
          "digits","point","tick_size","tick_value",
          "volume_min","volume_max","volume_step","spread_points",
@@ -164,7 +164,7 @@ public:
          SAxMarketSnapshotRow row=m_rows[m_head];
          double spreadPts=(m_point>0.0)?(row.tick.ask-row.tick.bid)/m_point:0.0;
          uint result=FileWrite(m_file,
-            1,row.sequence,m_symbol,m_magic,row.tick.time_msc,
+            "TICK",1,row.sequence,m_symbol,m_magic,row.tick.time_msc,
             row.tick.bid,row.tick.ask,row.tick.last,row.tick.volume,row.tick.volume_real,row.tick.flags,
             m_digits,m_point,m_tickSize,m_tickValue,
             m_volumeMin,m_volumeMax,m_volumeStep,spreadPts,
@@ -191,6 +191,9 @@ public:
       if(m_ready && m_file!=INVALID_HANDLE)
         {
          Flush(0);
+         // Footer records drops that occurred after the final accepted tick.
+         FileWrite(m_file,"SUMMARY",m_dropped);
+         FileFlush(m_file);
          FileClose(m_file);
         }
       m_file=INVALID_HANDLE;
