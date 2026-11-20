@@ -42,6 +42,7 @@ class ShockOutcome:
     onset_regime: str | None
     onset_regime_strength: float
     transmission_available_at_onset: bool
+    transmission_state_at_onset: str | None
     cross_asset_confirmation_at_onset: bool | None
 
     def as_dict(self) -> dict[str, Any]:
@@ -62,6 +63,7 @@ class _TrackedEvent:
     regime_strength: float
     transmission_available: bool
     cross_asset_confirmation: bool | None
+    transmission_state: str | None = None
     elapsed_bars: int = 0
     max_favourable_pct: float = 0.0
     max_adverse_pct: float = 0.0
@@ -80,6 +82,18 @@ class ShockSnapshotAdapter:
         4: "IMPULSE", 5: "FOLLOW_THROUGH", 6: "ABSORPTION",
         7: "REVERSAL", 8: "NORMALIZING",
     }
+    _MQL_REGIMES = {
+        0: "UNAVAILABLE", 1: "R1_PERSISTENT_BULLISH_TREND",
+        2: "R2_BULLISH_UNSTABLE", 3: "R3_RANGE_CHOP",
+        4: "R4_BEARISH_TRANSITION", 5: "R5_PERSISTENT_BEARISH_TREND",
+        6: "R6_VOLATILITY_SHOCK", 7: "R7_INFORMATION_CONFLICT",
+        8: "R8_STRUCTURAL_BREAK",
+    }
+    _MQL_TRANSMISSION = {
+        0: "UNKNOWN", 1: "INSUFFICIENT_DATA", 2: "INACTIVE",
+        3: "LEADER", 4: "CONFIRMING", 5: "WEAKENING",
+        6: "DIVERGING", 7: "INVERTED",
+    }
 
     @classmethod
     def from_mql5(cls, payload: dict[str, Any]) -> dict[str, Any]:
@@ -88,6 +102,12 @@ class ShockSnapshotAdapter:
             state = cls._MQL_STATES.get(state, "UNKNOWN")
         else:
             state = str(state).upper().replace(" ", "_")
+        regime = payload.get("regime")
+        if isinstance(regime, int):
+            regime = cls._MQL_REGIMES.get(regime, "UNAVAILABLE")
+        transmission_state = payload.get("transmissionState")
+        if isinstance(transmission_state, int):
+            transmission_state = cls._MQL_TRANSMISSION.get(transmission_state, "UNKNOWN")
         confirmation_available = bool(payload.get("crossAssetConfirmationAvailable", False))
         confirmation = (
             bool(payload.get("crossAssetConfirmation", False))
@@ -105,8 +125,11 @@ class ShockSnapshotAdapter:
             "normalized_magnitude": float(payload.get("normalizedMagnitude", 0.0)),
             "event_magnitude_atr": float(payload.get("eventMagnitudeAtr", 0.0)),
             "confidence": float(payload.get("confidence", 0.0)),
-            "regime": str(payload.get("regime")) if payload.get("regime") is not None else None,
+            "regime": str(regime) if regime is not None else None,
             "regime_strength": float(payload.get("regimeStrength", 0.0)),
+            "information_transmission_state": (
+                str(transmission_state) if transmission_state is not None else None
+            ),
             "transmission_available": bool(payload.get("transmissionAvailable", False)),
             "cross_asset_confirmation": confirmation,
         }
@@ -305,14 +328,14 @@ class ShockOutcomeTracker:
             underlying_return = (close / event.entry_close - 1.0) * 100.0
             directional_return = event.direction * underlying_return
             if event.direction > 0:
-                favourable = (high / event.entry_close - 1.0) * 100.0
-                adverse = (low / event.entry_close - 1.0) * 100.0
+                favourable = max(0.0, (high / event.entry_close - 1.0) * 100.0)
+                adverse = max(0.0, (event.entry_close - low) / event.entry_close * 100.0)
             else:
                 # Simple notional short P&L convention, not reciprocal return.
-                favourable = (event.entry_close - low) / event.entry_close * 100.0
-                adverse = (event.entry_close - high) / event.entry_close * 100.0
+                favourable = max(0.0, (event.entry_close - low) / event.entry_close * 100.0)
+                adverse = max(0.0, (high / event.entry_close - 1.0) * 100.0)
             event.max_favourable_pct = max(event.max_favourable_pct, favourable)
-            event.max_adverse_pct = min(event.max_adverse_pct, adverse)
+            event.max_adverse_pct = max(event.max_adverse_pct, adverse)
 
             if event.elapsed_bars in self.horizons and event.elapsed_bars not in event.emitted_horizons:
                 event.emitted_horizons.add(event.elapsed_bars)
@@ -331,6 +354,7 @@ class ShockOutcomeTracker:
                     onset_confidence=event.onset_confidence,
                     onset_regime=event.regime, onset_regime_strength=event.regime_strength,
                     transmission_available_at_onset=event.transmission_available,
+                    transmission_state_at_onset=event.transmission_state,
                     cross_asset_confirmation_at_onset=event.cross_asset_confirmation,
                 )
                 outcomes.append(outcome)
@@ -366,6 +390,7 @@ class ShockOutcomeTracker:
                     regime_strength=float(self._get(snapshot, "regime_strength", 0.0)),
                     transmission_available=bool(self._get(snapshot, "transmission_available", False)),
                     cross_asset_confirmation=self._get(snapshot, "cross_asset_confirmation"),
+                    transmission_state=self._get(snapshot, "information_transmission_state"),
                 )
                 self._active.append(event)
                 if self.ledger:
