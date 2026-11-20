@@ -3,9 +3,12 @@
 ## Snapshot export
 
 The EA's optional `InpEnableMarketSnapshots` input enables a buffered CSV recorder.
-It captures the tick associated with each completed score evaluation, the blended
-BUY/SELL score, confidence, action, regime, engine/pending/position state, account
-equity and margin fields, and the symbol's execution/volume specifications.
+It captures every valid tick accepted by the EA's market-data layer before downstream
+integrity/risk gates can return early. When that tick reaches score evaluation, the
+recorder attaches the same-tick blended BUY/SELL score, confidence, action and regime.
+Rows also carry engine/pending/position state, account equity and margin fields, and
+the symbol's execution/volume specifications. The `score_updated` field distinguishes
+a same-tick decision from a raw tick that was rejected before scoring.
 
 The recorder is observational only. It does not grant execution authority, change
 risk calculations, or participate in entry eligibility. Rows are buffered in memory
