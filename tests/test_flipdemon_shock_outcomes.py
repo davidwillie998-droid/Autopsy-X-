@@ -4,6 +4,7 @@ from enum import Enum
 import tempfile
 import unittest
 from pathlib import Path
+import re
 
 from python.autopsy_research.shock_outcomes import (
     ShockEventLedger, ShockOutcomeTracker, ShockSnapshotAdapter,
@@ -123,6 +124,51 @@ class ShockOutcomeTrackerTests(unittest.TestCase):
         self.assertEqual({(x.direction, x.horizon_bars) for x in second}, {(1, 2), (-1, 1)})
         third = bar(tracker, 400, 99)
         self.assertEqual((third[0].direction, third[0].horizon_bars), (-1, 2))
+
+
+    def test_adapter_enum_maps_match_authoritative_mql5_enum_order(self):
+        root = Path(__file__).resolve().parents[1]
+        shock = (root / "MQL5/Include/AutopsyX/ShockDNAEngine.mqh").read_text()
+        regime = (root / "MQL5/Include/AutopsyX/RegimeClassifierEngine.mqh").read_text()
+        transmission = (root / "MQL5/Include/AutopsyX/InformationTransmissionEngine.mqh").read_text()
+
+        def enum_members(source, enum_name, prefix):
+            match = re.search(r"enum\\s+" + enum_name + r"\\s*\\{([^}]*)\\}", source, re.S)
+            self.assertIsNotNone(match, enum_name)
+            return re.findall(prefix + r"[A-Z_]+", match.group(1))
+
+        self.assertEqual(enum_members(shock, "ENUM_AX_SHOCK_STATE", "AX_SHOCK_"), [
+            "AX_SHOCK_UNKNOWN", "AX_SHOCK_INSUFFICIENT_DATA", "AX_SHOCK_NONE",
+            "AX_SHOCK_ONSET", "AX_SHOCK_IMPULSE", "AX_SHOCK_FOLLOW_THROUGH",
+            "AX_SHOCK_ABSORPTION", "AX_SHOCK_REVERSAL", "AX_SHOCK_NORMALIZING",
+        ])
+        self.assertEqual(enum_members(regime, "ENUM_AX_REGIME_CLASS", "AX_RC_"), [
+            "AX_RC_UNAVAILABLE", "AX_RC_PERSISTENT_BULLISH_TREND",
+            "AX_RC_BULLISH_UNSTABLE", "AX_RC_RANGE_CHOP",
+            "AX_RC_BEARISH_TRANSITION", "AX_RC_PERSISTENT_BEARISH_TREND",
+            "AX_RC_VOLATILITY_SHOCK", "AX_RC_INFORMATION_CONFLICT",
+            "AX_RC_STRUCTURAL_BREAK",
+        ])
+        self.assertEqual(enum_members(transmission, "ENUM_AX_TRANSMISSION_STATE", "AX_TS_"), [
+            "AX_TS_UNKNOWN", "AX_TS_INSUFFICIENT_DATA", "AX_TS_INACTIVE",
+            "AX_TS_LEADER", "AX_TS_CONFIRMING", "AX_TS_WEAKENING",
+            "AX_TS_DIVERGING", "AX_TS_INVERTED",
+        ])
+
+    def test_mql5_snapshot_struct_contains_all_consumed_adapter_fields(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / "MQL5/Include/AutopsyX/ShockDNAEngine.mqh").read_text()
+        match = re.search(r"struct\\s+SAxShockDNASnapshot\\s*\\{([^}]*)\\}", source, re.S)
+        self.assertIsNotNone(match)
+        struct_body = match.group(1)
+        for field in (
+            "timestamp", "valid", "dataQualityOk", "dataQualityReason",
+            "shockDetected", "shockState", "direction", "normalizedMagnitude",
+            "eventMagnitudeAtr", "persistenceBars", "regime", "regimeStrength",
+            "transmissionState", "transmissionAvailable",
+            "crossAssetConfirmationAvailable", "crossAssetConfirmation", "confidence",
+        ):
+            self.assertRegex(struct_body, r"\\b" + field + r"\\b")
 
     def test_mql5_adapter_maps_enum_and_optional_confirmation(self):
         mapped = ShockSnapshotAdapter.from_mql5({
