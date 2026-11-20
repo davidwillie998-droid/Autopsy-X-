@@ -15,6 +15,7 @@ struct SAxMarketSnapshotRow
    ulong       sequence;
    MqlTick     tick;
    SAxScore    score;
+   bool        scoreUpdated;
    int         engineState;
    bool        pending;
    bool        hasPosition;
@@ -55,7 +56,7 @@ private:
          "bid","ask","last","tick_volume","real_volume","flags",
          "digits","point","tick_size","tick_value",
          "volume_min","volume_max","volume_step","spread_points",
-         "buy_score","sell_score","confidence","action","regime","score_time",
+         "buy_score","sell_score","confidence","score_updated","action","regime","score_time",
          "engine_state","pending_entry","has_position","position_direction",
          "equity","balance","free_margin","margin_level","dropped_before");
       return(written>0);
@@ -141,6 +142,7 @@ public:
       m_rows[tail].sequence=m_sequence++;
       m_rows[tail].tick=tick;
       m_rows[tail].score=score;
+      m_rows[tail].scoreUpdated=false;
       m_rows[tail].engineState=engineState;
       m_rows[tail].pending=pending;
       m_rows[tail].hasPosition=hasPosition;
@@ -152,6 +154,25 @@ public:
       m_rows[tail].droppedBefore=m_dropped;
       m_count++;
       return(true);
+     }
+
+   void UpdateLastDecision(const SAxScore &score,const int engineState,
+                            const bool pending,const bool hasPosition,const int positionDirection,
+                            const double equity,const double balance,const double freeMargin,
+                            const double marginLevel)
+     {
+      if(!m_ready || m_count<=0) return;
+      int tail=(m_head+m_count-1)%AX_MARKET_SNAPSHOT_CAPACITY;
+      m_rows[tail].score=score;
+      m_rows[tail].scoreUpdated=true;
+      m_rows[tail].engineState=engineState;
+      m_rows[tail].pending=pending;
+      m_rows[tail].hasPosition=hasPosition;
+      m_rows[tail].positionDirection=positionDirection;
+      m_rows[tail].equity=equity;
+      m_rows[tail].balance=balance;
+      m_rows[tail].freeMargin=freeMargin;
+      m_rows[tail].marginLevel=marginLevel;
      }
 
    int Flush(const int maxRows=0)
@@ -168,7 +189,7 @@ public:
             row.tick.bid,row.tick.ask,row.tick.last,row.tick.volume,row.tick.volume_real,row.tick.flags,
             m_digits,m_point,m_tickSize,m_tickValue,
             m_volumeMin,m_volumeMax,m_volumeStep,spreadPts,
-            row.score.buyScore,row.score.sellScore,row.score.confidence,
+            row.score.buyScore,row.score.sellScore,row.score.confidence,(int)row.scoreUpdated,
             (int)row.score.action,(int)row.score.regime,(long)row.score.time,
             row.engineState,(int)row.pending,(int)row.hasPosition,row.positionDirection,
             row.equity,row.balance,row.freeMargin,row.marginLevel,row.droppedBefore);
