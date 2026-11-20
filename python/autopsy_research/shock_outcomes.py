@@ -225,7 +225,8 @@ class ShockEventLedger:
 
     def delete_active(self, event_id: str) -> None:
         self.connection.execute("DELETE FROM active_events WHERE event_id=?", (event_id,))
-        self.connection.commit()
+        if not self.connection.in_transaction:
+            self.connection.commit()
 
     def load_active(self) -> list[_TrackedEvent]:
         rows = self.connection.execute("SELECT payload FROM active_events").fetchall()
