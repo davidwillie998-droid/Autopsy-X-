@@ -14,12 +14,12 @@ class ShockOutcomeReportTests(unittest.TestCase):
              "timeframe": "M15", "horizon_bars": 1, "direction": 1,
              "onset_magnitude_atr": 2.2, "onset_regime": "TREND_BULL",
              "directional_return_pct": 1.0, "max_favourable_excursion_pct": 2.0,
-             "max_adverse_excursion_pct": -0.5},
+             "max_adverse_excursion_pct": 0.5},
             {"event_id": "b", "event_timestamp": 1700086400, "symbol": "XAUUSD",
              "timeframe": "M15", "horizon_bars": 1, "direction": 1,
              "onset_magnitude_atr": 2.4, "onset_regime": "TREND_BULL",
              "directional_return_pct": -0.5, "max_favourable_excursion_pct": 0.5,
-             "max_adverse_excursion_pct": -1.0},
+             "max_adverse_excursion_pct": 1.0},
         ]
         result = summarize(rows, iterations=100)[0]
         self.assertEqual(result["observations"], 2)
