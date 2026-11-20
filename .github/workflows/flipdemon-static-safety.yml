@@ -18,6 +18,7 @@ on:
       - 'tests/test_orderflow_regime_scoring.py'
       - 'tests/test_liquidity_event_classification.py'
       - 'tests/test_flipdemon_shock_outcomes.py'
+      - 'python/autopsy_research/shock_outcomes.py'
       - 'tests/test_flipdemon_mql5_hygiene.py'
       - 'tests/test_flipdemon_partial_recovery.py'
       - 'tests/test_flipdemon_distributed_risk_retry.py'
