@@ -77,5 +77,69 @@ class LiquidityEventClassificationTests(unittest.TestCase):
         self.assertNotIn("g_mom.DisplacementPts()", call)
 
 
+    @staticmethod
+    def classify_reference(
+        side, close, level, displacement, is_displacement, rejected,
+        structure_event, opposing=False, expired=False,
+    ):
+        """Behavioral specification for the MQL5 classifier, not an MT5 runtime."""
+        if expired:
+            return "NONE"
+        if opposing:
+            return "UNCONFIRMED"
+        if side == "sell_side_swept":
+            if close < level and displacement < 0 and is_displacement and structure_event == "BOS_BEARISH":
+                return "CONTINUATION_BEARISH"
+            if close > level and displacement > 0 and is_displacement and rejected and structure_event in ("CHOCH_BULLISH", "MSS_BULLISH"):
+                return "REVERSAL_BULLISH"
+        elif side == "buy_side_swept":
+            if close > level and displacement > 0 and is_displacement and structure_event == "BOS_BULLISH":
+                return "CONTINUATION_BULLISH"
+            if close < level and displacement < 0 and is_displacement and rejected and structure_event in ("CHOCH_BEARISH", "MSS_BEARISH"):
+                return "REVERSAL_BEARISH"
+        return "UNCONFIRMED"
+
+    def test_scenario_matrix_confirms_only_complete_structural_evidence(self):
+        cases = [
+            ("sell_side_swept", 99, 100,  -8, True,  False, "BOS_BEARISH", "CONTINUATION_BEARISH"),
+            ("buy_side_swept",  101,100,   8, True,  False, "BOS_BULLISH", "CONTINUATION_BULLISH"),
+            ("sell_side_swept", 101,100,   8, True,  True,  "CHOCH_BULLISH", "REVERSAL_BULLISH"),
+            ("buy_side_swept",   99,100,  -8, True,  True,  "MSS_BEARISH", "REVERSAL_BEARISH"),
+            ("sell_side_swept", 101,100,   8, True,  False, "CHOCH_BULLISH", "UNCONFIRMED"),
+            ("buy_side_swept",   99,100,  -8, False, True,  "CHOCH_BEARISH", "UNCONFIRMED"),
+            ("sell_side_swept", 100,100,   8, True,  True,  "CHOCH_BULLISH", "UNCONFIRMED"),
+            ("buy_side_swept",  101,100,  -8, True,  True,  "MSS_BEARISH", "UNCONFIRMED"),
+        ]
+        for side, close, level, displacement, impulse, rejected, event, expected in cases:
+            with self.subTest(side=side, event=event, expected=expected):
+                self.assertEqual(
+                    self.classify_reference(side, close, level, displacement, impulse, rejected, event),
+                    expected,
+                )
+
+    def test_opposing_and_expired_sweeps_never_receive_directional_labels(self):
+        args = ("sell_side_swept", 101, 100, 8, True, True, "CHOCH_BULLISH")
+        self.assertEqual(self.classify_reference(*args, opposing=True), "UNCONFIRMED")
+        self.assertEqual(self.classify_reference(*args, expired=True), "NONE")
+
+    def test_scenario_contract_is_present_in_mql5_classifier(self):
+        source = LIQUIDITY.read_text()
+        required = (
+            "close<m_bullClassificationLevel && displacementPts<0.0 && isDisplacement",
+            "structureEvent==AX_STRUCT_BOS_BEARISH",
+            "close>m_bearClassificationLevel && displacementPts>0.0 && isDisplacement",
+            "structureEvent==AX_STRUCT_BOS_BULLISH",
+            "m_bullClassificationRejected",
+            "m_bearClassificationRejected",
+            "structureEvent==AX_STRUCT_CHOCH_BULLISH || structureEvent==AX_STRUCT_MSS_BULLISH",
+            "structureEvent==AX_STRUCT_CHOCH_BEARISH || structureEvent==AX_STRUCT_MSS_BEARISH",
+            "if(m_bullClassificationPending && m_bearClassificationPending)",
+            "classificationExpirySeconds",
+        )
+        for fragment in required:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
+
+
 if __name__ == "__main__":
     unittest.main()
