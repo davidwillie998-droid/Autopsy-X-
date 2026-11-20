@@ -92,6 +92,12 @@ class PremiumDiscountSourceContractTests(unittest.TestCase):
                          ("BEARISH", 80, 120))
         self.assertIsNone(select_confirmed_range(bearish, [(6, 91)]))
 
+    def test_snapshot_declares_all_protection_state_fields(self):
+        source = SOURCE.read_text()
+        snapshot = source.split("struct SAxPremiumDiscountSnapshot", 1)[1].split("};", 1)[0]
+        self.assertIn("bool strongExtremeProtected;", snapshot)
+        self.assertIn("bool protectionBroken;", snapshot)
+
     def test_protected_extreme_requires_closed_bar_break(self):
         source = SOURCE.read_text()
         self.assertIn("rates[0].close<swingLow", source)
