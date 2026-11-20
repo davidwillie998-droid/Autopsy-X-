@@ -16,6 +16,7 @@
 
 #include <AutopsyX/Defs.mqh>
 #include <AutopsyX/MarketData.mqh>
+#include <AutopsyX/MarketSnapshotRecorder.mqh>
 #include <AutopsyX/BrokerCompatibility.mqh>
 #include <AutopsyX/SpreadCostIntelligence.mqh>
 #include <AutopsyX/Momentum.mqh>
@@ -81,6 +82,7 @@
 // INPUTS
 //====================================================================
 input group "=== MODE ===";
+input bool          InpEnableMarketSnapshots = true; // Export timestamped market/decision rows for deterministic replay; observational only
 input ENUM_AX_MODE   InpMode                    = AX_MODE_AGGRESSIVE; // Aggression mode
 input double         InpExtremeRiskPercent      = 2.0;                // EXTREME mode risk % per trade (hard-capped at 2.0)
 
@@ -322,6 +324,7 @@ input double          InpShadowRiverReversalMultiplier = 2.0;
 CBrokerCompatibility  g_brokerCompatibility;
 SAxBrokerCompatibilitySnapshot g_brokerSnapshot;
 CMarketData          g_md;
+CMarketSnapshotRecorder g_marketSnapshotRecorder;
 CSpreadCostIntelligence g_spreadCost;
 CMomentumEngine       g_mom;
 CMicrostructureEngine g_micro;
@@ -4338,6 +4341,9 @@ int OnInit(void)
       Print("AUTOPSY X: failed to initialize market data for ",_Symbol);
       return(INIT_FAILED);
      }
+   // Snapshot export is observational. Failure to open the file must never alter execution eligibility.
+   if(!g_marketSnapshotRecorder.Init(_Symbol,InpMagicNumber,InpEnableMarketSnapshots))
+      Print("AUTOPSY X SNAPSHOT: recorder unavailable; strategy continues without snapshot export.");
    if(InpEnableAdvancedTrendSuite)
      {
       bool shadowReady=g_shadowRiver.ConfigurePoints(InpShadowRiverSensitivityPoints,g_md.Point(),
@@ -4668,6 +4674,7 @@ int OnInit(void)
 
 void OnDeinit(const int reason)
   {
+   g_marketSnapshotRecorder.Deinit();
    g_advancedSessionOrb.Cleanup();
    EventKillTimer();
    g_executionLatency.Report();
@@ -5828,6 +5835,16 @@ void AxProcessTick(void)
    AxApplyAdvancedORBScoreBonus(score);
    AxApplyPremiumDiscountScoreBonus(score);
    g_lastScore = score; // dashboard reads this, not g_scorer.Last(), so it shows the blended score
+   // Capture the exact tick and blended score used by this evaluation. Disk writes are deferred to OnTimer.
+   if(InpEnableMarketSnapshots)
+     {
+      MqlTick snapshotTick;
+      if(SymbolInfoTick(_Symbol,snapshotTick))
+         g_marketSnapshotRecorder.Record(snapshotTick,g_lastScore,(int)g_engineState,
+            g_pendingActive,g_haveOpenPosition,(int)g_posState.dir,
+            AccountInfoDouble(ACCOUNT_EQUITY),AccountInfoDouble(ACCOUNT_BALANCE),
+            AccountInfoDouble(ACCOUNT_MARGIN_FREE),AccountInfoDouble(ACCOUNT_MARGIN_LEVEL));
+     }
    g_accuracy.OnTickUpdate(g_md.CurrentMid());
    //--- sample into the accuracy engine on signal-direction change or at most once/second -   ---
    //--- registering every tick of a sustained signal would saturate the ring buffer on fast-  ---
@@ -6224,6 +6241,9 @@ void OnTick(void)
 //====================================================================
 void OnTimer(void)
   {
+   // Flush bounded snapshot batches outside the tick handler to keep file I/O off the hot path.
+   if(InpEnableMarketSnapshots) g_marketSnapshotRecorder.Flush(1024);
+
    // This recovery clock is independent of dashboard visibility. It never sends
    // orders; it only reconciles broker truth and resolves the persisted reservation.
    if(InpExecutionMode==AX_EXEC_LIVE && g_distributedRecoveryPending)
