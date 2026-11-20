@@ -95,7 +95,11 @@ public:
       m_volumeMin=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
       m_volumeMax=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MAX);
       m_volumeStep=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
-      m_fileName=StringFormat("AutopsyX_MarketSnapshots_%s_%I64d.csv",symbol,magic);
+      string sessionStamp=TimeToString(TimeLocal(),TIME_DATE|TIME_SECONDS);
+      StringReplace(sessionStamp,".","_");
+      StringReplace(sessionStamp,":","_");
+      StringReplace(sessionStamp," ","_");
+      m_fileName=StringFormat("AutopsyX_MarketSnapshots_%s_%I64d_%s.csv",symbol,magic,sessionStamp);
 
       m_file=FileOpen(m_fileName,FILE_READ|FILE_WRITE|FILE_CSV|FILE_SHARE_READ|FILE_ANSI,',');
       if(m_file==INVALID_HANDLE)
