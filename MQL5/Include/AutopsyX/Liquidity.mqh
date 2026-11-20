@@ -78,6 +78,14 @@ private:
    ENUM_AX_LIQUIDITY_EVENT_CLASS m_eventClass;
    datetime          m_lastClassifiedBarTime;
    double            m_eventLevel;
+   bool              m_bullClassificationPending;
+   double            m_bullClassificationLevel;
+   datetime          m_bullClassificationTime;
+   bool              m_bullClassificationRejected;
+   bool              m_bearClassificationPending;
+   double            m_bearClassificationLevel;
+   datetime          m_bearClassificationTime;
+   bool              m_bearClassificationRejected;
 
 public:
                      CLiquidityEngine(void)
@@ -90,6 +98,10 @@ public:
       m_eventClass=AX_LIQ_EVENT_NONE;
       m_lastClassifiedBarTime=0;
       m_eventLevel=0.0;
+      m_bullClassificationPending=false; m_bullClassificationLevel=0.0;
+      m_bullClassificationTime=0; m_bullClassificationRejected=false;
+      m_bearClassificationPending=false; m_bearClassificationLevel=0.0;
+      m_bearClassificationTime=0; m_bearClassificationRejected=false;
      }
 
    bool              Init(const string symbol,ENUM_TIMEFRAMES tf=PERIOD_M1)
@@ -247,10 +259,15 @@ public:
             m_bullSweepLevel  = nearestLow;
             m_bullSweepTime   = now;
             m_bullRejectionConfirmed=false;
+            m_bullClassificationPending=true;
+            m_bullClassificationLevel=nearestLow;
+            m_bullClassificationTime=now;
+            m_bullClassificationRejected=false;
            }
          else if(m_bullSweepActive && mid>m_bullSweepLevel)
            {
             m_bullRejectionConfirmed = true; // price recovered back above the swept low
+            if(m_bullClassificationPending) m_bullClassificationRejected=true;
            }
         }
 
@@ -264,10 +281,15 @@ public:
             m_bearSweepLevel  = nearestHigh;
             m_bearSweepTime   = now;
             m_bearRejectionConfirmed=false;
+            m_bearClassificationPending=true;
+            m_bearClassificationLevel=nearestHigh;
+            m_bearClassificationTime=now;
+            m_bearClassificationRejected=false;
            }
          else if(m_bearSweepActive && mid<m_bearSweepLevel)
            {
             m_bearRejectionConfirmed = true;
+            if(m_bearClassificationPending) m_bearClassificationRejected=true;
            }
         }
      }
@@ -286,37 +308,52 @@ public:
       m_eventClass=AX_LIQ_EVENT_NONE;
       m_eventLevel=0.0;
 
-      if(m_bullSweepActive && m_bearSweepActive)
+      // Preserve a separate classification snapshot. The legacy 120-second attack-ready
+      // state remains unchanged, while M15/H1 classification must survive a full candle.
+      int tfSeconds=PeriodSeconds(m_tf);
+      if(tfSeconds<=0) tfSeconds=60;
+      int classificationExpirySeconds=MathMax(120,tfSeconds*2);
+      datetime now=TimeCurrent();
+      if(m_bullClassificationPending && (now-m_bullClassificationTime)>classificationExpirySeconds)
+         m_bullClassificationPending=false;
+      if(m_bearClassificationPending && (now-m_bearClassificationTime)>classificationExpirySeconds)
+         m_bearClassificationPending=false;
+
+      if(m_bullClassificationPending && m_bearClassificationPending)
         {
          m_eventClass=AX_LIQ_EVENT_UNCONFIRMED;
+         m_bullClassificationPending=false;
+         m_bearClassificationPending=false;
          return; // opposing sweeps in one window are ambiguous, never force a directional label
         }
 
-      if(m_bullSweepActive)
+      if(m_bullClassificationPending)
         {
          m_eventClass=AX_LIQ_EVENT_UNCONFIRMED;
-         m_eventLevel=m_bullSweepLevel;
-         if(close<m_bullSweepLevel && displacementPts<0.0 && isDisplacement &&
+         m_eventLevel=m_bullClassificationLevel;
+         if(close<m_bullClassificationLevel && displacementPts<0.0 && isDisplacement &&
             structureEvent==AX_STRUCT_BOS_BEARISH)
             m_eventClass=AX_LIQ_EVENT_CONTINUATION_BEARISH;
-         else if(close>m_bullSweepLevel && displacementPts>0.0 && isDisplacement &&
-                 m_bullRejectionConfirmed &&
+         else if(close>m_bullClassificationLevel && displacementPts>0.0 && isDisplacement &&
+                 m_bullClassificationRejected &&
                  (structureEvent==AX_STRUCT_CHOCH_BULLISH || structureEvent==AX_STRUCT_MSS_BULLISH))
             m_eventClass=AX_LIQ_EVENT_REVERSAL_BULLISH;
+         m_bullClassificationPending=false;
          return;
         }
 
-      if(m_bearSweepActive)
+      if(m_bearClassificationPending)
         {
          m_eventClass=AX_LIQ_EVENT_UNCONFIRMED;
-         m_eventLevel=m_bearSweepLevel;
-         if(close>m_bearSweepLevel && displacementPts>0.0 && isDisplacement &&
+         m_eventLevel=m_bearClassificationLevel;
+         if(close>m_bearClassificationLevel && displacementPts>0.0 && isDisplacement &&
             structureEvent==AX_STRUCT_BOS_BULLISH)
             m_eventClass=AX_LIQ_EVENT_CONTINUATION_BULLISH;
-         else if(close<m_bearSweepLevel && displacementPts<0.0 && isDisplacement &&
-                 m_bearRejectionConfirmed &&
+         else if(close<m_bearClassificationLevel && displacementPts<0.0 && isDisplacement &&
+                 m_bearClassificationRejected &&
                  (structureEvent==AX_STRUCT_CHOCH_BEARISH || structureEvent==AX_STRUCT_MSS_BEARISH))
             m_eventClass=AX_LIQ_EVENT_REVERSAL_BEARISH;
+         m_bearClassificationPending=false;
          return;
         }
      }
