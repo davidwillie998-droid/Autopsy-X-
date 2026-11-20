@@ -122,6 +122,12 @@ class LiquidityEventClassificationTests(unittest.TestCase):
         self.assertEqual(self.classify_reference(*args, opposing=True), "UNCONFIRMED")
         self.assertEqual(self.classify_reference(*args, expired=True), "NONE")
 
+    def test_classifier_summary_exposes_closed_bar_timestamp(self):
+        source = LIQUIDITY.read_text()
+        self.assertIn("event_bar=%s", source)
+        self.assertIn("TimeToString(m_lastClassifiedBarTime,TIME_DATE|TIME_MINUTES)", source)
+        self.assertIn('"UNAVAILABLE"', source)
+
     def test_scenario_contract_is_present_in_mql5_classifier(self):
         source = LIQUIDITY.read_text()
         required = (
