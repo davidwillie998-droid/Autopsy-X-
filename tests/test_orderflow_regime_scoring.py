@@ -55,9 +55,9 @@ class RegimeConditionedOrderFlowTests(unittest.TestCase):
         )[1].split("void AxApplyOrderFlowBonus", 1)[0]
         self.assertIn("g_regime.Slope()>0.0", body)
         self.assertIn("g_regime.Slope()<0.0", body)
-        self.assertIn("return(1.0)", body)
-        self.assertIn("return(0.35)", body)
-        self.assertIn("return(0.45)", body)
+        self.assertIn("? 1.0 : 0.35", body)
+        self.assertIn("? 0.85 : 0.45", body)
+        self.assertIn("? 0.90 : 0.30", body)
         self.assertIn("return(0.30)", body)
 
     def test_all_flow_evidence_is_scaled_before_it_changes_scores(self):
