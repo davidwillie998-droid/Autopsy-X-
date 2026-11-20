@@ -10,8 +10,9 @@ equity and margin fields, and the symbol's execution/volume specifications.
 The recorder is observational only. It does not grant execution authority, change
 risk calculations, or participate in entry eligibility. Rows are buffered in memory
 and flushed by `OnTimer`, outside the tick handler. The buffer holds 4,096 rows;
-overflow is counted in `dropped_before`. Any nonzero dropped count makes a file
-ineligible for replay import.
+overflow is counted in `dropped_before` on the next accepted tick and in a final
+`SUMMARY` footer, including drops after the last accepted tick. Any nonzero dropped
+count makes a file ineligible for replay import.
 
 Files are written under the terminal's `MQL5/Files` directory with a unique
 recording-session timestamp in the filename. They are not written to the Common
