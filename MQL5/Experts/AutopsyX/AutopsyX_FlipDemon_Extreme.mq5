@@ -5776,11 +5776,22 @@ void AxProcessTick(void)
    // repeated ticks. It labels reversal, continuation or unconfirmed sweep evidence; it does
    // not alter the scorer, execution decision or account-risk controls.
    datetime liquidityClosedBarTime=iTime(_Symbol,InpRegimeTimeframe,1);
+   double liquidityClosedBarOpen=iOpen(_Symbol,InpRegimeTimeframe,1);
    double liquidityClosedBarClose=iClose(_Symbol,InpRegimeTimeframe,1);
-   if(liquidityClosedBarTime>0 && liquidityClosedBarClose>0.0)
-      g_liq.ClassifyClosedBar(liquidityClosedBarClose,g_mom.DisplacementPts(),
-                              g_structure.IsDisplacement(),g_structure.LastEvent(),
+   double liquidityPoint=g_md.Point();
+   if(liquidityPoint>0.0 && liquidityClosedBarTime>0 &&
+      liquidityClosedBarOpen>0.0 && liquidityClosedBarClose>0.0)
+     {
+      // Use the signed body of the SAME completed candle. Tick momentum is live and may point
+      // the other way, so it must never confirm a historical closed-bar liquidity event.
+      double closedBarDisplacementPts=(liquidityClosedBarClose-liquidityClosedBarOpen)/liquidityPoint;
+      ENUM_AX_STRUCTURE_EVENT closedBarStructureEvent=AX_STRUCT_NONE;
+      if(g_structure.LastEventTime()==liquidityClosedBarTime)
+         closedBarStructureEvent=g_structure.LastEvent();
+      g_liq.ClassifyClosedBar(liquidityClosedBarClose,closedBarDisplacementPts,
+                              g_structure.IsDisplacement(),closedBarStructureEvent,
                               liquidityClosedBarTime);
+     }
    datetime orbServerTime=TimeTradeServer();
    if(orbServerTime<=0) orbServerTime=TimeCurrent();
    g_advancedSessionOrb.Update(_Symbol,orbServerTime,g_md.Point());
