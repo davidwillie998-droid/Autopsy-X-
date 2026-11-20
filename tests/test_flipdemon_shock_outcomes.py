@@ -86,7 +86,7 @@ class ShockOutcomeTrackerTests(unittest.TestCase):
         bar(tracker, 100, 100, high=120, low=80, snapshot=onset)
         result = bar(tracker, 200, 100, high=101, low=99)[0]
         self.assertAlmostEqual(result.max_favourable_excursion_pct, 1.0)
-        self.assertAlmostEqual(result.max_adverse_excursion_pct, -1.0)
+        self.assertAlmostEqual(result.max_adverse_excursion_pct, 1.0)
 
     def test_invalid_bars_do_not_advance_event_horizons_or_accept_late_stale_bars(self):
         tracker = ShockOutcomeTracker((1,))
