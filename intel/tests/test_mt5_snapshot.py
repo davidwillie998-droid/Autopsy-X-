@@ -8,7 +8,7 @@ from autopsyx.mt5_snapshot import audit_snapshot
 
 
 FIELDS = [
-    "sequence", "symbol", "magic", "time_msc",
+    "record_type", "sequence", "symbol", "magic", "time_msc",
     "bid", "ask", "spread_points", "dropped_before",
 ]
 
@@ -22,6 +22,7 @@ def write_snapshot(path, rows):
 
 def row(sequence, time_msc, *, bid="1.10000", ask="1.10010", dropped="0"):
     return {
+        "record_type": "TICK",
         "sequence": str(sequence),
         "symbol": "EURUSD",
         "magic": "1500015",
@@ -93,3 +94,14 @@ def test_missing_schema_column_is_rejected(tmp_path):
 
     with pytest.raises(ValueError, match="missing required columns"):
         audit_snapshot(path)
+
+
+def test_terminal_footer_reports_trailing_drops(tmp_path):
+    path = tmp_path / "snapshot.csv"
+    write_snapshot(path, [row(0, 1000), {"record_type": "SUMMARY", "sequence": "4"}])
+
+    audit = audit_snapshot(path)
+
+    assert audit.rows == 1
+    assert audit.reported_dropped_rows == 4
+    assert not audit.valid_for_replay_import
