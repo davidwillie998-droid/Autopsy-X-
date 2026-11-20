@@ -19,6 +19,7 @@ import statistics
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 def percentile(values: list[float], q: float) -> float:
@@ -40,10 +41,14 @@ def load_outcomes(database: str) -> list[dict]:
     return [json.loads(row[0]) for row in rows]
 
 
-def cluster_bootstrap_ci(records: list[dict], iterations: int = 2000, seed: int = 17) -> tuple[float, float]:
+def cluster_bootstrap_ci(
+    records: list[dict], iterations: int = 2000, seed: int = 17,
+    cluster_timezone: str = "UTC",
+) -> tuple[float, float]:
+    zone = ZoneInfo(cluster_timezone)
     clusters: dict[str, list[float]] = defaultdict(list)
     for row in records:
-        day = datetime.fromtimestamp(int(row["event_timestamp"]), tz=timezone.utc).date().isoformat()
+        day = datetime.fromtimestamp(int(row["event_timestamp"]), tz=zone).date().isoformat()
         clusters[day].append(float(row["directional_return_pct"]))
     keys = sorted(clusters)
     if len(keys) < 2:
@@ -58,7 +63,9 @@ def cluster_bootstrap_ci(records: list[dict], iterations: int = 2000, seed: int 
     return percentile(estimates, 0.025), percentile(estimates, 0.975)
 
 
-def summarize(records: list[dict], iterations: int = 2000) -> list[dict]:
+def summarize(
+    records: list[dict], iterations: int = 2000, cluster_timezone: str = "UTC"
+) -> list[dict]:
     groups: dict[tuple, list[dict]] = defaultdict(list)
     for row in records:
         onset = float(row.get("onset_magnitude_atr", 0.0))
@@ -72,13 +79,18 @@ def summarize(records: list[dict], iterations: int = 2000) -> list[dict]:
     output = []
     for key, rows in sorted(groups.items(), key=lambda item: str(item[0])):
         returns = [float(r["directional_return_pct"]) for r in rows]
-        lower, upper = cluster_bootstrap_ci(rows, iterations=iterations)
+        lower, upper = cluster_bootstrap_ci(
+            rows, iterations=iterations, cluster_timezone=cluster_timezone
+        )
         output.append({
             "symbol": key[0], "timeframe": key[1], "horizon_bars": key[2],
             "direction": key[3], "onset_regime": key[4], "severity_bucket": key[5],
             "observations": len(rows),
             "unique_events": len({r["event_id"] for r in rows}),
-            "event_days": len({datetime.fromtimestamp(int(r["event_timestamp"]), tz=timezone.utc).date() for r in rows}),
+            "event_days": len({
+                datetime.fromtimestamp(int(r["event_timestamp"]), tz=ZoneInfo(cluster_timezone)).date()
+                for r in rows
+            }),
             "mean_directional_return_pct": statistics.mean(returns),
             "median_directional_return_pct": statistics.median(returns),
             "win_rate_pct": 100.0 * sum(x > 0 for x in returns) / len(returns),
@@ -95,19 +107,30 @@ def main() -> None:
     parser.add_argument("database", help="SQLite ledger created by ShockEventLedger")
     parser.add_argument("--output", default="shock_outcome_summary.csv")
     parser.add_argument("--bootstrap-iterations", type=int, default=2000)
+    parser.add_argument("--cluster-timezone", default="UTC",
+                        help="IANA timezone for event-day clusters, e.g. America/New_York")
     args = parser.parse_args()
     if args.bootstrap_iterations < 100:
         parser.error("--bootstrap-iterations must be at least 100")
+    try:
+        ZoneInfo(args.cluster_timezone)
+    except ZoneInfoNotFoundError:
+        parser.error(f"Unknown IANA timezone: {args.cluster_timezone}")
     records = load_outcomes(args.database)
     if not records:
         parser.error("No matured outcomes in the selected database.")
-    rows = summarize(records, iterations=args.bootstrap_iterations)
+    rows = summarize(
+        records, iterations=args.bootstrap_iterations,
+        cluster_timezone=args.cluster_timezone,
+    )
     with Path(args.output).open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
     print(f"Wrote {len(rows)} grouped summaries from {len(records)} horizon observations to {args.output}")
-    print("Research only: intervals are event-day cluster bootstrap estimates, not proof of alpha.")
+    print("Returns are gross price-only, before spread, slippage, financing and contract costs.")
+    print(f"Bootstrap clusters use {args.cluster_timezone} calendar days.")
+    print("Research only: intervals are clustered estimates, not proof of alpha.")
 
 
 if __name__ == "__main__":
