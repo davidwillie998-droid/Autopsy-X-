@@ -64,6 +64,9 @@ intent and the `.mq5`/`.mqh` files as the thing to fix.
 | `Momentum.mqh` | Tick velocity/acceleration, displacement, volatility, persistence, exhaustion |
 | `Microstructure.mqh` | Tick imbalance, spread state, volatility expansion -> BUY/SELL components |
 | `Liquidity.mqh` | Swing/equal/session highs & lows, sweep -> rejection -> displacement sequencing |
+| `FairValueGapEngine.mqh` | Closed-bar bullish/bearish FVG detection, displacement-body filter, age/mitigation/invalidation lifecycle, consequent encroachment and live retest location; bounded advisory score only |
+| `PremiumDiscountEngine.mqh` | Multi-timeframe dealing range, premium/discount/equilibrium and OTE location evidence |
+| `DailyExtremeProjectionEngine.mqh` | New York-clock Asia/CBDR/FLOUT projection families and ADR context; observational only |
 | `Regime.mqh` | TREND/STRONG_TREND/BREAKOUT/RANGE/MEAN_REVERSION/HIGH_VOL/LOW_VOL/CHAOTIC/UNSAFE classification |
 | `SignalScore.mqh` | Combines the above into independent 0–100 BUY/SELL scores + confidence |
 | `FlipEngine.mqh` | Multi-factor confirmation required before reversing a held position |
@@ -75,6 +78,10 @@ intent and the `.mq5`/`.mqh` files as the thing to fix.
 | `TradeAutopsy.mqh` | Per-trade CSV log + rule-based classification |
 | `Statistics.mqh` | Win rate / profit factor / expectancy / drawdown / directional accuracy / profitability gate |
 | `Dashboard.mqh` | On-chart panel + KILL ENGINE button |
+
+### ICT FVG retracement evidence
+
+The FVG engine scans completed M5 bars by default. It rejects undersized gaps and weak middle-candle bodies, expires stale zones, and invalidates a zone after a complete fill. A score bonus is available only while price is inside a valid retracement zone and W1/D1 institutional direction agrees. The bonus is capped at 8 points and never creates an entry by itself. FVG definitions and lifecycle rules are an operational implementation, not proof of institutional orders or a standalone trading edge. The live quote may update zone location, while formation and invalidation use closed bars only.
 
 ## 4. Risk modes
 
