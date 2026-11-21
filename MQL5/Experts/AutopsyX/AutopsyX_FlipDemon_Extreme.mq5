@@ -2856,7 +2856,7 @@ void AxApplyOrderBlockScoreBonus(SAxScore &score)
                    bonus,g_marketMakerModel.Summary());
    }
 
-Session ORB is bounded confirmation evidence, never an independent order signal.
+//--- Session ORB is bounded confirmation evidence, never an independent order signal.
 void AxApplyAdvancedORBScoreBonus(SAxScore &score)
   {
    if(!InpEnableAdvancedSessionORB || InpORBScoreBonus<=0.0 ||
