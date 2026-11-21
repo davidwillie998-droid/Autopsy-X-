@@ -72,7 +72,7 @@ private:
       if(count<20 || point<=0.0) return(false);
 
       // Series arrays: [0] is the latest CLOSED candle. Scan newest to oldest.
-      for(int i=0;i<=count-17;i++)
+      for(int i=0;i<=count-18;i++)
         {
          const MqlRates newer=rates[i];
          const MqlRates middle=rates[i+1];
