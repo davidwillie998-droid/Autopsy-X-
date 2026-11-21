@@ -89,6 +89,15 @@ private:
       return(utc>=StructToTime(a) && utc<StructToTime(b) ? -4 : -5);
      }
 
+   int NYUtcOffsetForLocal(const int year,const int month,const int day,const int hour) const
+     {
+      int dstStartDay=FirstSunday(year,3)+7;
+      int dstEndDay=FirstSunday(year,11);
+      bool afterStart=(month>3 || (month==3 && (day>dstStartDay || (day==dstStartDay && hour>=2))));
+      bool beforeEnd=(month<11 || (month==11 && (day<dstEndDay || (day==dstEndDay && hour<2))));
+      return(afterStart && beforeEnd ? -4 : -5);
+     }
+
    datetime NYLocalToServer(const int year,const int month,const int day,
                             const int hour,const int minute,const int serverOffsetSeconds) const
      {
@@ -97,8 +106,7 @@ private:
       local.year=year; local.mon=month; local.day=day;
       local.hour=hour; local.min=minute;
       datetime wallClock=StructToTime(local);
-      int nyOffset=NYUtcOffsetHours(wallClock+5*3600);
-      datetime utc=wallClock-nyOffset*3600;
+      datetime utc=wallClock-NYUtcOffsetForLocal(year,month,day,hour)*3600;
       return(utc+serverOffsetSeconds);
      }
 
@@ -337,8 +345,11 @@ public:
       int asiaStartYear=nyYear,asiaStartMonth=nyMonth,asiaStartDay=nyDay;
       if(m_asiaEndHour<=m_asiaStartHour)
         {
+         MqlDateTime currentNYDate;
+         ZeroMemory(currentNYDate);
+         currentNYDate.year=nyYear; currentNYDate.mon=nyMonth; currentNYDate.day=nyDay;
          MqlDateTime previousNY;
-         TimeToStruct(nyDayStart-86400,previousNY);
+         TimeToStruct(StructToTime(currentNYDate)-86400,previousNY);
          asiaStartYear=previousNY.year;
          asiaStartMonth=previousNY.mon;
          asiaStartDay=previousNY.day;
