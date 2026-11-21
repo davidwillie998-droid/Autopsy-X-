@@ -129,7 +129,7 @@ private:
       ArraySetAsSeries(rates,false);
       int copied=CopyRates(m_symbol,PERIOD_M1,start,finish,rates);
       if(copied<=0) return(false);
-      datetime now=TimeCurrent();
+      datetime now=TimeTradeServer();
       int valid=0;
       for(int i=0;i<copied;i++)
         {
@@ -334,11 +334,21 @@ public:
       CurrentNYDate(utcNow,nyYear,nyMonth,nyDay);
       datetime nyDayStart=NYLocalToServer(nyYear,nyMonth,nyDay,0,0,serverOffsetSeconds);
       m_state.brokerDayStart=nyDayStart;
-      datetime asiaStart=NYLocalToServer(nyYear,nyMonth,nyDay,m_asiaStartHour,0,serverOffsetSeconds);
-      datetime asiaEnd=NYLocalToServer(nyYear,nyMonth,nyDay,m_asiaEndHour,0,serverOffsetSeconds);
+      int asiaStartYear=nyYear,asiaStartMonth=nyMonth,asiaStartDay=nyDay;
+      if(m_asiaEndHour<=m_asiaStartHour)
+        {
+         MqlDateTime previousNY;
+         TimeToStruct(nyDayStart-86400,previousNY);
+         asiaStartYear=previousNY.year;
+         asiaStartMonth=previousNY.mon;
+         asiaStartDay=previousNY.day;
+        }
+      datetime asiaStart=NYLocalToServer(asiaStartYear,asiaStartMonth,asiaStartDay,
+                                         m_asiaStartHour,0,serverOffsetSeconds);
+      datetime asiaEnd=NYLocalToServer(nyYear,nyMonth,nyDay,
+                                       m_asiaEndHour,0,serverOffsetSeconds);
       datetime cbdrStart=NYLocalToServer(nyYear,nyMonth,nyDay,m_cbdrStartHour,0,serverOffsetSeconds);
       datetime cbdrEnd=NYLocalToServer(nyYear,nyMonth,nyDay,m_cbdrEndHour,0,serverOffsetSeconds);
-      if(m_asiaEndHour<=m_asiaStartHour) asiaEnd=nyDayStart+86400;
       if(m_cbdrEndHour<=m_cbdrStartHour) cbdrEnd+=86400;
 
       MqlTick tick;
