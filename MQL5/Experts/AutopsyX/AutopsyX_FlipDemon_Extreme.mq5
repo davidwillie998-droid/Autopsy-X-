@@ -5488,7 +5488,8 @@ void AxProcessTick(void)
    g_w1Institutional.Update();
    g_d1Institutional.Update();
        if(InpUsePremiumDiscountEngine) g_premiumDiscount.Update();
-   if(InpEnableDailyExtremeProjection) g_dailyExtremeProjection.Update();
+   if(InpEnableDailyExtremeProjection && g_dailyExtremeProjection.Update() && InpVerboseLogging)
+      PrintFormat("AUTOPSY X DAILY EXTREME PROJECTION: %s",g_dailyExtremeProjection.Summary());
    g_h4TrendBreakout.Update(); // internally throttled to the latest completed H4 bar
    g_spreadCost.Observe(g_md.CurrentBid(),g_md.CurrentAsk(),g_md.Point());
    // Calendar refresh is internally throttled, never queried on every tick.
