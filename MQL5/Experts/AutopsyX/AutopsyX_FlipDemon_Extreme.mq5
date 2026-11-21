@@ -32,6 +32,7 @@
 #include <AutopsyX/W1InstitutionalDirection.mqh>
 #include <AutopsyX/D1InstitutionalLevels.mqh>
 #include <AutopsyX/PremiumDiscountEngine.mqh>
+#include <AutopsyX/FairValueGapEngine.mqh>
 #include <AutopsyX/DailyExtremeProjectionEngine.mqh>
 #include <AutopsyX/H4TrendBreakoutEngine.mqh>
 #include <AutopsyX/ShadowRiverEngine.mqh>
@@ -130,6 +131,14 @@ input double          InpOrderFlowScoreWeight     = 15.0;  // Max points each of
 input group "=== PREMIUM / EQUILIBRIUM / DISCOUNT LOCATION ===";
 input bool            InpUsePremiumDiscountEngine = true;  // Advisory multi-timeframe dealing-range location; never an independent entry trigger
 input double          InpPremiumDiscountScoreWeight = 12.0; // Maximum score contribution from confirmed H4/H1 premium-discount alignment
+input group "=== ICT FAIR VALUE GAP RETRACEMENT ===";
+input bool InpUseFvgRetestEngine = true; // Closed-bar FVG lifecycle, retest evidence only, never an independent entry trigger
+input ENUM_TIMEFRAMES InpFvgTimeframe = PERIOD_M5;
+input int InpFvgLookbackBars = 120;
+input int InpFvgMaxAgeBars = 36;
+input double InpFvgMinGapAtr = 0.05;
+input double InpFvgMinDisplacementBodyRatio = 0.55;
+input double InpFvgScoreWeight = 6.0; // Bounded score bonus, hard-capped at 8 points
 
 input group "=== DAILY HIGH / LOW PROJECTION (ASIA + CBDR + FLOUT) ===";
 input bool InpEnableDailyExtremeProjection = true; // Observational projection zones only, never an independent entry trigger
@@ -363,6 +372,7 @@ CStructureEngine      g_structure;
 CW1InstitutionalDirection g_w1Institutional;
 CD1InstitutionalLevels g_d1Institutional;
 CPremiumDiscountEngine g_premiumDiscount;
+CFairValueGapEngine g_fvg;
 CDailyExtremeProjectionEngine g_dailyExtremeProjection;
 CH4TrendBreakoutEngine g_h4TrendBreakout;
 CCompositeDirectionEngine g_compositeDirection;
@@ -2709,6 +2719,38 @@ void AxApplyPremiumDiscountScoreBonus(SAxScore &score)
   }
 
 //--- H4 breakout is a bounded confirmation bonus, never an independent order signal.
+void AxApplyFvgRetestScoreBonus(SAxScore &score)
+  {
+   if(!InpUseFvgRetestEngine || InpFvgScoreWeight<=0.0 || !g_regime.TradingAllowed())
+      return;
+   double weight=AxClampD(InpFvgScoreWeight,0.0,8.0);
+   double buyComponent=g_fvg.BullishScoreComponent();
+   double sellComponent=g_fvg.BearishScoreComponent();
+   double buyBonus=0.0,sellBonus=0.0;
+   if(buyComponent>0.0 && g_w1Institutional.AllowsDirection(AX_DIR_BUY) &&
+      g_d1Institutional.AllowsDirection(AX_DIR_BUY))
+      buyBonus=(buyComponent/100.0)*weight;
+   if(sellComponent>0.0 && g_w1Institutional.AllowsDirection(AX_DIR_SELL) &&
+      g_d1Institutional.AllowsDirection(AX_DIR_SELL))
+      sellBonus=(sellComponent/100.0)*weight;
+   if(buyBonus<=0.0 && sellBonus<=0.0) return;
+   score.buyScore=AxClampD(score.buyScore+buyBonus,0.0,100.0);
+   score.sellScore=AxClampD(score.sellScore+sellBonus,0.0,100.0);
+   score.scoreGap=MathAbs(score.buyScore-score.sellScore);
+   score.confidence=AxClampD(score.scoreGap*1.15,0.0,100.0);
+   score.action=AX_DIR_NONE;
+   if(score.scoreGap>=InpMinGapToAct)
+     {
+      if(score.buyScore>score.sellScore && score.buyScore>=InpMinScoreToAct)
+         score.action=AX_DIR_BUY;
+      else if(score.sellScore>score.buyScore && score.sellScore>=InpMinScoreToAct)
+         score.action=AX_DIR_SELL;
+     }
+   if(InpVerboseLogging)
+      PrintFormat("AUTOPSY X ICT FVG RETEST: BUY +%.2f SELL +%.2f | %s",
+                  buyBonus,sellBonus,g_fvg.Summary());
+  }
+
 void AxApplyAdvancedORBScoreBonus(SAxScore &score)
   {
    if(!InpEnableAdvancedSessionORB || InpORBScoreBonus<=0.0 ||
@@ -4433,6 +4475,9 @@ int OnInit(void)
                   g_d1Institutional.Summary());
    if(InpUsePremiumDiscountEngine && !g_premiumDiscount.Init(_Symbol,180,2))
       Print("AUTOPSY X: premium/discount range history unavailable at startup; location score remains neutral until valid completed-bar ranges form.");
+   if(InpUseFvgRetestEngine && !g_fvg.Init(_Symbol,InpFvgTimeframe,InpFvgLookbackBars,
+      InpFvgMaxAgeBars,InpFvgMinGapAtr,InpFvgMinDisplacementBodyRatio))
+      Print("AUTOPSY X: ICT FVG retest engine unavailable; FVG score contribution remains zero.");
    if(InpEnableDailyExtremeProjection && !g_dailyExtremeProjection.Init(_Symbol,
       InpDailyExtremeAsiaStartNewYorkHour,InpDailyExtremeAsiaEndNewYorkHour,
       InpDailyExtremeCBDRStartNewYorkHour,InpDailyExtremeCBDREndNewYorkHour,
@@ -5817,6 +5862,7 @@ void AxProcessTick(void)
       g_regimeHtf.Update();
      }
    g_liq.UpdateTick(g_md.CurrentBid(),g_md.CurrentAsk(),g_mom.DisplacementPts(),g_md.Point());
+   if(InpUseFvgRetestEngine) g_fvg.Update(g_md.CurrentMid());
    // Classification consumes the last CLOSED bar only and is guarded internally against
    // repeated ticks. It labels reversal, continuation or unconfirmed sweep evidence; it does
    // not alter the scorer, execution decision or account-risk controls.
@@ -5872,6 +5918,7 @@ void AxProcessTick(void)
    AxApplyH4BreakoutBonus(score);
    AxApplyAdvancedORBScoreBonus(score);
    AxApplyPremiumDiscountScoreBonus(score);
+   AxApplyFvgRetestScoreBonus(score);
    g_lastScore = score; // dashboard reads this, not g_scorer.Last(), so it shows the blended score
    // Attach the exact same-tick blended decision to the raw snapshot captured at handler entry.
    if(snapshotCaptured)
