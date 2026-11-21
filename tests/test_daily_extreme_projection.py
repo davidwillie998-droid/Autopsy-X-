@@ -78,6 +78,9 @@ class ProjectionSourceContractTests(unittest.TestCase):
         source = ENGINE.read_text()
         self.assertIn("practitioner-defined projection unit", source)
         self.assertIn("not a statistical standard deviation of returns", source)
+        self.assertIn("nearestUpper=%.5f", source)
+        self.assertIn("nearestLower=%.5f", source)
+        self.assertIn("if(!force && minuteBar==m_lastMinute) return(false);", source)
 
     def test_projection_engine_is_observational_and_wired(self):
         source = EA.read_text()
@@ -86,5 +89,6 @@ class ProjectionSourceContractTests(unittest.TestCase):
         self.assertIn("g_dailyExtremeProjection.Init(_Symbol", source)
         self.assertIn("g_dailyExtremeProjection.Update()", source)
         self.assertIn("DAILY EXTREME PROJECTION", source)
+        self.assertIn("g_dailyExtremeProjection.Summary()", source)
         # Projection logic must not mutate order direction or bypass entry gates.
         self.assertNotIn("g_dailyExtremeProjection", source.split("void AxApplyPremiumDiscountScoreBonus", 1)[1].split("void AxApplyAdvancedORBScoreBonus", 1)[0])
