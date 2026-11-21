@@ -103,7 +103,7 @@ class MarketMakerModelSourceContractTests(unittest.TestCase):
         source = ENGINE.read_text(encoding="utf-8")
         self.assertIn("originRetestObserved", source)
         self.assertIn("Only count a retest that occurs AFTER the first closed-bar", source)
-        self.assertIn("A retest is not required", source)
+        self.assertIn("a retest is not required", source)
 
     def test_engine_never_sends_or_authorizes_orders(self):
         source = ENGINE.read_text(encoding="utf-8")
