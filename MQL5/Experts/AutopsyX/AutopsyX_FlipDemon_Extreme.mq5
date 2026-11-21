@@ -2718,7 +2718,7 @@ void AxApplyPremiumDiscountScoreBonus(SAxScore &score)
                   buyBonus,sellBonus,g_premiumDiscount.Summary());
   }
 
-//--- H4 breakout is a bounded confirmation bonus, never an independent order signal.
+//--- FVG retest is bounded confirmation evidence, never an independent order signal.
 void AxApplyFvgRetestScoreBonus(SAxScore &score)
   {
    if(!InpUseFvgRetestEngine || InpFvgScoreWeight<=0.0 || !g_regime.TradingAllowed())
@@ -2751,6 +2751,7 @@ void AxApplyFvgRetestScoreBonus(SAxScore &score)
                   buyBonus,sellBonus,g_fvg.Summary());
   }
 
+//--- Session ORB is bounded confirmation evidence, never an independent order signal.
 void AxApplyAdvancedORBScoreBonus(SAxScore &score)
   {
    if(!InpEnableAdvancedSessionORB || InpORBScoreBonus<=0.0 ||
