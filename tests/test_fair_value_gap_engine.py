@@ -74,14 +74,16 @@ class FairValueGapSourceContractTests(unittest.TestCase):
         source = ENGINE.read_text()
         self.assertIn("iTime(m_symbol,m_timeframe,1)", source)
         self.assertIn("CopyRates(m_symbol,m_timeframe,1,m_lookbackBars,rates)", source)
-        self.assertIn("rates[i].time", source)
+        self.assertIn("out.formed=newer.time", source)
         self.assertNotIn("CopyRates(m_symbol,m_timeframe,0,", source)
 
     def test_engine_checks_gap_size_and_middle_candle_displacement(self):
         source = ENGINE.read_text()
         self.assertIn("gapAtr<m_minGapAtr", source)
         self.assertIn("bodyRatio<m_minBodyRatio", source)
-        self.assertIn("PriorAverageRange", source)
+        self.assertIn("PriorAverageTrueRange", source)
+        self.assertIn("middle.close<=middle.open", source)
+        self.assertIn("middle.close>=middle.open", source)
 
     def test_engine_tracks_ce_touch_fill_age_and_live_zone_location(self):
         source = ENGINE.read_text()
