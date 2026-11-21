@@ -133,10 +133,11 @@ input double          InpPremiumDiscountScoreWeight = 12.0; // Maximum score con
 
 input group "=== DAILY HIGH / LOW PROJECTION (ASIA + CBDR + FLOUT) ===";
 input bool InpEnableDailyExtremeProjection = true; // Observational projection zones only, never an independent entry trigger
-input int InpDailyExtremeAsiaStartServerHour = 0; // Broker SERVER time, configure to the broker Asia window
-input int InpDailyExtremeAsiaEndServerHour = 7; // Broker SERVER time, exclusive end hour
-input int InpDailyExtremeCBDRStartServerHour = 14; // Broker SERVER time, configure to the NY CBDR equivalent
-input int InpDailyExtremeCBDREndServerHour = 20; // Broker SERVER time, exclusive end hour
+input int InpDailyExtremeAsiaStartNewYorkHour = 20; // New York local time, prior evening Asia range start
+input int InpDailyExtremeAsiaEndNewYorkHour = 0; // New York local time, midnight exclusive end
+input int InpDailyExtremeCBDRStartNewYorkHour = 14; // New York local time, CBDR start
+input int InpDailyExtremeCBDREndNewYorkHour = 20; // New York local time, CBDR end
+input int InpDailyExtremeBrokerUtcOffsetMinutes = 9999; // 9999=auto live broker offset; tester/replay requires explicit server UTC offset in minutes
 input double InpDailyExtremeConfluenceToleranceADR = 0.05; // Projection overlap tolerance as fraction of prior 20-day ADR
 input int             InpVolumeProfileBars        = 120;   // Rolling lookback for the volume profile, bars
 input double          InpVolumeProfileBinPoints   = 5.0;    // Volume profile bin width, points
@@ -4433,16 +4434,16 @@ int OnInit(void)
    if(InpUsePremiumDiscountEngine && !g_premiumDiscount.Init(_Symbol,180,2))
       Print("AUTOPSY X: premium/discount range history unavailable at startup; location score remains neutral until valid completed-bar ranges form.");
    if(InpEnableDailyExtremeProjection && !g_dailyExtremeProjection.Init(_Symbol,
-      InpDailyExtremeAsiaStartServerHour,InpDailyExtremeAsiaEndServerHour,
-      InpDailyExtremeCBDRStartServerHour,InpDailyExtremeCBDREndServerHour,
-      InpDailyExtremeConfluenceToleranceADR))
-      PrintFormat("AUTOPSY X: daily extreme projection unavailable (%s). Check M1 history and broker-server session hours.",
+      InpDailyExtremeAsiaStartNewYorkHour,InpDailyExtremeAsiaEndNewYorkHour,
+      InpDailyExtremeCBDRStartNewYorkHour,InpDailyExtremeCBDREndNewYorkHour,
+      InpDailyExtremeConfluenceToleranceADR,InpDailyExtremeBrokerUtcOffsetMinutes))
+      PrintFormat("AUTOPSY X: New York IPDA projection unavailable (%s). Check UTC clock, broker offset and M1 history.",
                   g_dailyExtremeProjection.Summary());
    else if(InpEnableDailyExtremeProjection)
-      PrintFormat("AUTOPSY X DAILY EXTREME PROJECTION: %s | Asia server=%02d-%02d CBDR server=%02d-%02d | observational only",
-         g_dailyExtremeProjection.Summary(),InpDailyExtremeAsiaStartServerHour,
-         InpDailyExtremeAsiaEndServerHour,InpDailyExtremeCBDRStartServerHour,
-         InpDailyExtremeCBDREndServerHour);
+      PrintFormat("AUTOPSY X NEW YORK IPDA CLOCK: %s | Asia NY=%02d-%02d (prior evening) CBDR NY=%02d-%02d | server offset=%d min | observational only",
+         g_dailyExtremeProjection.Summary(),InpDailyExtremeAsiaStartNewYorkHour,
+         InpDailyExtremeAsiaEndNewYorkHour,InpDailyExtremeCBDRStartNewYorkHour,
+         InpDailyExtremeCBDREndNewYorkHour,InpDailyExtremeBrokerUtcOffsetMinutes);
    if(!g_h4TrendBreakout.Init(_Symbol,PERIOD_H4,400,20))
       PrintFormat("AUTOPSY X: H4 EMA400/range breakout data unavailable; H4 filter will fail closed when required (%s).",
                   g_h4TrendBreakout.Summary());
