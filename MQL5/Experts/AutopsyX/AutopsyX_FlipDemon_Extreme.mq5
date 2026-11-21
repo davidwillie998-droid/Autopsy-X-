@@ -43,6 +43,7 @@
 #include <AutopsyX/NewsDefense.mqh>
 #include <AutopsyX/SignalScore.mqh>
 #include <AutopsyX/EvidenceArbitrationEngine.mqh> // Supervisory evidence contract; observational until explicitly wired
+#include <AutopsyX/InstitutionalEvidenceAdapter.mqh>
 #include <AutopsyX/FlipEngine.mqh>
 #include <AutopsyX/AntiChop.mqh>
 #include <AutopsyX/RiskEngine.mqh>
@@ -380,6 +381,8 @@ bool                  g_regimeClassificationAvailable = false;
 CStructureEngine      g_structure;
 CW1InstitutionalDirection g_w1Institutional;
 CD1InstitutionalLevels g_d1Institutional;
+CInstitutionalEvidenceAdapter g_institutionalEvidenceAdapter;
+CEvidenceArbitrationEngine g_evidenceArbitrator;
 CPremiumDiscountEngine g_premiumDiscount;
 CFairValueGapEngine g_fvg;
 COrderBlockEngine g_orderBlock;
@@ -5940,6 +5943,31 @@ void AxProcessTick(void)
    datetime orbServerTime=TimeTradeServer();
    if(orbServerTime<=0) orbServerTime=TimeCurrent();
    g_advancedSessionOrb.Update(_Symbol,orbServerTime,g_md.Point());
+
+   // Supervisory evidence shadow pass. Existing timestamped reads only.
+   // No effect on score, entry, execution or account-risk authority.
+   if(isNewBarThisTick)
+     {
+      g_evidenceArbitrator.Clear();
+      SAxW1Snapshot w1EvidenceSnapshot=g_w1Institutional.Snapshot();
+      SAxD1Snapshot d1EvidenceSnapshot=g_d1Institutional.Snapshot();
+      g_institutionalEvidenceAdapter.AddW1(w1EvidenceSnapshot,g_evidenceArbitrator);
+      g_institutionalEvidenceAdapter.AddD1(d1EvidenceSnapshot,g_evidenceArbitrator);
+      int structureEvidenceAge=PeriodSeconds(InpRegimeTimeframe)*3;
+      if(structureEvidenceAge<=0) structureEvidenceAge=3600;
+      g_institutionalEvidenceAdapter.AddStructureEvent(
+         g_structure.LastEvent(),g_structure.LastEventTime(),
+         structureEvidenceAge,g_evidenceArbitrator);
+      SAxArbitrationResult shadowResult=g_evidenceArbitrator.Resolve(TimeCurrent());
+      if(InpVerboseLogging)
+         PrintFormat("AUTOPSY X EVIDENCE SHADOW: direction=%s strength=%.1f conflict=%.3f fresh=%d stale=%d unavailable=%d groups=%d reason=%s",
+                     shadowResult.direction==AX_DIR_BUY?"BUY":
+                     shadowResult.direction==AX_DIR_SELL?"SELL":"WAIT",
+                     shadowResult.directionalStrength,shadowResult.conflictRatio,
+                     shadowResult.freshEvidenceCount,shadowResult.staleEvidenceCount,
+                     shadowResult.unavailableEvidenceCount,
+                     shadowResult.independentGroupCount,shadowResult.reason);
+     }
 
    //--- SCORE ---
    SAxScore score = g_scorer.Evaluate(g_md,g_mom,g_micro,g_liq,g_regime);
