@@ -71,6 +71,7 @@ on:
       - 'tests/test_advanced_session_orb_contract.py'
       - 'tests/test_fair_value_gap_engine.py'
       - 'tests/test_order_block_engine.py'
+      - 'tests/test_market_maker_model_engine.py'
       - '.github/workflows/flipdemon-static-safety.yml'
 
 permissions:
