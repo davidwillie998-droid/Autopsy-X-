@@ -57,6 +57,8 @@ intent and the `.mq5`/`.mqh` files as the thing to fix.
 
 ## 3. Modules
 
+See [ICT Institutional-Price-Delivery Concept Map](../docs/ICT_INSTITUTIONAL_CONCEPT_MAP.md) for the source boundary, concept inventory, existing EA coverage, implementation gaps and feed-quality limitations.
+
 | File | Responsibility |
 |---|---|
 | `Defs.mqh` | Shared enums/structs used by every other module |
