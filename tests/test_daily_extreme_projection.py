@@ -1,9 +1,10 @@
-"""Reference mathematics and source contracts for daily-extreme projections.
+"""Reference mathematics and source contracts for NY-clock daily projections.
 
-These tests do not compile or execute MQL5. Broker-server session hours must
-be configured and calibrated per symbol before the projections are relied on.
+These tests do not compile or execute MQL5. Live mode derives the current
+broker UTC offset. Strategy Tester requires an explicit broker UTC offset.
 """
 from pathlib import Path
+from datetime import datetime, timezone
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +35,20 @@ def flout_projection(high, low, multiple):
     return midpoint + multiple * half, midpoint - multiple * half
 
 
+
+def first_sunday(year, month):
+    first = datetime(year, month, 1)
+    return 1 + ((6 - first.weekday()) % 7)
+
+
+def ny_utc_offset_hours(utc):
+    start_day = first_sunday(utc.year, 3) + 7
+    end_day = first_sunday(utc.year, 11)
+    start = datetime(utc.year, 3, start_day, 7, tzinfo=timezone.utc)
+    end = datetime(utc.year, 11, end_day, 6, tzinfo=timezone.utc)
+    return -4 if start <= utc < end else -5
+
+
 class ProjectionMathTests(unittest.TestCase):
     def test_asia_range_deviations_are_symmetric(self):
         self.assertEqual(asia_projection(3350, 3320, 1), (3380, 3290))
@@ -44,6 +59,13 @@ class ProjectionMathTests(unittest.TestCase):
 
     def test_flout_uses_half_combined_range(self):
         self.assertEqual(flout_projection(3400, 3300, 2), (3450, 3250))
+
+
+    def test_new_york_dst_uses_us_transition_instants(self):
+        self.assertEqual(ny_utc_offset_hours(datetime(2026, 3, 8, 6, 59, tzinfo=timezone.utc)), -5)
+        self.assertEqual(ny_utc_offset_hours(datetime(2026, 3, 8, 7, 0, tzinfo=timezone.utc)), -4)
+        self.assertEqual(ny_utc_offset_hours(datetime(2026, 11, 1, 5, 59, tzinfo=timezone.utc)), -4)
+        self.assertEqual(ny_utc_offset_hours(datetime(2026, 11, 1, 6, 0, tzinfo=timezone.utc)), -5)
 
     def test_invalid_ranges_fail_closed(self):
         for fn, args in (
@@ -82,13 +104,29 @@ class ProjectionSourceContractTests(unittest.TestCase):
         self.assertIn("nearestLower=%.5f", source)
         self.assertIn("if(!force && minuteBar==m_lastMinute) return(false);", source)
 
+
+    def test_sessions_are_new_york_clock_and_asia_uses_prior_evening(self):
+        source = ENGINE.read_text()
+        ea = EA.read_text()
+        self.assertIn("NYUtcOffsetHours", source)
+        self.assertIn("NYUtcOffsetForLocal", source)
+        self.assertIn("TimeGMT()", source)
+        self.assertIn("TimeTradeServer()", source)
+        self.assertIn("previousNY.year", source)
+        self.assertIn("InpDailyExtremeAsiaStartNewYorkHour = 20", ea)
+        self.assertIn("InpDailyExtremeAsiaEndNewYorkHour = 0", ea)
+        self.assertIn("InpDailyExtremeCBDRStartNewYorkHour = 14", ea)
+        self.assertIn("InpDailyExtremeCBDREndNewYorkHour = 20", ea)
+        self.assertIn("TESTER_REQUIRES_EXPLICIT_BROKER_UTC_OFFSET", source)
+        self.assertIn("InpDailyExtremeBrokerUtcOffsetMinutes", ea)
+
     def test_projection_engine_is_observational_and_wired(self):
         source = EA.read_text()
         self.assertIn("#include <AutopsyX/DailyExtremeProjectionEngine.mqh>", source)
         self.assertIn("CDailyExtremeProjectionEngine g_dailyExtremeProjection", source)
         self.assertIn("g_dailyExtremeProjection.Init(_Symbol", source)
         self.assertIn("g_dailyExtremeProjection.Update()", source)
-        self.assertIn("DAILY EXTREME PROJECTION", source)
+        self.assertIn("NEW YORK IPDA CLOCK", source)
         self.assertIn("g_dailyExtremeProjection.Summary()", source)
         # Projection logic must not mutate order direction or bypass entry gates.
         self.assertNotIn("g_dailyExtremeProjection", source.split("void AxApplyPremiumDiscountScoreBonus", 1)[1].split("void AxApplyAdvancedORBScoreBonus", 1)[0])
