@@ -61,19 +61,61 @@ private:
    int m_cbdrStartHour;
    int m_cbdrEndHour;
    double m_toleranceAtrFraction;
+   int m_manualServerOffsetMinutes;
    SAxDailyExtremeProjection m_state;
    bool m_initialized;
    datetime m_lastMinute;
 
-   datetime DayStart(const datetime when) const
+   int FirstSunday(const int year,const int month) const
      {
-      MqlDateTime parts;
-      TimeToStruct(when,parts);
-      parts.hour=0;
-      parts.min=0;
-      parts.sec=0;
-      return(StructToTime(parts));
+      MqlDateTime d;
+      ZeroMemory(d);
+      d.year=year; d.mon=month; d.day=1;
+      datetime first=StructToTime(d);
+      TimeToStruct(first,d);
+      return(1+((7-d.day_of_week)%7));
      }
+
+   int NYUtcOffsetHours(const datetime utc) const
+     {
+      MqlDateTime p;
+      TimeToStruct(utc,p);
+      int dstStartDay=FirstSunday(p.year,3)+7;
+      int dstEndDay=FirstSunday(p.year,11);
+      MqlDateTime a,b;
+      ZeroMemory(a); ZeroMemory(b);
+      a.year=p.year; a.mon=3; a.day=dstStartDay; a.hour=7;
+      b.year=p.year; b.mon=11; b.day=dstEndDay; b.hour=6;
+      return(utc>=StructToTime(a) && utc<StructToTime(b) ? -4 : -5);
+     }
+
+   datetime NYLocalToServer(const int year,const int month,const int day,
+                            const int hour,const int minute,const int serverOffsetSeconds) const
+     {
+      MqlDateTime local;
+      ZeroMemory(local);
+      local.year=year; local.mon=month; local.day=day;
+      local.hour=hour; local.min=minute;
+      datetime wallClock=StructToTime(local);
+      int nyOffset=NYUtcOffsetHours(wallClock+5*3600);
+      datetime utc=wallClock-nyOffset*3600;
+      return(utc+serverOffsetSeconds);
+     }
+
+   void CurrentNYDate(const datetime utc,int &year,int &month,int &day) const
+     {
+      MqlDateTime p;
+      TimeToStruct(utc+NYUtcOffsetHours(utc)*3600,p);
+      year=p.year; month=p.mon; day=p.day;
+     }
+
+   int ResolveServerUtcOffset(const datetime serverNow,const datetime utcNow) const
+     {
+      if(m_manualServerOffsetMinutes!=9999) return(m_manualServerOffsetMinutes*60);
+      return((int)MathRound((double)(serverNow-utcNow)/60.0)*60);
+     }
+
+
 
    bool ReadSession(const datetime start,const datetime finish,
                     double &high,double &low,double &bodyHigh,double &bodyLow,
@@ -225,6 +267,7 @@ public:
       m_cbdrStartHour=14;
       m_cbdrEndHour=20;
       m_toleranceAtrFraction=0.05;
+      m_manualServerOffsetMinutes=9999;
       m_initialized=false;
       m_lastMinute=0;
       ZeroMemory(m_state);
@@ -233,13 +276,16 @@ public:
 
    bool Init(const string symbol,const int asiaStartHour,const int asiaEndHour,
              const int cbdrStartHour,const int cbdrEndHour,
-             const double toleranceAtrFraction=0.05)
+             const double toleranceAtrFraction=0.05,
+             const int manualServerUtcOffsetMinutes=9999)
      {
       if(StringLen(symbol)==0 || asiaStartHour<0 || asiaStartHour>23 ||
          asiaEndHour<0 || asiaEndHour>23 || cbdrStartHour<0 ||
          cbdrStartHour>23 || cbdrEndHour<0 || cbdrEndHour>23 ||
          asiaStartHour==asiaEndHour || cbdrStartHour==cbdrEndHour ||
-         toleranceAtrFraction<=0.0 || toleranceAtrFraction>0.5)
+         toleranceAtrFraction<=0.0 || toleranceAtrFraction>0.5 ||
+         (manualServerUtcOffsetMinutes!=9999 &&
+          (manualServerUtcOffsetMinutes< -720 || manualServerUtcOffsetMinutes>840)))
         {
          m_state.reason="INVALID_CONFIGURATION";
          return(false);
@@ -250,6 +296,12 @@ public:
       m_cbdrStartHour=cbdrStartHour;
       m_cbdrEndHour=cbdrEndHour;
       m_toleranceAtrFraction=toleranceAtrFraction;
+      m_manualServerOffsetMinutes=manualServerUtcOffsetMinutes;
+      if(MQLInfoInteger(MQL_TESTER) && m_manualServerOffsetMinutes==9999)
+        {
+         m_state.reason="TESTER_REQUIRES_EXPLICIT_BROKER_UTC_OFFSET";
+         return(false);
+        }
       m_initialized=true;
       return(Update(true));
      }
@@ -257,7 +309,15 @@ public:
    bool Update(const bool force=false)
      {
       if(!m_initialized) return(false);
-      datetime now=TimeCurrent();
+      datetime now=TimeTradeServer();
+      datetime utcNow=TimeGMT();
+      if(now<=0 || utcNow<=0)
+        {
+         m_state.available=false;
+         m_state.reason="SERVER_OR_UTC_CLOCK_UNAVAILABLE";
+         return(false);
+        }
+      int serverOffsetSeconds=ResolveServerUtcOffset(now,utcNow);
       datetime minuteBar=iTime(m_symbol,PERIOD_M1,0);
       if(minuteBar<=0)
         {
@@ -270,15 +330,15 @@ public:
 
       ZeroMemory(m_state);
       m_state.lastUpdateBar=minuteBar;
-      datetime dayStart=DayStart(now);
-      m_state.brokerDayStart=dayStart;
-      MqlDateTime day;
-      TimeToStruct(dayStart,day);
-      datetime asiaStart=dayStart+m_asiaStartHour*3600;
-      datetime asiaEnd=dayStart+m_asiaEndHour*3600;
-      if(m_asiaEndHour<=m_asiaStartHour) asiaEnd+=86400;
-      datetime cbdrStart=dayStart+m_cbdrStartHour*3600;
-      datetime cbdrEnd=dayStart+m_cbdrEndHour*3600;
+      int nyYear=0,nyMonth=0,nyDay=0;
+      CurrentNYDate(utcNow,nyYear,nyMonth,nyDay);
+      datetime nyDayStart=NYLocalToServer(nyYear,nyMonth,nyDay,0,0,serverOffsetSeconds);
+      m_state.brokerDayStart=nyDayStart;
+      datetime asiaStart=NYLocalToServer(nyYear,nyMonth,nyDay,m_asiaStartHour,0,serverOffsetSeconds);
+      datetime asiaEnd=NYLocalToServer(nyYear,nyMonth,nyDay,m_asiaEndHour,0,serverOffsetSeconds);
+      datetime cbdrStart=NYLocalToServer(nyYear,nyMonth,nyDay,m_cbdrStartHour,0,serverOffsetSeconds);
+      datetime cbdrEnd=NYLocalToServer(nyYear,nyMonth,nyDay,m_cbdrEndHour,0,serverOffsetSeconds);
+      if(m_asiaEndHour<=m_asiaStartHour) asiaEnd=nyDayStart+86400;
       if(m_cbdrEndHour<=m_cbdrStartHour) cbdrEnd+=86400;
 
       MqlTick tick;
@@ -288,11 +348,11 @@ public:
          return(false);
         }
       double price=(tick.bid+tick.ask)*0.5;
-      m_state.currentDayHigh=iHigh(m_symbol,PERIOD_D1,0);
-      m_state.currentDayLow=iLow(m_symbol,PERIOD_D1,0);
-      if(m_state.currentDayHigh<=0.0 || m_state.currentDayLow<=0.0)
+      double dayBodyHigh=0.0,dayBodyLow=0.0;
+      if(!ReadSession(nyDayStart,now,m_state.currentDayHigh,m_state.currentDayLow,
+                      dayBodyHigh,dayBodyLow,false))
         {
-         m_state.reason="CURRENT_D1_RANGE_UNAVAILABLE";
+         m_state.reason="NEW_YORK_DAILY_RANGE_M1_HISTORY_UNAVAILABLE";
          return(false);
         }
       m_state.currentDayHigh=MathMax(m_state.currentDayHigh,tick.ask);
@@ -337,7 +397,8 @@ public:
       if(tolerance<=0.0) tolerance=MathMax(tickSize*2.0,(m_state.asiaRange+m_state.cbdrBodyRange)*0.01);
       ScoreProjectionClusters(price,tolerance);
       m_state.available=(m_state.asiaAvailable || m_state.cbdrAvailable);
-      m_state.reason=StringFormat("ASIA=%s/%s H=%.5f L=%.5f CBDR=%s/%s bodyH=%.5f bodyL=%.5f FLOUT=%s mid=%.5f half=%.5f ADR20=%.5f used=%.1f%% remaining=%.5f nearestUpper=%.5f upperFamilies=%d nearestLower=%.5f lowerFamilies=%d",
+      m_state.reason=StringFormat("NY=%04d-%02d-%02d NYUTC=%d SERVERUTC=%dmin ASIA=%s/%s H=%.5f L=%.5f CBDR=%s/%s bodyH=%.5f bodyL=%.5f FLOUT=%s mid=%.5f half=%.5f ADR20=%.5f used=%.1f%% remaining=%.5f nearestUpper=%.5f upperFamilies=%d nearestLower=%.5f lowerFamilies=%d",
+         nyYear,nyMonth,nyDay,NYUtcOffsetHours(utcNow),serverOffsetSeconds/60,
          m_state.asiaAvailable?"READY":"N/A",m_state.asiaComplete?"COMPLETE":"FORMING",
          m_state.asiaHigh,m_state.asiaLow,
          m_state.cbdrAvailable?"READY":"N/A",m_state.cbdrComplete?"COMPLETE":"FORMING",
