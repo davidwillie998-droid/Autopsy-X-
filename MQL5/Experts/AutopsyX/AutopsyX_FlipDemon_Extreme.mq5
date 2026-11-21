@@ -34,6 +34,7 @@
 #include <AutopsyX/PremiumDiscountEngine.mqh>
 #include <AutopsyX/FairValueGapEngine.mqh>
 #include <AutopsyX/OrderBlockEngine.mqh>
+#include <AutopsyX/MarketMakerModelEngine.mqh>
 #include <AutopsyX/DailyExtremeProjectionEngine.mqh>
 #include <AutopsyX/H4TrendBreakoutEngine.mqh>
 #include <AutopsyX/ShadowRiverEngine.mqh>
@@ -149,6 +150,20 @@ input int InpOrderBlockMaxAgeBars = 48;
 input int InpOrderBlockOriginSearchBars = 8;
 input double InpOrderBlockMinDisplacementBodyRatio = 0.55;
 input double InpOrderBlockScoreWeight = 6.0; // Bounded score bonus, hard-capped at 8 points
+
+input group "=== ICT MARKET MAKER BUY/SELL MODEL (MMBM / MMSM) ===";
+input bool InpEnableMarketMakerModel = true; // H4 origin/curve, H4 premium-discount terminal, M15 reversal; observational model
+input ENUM_TIMEFRAMES InpMMXMConfirmationTimeframe = PERIOD_M15;
+input int InpMMXMMaxOriginAgeBars = 36; // Maximum age of the original H4 consolidation
+input int InpMMXMMinConsolidationBars = 3;
+input int InpMMXMMaxConsolidationBars = 8;
+input double InpMMXMMaxConsolidationAtr = 1.75; // Origin range width / H4 ATR(14)
+input double InpMMXMBreakoutBufferAtr = 0.10; // Closed H4 breakout buffer
+input int InpMMXMReversalLookbackBars = 5; // M15 MSS reference window
+input double InpMMXMMinDisplacementAtr = 0.75;
+input double InpMMXMMinBodyRatio = 0.55;
+input double InpMMXMTerminalZonePercent = 61.8; // Premium for MMSM, mirrored discount for MMBM
+input double InpMMXMScoreWeight = 0.0; // Keep at zero until chronological replay proves incremental edge; max 8 points
 
 input group "=== DAILY HIGH / LOW PROJECTION (ASIA + CBDR + FLOUT) ===";
 input bool InpEnableDailyExtremeProjection = true; // Observational projection zones only, never an independent entry trigger
@@ -384,6 +399,7 @@ CD1InstitutionalLevels g_d1Institutional;
 CInstitutionalEvidenceAdapter g_institutionalEvidenceAdapter;
 CEvidenceArbitrationEngine g_evidenceArbitrator;
 CPremiumDiscountEngine g_premiumDiscount;
+CMarketMakerModelEngine g_marketMakerModel;
 CFairValueGapEngine g_fvg;
 COrderBlockEngine g_orderBlock;
 CDailyExtremeProjectionEngine g_dailyExtremeProjection;
@@ -808,6 +824,9 @@ string AxBuildEntryReason(const SAxScore &score,const ENUM_AX_DIR dir)
    bool liqReady = (dir==AX_DIR_BUY) ? g_liq.BullishAttackReady(g_mom.DisplacementPts())
                                        : g_liq.BearishAttackReady(g_mom.DisplacementPts());
    if(liqReady) tags+="LIQUIDITY_SWEEP ";
+   SAxMarketMakerModelSnapshot mmxm=g_marketMakerModel.Read();
+   if(mmxm.direction==dir && mmxm.stage==AX_MMXM_REVERSAL_CONFIRMED)
+      tags+=(dir==AX_DIR_BUY ? "MMBM_CONFIRMED " : "MMSM_CONFIRMED ");
    tags+="MOMENTUM";
    // VWAP trend read reported alongside the other engines here - advisory evidence only, never an
    // override of the regime/structure engines that already decided this trade (Task 2)
@@ -2797,7 +2816,47 @@ void AxApplyOrderBlockScoreBonus(SAxScore &score)
                   buyBonus,sellBonus,g_orderBlock.Summary());
   }
 
-//--- Session ORB is bounded confirmation evidence, never an independent order signal.
+//--- 
+ //--- Complete Market Maker Buy/Sell delivery-cycle confirmation.
+ //--- W1/D1 remain directional authorities; this cannot bypass risk or execution gates.
+ void AxApplyMarketMakerModelScoreBonus(SAxScore &score)
+   {
+    if(!InpEnableMarketMakerModel || InpMMXMScoreWeight<=0.0 ||
+       !g_regime.TradingAllowed())
+       return;
+    SAxMarketMakerModelSnapshot mmxm=g_marketMakerModel.Read();
+    if(!mmxm.available || !mmxm.reversalConfirmed ||
+       mmxm.stage!=AX_MMXM_REVERSAL_CONFIRMED ||
+       mmxm.direction==AX_DIR_NONE)
+       return;
+    if(!g_w1Institutional.AllowsDirection(mmxm.direction) ||
+       !g_d1Institutional.AllowsDirection(mmxm.direction))
+       return;
+
+    double weight=AxClampD(InpMMXMScoreWeight,0.0,8.0);
+    double bonus=(g_marketMakerModel.DirectionalScoreComponent()/100.0)*weight;
+    if(mmxm.direction==AX_DIR_BUY)
+       score.buyScore=AxClampD(score.buyScore+bonus,0.0,100.0);
+    else
+       score.sellScore=AxClampD(score.sellScore+bonus,0.0,100.0);
+
+    score.scoreGap=MathAbs(score.buyScore-score.sellScore);
+    score.confidence=AxClampD(score.scoreGap*1.15,0.0,100.0);
+    score.action=AX_DIR_NONE;
+    if(score.scoreGap>=InpMinGapToAct)
+      {
+       if(score.buyScore>score.sellScore && score.buyScore>=InpMinScoreToAct)
+          score.action=AX_DIR_BUY;
+       else if(score.sellScore>score.buyScore && score.sellScore>=InpMinScoreToAct)
+          score.action=AX_DIR_SELL;
+      }
+    if(InpVerboseLogging)
+       PrintFormat("AUTOPSY X MMXM CONFIRMED: %s +%.2f | %s",
+                   (mmxm.direction==AX_DIR_BUY ? "BUY" : "SELL"),
+                   bonus,g_marketMakerModel.Summary());
+   }
+
+Session ORB is bounded confirmation evidence, never an independent order signal.
 void AxApplyAdvancedORBScoreBonus(SAxScore &score)
   {
    if(!InpEnableAdvancedSessionORB || InpORBScoreBonus<=0.0 ||
@@ -4529,6 +4588,13 @@ int OnInit(void)
       InpOrderBlockLookbackBars,InpOrderBlockMaxAgeBars,InpOrderBlockOriginSearchBars,
       InpOrderBlockMinDisplacementBodyRatio))
       Print("AUTOPSY X: order block engine unavailable; order-block score contribution remains zero.");
+   if(InpEnableMarketMakerModel && !g_marketMakerModel.Init(_Symbol,PERIOD_H4,
+      InpMMXMConfirmationTimeframe,InpMMXMMaxOriginAgeBars,
+      InpMMXMMinConsolidationBars,InpMMXMMaxConsolidationBars,
+      InpMMXMMaxConsolidationAtr,InpMMXMBreakoutBufferAtr,
+      InpMMXMReversalLookbackBars,InpMMXMMinDisplacementAtr,
+      InpMMXMMinBodyRatio,InpMMXMTerminalZonePercent))
+      Print("AUTOPSY X: Market Maker Buy/Sell Model initialization failed; model evidence unavailable.");
    if(InpEnableDailyExtremeProjection && !g_dailyExtremeProjection.Init(_Symbol,
       InpDailyExtremeAsiaStartNewYorkHour,InpDailyExtremeAsiaEndNewYorkHour,
       InpDailyExtremeCBDRStartNewYorkHour,InpDailyExtremeCBDREndNewYorkHour,
@@ -4560,6 +4626,14 @@ int OnInit(void)
    g_w1Institutional.Update(true);
    g_d1Institutional.Update(true);
    if(InpUsePremiumDiscountEngine) g_premiumDiscount.Update(true);
+   if(InpEnableMarketMakerModel)
+     {
+      SAxPremiumDiscountSnapshot mmxmH4Range;
+      ZeroMemory(mmxmH4Range);
+      g_premiumDiscount.Read(PERIOD_H4,mmxmH4Range);
+      g_marketMakerModel.Update(mmxmH4Range,true);
+      PrintFormat("AUTOPSY X ICT MARKET MAKER MODEL: %s",g_marketMakerModel.Summary());
+     }
    if(InpEnableDailyExtremeProjection) g_dailyExtremeProjection.Update(true);
    g_h4TrendBreakout.Update(true);
    g_vpMacd.Update();
@@ -5585,6 +5659,14 @@ void AxProcessTick(void)
    g_w1Institutional.Update();
    g_d1Institutional.Update();
        if(InpUsePremiumDiscountEngine) g_premiumDiscount.Update();
+   if(InpEnableMarketMakerModel)
+     {
+      SAxPremiumDiscountSnapshot mmxmH4Range;
+      ZeroMemory(mmxmH4Range);
+      g_premiumDiscount.Read(PERIOD_H4,mmxmH4Range);
+      if(g_marketMakerModel.Update(mmxmH4Range) && InpVerboseLogging)
+         PrintFormat("AUTOPSY X ICT MARKET MAKER MODEL: %s",g_marketMakerModel.Summary());
+     }
    if(InpEnableDailyExtremeProjection && g_dailyExtremeProjection.Update() && InpVerboseLogging)
       PrintFormat("AUTOPSY X DAILY EXTREME PROJECTION: %s",g_dailyExtremeProjection.Summary());
    g_h4TrendBreakout.Update(); // internally throttled to the latest completed H4 bar
@@ -6002,6 +6084,7 @@ void AxProcessTick(void)
    AxApplyPremiumDiscountScoreBonus(score);
    AxApplyFvgRetestScoreBonus(score);
    AxApplyOrderBlockScoreBonus(score);
+    AxApplyMarketMakerModelScoreBonus(score);
    g_lastScore = score; // dashboard reads this, not g_scorer.Last(), so it shows the blended score
    // Attach the exact same-tick blended decision to the raw snapshot captured at handler entry.
    if(snapshotCaptured)
