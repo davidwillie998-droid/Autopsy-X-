@@ -15,6 +15,7 @@ on:
       - 'tests/test_flipdemon_account_risk.py'
       - 'tests/test_flipdemon_volume_profile_nodes.py'
       - 'tests/test_premium_discount_engine.py'
+      - 'tests/test_daily_extreme_projection.py'
       - 'tests/test_orderflow_regime_scoring.py'
       - 'tests/test_liquidity_event_classification.py'
       - 'tests/test_flipdemon_shock_outcomes.py'
