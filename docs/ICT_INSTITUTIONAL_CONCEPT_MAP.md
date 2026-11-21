@@ -161,6 +161,19 @@ Default configuration is deliberately conservative: H4 curve/origin, M15 confirm
 
 Interpretation limit: this engine classifies observable OHLC behaviour. It cannot prove that a market maker or bank engineered a move, and it does not assume every expansion returns to its origin. The return-to-origin label is only set after price actually reaches the original range.
 
+### Historical replay preparation
+
+Run `MQL5/Scripts/AutopsyX/ExportMMXMHistory.mq5` from MetaTrader 5 on the symbol being evaluated. It exports two chronological CSV files to the terminal's `MQL5/Files` directory:
+
+- `MMXM_SYMBOL_H4.csv`
+- `MMXM_SYMBOL_M15.csv`
+
+The default export window is 730 days. Both files use broker-server timestamps and include OHLC, tick volume, real volume and spread points. Keep the broker time zone and symbol specification with the export. A replay must align M15 bars to the H4 decision timestamp and use only bars that had closed at that timestamp.
+
+Current research limitation: the engine's external-liquidity reference is presently the highest prior H4 high or lowest prior H4 low in a 25-bar pre-origin window. It is a rolling external-extreme proxy, not yet a confirmed equal-high/equal-low pool or a swing-classified liquidity pool. The replay must report this limitation and measure false raids before this proxy is promoted to institutional liquidity evidence.
+
+The exporter only prepares data. It does not run a replay, produce performance statistics, or prove that the model has an edge. MetaEditor compilation, MT5 history completeness checks and chronological replay remain outstanding.
+
 Reference for terminology cross-checking: [ICT Charter PAM 6, Buyside Trade Plan transcript mirror](https://info.quagmyre.com/xwiki/bin/view/Forex/The-Inner-Circle-Trader/ICT-Charter-Price-Action-Models/ICT-Charter-PAM-6-Buyside-Trade-Plan/). This is a third-party transcript mirror, not an official ICT-hosted source.
 
 ## Gaps worth implementing next
