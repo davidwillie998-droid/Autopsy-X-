@@ -67,6 +67,7 @@ See [ICT Institutional-Price-Delivery Concept Map](../docs/ICT_INSTITUTIONAL_CON
 | `Microstructure.mqh` | Tick imbalance, spread state, volatility expansion -> BUY/SELL components |
 | `Liquidity.mqh` | Swing/equal/session highs & lows, sweep -> rejection -> displacement sequencing |
 | `FairValueGapEngine.mqh` | Closed-bar bullish/bearish FVG detection, displacement-body filter, age/mitigation/invalidation lifecycle, consequent encroachment and live retest location; bounded advisory score only |
+| `OrderBlockEngine.mqh` | Structure-confirmed final opposing candle, closed-bar displacement confirmation, body-zone retest, age expiry and failed-block breaker conversion; bounded advisory score only |
 | `PremiumDiscountEngine.mqh` | Multi-timeframe dealing range, premium/discount/equilibrium and OTE location evidence |
 | `DailyExtremeProjectionEngine.mqh` | New York-clock Asia/CBDR/FLOUT projection families and ADR context; observational only |
 | `Regime.mqh` | TREND/STRONG_TREND/BREAKOUT/RANGE/MEAN_REVERSION/HIGH_VOL/LOW_VOL/CHAOTIC/UNSAFE classification |
@@ -80,6 +81,10 @@ See [ICT Institutional-Price-Delivery Concept Map](../docs/ICT_INSTITUTIONAL_CON
 | `TradeAutopsy.mqh` | Per-trade CSV log + rule-based classification |
 | `Statistics.mqh` | Win rate / profit factor / expectancy / drawdown / directional accuracy / profitability gate |
 | `Dashboard.mqh` | On-chart panel + KILL ENGINE button |
+
+### ICT Order Block and Breaker evidence
+
+The Order Block engine is driven by the existing structure engine on `InpRegimeTimeframe`. It accepts only a closed-bar BOS, CHoCH or MSS event accompanied by a directional displacement candle, then searches a bounded number of preceding closed candles for the final opposing candle. The zone uses the candle body and distal wick. A later close through the distal edge converts the zone into a breaker with the opposite direction. Retests and live price location are tracked separately. The engine is advisory only, and the score contribution is capped at 8 points and requires W1/D1 directional agreement. This is an explicit operational definition, not proof of institutional resting orders or a standalone trading edge.
 
 ### ICT FVG retracement evidence
 
