@@ -143,12 +143,15 @@ The inventory below is a working engineering taxonomy of ICT price-delivery conc
 
 ## Gaps worth implementing next
 
-1. **Order Block / Breaker / Mitigation / Rejection lifecycle.** Detect an origin candle only when followed by a qualifying displacement and structural break. Track retest, invalidation and breaker conversion. Avoid drawing every opposite-colour candle as an order block.
-2. **IFVG and BPR.** Add explicit failed-gap inversion and overlap detection. Reuse the FVG zone lifecycle rather than building a second inconsistent price-zone engine.
+1. **IFVG and BPR.** Add explicit failed-gap inversion and overlap detection. Reuse the FVG zone lifecycle rather than building a second inconsistent price-zone engine.
 3. **AMD / Judas / CRT state machine.** Model range formation, one-sided liquidity raid, confirmation and delivery as a time-bounded sequence. Keep New York DST conversion separate from broker-server session inputs.
 4. **Silver Bullet and macro windows.** Add as configurable time-context evidence, not a universal hard gate. Gold/FX and 24/7 synthetic indices need separate session calibration.
 5. **SMT divergence.** Enable only when both instruments have valid, synchronized history and a defensible correlation relationship. Missing or stale comparison data must return unavailable, not fabricate divergence.
 6. **Model-level outcome research.** Log setup identity, symbol, session, regime, target distance, spread, slippage and invalidation. Compare each model against a baseline using chronological out-of-sample replay and ablation tests.
+
+## Newly implemented Order Block operational definition
+
+The current engine uses `InpRegimeTimeframe` so its structure-event timestamp and OHLC bars refer to the same closed-bar clock. It accepts BOS, CHoCH or MSS only when the confirming candle is directional displacement, then searches up to the configured number of preceding candles for the nearest opposing candle. The zone is the candle body plus its distal wick. A later completed candle closing beyond the distal edge flips the zone into a breaker in the opposite direction. This is one explicit, testable implementation, not a universal ICT definition. It does not claim to identify actual resting institutional orders.
 
 ## Non-negotiable interpretation limits
 
