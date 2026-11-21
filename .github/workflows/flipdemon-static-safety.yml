@@ -16,7 +16,6 @@ on:
       - 'tests/test_flipdemon_volume_profile_nodes.py'
       - 'tests/test_premium_discount_engine.py'
       - 'tests/test_daily_extreme_projection.py'
-      - 'tests/test_daily_extreme_projection.py'
       - 'tests/test_orderflow_regime_scoring.py'
       - 'tests/test_liquidity_event_classification.py'
       - 'tests/test_flipdemon_shock_outcomes.py'
@@ -54,7 +53,6 @@ on:
       - 'tests/test_flipdemon_account_risk.py'
       - 'tests/test_flipdemon_volume_profile_nodes.py'
       - 'tests/test_premium_discount_engine.py'
-      - 'tests/test_daily_extreme_projection.py'
       - 'tests/test_orderflow_regime_scoring.py'
       - 'tests/test_flipdemon_mql5_hygiene.py'
       - 'tests/test_flipdemon_partial_recovery.py'
@@ -99,7 +97,6 @@ jobs:
       - name: Run IQ200 telemetry source-contract tests
         run: |
           python -m pip install pytest
-          python -m pytest -q tests/test_iq200_telemetry_static.py tests/test_advanced_trend_suite_static.py tests/test_advanced_session_orb_contract.py tests/test_precision_entry_engine_contract.py tests/test_hedging_campaign_lifecycle_contract.py tests/test_position_state_registry_contract.py tests/test_break_even_persistence_contract.py tests/test_hedging_break_even_manager_contract.py tests/test_hedging_stop_action_recovery_contract.py tests/test_hedging_partial_close_ledger_contract.py tests/test_hedging_full_close_ledger_contract.py tests/test_hedging_full_close_lifecycle_contract.py tests/test_premium_discount_engine.py
           python -m pytest -q tests/test_iq200_telemetry_static.py tests/test_advanced_trend_suite_static.py tests/test_advanced_session_orb_contract.py tests/test_precision_entry_engine_contract.py tests/test_hedging_campaign_lifecycle_contract.py tests/test_position_state_registry_contract.py tests/test_break_even_persistence_contract.py tests/test_hedging_break_even_manager_contract.py tests/test_hedging_stop_action_recovery_contract.py tests/test_hedging_partial_close_ledger_contract.py tests/test_hedging_full_close_ledger_contract.py tests/test_hedging_full_close_lifecycle_contract.py tests/test_premium_discount_engine.py tests/test_daily_extreme_projection.py
           python -m pytest -q tests/test_orderflow_regime_scoring.py tests/test_liquidity_event_classification.py tests/test_flipdemon_shock_outcomes.py tests/test_shock_outcome_report.py
       - name: Verify critical safety invariants
