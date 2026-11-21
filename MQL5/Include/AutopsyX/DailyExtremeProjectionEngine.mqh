@@ -265,7 +265,7 @@ public:
          m_state.reason="M1_TIME_UNAVAILABLE";
          return(false);
         }
-      if(!force && minuteBar==m_lastMinute) return(m_state.available);
+      if(!force && minuteBar==m_lastMinute) return(false);
       m_lastMinute=minuteBar;
 
       ZeroMemory(m_state);
@@ -337,11 +337,15 @@ public:
       if(tolerance<=0.0) tolerance=MathMax(tickSize*2.0,(m_state.asiaRange+m_state.cbdrBodyRange)*0.01);
       ScoreProjectionClusters(price,tolerance);
       m_state.available=(m_state.asiaAvailable || m_state.cbdrAvailable);
-      m_state.reason=StringFormat("ASIA=%s/%s CBDR=%s/%s FLOUT=%s ADR20=%.5f used=%.1f%% upperConfluence=%d lowerConfluence=%d",
+      m_state.reason=StringFormat("ASIA=%s/%s H=%.5f L=%.5f CBDR=%s/%s bodyH=%.5f bodyL=%.5f FLOUT=%s mid=%.5f half=%.5f ADR20=%.5f used=%.1f%% remaining=%.5f nearestUpper=%.5f upperFamilies=%d nearestLower=%.5f lowerFamilies=%d",
          m_state.asiaAvailable?"READY":"N/A",m_state.asiaComplete?"COMPLETE":"FORMING",
+         m_state.asiaHigh,m_state.asiaLow,
          m_state.cbdrAvailable?"READY":"N/A",m_state.cbdrComplete?"COMPLETE":"FORMING",
-         m_state.floutAvailable?"READY":"WAITING",m_state.adr20,m_state.adrUsedPercent,
-         m_state.upperConfluenceCount,m_state.lowerConfluenceCount);
+         m_state.cbdrBodyHigh,m_state.cbdrBodyLow,
+         m_state.floutAvailable?"READY":"WAITING",m_state.floutMidpoint,m_state.floutHalfRange,
+         m_state.adr20,m_state.adrUsedPercent,m_state.adrRemaining,
+         m_state.nearestUpperProjection,m_state.upperConfluenceCount,
+         m_state.nearestLowerProjection,m_state.lowerConfluenceCount);
       return(m_state.available);
      }
 
