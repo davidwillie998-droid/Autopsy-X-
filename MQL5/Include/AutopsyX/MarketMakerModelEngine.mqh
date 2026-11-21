@@ -119,7 +119,7 @@ private:
 
       // Series arrays: index 0 is the latest CLOSED H4 bar. A candidate
       // origin occupies [end .. end+length-1]; lower indexes are later bars.
-      for(int end=1;end<=maxEnd;end++)
+      for(int end=2;end<=maxEnd;end++)
         {
          for(int length=m_minConsolidationBars;
              length<=m_maxConsolidationBars;length++)
@@ -172,7 +172,7 @@ private:
 
             double extension=(firstBreak==AX_DIR_BUY ?
                               extreme-rangeHigh : rangeLow-extreme);
-            if(extension<atr*0.35) continue;
+            if(extension<MathMax(atr*0.75,width*1.25)) continue;
 
             // Prefer a compact, multi-bar origin followed by meaningful
             // expansion. Penalize stale origins so old unrelated ranges
@@ -475,7 +475,7 @@ public:
          m_state.originRetestObserved?"YES":"NO",
          m_state.reversalConfirmed?"YES":"NO",
          MathMin(m_state.targetNear,m_state.targetFar),
-         MathMax(m_state.targetNear,m_state.targetFar),m_state.reason);
+         MathMax(m_state.targetNear,m_state.targetFar),m_state.reason));
      }
   };
 
