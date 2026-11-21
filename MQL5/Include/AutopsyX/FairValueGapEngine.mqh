@@ -48,14 +48,17 @@ private:
       s.reason=reason;
      }
 
-   double PriorAverageRange(const MqlRates &rates[],const int count,const int firstIndex) const
+   double PriorAverageTrueRange(const MqlRates &rates[],const int count,const int firstIndex) const
      {
       const int period=14;
-      if(firstIndex+period>count) return(0.0);
+      if(firstIndex+period>=count) return(0.0);
       double sum=0.0;
       for(int k=0;k<period;k++)
         {
-         double range=rates[firstIndex+k].high-rates[firstIndex+k].low;
+         int index=firstIndex+k;
+         double range=rates[index].high-rates[index].low;
+         range=MathMax(range,MathAbs(rates[index].high-rates[index+1].close));
+         range=MathMax(range,MathAbs(rates[index].low-rates[index+1].close));
          if(range<=0.0 || !MathIsValidNumber(range)) return(0.0);
          sum+=range;
         }
@@ -78,6 +81,8 @@ private:
          if(candleRange<=0.0) continue;
          double bodyRatio=MathAbs(middle.close-middle.open)/candleRange;
          if(bodyRatio<m_minBodyRatio) continue;
+         if(dir==AX_DIR_BUY && middle.close<=middle.open) continue;
+         if(dir==AX_DIR_SELL && middle.close>=middle.open) continue;
 
          double lower=0.0,upper=0.0;
          if(dir==AX_DIR_BUY)
@@ -95,7 +100,7 @@ private:
          else continue;
 
          double gap=upper-lower;
-         double atr=PriorAverageRange(rates,count,i+3);
+         double atr=PriorAverageTrueRange(rates,count,i+3);
          if(gap<=MathMax(point*2.0,tickSize) || atr<=0.0) continue;
          double gapAtr=gap/atr;
          if(gapAtr<m_minGapAtr) continue;
