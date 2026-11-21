@@ -137,12 +137,13 @@ private:
                continue;
 
             ENUM_AX_DIR firstBreak=AX_DIR_NONE;
+            int breakoutIndex=-1;
             for(int k=end-1;k>=0;k--)
               {
                if(rates[k].close>rangeHigh+breakoutBuffer)
-                 { firstBreak=AX_DIR_BUY; break; }
+                 { firstBreak=AX_DIR_BUY; breakoutIndex=k; break; }
                if(rates[k].close<rangeLow-breakoutBuffer)
-                 { firstBreak=AX_DIR_SELL; break; }
+                 { firstBreak=AX_DIR_SELL; breakoutIndex=k; break; }
               }
             if(firstBreak==AX_DIR_NONE) continue;
 
@@ -205,7 +206,9 @@ private:
                         "ORIGIN_FOUND_BUY_SIDE_CURVE_FORMING" :
                         "ORIGIN_FOUND_SELL_SIDE_CURVE_FORMING");
 
-            for(int k=0;k<end;k++)
+            // Only count a retest that occurs AFTER the first closed-bar
+            // breakout. The breakout candle itself is not a pullback.
+            for(int k=0;k<breakoutIndex;k++)
                if(rates[k].low<=rangeHigh && rates[k].high>=rangeLow)
                  { out.originRetestObserved=true; break; }
            }
