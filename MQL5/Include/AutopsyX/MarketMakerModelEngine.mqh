@@ -462,8 +462,10 @@ public:
       string model=(m_state.model==AX_MMXM_BUY_MODEL ? "MMBM" :
                     (m_state.model==AX_MMXM_SELL_MODEL ? "MMSM" : "NONE"));
       string stage=EnumToString(m_state.stage);
+      string direction=(m_state.direction==AX_DIR_BUY ? "BUY" :
+                        (m_state.direction==AX_DIR_SELL ? "SELL" : "WAIT"));
       return(StringFormat("MMXM %s %s dir=%s origin=[%.5f..%.5f] external=%.5f swept=%s curveExtreme=%.5f H4Position=%.1f%% terminal=%s retest=%s reversal=%s target=[%.5f..%.5f] reason=%s",
-         model,stage,AxDirToString(m_state.direction),
+         model,stage,direction,
          m_state.originLow,m_state.originHigh,m_state.priorExternalLiquidity,
          m_state.externalLiquiditySwept?"YES":"NO",m_state.curveExtreme,
          m_state.terminalPositionPercent,m_state.terminalZoneReached?"YES":"NO",
