@@ -138,8 +138,30 @@ The inventory below is a working engineering taxonomy of ICT price-delivery conc
 | Asia, CBDR, FLOUT and ADR20 projections | DailyExtremeProjectionEngine.mqh | Observational only; NY-local clock with DST handling |
 | Order flow, CVD proxy, footprint, volume profile, DOM heatmap | OrderFlow.mqh, Footprint.mqh, VolumeProfile.mqh, Heatmap.mqh | Existing evidence modules; feed quality and broker availability must be explicit |
 | Session opening range | AdvancedSessionORBEngine.mqh | Optional, session-hour configuration requires broker validation |
+| Market Maker Buy/Sell delivery cycle (MMBM / MMSM) | MarketMakerModelEngine.mqh | Implemented as a closed-bar H4 origin/curve and H4 premium-discount terminal model, with M15 displacement/MSS confirmation; observational by default |
 | FVG lifecycle and retest | FairValueGapEngine.mqh | Newly integrated; closed-bar formation/invalidation, age cap, true-range size filter, middle-candle body/direction filter, CE and live retest location |
 | Composite direction and risk | CompositeDirection.mqh, account-risk coordinator and execution eligibility modules | Existing independent direction/risk gates remain authoritative |
+
+## Market Maker Buy/Sell Model implementation
+
+The new `MarketMakerModelEngine.mqh` classifies the complete delivery-cycle hypothesis rather than treating a single sweep or premium/discount reading as an entry. It has no order, position, stop, or risk-control calls.
+
+Operational sequence:
+
+1. Find a compact original consolidation on completed H4 bars.
+2. Require a completed H4 close outside the range by a configurable ATR buffer. An upward first curve maps to a Market Maker Sell Model (MMSM); a downward first curve maps to a Market Maker Buy Model (MMBM).
+3. Record the prior external H4 high or low and the curve extreme. A later return into the original range is recorded, but is not required for the model to continue.
+4. Require the terminal extreme to raid the prior external liquidity and reach the upper H4 premium zone for MMSM or the mirrored lower discount zone for MMBM. The default terminal threshold is 61.8% of the current confirmed H4 dealing range, mirrored at 38.2%.
+5. Require a completed M15 displacement candle after the terminal extreme. It must meet the configured body/range and ATR thresholds and close beyond the preceding M15 structure reference. This is the operational Smart Money Reversal (SMR) confirmation.
+6. A completed H4 close through the terminal extreme invalidates the reversal thesis. If the confirmed delivery reaches the nearest edge of the original consolidation, the model is labelled returned-to-origin.
+
+Default configuration is deliberately conservative: H4 curve/origin, M15 confirmation, 3-8 bar consolidation, 1.75 H4 ATR maximum origin width, 0.10 ATR breakout buffer, 0.75 ATR displacement, 55% body ratio and 61.8% terminal-zone threshold. These are engineering parameters, not universal ICT rules and not empirically optimized values.
+
+`InpMMXMScoreWeight` defaults to zero. The state machine runs and logs its observations, but it does not change the directional score until chronological replay demonstrates incremental value. If enabled later, its contribution is capped at 8 points and requires W1 and D1 directional agreement. It never bypasses risk, execution eligibility, broker preflight or the account-wide risk ceiling.
+
+Interpretation limit: this engine classifies observable OHLC behaviour. It cannot prove that a market maker or bank engineered a move, and it does not assume every expansion returns to its origin. The return-to-origin label is only set after price actually reaches the original range.
+
+Reference for terminology cross-checking: [ICT Charter PAM 6, Buyside Trade Plan transcript mirror](https://info.quagmyre.com/xwiki/bin/view/Forex/The-Inner-Circle-Trader/ICT-Charter-Price-Action-Models/ICT-Charter-PAM-6-Buyside-Trade-Plan/). This is a third-party transcript mirror, not an official ICT-hosted source.
 
 ## Gaps worth implementing next
 
