@@ -43,7 +43,7 @@ class ProjectionMathTests(unittest.TestCase):
         self.assertEqual(cbdr_projection(3400, 3380, 2), (3440, 3340))
 
     def test_flout_uses_half_combined_range(self):
-        self.assertEqual(flout_projection(3300, 3400, 2), (3450, 3250))
+        self.assertEqual(flout_projection(3400, 3300, 2), (3450, 3250))
 
     def test_invalid_ranges_fail_closed(self):
         for fn, args in (
