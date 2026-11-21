@@ -187,7 +187,8 @@ public:
 
          MqlRates latest[];
          ArraySetAsSeries(latest,true);
-         if(CopyRates(m_symbol,m_timeframe,1,1,latest)==1)
+         if(CopyRates(m_symbol,m_timeframe,1,1,latest)==1 &&
+            latest[0].time>m_zone.confirmationTime)
            {
             bool broken=m_zone.direction==AX_DIR_BUY ?
                         latest[0].close<m_zone.lower :
