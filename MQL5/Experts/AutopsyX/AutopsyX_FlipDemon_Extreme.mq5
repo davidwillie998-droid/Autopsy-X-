@@ -32,6 +32,7 @@
 #include <AutopsyX/W1InstitutionalDirection.mqh>
 #include <AutopsyX/D1InstitutionalLevels.mqh>
 #include <AutopsyX/PremiumDiscountEngine.mqh>
+#include <AutopsyX/DailyExtremeProjectionEngine.mqh>
 #include <AutopsyX/H4TrendBreakoutEngine.mqh>
 #include <AutopsyX/ShadowRiverEngine.mqh>
 #include <AutopsyX/AdvancedTrendSuite.mqh>
@@ -129,6 +130,14 @@ input double          InpOrderFlowScoreWeight     = 15.0;  // Max points each of
 input group "=== PREMIUM / EQUILIBRIUM / DISCOUNT LOCATION ===";
 input bool            InpUsePremiumDiscountEngine = true;  // Advisory multi-timeframe dealing-range location; never an independent entry trigger
 input double          InpPremiumDiscountScoreWeight = 12.0; // Maximum score contribution from confirmed H4/H1 premium-discount alignment
+
+input group "=== DAILY HIGH / LOW PROJECTION (ASIA + CBDR + FLOUT) ===";
+input bool InpEnableDailyExtremeProjection = true; // Observational projection zones only, never an independent entry trigger
+input int InpDailyExtremeAsiaStartServerHour = 0; // Broker SERVER time, configure to the broker Asia window
+input int InpDailyExtremeAsiaEndServerHour = 7; // Broker SERVER time, exclusive end hour
+input int InpDailyExtremeCBDRStartServerHour = 14; // Broker SERVER time, configure to the NY CBDR equivalent
+input int InpDailyExtremeCBDREndServerHour = 20; // Broker SERVER time, exclusive end hour
+input double InpDailyExtremeConfluenceToleranceADR = 0.05; // Projection overlap tolerance as fraction of prior 20-day ADR
 input int             InpVolumeProfileBars        = 120;   // Rolling lookback for the volume profile, bars
 input double          InpVolumeProfileBinPoints   = 5.0;    // Volume profile bin width, points
 input double          InpFootprintBinPoints       = 3.0;    // Footprint level width, points (finer than the volume profile)
@@ -353,6 +362,7 @@ CStructureEngine      g_structure;
 CW1InstitutionalDirection g_w1Institutional;
 CD1InstitutionalLevels g_d1Institutional;
 CPremiumDiscountEngine g_premiumDiscount;
+CDailyExtremeProjectionEngine g_dailyExtremeProjection;
 CH4TrendBreakoutEngine g_h4TrendBreakout;
 CCompositeDirectionEngine g_compositeDirection;
 CVPMACDEngine         g_vpMacd;
@@ -4422,6 +4432,17 @@ int OnInit(void)
                   g_d1Institutional.Summary());
    if(InpUsePremiumDiscountEngine && !g_premiumDiscount.Init(_Symbol,180,2))
       Print("AUTOPSY X: premium/discount range history unavailable at startup; location score remains neutral until valid completed-bar ranges form.");
+   if(InpEnableDailyExtremeProjection && !g_dailyExtremeProjection.Init(_Symbol,
+      InpDailyExtremeAsiaStartServerHour,InpDailyExtremeAsiaEndServerHour,
+      InpDailyExtremeCBDRStartServerHour,InpDailyExtremeCBDREndServerHour,
+      InpDailyExtremeConfluenceToleranceADR))
+      PrintFormat("AUTOPSY X: daily extreme projection unavailable (%s). Check M1 history and broker-server session hours.",
+                  g_dailyExtremeProjection.Summary());
+   else if(InpEnableDailyExtremeProjection)
+      PrintFormat("AUTOPSY X DAILY EXTREME PROJECTION: %s | Asia server=%02d-%02d CBDR server=%02d-%02d | observational only",
+         g_dailyExtremeProjection.Summary(),InpDailyExtremeAsiaStartServerHour,
+         InpDailyExtremeAsiaEndServerHour,InpDailyExtremeCBDRStartServerHour,
+         InpDailyExtremeCBDREndServerHour);
    if(!g_h4TrendBreakout.Init(_Symbol,PERIOD_H4,400,20))
       PrintFormat("AUTOPSY X: H4 EMA400/range breakout data unavailable; H4 filter will fail closed when required (%s).",
                   g_h4TrendBreakout.Summary());
@@ -4442,6 +4463,7 @@ int OnInit(void)
    g_w1Institutional.Update(true);
    g_d1Institutional.Update(true);
    if(InpUsePremiumDiscountEngine) g_premiumDiscount.Update(true);
+   if(InpEnableDailyExtremeProjection) g_dailyExtremeProjection.Update(true);
    g_h4TrendBreakout.Update(true);
    g_vpMacd.Update();
    // Respect the calendar engine's refresh interval after the forced startup read.
@@ -5466,6 +5488,7 @@ void AxProcessTick(void)
    g_w1Institutional.Update();
    g_d1Institutional.Update();
        if(InpUsePremiumDiscountEngine) g_premiumDiscount.Update();
+   if(InpEnableDailyExtremeProjection) g_dailyExtremeProjection.Update();
    g_h4TrendBreakout.Update(); // internally throttled to the latest completed H4 bar
    g_spreadCost.Observe(g_md.CurrentBid(),g_md.CurrentAsk(),g_md.Point());
    // Calendar refresh is internally throttled, never queried on every tick.
