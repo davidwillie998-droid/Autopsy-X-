@@ -33,6 +33,7 @@
 #include <AutopsyX/D1InstitutionalLevels.mqh>
 #include <AutopsyX/PremiumDiscountEngine.mqh>
 #include <AutopsyX/FairValueGapEngine.mqh>
+#include <AutopsyX/OrderBlockEngine.mqh>
 #include <AutopsyX/DailyExtremeProjectionEngine.mqh>
 #include <AutopsyX/H4TrendBreakoutEngine.mqh>
 #include <AutopsyX/ShadowRiverEngine.mqh>
@@ -139,6 +140,13 @@ input int InpFvgMaxAgeBars = 36;
 input double InpFvgMinGapAtr = 0.05;
 input double InpFvgMinDisplacementBodyRatio = 0.55;
 input double InpFvgScoreWeight = 6.0; // Bounded score bonus, hard-capped at 8 points
+input group "=== ICT ORDER BLOCK AND BREAKER ===";
+input bool InpUseOrderBlockEngine = true; // Structure-confirmed OB and breaker lifecycle, advisory only
+input int InpOrderBlockLookbackBars = 160;
+input int InpOrderBlockMaxAgeBars = 48;
+input int InpOrderBlockOriginSearchBars = 8;
+input double InpOrderBlockMinDisplacementBodyRatio = 0.55;
+input double InpOrderBlockScoreWeight = 6.0; // Bounded score bonus, hard-capped at 8 points
 
 input group "=== DAILY HIGH / LOW PROJECTION (ASIA + CBDR + FLOUT) ===";
 input bool InpEnableDailyExtremeProjection = true; // Observational projection zones only, never an independent entry trigger
@@ -373,6 +381,7 @@ CW1InstitutionalDirection g_w1Institutional;
 CD1InstitutionalLevels g_d1Institutional;
 CPremiumDiscountEngine g_premiumDiscount;
 CFairValueGapEngine g_fvg;
+COrderBlockEngine g_orderBlock;
 CDailyExtremeProjectionEngine g_dailyExtremeProjection;
 CH4TrendBreakoutEngine g_h4TrendBreakout;
 CCompositeDirectionEngine g_compositeDirection;
@@ -2751,6 +2760,39 @@ void AxApplyFvgRetestScoreBonus(SAxScore &score)
                   buyBonus,sellBonus,g_fvg.Summary());
   }
 
+//--- Order Block / Breaker is location evidence only after a closed-bar structure break.
+void AxApplyOrderBlockScoreBonus(SAxScore &score)
+  {
+   if(!InpUseOrderBlockEngine || InpOrderBlockScoreWeight<=0.0 || !g_regime.TradingAllowed())
+      return;
+   double weight=AxClampD(InpOrderBlockScoreWeight,0.0,8.0);
+   double buyComponent=g_orderBlock.BullishScoreComponent();
+   double sellComponent=g_orderBlock.BearishScoreComponent();
+   double buyBonus=0.0,sellBonus=0.0;
+   if(buyComponent>0.0 && g_w1Institutional.AllowsDirection(AX_DIR_BUY) &&
+      g_d1Institutional.AllowsDirection(AX_DIR_BUY))
+      buyBonus=(buyComponent/100.0)*weight;
+   if(sellComponent>0.0 && g_w1Institutional.AllowsDirection(AX_DIR_SELL) &&
+      g_d1Institutional.AllowsDirection(AX_DIR_SELL))
+      sellBonus=(sellComponent/100.0)*weight;
+   if(buyBonus<=0.0 && sellBonus<=0.0) return;
+   score.buyScore=AxClampD(score.buyScore+buyBonus,0.0,100.0);
+   score.sellScore=AxClampD(score.sellScore+sellBonus,0.0,100.0);
+   score.scoreGap=MathAbs(score.buyScore-score.sellScore);
+   score.confidence=AxClampD(score.scoreGap*1.15,0.0,100.0);
+   score.action=AX_DIR_NONE;
+   if(score.scoreGap>=InpMinGapToAct)
+     {
+      if(score.buyScore>score.sellScore && score.buyScore>=InpMinScoreToAct)
+         score.action=AX_DIR_BUY;
+      else if(score.sellScore>score.buyScore && score.sellScore>=InpMinScoreToAct)
+         score.action=AX_DIR_SELL;
+     }
+   if(InpVerboseLogging && (buyBonus>0.0 || sellBonus>0.0))
+      PrintFormat("AUTOPSY X ICT ORDER BLOCK: BUY +%.2f SELL +%.2f | %s",
+                  buyBonus,sellBonus,g_orderBlock.Summary());
+  }
+
 //--- Session ORB is bounded confirmation evidence, never an independent order signal.
 void AxApplyAdvancedORBScoreBonus(SAxScore &score)
   {
@@ -4479,6 +4521,10 @@ int OnInit(void)
    if(InpUseFvgRetestEngine && !g_fvg.Init(_Symbol,InpFvgTimeframe,InpFvgLookbackBars,
       InpFvgMaxAgeBars,InpFvgMinGapAtr,InpFvgMinDisplacementBodyRatio))
       Print("AUTOPSY X: ICT FVG retest engine unavailable; FVG score contribution remains zero.");
+   if(InpUseOrderBlockEngine && !g_orderBlock.Init(_Symbol,InpRegimeTimeframe,
+      InpOrderBlockLookbackBars,InpOrderBlockMaxAgeBars,InpOrderBlockOriginSearchBars,
+      InpOrderBlockMinDisplacementBodyRatio))
+      Print("AUTOPSY X: order block engine unavailable; order-block score contribution remains zero.");
    if(InpEnableDailyExtremeProjection && !g_dailyExtremeProjection.Init(_Symbol,
       InpDailyExtremeAsiaStartNewYorkHour,InpDailyExtremeAsiaEndNewYorkHour,
       InpDailyExtremeCBDRStartNewYorkHour,InpDailyExtremeCBDREndNewYorkHour,
@@ -5822,6 +5868,9 @@ void AxProcessTick(void)
            }
         }
       g_structure.Update();
+      if(InpUseOrderBlockEngine)
+         g_orderBlock.Update(g_md.CurrentMid(),g_structure.LastEvent(),
+                             g_structure.LastEventTime(),g_structure.IsDisplacement());
       g_w1Institutional.Update();
       g_d1Institutional.Update();
        if(InpUsePremiumDiscountEngine) g_premiumDiscount.Update();
@@ -5864,6 +5913,9 @@ void AxProcessTick(void)
      }
    g_liq.UpdateTick(g_md.CurrentBid(),g_md.CurrentAsk(),g_mom.DisplacementPts(),g_md.Point());
    if(InpUseFvgRetestEngine) g_fvg.Update(g_md.CurrentMid());
+   if(InpUseOrderBlockEngine)
+      g_orderBlock.Update(g_md.CurrentMid(),g_structure.LastEvent(),
+                          g_structure.LastEventTime(),g_structure.IsDisplacement());
    // Classification consumes the last CLOSED bar only and is guarded internally against
    // repeated ticks. It labels reversal, continuation or unconfirmed sweep evidence; it does
    // not alter the scorer, execution decision or account-risk controls.
@@ -5920,6 +5972,7 @@ void AxProcessTick(void)
    AxApplyAdvancedORBScoreBonus(score);
    AxApplyPremiumDiscountScoreBonus(score);
    AxApplyFvgRetestScoreBonus(score);
+   AxApplyOrderBlockScoreBonus(score);
    g_lastScore = score; // dashboard reads this, not g_scorer.Last(), so it shows the blended score
    // Attach the exact same-tick blended decision to the raw snapshot captured at handler entry.
    if(snapshotCaptured)
