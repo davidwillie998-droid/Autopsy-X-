@@ -42,6 +42,7 @@
 #include <AutopsyX/VPMACD.mqh>
 #include <AutopsyX/NewsDefense.mqh>
 #include <AutopsyX/SignalScore.mqh>
+#include <AutopsyX/EvidenceArbitrationEngine.mqh> // Supervisory evidence contract; observational until explicitly wired
 #include <AutopsyX/FlipEngine.mqh>
 #include <AutopsyX/AntiChop.mqh>
 #include <AutopsyX/RiskEngine.mqh>
