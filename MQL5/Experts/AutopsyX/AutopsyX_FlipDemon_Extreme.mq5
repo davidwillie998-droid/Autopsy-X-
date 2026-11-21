@@ -4440,10 +4440,10 @@ int OnInit(void)
       PrintFormat("AUTOPSY X: New York IPDA projection unavailable (%s). Check UTC clock, broker offset and M1 history.",
                   g_dailyExtremeProjection.Summary());
    else if(InpEnableDailyExtremeProjection)
-      PrintFormat("AUTOPSY X NEW YORK IPDA CLOCK: %s | Asia NY=%02d-%02d (prior evening) CBDR NY=%02d-%02d | server offset=%d min | observational only",
+      PrintFormat("AUTOPSY X NEW YORK IPDA CLOCK: %s | Asia NY=%02d-%02d (prior evening) CBDR NY=%02d-%02d | broker offset mode=%s | observational only",
          g_dailyExtremeProjection.Summary(),InpDailyExtremeAsiaStartNewYorkHour,
          InpDailyExtremeAsiaEndNewYorkHour,InpDailyExtremeCBDRStartNewYorkHour,
-         InpDailyExtremeCBDREndNewYorkHour,InpDailyExtremeBrokerUtcOffsetMinutes);
+         InpDailyExtremeCBDREndNewYorkHour,(InpDailyExtremeBrokerUtcOffsetMinutes==9999 ? "AUTO LIVE" : "MANUAL TESTER/REPLAY"));
    if(!g_h4TrendBreakout.Init(_Symbol,PERIOD_H4,400,20))
       PrintFormat("AUTOPSY X: H4 EMA400/range breakout data unavailable; H4 filter will fail closed when required (%s).",
                   g_h4TrendBreakout.Summary());
