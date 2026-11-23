@@ -40,6 +40,7 @@ test('reconciles broker risk and derives the selected stop-risk budget from equi
   const f = fixture();
   try {
     const result = f.ledger.reconcile({ ...f.base, existingRiskMoney: 30 });
+    assert.equal(result.maxStopRiskPercent, 2.0);
     assert.equal(result.hardCapMoney, 200);
     assert.equal(result.withinCap, true);
   } finally { f.close(); }
@@ -56,6 +57,16 @@ test('uses the configured stop-risk percentage instead of a fixed two-percent ce
     assert.equal(first.ok, true);
     expectCode(() => f.ledger.reserve({ ...configured, instanceId: 'terminal-b',
       idempotencyKey: 'config-entry-0002', riskMoney: 201 }), 'ACCOUNT_RISK_BUDGET_EXCEEDED');
+  } finally { f.close(); }
+});
+
+test('rejects invalid configured stop-risk percentages', () => {
+  const f = fixture();
+  try {
+    for (const value of [0, -1, 100.01, Number.NaN]) {
+      expectCode(() => f.ledger.reconcile({ ...f.base, maxStopRiskPercent: value }),
+        'INVALID_MAX_STOP_RISK_PERCENT');
+    }
   } finally { f.close(); }
 });
 
