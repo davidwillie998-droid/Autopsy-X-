@@ -100,6 +100,8 @@ The FVG engine scans completed M5 bars by default. It rejects undersized gaps an
 
 Aggression comes from faster decisions, tighter execution windows, and
 willingness to flip direction — never from position-size escalation.
+
+`InpMaxAccountStopRiskPercent` independently sets the maximum stop-risk per entry and across broker-confirmed account exposure. Its default is 10.0%, configurable from 0.05% to 100.0%. It is separate from `InpMarginProfile` (5%, 50%, 100% margin utilisation). The distributed risk coordinator receives the same configured percentage in each broker snapshot.
 `RiskEngine.Configure()` applies the independently configurable `InpMaxAccountStopRiskPercent` stop-risk maximum, and
 there is no code path anywhere in this EA that increases lot size after a
 loss.
