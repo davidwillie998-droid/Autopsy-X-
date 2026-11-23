@@ -109,7 +109,7 @@ public:
                                 const double vwapAlignmentBonus=1.0)
      {
       m_enabled = enabled;
-      m_configuredRiskFrac = AxClampD(configuredRiskPercent/100.0,0.0001,0.20);
+      m_configuredRiskFrac = AxClampD(configuredRiskPercent/100.0,0.0001,1.0);
       // ordering is enforced here, not trusted from inputs, so a misconfigured input set can't
       // produce an incoherent ladder (e.g. CAUTION triggering at a wider drawdown than DEFENSIVE)
       m_cautionDdPct    = MathMax(0.5,cautionDdPct);
@@ -371,7 +371,7 @@ public:
       //--- VWAP alignment bonus (Zarattini & Aziz 2023, adapted - see VWAPEngine.mqh and             ---
       //--- CExitEngine's mechanical VWAP exit). IMPORTANT: this class's own documented invariant      ---
       //--- (see the file header) is that it only ever scales DOWN from CRiskEngine's already hard-    ---
-      //--- capped 2% max risk-per-trade ceiling, never up - a true above-1.0x multiplier here would   ---
+      //--- configured maximum stop-risk per-trade ceiling, never up - a true above-1.0x multiplier here would   ---
       //--- silently push effective risk past that ceiling, which is exactly the "just this once, a    ---
       //--- bit more" reasoning this whole engine exists to refuse. So the bonus is implemented as a    ---
       //--- CLAW-BACK: it can pull baseMult back TOWARD 1.0 (partially offsetting how much CAUTION/     ---
@@ -451,7 +451,7 @@ private:
       // before enough realized losses exist to derive this empirically, use the EA's actual
       // configured risk-per-trade percent (from CRiskEngine) rather than an arbitrary flat
       // assumption - it can otherwise be off by up to 40x from what's really being risked
-      // (InpMode ranges from 0.05% to 2.0%), which is exactly when an accurate estimate matters most
+      // (InpMode uses the independently configured maximum stop-risk percentage), which is exactly when an accurate estimate matters most
       return(m_configuredRiskFrac);
      }
   };
