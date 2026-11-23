@@ -181,9 +181,6 @@ public:
    bool WriteSummary(const datetime serverTime)
      {
       if(!m_initialized || serverTime<=0) return(false);
-      string day=TimeToString(serverTime,TIME_DATE);
-      string dayKey=day;
-      StringReplace(dayKey,".","");
       m_filename=StringFormat("AUTOPSYX_GapHour_Analytics_%s_%I64u_HISTORY.csv",
                               SafePart(m_symbol),m_magic);
       int h=FileOpen(m_filename,FILE_WRITE|FILE_CSV|FILE_ANSI|
