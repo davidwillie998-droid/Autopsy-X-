@@ -96,11 +96,11 @@ The FVG engine scans completed M5 bars by default. It rejects undersized gaps an
 |---|---|
 | `AX_MODE_NORMAL` | 0.5% |
 | `AX_MODE_AGGRESSIVE` | 1.0% |
-| `AX_MODE_EXTREME` | up to `InpExtremeRiskPercent`, hard-capped at 2.0% |
+| `AX_MODE_EXTREME` | up to `InpExtremeRiskPercent`, bounded by `InpMaxAccountStopRiskPercent` |
 
 Aggression comes from faster decisions, tighter execution windows, and
 willingness to flip direction — never from position-size escalation.
-`RiskEngine.Configure()` hard-clamps risk to 2% regardless of input, and
+`RiskEngine.Configure()` applies the independently configurable `InpMaxAccountStopRiskPercent` stop-risk maximum, and
 there is no code path anywhere in this EA that increases lot size after a
 loss.
 
