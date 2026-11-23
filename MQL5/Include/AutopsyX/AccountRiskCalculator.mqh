@@ -7,7 +7,6 @@
 #ifndef AX_ACCOUNTRISKCALCULATOR_MQH
 #define AX_ACCOUNTRISKCALCULATOR_MQH
 
-#define AX_ACCOUNT_RISK_HARD_CAP_PCT 2.0
 
 struct SAxAccountRiskSnapshot
   {
@@ -46,6 +45,7 @@ class CAccountRiskCalculator
   {
 private:
    string m_auditFile;
+   double m_maxAccountRiskPercent;
 
    bool ValidNumber(const double value) const
      {
@@ -269,8 +269,10 @@ private:
          reason=pending?"INVALID_PENDING_LIMIT_VOLUME_OR_PRICE":"INVALID_PROPOSED_VOLUME_OR_PRICE";
       else if(!ValidNumber(perEntryRiskPercent) || perEntryRiskPercent<=0.0)
          reason="INVALID_PER_ENTRY_RISK_LIMIT";
-      else if(perEntryRiskPercent>AX_ACCOUNT_RISK_HARD_CAP_PCT)
-         reason="PER_ENTRY_RISK_LIMIT_EXCEEDS_ABSOLUTE_CAP";
+      else if(!ValidNumber(m_maxAccountRiskPercent) || m_maxAccountRiskPercent<0.05 || m_maxAccountRiskPercent>100.0)
+         reason="ACCOUNT_STOP_RISK_LIMIT_NOT_CONFIGURED";
+      else if(perEntryRiskPercent>m_maxAccountRiskPercent)
+         reason="PER_ENTRY_RISK_LIMIT_EXCEEDS_CONFIGURED_MAXIMUM";
       else
         {
          bool stopOnLossSide=(direction==AX_DIR_BUY)?(stopPrice<entryPrice):(stopPrice>entryPrice);
@@ -287,15 +289,15 @@ private:
                decision.calculationError=calcError;
               }
             else if(snapshot.existingRiskMoney>snapshot.hardRiskBudgetMoney+0.01)
-               reason="EXISTING_ACCOUNT_RISK_ALREADY_EXCEEDS_2_PERCENT";
+               reason="EXISTING_ACCOUNT_RISK_ALREADY_EXCEEDS_CONFIGURED_MAXIMUM";
             else if(decision.proposedRiskMoney>
                     snapshot.equity*perEntryRiskPercent/100.0+0.01)
                reason=pending?"PENDING_LIMIT_EXCEEDS_PER_ENTRY_RISK_LIMIT"
                              :"PROPOSED_ORDER_EXCEEDS_PER_ENTRY_RISK_LIMIT";
             else if(snapshot.existingRiskMoney+decision.proposedRiskMoney>
                     snapshot.hardRiskBudgetMoney+0.01)
-               reason=pending?"PENDING_LIMIT_EXCEEDS_ACCOUNT_WIDE_2_PERCENT_CAP"
-                             :"PROPOSED_ORDER_EXCEEDS_ACCOUNT_WIDE_2_PERCENT_CAP";
+               reason=pending?"PENDING_LIMIT_EXCEEDS_CONFIGURED_ACCOUNT_STOP_RISK"
+                             :"PROPOSED_ORDER_EXCEEDS_CONFIGURED_ACCOUNT_STOP_RISK";
            }
         }
       return(reason=="");
@@ -346,6 +348,12 @@ public:
      {
       m_auditFile=StringFormat("FlipDemon_AccountRisk_%I64d.csv",
                                AccountInfoInteger(ACCOUNT_LOGIN));
+      m_maxAccountRiskPercent=10.0;
+     }
+
+   void              ConfigureMaxRiskPercent(const double maximumRiskPercent)
+     {
+      m_maxAccountRiskPercent=maximumRiskPercent;
      }
 
    bool              Scan(SAxAccountRiskSnapshot &snapshot) const
@@ -365,7 +373,12 @@ public:
          snapshot.failureReason="INVALID_ACCOUNT_EQUITY";
          return(false);
         }
-      snapshot.hardRiskBudgetMoney=snapshot.equity*(AX_ACCOUNT_RISK_HARD_CAP_PCT/100.0);
+      if(!ValidNumber(m_maxAccountRiskPercent) || m_maxAccountRiskPercent<0.05 || m_maxAccountRiskPercent>100.0)
+        {
+         snapshot.failureReason="INVALID_CONFIGURED_ACCOUNT_STOP_RISK_MAXIMUM";
+         return(false);
+        }
+      snapshot.hardRiskBudgetMoney=snapshot.equity*(m_maxAccountRiskPercent/100.0);
 
       bool hedging=(AccountInfoInteger(ACCOUNT_MARGIN_MODE)==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING);
       string seenSymbols[];
