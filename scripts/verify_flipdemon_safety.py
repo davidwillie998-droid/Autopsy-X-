@@ -345,7 +345,7 @@ require("OrderCalcProfit(orderType,_Symbol,1.0,entryPrice,stopPrice,oneLotProfit
 require("CalculateLotSize(g_md,intendedPrice,slPrice,dir,sizingDecision)" in ea
         and "sizingDecision.rejectionReason" in ea,
         "EA logs the risk engine sizing decision at the entry evaluation point")
-require("m_riskPercent               = AxClampD(riskPercent,0.05,2.0)" in risk,
+require("m_riskPercent               = AxClampD(riskPercent,0.05,m_maxRiskPercent)" in risk,
         "decision-record integration retains the configured per-entry risk maximum")
 
 
@@ -355,6 +355,8 @@ require(ACCOUNT_RISK.is_file(), "dedicated account-wide risk calculator exists")
 account_risk = ACCOUNT_RISK.read_text(encoding="utf-8")
 require("m_maxAccountRiskPercent" in account_risk and "ConfigureMaxRiskPercent" in account_risk,
         "account-wide monetary stop-risk uses the configurable maximum")
+require("InpMaxAccountStopRiskPercent" in ea and "ConfigureMaxRiskPercent(InpMaxAccountStopRiskPercent)" in ea,
+        "EA exposes and applies a configurable stop-risk maximum independently of margin profiles")
 require("PositionsTotal()" in account_risk and "PositionGetTicket(i)" in account_risk
         and "POSITION_SL" in account_risk and "POSITION_PRICE_OPEN" in account_risk,
         "all broker-confirmed open positions and protective stops are enumerated")
