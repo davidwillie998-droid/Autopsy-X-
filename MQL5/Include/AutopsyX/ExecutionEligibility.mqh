@@ -28,22 +28,18 @@ class CExecutionEligibility
 private:
    double            m_minRR;
    double            m_minExpectedValueR;
-   double            m_minFreeMarginBufferPercent; // required free margin AFTER the trade, as a
-                                                     // percent of what the trade itself would use
 
 public:
                      CExecutionEligibility(void)
      {
-      m_minRR=1.2; m_minExpectedValueR=0.0; m_minFreeMarginBufferPercent=50.0;
+      m_minRR=1.2; m_minExpectedValueR=0.0;
      }
 
-   void              Configure(const double minRR,const double minExpectedValueR,
-                                const double minFreeMarginBufferPercent)
+   void              Configure(const double minRR,const double minExpectedValueR)
      {
       m_minRR                      = MathMax(0.0,minRR);
       m_minExpectedValueR          = (MathIsValidNumber(minExpectedValueR) && minExpectedValueR>=0.0)
                                       ? minExpectedValueR : 0.0;
-      m_minFreeMarginBufferPercent = MathMax(0.0,minFreeMarginBufferPercent);
      }
 
    //--- thesis and composite direction must already be built by the caller (CompositeDirection.mqh, ---
@@ -53,8 +49,7 @@ public:
                               const ENUM_AX_COMPOSITE_DIRECTION compositeDirection,
                               CRiskEngine &risk,
                               const int openPositions,const double currentExposureLots,
-                              const double spreadPts,const double marginRequiredForOrder,
-                              string &reasonOut) const
+                              const double spreadPts,string &reasonOut) const
      {
       //--- 1. composite direction's own verdict is authoritative for BLOCKED/DATA_UNAVAILABLE/ ---
       //--- INSUFFICIENT_EVIDENCE - this gate does not second-guess those, only NEUTRAL/BULLISH/BEARISH ---
@@ -85,17 +80,8 @@ public:
       if(!risk.PreTradeAllowed(openPositions,currentExposureLots,spreadPts,riskReason))
         { reasonOut=riskReason; return(AX_ELIGIBILITY_BLOCKED); }
 
-      //--- 3. margin: real broker figures, checked fresh, never assumed ---
-      double marginFree = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
-      if(marginRequiredForOrder<=0)
-        { reasonOut="Margin requirement could not be computed"; return(AX_ELIGIBILITY_DATA_UNAVAILABLE); }
-      double marginBufferPct = ((marginFree-marginRequiredForOrder)/marginRequiredForOrder)*100.0;
-      if(marginFree<marginRequiredForOrder || marginBufferPct<m_minFreeMarginBufferPercent)
-        {
-         reasonOut=StringFormat("Insufficient margin buffer: free=%.2f required=%.2f (buffer %.1f%% < min %.1f%%)",
-                                 marginFree,marginRequiredForOrder,marginBufferPct,m_minFreeMarginBufferPercent);
-         return(AX_ELIGIBILITY_BLOCKED);
-        }
+      //--- Broker margin policy is owned by the final OrderCalcMargin preflight.
+      //--- Do not add a second free-margin buffer here; that would contradict the selected profile.
 
       //--- 4. thesis-quality checks: SL/TP validity, structural sanity ---
       if(thesis.direction==AX_DIR_BUY)
