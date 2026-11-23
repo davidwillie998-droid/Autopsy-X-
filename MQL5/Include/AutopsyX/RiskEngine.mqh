@@ -31,6 +31,7 @@ class CRiskEngine
 private:
    //--- configuration ---
    double            m_riskPercent;
+   double            m_maxRiskPercent;
    double            m_dailyLossLimitPercent;
    int               m_maxConsecutiveLosses;
    int               m_maxOpenPositions;
@@ -94,7 +95,7 @@ private:
 public:
                      CRiskEngine(void)
      {
-      m_riskPercent=1.0; m_dailyLossLimitPercent=8.0; m_maxConsecutiveLosses=5;
+      m_riskPercent=1.0; m_maxRiskPercent=10.0; m_dailyLossLimitPercent=8.0; m_maxConsecutiveLosses=5;
       m_maxOpenPositions=1; m_maxFlipsPerDay=20;
       m_maxTradesPerRollingPeriod=10; m_rollingPeriodSec=300;
       m_maxSpreadPts=250; m_maxSlippagePts=30; m_minFreeMarginPercent=150.0;
@@ -113,9 +114,11 @@ public:
                                 const double minFreeMarginPercent,
                                 const double weeklyLossLimitPercent=15.0,
                                 const int maxPositionsPerSymbol=1,
-                                const int maxExecutionFailures=5)
+                                const int maxExecutionFailures=5,
+                                const double maxRiskPercent=10.0)
      {
-      m_riskPercent               = AxClampD(riskPercent,0.05,2.0);   // hard ceiling: never >2% (spec section 2)
+      m_maxRiskPercent            = AxClampD(maxRiskPercent,0.05,100.0);
+      m_riskPercent               = AxClampD(riskPercent,0.05,m_maxRiskPercent);
       m_dailyLossLimitPercent     = dailyLossLimitPercent;
       m_maxConsecutiveLosses      = maxConsecutiveLosses;
       // Zero disables the software position-count ceiling. Negative values are
