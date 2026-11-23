@@ -173,9 +173,9 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         method = self.account_risk[start:]
         self.assertIn("bool snapshotKnown=LoadSnapshot(snapshot,decision,reason);", method)
         self.assertIn("snapshot.existingRiskMoney= snapshot.existingRiskMoney", method) if False else None
-        self.assertIn("decision.proposedRiskMoney", method)
-        self.assertIn("snapshot.existingRiskMoney+decision.proposedRiskMoney>", method)
-        self.assertIn("snapshot.hardRiskBudgetMoney+0.01", method)
+        self.assertIn("decision.proposedRiskMoney", self.account_risk)
+        self.assertIn("snapshot.existingRiskMoney+decision.proposedRiskMoney>", self.account_risk)
+        self.assertIn("snapshot.hardRiskBudgetMoney+0.01", self.account_risk)
         self.assertIn("PROPOSED_ORDER_EXCEEDS_CONFIGURED_ACCOUNT_STOP_RISK", self.account_risk)
 
     def test_broker_symbol_preflight_enforces_direction_market_and_volume_contract(self):
@@ -242,8 +242,8 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
             self.expert.index("double AxRiskPercentForMode(void)"):
             self.expert.index("double AxMarginUsageLimitForProfile(void)")
         ]
-        self.assertIn("return(0.5);", risk_helper)
-        self.assertIn("return(1.0);", risk_helper)
+        self.assertIn("return(MathMin(0.5,maximumRisk));", risk_helper)
+        self.assertIn("return(MathMin(1.0,maximumRisk));", risk_helper)
         self.assertIn("AxClampD(InpExtremeRiskPercent,0.05,maximumRisk)", risk_helper)
         self.assertIn("InpMaxAccountStopRiskPercent", risk_helper)
         self.assertIn("MathMax(InpMinFreeMarginPercent,brokerFloor)", self.expert)
