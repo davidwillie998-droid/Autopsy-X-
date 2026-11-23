@@ -240,7 +240,7 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         self.assertIn("AxMarginUsageLimitForProfile()", self.expert)
         risk_helper = self.expert[
             self.expert.index("double AxRiskPercentForMode(void)"):
-            self.expert.index("double AxMarginUsageLimitForMode(void)")
+            self.expert.index("double AxMarginUsageLimitForProfile(void)")
         ]
         self.assertIn("return(0.5);", risk_helper)
         self.assertIn("return(1.0);", risk_helper)
