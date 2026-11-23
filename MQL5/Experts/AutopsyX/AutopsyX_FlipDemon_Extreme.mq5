@@ -4558,9 +4558,9 @@ void AxObserveGapHour(void)
          g_gapLastJournalTime=serverNow;
      }
    if(InpVerboseLogging &&
-      (g_gapSnapshot.state!=previous.state ||
-       g_gapSnapshot.window!=previous.window ||
-       g_gapSnapshot.reason!=previous.reason))
+      (g_gapSnapshot.state!=previousState ||
+       g_gapSnapshot.window!=previousWindow ||
+       g_gapSnapshot.reason!=previousReason))
       PrintFormat("AUTOPSY X GAP HOUR: state=%d window=%d market=%d symbol=%s spread=%.5f leverage=1:%I64d margin=%.5f free=%.2f commission_verified=%s costs_verified=%s reason=%s",
                   (int)g_gapSnapshot.state,(int)g_gapSnapshot.window,
                   (int)g_gapSnapshot.marketStatus,_Symbol,
