@@ -34,8 +34,11 @@ function accountIdentity(input) {
 function snapshotFields(input, now, maxAgeMs) {
   const equity = finiteNumber(input?.equity, 'equity', { min: 0, exclusive: true });
   const brokerRiskMoney = finiteNumber(input?.existingRiskMoney, 'existingRiskMoney');
-  const maxStopRiskPercent = finiteNumber(input?.maxStopRiskPercent, 'maxStopRiskPercent', { min: 0.05 });
-  if (maxStopRiskPercent > 100.0) fail(400, 'INVALID_MAX_STOP_RISK_PERCENT', 'maxStopRiskPercent cannot exceed 100.');
+  const maxStopRiskPercent = input?.maxStopRiskPercent;
+  if (typeof maxStopRiskPercent !== 'number' || !Number.isFinite(maxStopRiskPercent) ||
+      maxStopRiskPercent < 0.05 || maxStopRiskPercent > 100.0) {
+    fail(400, 'INVALID_MAX_STOP_RISK_PERCENT', 'maxStopRiskPercent must be a finite percentage from 0.05 to 100.');
+  }
   const snapshotAtMs = finiteNumber(input?.snapshotAtMs, 'snapshotAtMs', { min: 0, exclusive: true });
   const snapshotId = String(input?.snapshotId ?? '').trim();
   if (!snapshotId || snapshotId.length > 160) {
