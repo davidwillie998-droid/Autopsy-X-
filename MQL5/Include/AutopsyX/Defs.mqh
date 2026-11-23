@@ -14,6 +14,14 @@ enum ENUM_AX_MODE
    AX_MODE_EXTREME = 2      // up to 2.0% risk per trade (configurable)
   };
 
+//--- Margin utilisation is an independent account-exposure profile. ---
+enum ENUM_AX_MARGIN_PROFILE
+  {
+   AX_MARGIN_LOW = 0,       // 5% of equity allocated to used margin
+   AX_MARGIN_MEDIUM = 1,    // 50% of equity allocated to used margin
+   AX_MARGIN_MAXIMUM = 2    // 100% ceiling, still subject to broker stop-out protections
+  };
+
 //--- Trade direction ---------------------------------------------------------
 enum ENUM_AX_DIR
   {
