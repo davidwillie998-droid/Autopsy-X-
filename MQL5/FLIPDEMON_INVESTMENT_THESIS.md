@@ -80,8 +80,8 @@ This is a stateful strategy variant, not a fixed-threshold baseline. Therefore:
 ## 5. Execution and capital-preservation constraints
 
 - Preserve `ANALYSIS_ONLY` as the default. Research and decision logging do not grant execution authority.
-- The immutable account-wide open stop-risk ceiling is **2.00% of current equity in aggregate**, across all controlled positions, pending orders and outstanding reservations. It is one shared ceiling, not 2% per symbol, per campaign, or per terminal.
-- Per-entry and campaign limits may be stricter; none may increase the aggregate 2.00% ceiling.
+- The account-wide open stop-risk ceiling is configurable through `InpMaxAccountStopRiskPercent` (0.05% to 100.0%), applied as one shared budget across broker-confirmed positions and pending orders. The same value is transmitted to the distributed risk coordinator for reservation checks. It is independent of the 5%, 50% and 100% margin-utilisation profiles.
+- Per-entry sizing is independently bounded by the configured account maximum and the selected strategy mode. Campaign additions must recalculate remaining account stop-risk before execution.
 - Unknown exposure, invalid/missing protection, stale snapshots, unresolved submissions, uncertain broker outcomes, unreconciled reservations, or failed audit persistence must fail closed.
 - Never average down, martingale, force broker minimum volume above the risk budget, or reuse a consumed signal ID.
 - Profitable campaign additions require a distinct, fresh continuation decision and a complete recalculation of remaining aggregate risk before reservation.
