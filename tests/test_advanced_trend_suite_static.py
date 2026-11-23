@@ -71,7 +71,9 @@ def test_execution_feedback_receives_only_valid_observations():
 def test_advanced_suite_does_not_change_account_risk_authority():
     assert "g_accountRisk.Evaluate" in EA
     assert "g_accountRiskCoordinator" in EA
-    assert "InpExtremeRiskPercent      = 2.0" in EA
+    assert "InpExtremeRiskPercent      = 5.0" in EA
+    assert "InpMaxAccountStopRiskPercent = 10.0" in EA
+    assert "InpMaxAccountStopRiskPercent" in EA
     assert "InpEnablePyramidExecution    = false" in EA
 
 
