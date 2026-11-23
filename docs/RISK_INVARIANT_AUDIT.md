@@ -1,9 +1,9 @@
 # Risk Invariant Audit (Section A)
 
-**Applies to commit:** bfd079e0 (post-fix)
+**Historical audit:** bfd079e0. The fixed 2% policy described in this original audit has been superseded by the configurable stop-risk refactor on the current FlipDemon branch.
 **Audited invariant:** the account can never be exposed to more risk than
-`CRiskEngine`'s own configured, hard-clamped risk-per-trade percent
-(0.05%-2.0%) implies, regardless of what any downstream engine
+`CRiskEngine`'s own configured maximum stop-risk percentage
+(0.05%-100.0%) implies, regardless of what any downstream engine
 (`CAdaptiveFlipEngine`, impact-cost sizing, VWAP alignment bonus) does to
 the lot size afterward.
 
@@ -17,7 +17,8 @@ per path, not from architecture description alone.
 `RiskEngine.mqh`, `Configure()`:
 
 ```cpp
-m_riskPercent = AxClampD(riskPercent,0.05,2.0);   // hard ceiling: never >2% (spec section 2)
+m_maxRiskPercent = AxClampD(maxRiskPercent,0.05,100.0);
+m_riskPercent = AxClampD(riskPercent,0.05,m_maxRiskPercent);
 ```
 
 Written exactly once, in `Configure()`. Read exactly once, in
@@ -84,8 +85,9 @@ return(lots);
 
 ## Verdict
 
-**PASS.** The risk-per-trade invariant (0.05%-2.0% of equity, hard-clamped
-at config time, never scaled up by any downstream engine) holds
+**UPDATED.** The risk-per-trade invariant is now bounded by the operator-configured
+`InpMaxAccountStopRiskPercent` (0.05%-100.0%), applied by `CRiskEngine` and
+`CAccountRiskCalculator`. Downstream adaptive multipliers remain unable to scale risk up
 end-to-end through every code path traced. One finding (Finding 1) was a
 latent broker-compatibility gap, not a risk-invariant violation - fixed
 in a discrete commit (`bfd079e`) before this audit was written up.
