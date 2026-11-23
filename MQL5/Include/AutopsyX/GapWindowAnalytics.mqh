@@ -116,7 +116,11 @@ public:
       m_symbol=symbol;
       m_magic=magic;
       m_initialized=(m_symbol!="");
-      return(m_initialized);
+      if(!m_initialized) return(false);
+      int historicalFiles=LoadHistoricalSummaries();
+      PrintFormat("AUTOPSY X GAP ANALYTICS: restored %d daily summary files for %s",
+                  historicalFiles,m_symbol);
+      return(true);
      }
 
    bool Record(const SAxGapObservation &o,const SAxGapSnapshot &s)
@@ -199,7 +203,7 @@ public:
                 "verified_gap_hour_rate",
                 "average_spread_points","minimum_spread_points","maximum_spread_points",
                 "average_round_trip_commission","average_round_trip_cost",
-                "average_cost_to_gross_ratio","average_order_latency_p95_us");
+                "average_cost_to_gross_ratio","cost_value_sample_rate",\n                "latency_sample_rate","average_order_latency_p95_us");
 
       int rows=0;
       for(int w=0;w<AX_GAP_ANALYTIC_WINDOWS;w++)
@@ -240,6 +244,8 @@ public:
                          DoubleToString(avgCommission,6),
                          DoubleToString(avgRoundTrip,6),
                          DoubleToString(avgCostRatio,6),
+                         DoubleToString((double)v.costValueSamples/n,5),
+                         DoubleToString((double)v.latencySamples/n,5),
                          DoubleToString(avgLatency,2));
                rows++;
               }
@@ -248,6 +254,123 @@ public:
       PrintFormat("AUTOPSY X GAP ANALYTICS: summary written rows=%d file=%s",
                   rows,m_filename);
       return(true);
+     }
+
+   bool LoadSummaryFile(const string filename)
+     {
+      int h=FileOpen(filename,FILE_READ|FILE_CSV|FILE_ANSI|FILE_COMMON,',');
+      if(h==INVALID_HANDLE) return(false);
+
+      // Skip the 27-column header.
+      for(int col=0;col<27 && !FileIsEnding(h);col++)
+         FileReadString(h);
+
+      int loaded=0;
+      while(!FileIsEnding(h))
+        {
+         string row[27];
+         bool rowValid=true;
+         for(int col=0;col<27;col++)
+           {
+            if(FileIsEnding(h))
+              {
+               rowValid=false;
+               break;
+              }
+            row[col]=FileReadString(h);
+           }
+         if(!rowValid || row[0]=="") break;
+
+         int w=-1;
+         if(row[5]=="REGULAR_SESSION") w=0;
+         else if(row[5]=="MARKET_REOPEN") w=1;
+         int day=(int)StringToInteger(row[6]);
+         int hour=(int)StringToInteger(StringSubstr(row[7],0,2));
+         int minute=(int)StringToInteger(StringSubstr(row[7],3,2));
+         int bucket=hour*4+(minute/15);
+         long samples=(long)StringToInteger(row[9]);
+         if(w<0 || day<0 || day>=AX_GAP_ANALYTIC_DAYS ||
+            bucket<0 || bucket>=AX_GAP_ANALYTIC_BUCKETS || samples<=0)
+            continue;
+
+         // Refuse cross-account or cross-symbol aggregation.
+         if(row[1]!=m_broker || row[2]!=m_server ||
+            row[3]!=m_accountType || row[4]!=m_symbol)
+            continue;
+
+         double freshRate=StringToDouble(row[10]);
+         double zeroRate=StringToDouble(row[11]);
+         double leverageRate=StringToDouble(row[12]);
+         double bothRate=StringToDouble(row[13]);
+         double costEvidenceRate=StringToDouble(row[14]);
+         double commissionRate=StringToDouble(row[15]);
+         double acceptableRate=StringToDouble(row[16]);
+         double readyRate=StringToDouble(row[17]);
+         double avgSpread=StringToDouble(row[18]);
+         double minSpread=StringToDouble(row[19]);
+         double maxSpread=StringToDouble(row[20]);
+         double avgCommission=StringToDouble(row[21]);
+         double avgRoundTrip=StringToDouble(row[22]);
+         double avgCostRatio=StringToDouble(row[23]);
+         double costValueRate=StringToDouble(row[24]);
+         double latencyRate=StringToDouble(row[25]);
+         double avgLatency=StringToDouble(row[26]);
+
+         long fresh=(long)MathRound(freshRate*samples);
+         long zero=(long)MathRound(zeroRate*fresh);
+         long leverage=(long)MathRound(leverageRate*samples);
+         long both=(long)MathRound(bothRate*fresh);
+         long costEvidence=(long)MathRound(costEvidenceRate*samples);
+         long commission=(long)MathRound(commissionRate*samples);
+         long acceptable=(long)MathRound(acceptableRate*costEvidence);
+         long ready=(long)MathRound(readyRate*samples);
+         long costValues=(long)MathRound(costValueRate*samples);
+         long latencyValues=(long)MathRound(latencyRate*samples);
+
+         SAxGapBucketStats v=m_stats[w][day][bucket];
+         v.samples+=samples;
+         v.freshQuotes+=fresh;
+         v.zeroSpreadSamples+=zero;
+         v.unlimitedLeverageSamples+=leverage;
+         v.bothConditionsSamples+=both;
+         v.costEvidenceSamples+=costEvidence;
+         v.commissionSamples+=commission;
+         v.acceptableCostSamples+=acceptable;
+         v.readySamples+=ready;
+         v.costValueSamples+=costValues;
+         v.latencySamples+=latencyValues;
+         v.spreadSum+=avgSpread*fresh;
+         if(fresh>0)
+           {
+            if(minSpread<v.spreadMin) v.spreadMin=minSpread;
+            if(maxSpread>v.spreadMax) v.spreadMax=maxSpread;
+           }
+         v.commissionSum+=avgCommission*commission;
+         v.roundTripCostSum+=avgRoundTrip*costValues;
+         v.costToGrossRatioSum+=avgCostRatio*costValues;
+         v.latencyP95SumUs+=avgLatency*latencyValues;
+         m_stats[w][day][bucket]=v;
+         loaded++;
+        }
+      FileClose(h);
+      return(loaded>0);
+     }
+
+   int LoadHistoricalSummaries(void)
+     {
+      string pattern=StringFormat("AUTOPSYX_GapHour_Analytics_%s_%I64u_*.csv",
+                                  SafePart(m_symbol),m_magic);
+      string filename="";
+      long search=FileFindFirst(pattern,filename,FILE_COMMON);
+      if(search==INVALID_HANDLE) return(0);
+      int loadedFiles=0;
+      do
+        {
+         if(LoadSummaryFile(filename)) loadedFiles++;
+        }
+      while(FileFindNext(search,filename));
+      FileFindClose(search);
+      return(loadedFiles);
      }
 
    string FileName(void) const { return(m_filename); }
