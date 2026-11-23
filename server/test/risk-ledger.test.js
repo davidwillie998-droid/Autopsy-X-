@@ -14,7 +14,7 @@ function fixture(options = {}) {
   let ledgerClosed = false;
   const base = {
     login: '12345678', server: 'Broker-Live',
-    equity: 10000, existingRiskMoney: 0,
+    equity: 10000, existingRiskMoney: 0, maxStopRiskPercent: 2.0,
     snapshotAtMs: now, snapshotId: 'snapshot-0001',
   };
   return {
