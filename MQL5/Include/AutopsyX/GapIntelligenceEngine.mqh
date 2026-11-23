@@ -120,6 +120,7 @@ struct SAxGapSnapshot
    long accountLeverage;
    ENUM_AX_GAP_LEVERAGE_POLICY leveragePolicy;
    double effectiveLeverage;
+   double grossNotional;
    double requiredMargin;
    double freeMargin;
    double commissionPerLotRoundTrip;
@@ -138,6 +139,9 @@ struct SAxGapSnapshot
    bool unlimitedLeverage;
    bool quoteFresh;
    bool commissionVerified;
+   bool marginCalculationVerified;
+   bool effectiveLeverageVerified;
+   bool executionCostAssessmentVerified;
    bool executionTelemetryVerified;
    bool orderLimitsVerified;
    bool executionCostAcceptable;
@@ -166,6 +170,7 @@ private:
       out.accountLeverage=0;
       out.leveragePolicy=AX_GAP_LEVERAGE_UNKNOWN;
       out.effectiveLeverage=0.0;
+      out.grossNotional=0.0;
       out.requiredMargin=0.0;
       out.freeMargin=0.0;
       out.commissionPerLotRoundTrip=0.0;
@@ -184,6 +189,9 @@ private:
       out.unlimitedLeverage=false;
       out.quoteFresh=false;
       out.commissionVerified=false;
+      out.marginCalculationVerified=false;
+      out.effectiveLeverageVerified=false;
+      out.executionCostAssessmentVerified=false;
       out.executionTelemetryVerified=false;
       out.orderLimitsVerified=false;
       out.executionCostAcceptable=false;
@@ -227,6 +235,7 @@ public:
       out.accountLeverage=observation.accountLeverage;
       out.leveragePolicy=observation.leveragePolicy;
       out.effectiveLeverage=observation.effectiveLeverage;
+      out.grossNotional=observation.grossNotional;
       out.requiredMargin=observation.requiredMargin;
       out.freeMargin=observation.freeMargin;
       out.commissionPerLotRoundTrip=observation.commissionPerLotRoundTrip;
@@ -242,6 +251,9 @@ public:
       out.brokerMaxPendingOrders=observation.brokerMaxPendingOrders;
       out.brokerMaxRequestsPerSecond=observation.brokerMaxRequestsPerSecond;
       out.commissionVerified=observation.commissionVerified;
+      out.marginCalculationVerified=observation.marginCalculationVerified;
+      out.effectiveLeverageVerified=(observation.grossNotional>0.0 && observation.effectiveLeverage>0.0);
+      out.executionCostAssessmentVerified=observation.executionCostAssessmentVerified;
       out.executionTelemetryVerified=observation.executionTelemetryVerified;
       out.orderLimitsVerified=observation.brokerOrderLimitsVerified;
 
