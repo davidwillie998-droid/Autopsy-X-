@@ -21,6 +21,12 @@ private:
    bool              m_volExpansion;
    double            m_volBaseline;
    double            m_volBaselinePrev;
+   double            m_spreadHistory[100];
+   int               m_spreadHistoryCount;
+   int               m_spreadHistoryNext;
+   double            m_spreadHistoryAverage;
+   long              m_stopsLevelPoints;
+   long              m_freezeLevelPoints;
 
 public:
                      CMicrostructureEngine(void) { Clear(); }
@@ -30,10 +36,30 @@ public:
       m_tickImbalance=0; m_avgSpreadPts=0; m_currentSpreadPts=0; m_spreadDeltaPts=0;
       m_spreadExpanding=false; m_spreadCompressing=false; m_volExpansion=false;
       m_volBaseline=0; m_volBaselinePrev=0;
+      m_spreadHistoryCount=0; m_spreadHistoryNext=0; m_spreadHistoryAverage=0.0;
+      m_stopsLevelPoints=0; m_freezeLevelPoints=0;
+      for(int i=0;i<100;i++) m_spreadHistory[i]=0.0;
      }
 
-   void              Update(const CMarketData &md,const CMomentumEngine &mom)
+   void              Update(const string symbol,const CMarketData &md,const CMomentumEngine &mom)
      {
+      // Record each accepted tick in a fixed 100-observation spread ring.
+      // A nonzero freeze level is metadata for distance checks, not a blanket
+      // ban on every new entry or every protective position action.
+      m_currentSpreadPts=md.CurrentSpreadPts();
+      if(MathIsValidNumber(m_currentSpreadPts) && m_currentSpreadPts>=0.0)
+        {
+         m_spreadHistory[m_spreadHistoryNext]=m_currentSpreadPts;
+         m_spreadHistoryNext=(m_spreadHistoryNext+1)%100;
+         if(m_spreadHistoryCount<100) m_spreadHistoryCount++;
+         double sum=0.0;
+         for(int spreadIndex=0;spreadIndex<m_spreadHistoryCount;spreadIndex++)
+            sum+=m_spreadHistory[spreadIndex];
+         m_spreadHistoryAverage=(m_spreadHistoryCount>0)?sum/(double)m_spreadHistoryCount:0.0;
+        }
+      m_stopsLevelPoints=SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL);
+      m_freezeLevelPoints=SymbolInfoInteger(symbol,SYMBOL_TRADE_FREEZE_LEVEL);
+
       int n = MathMin(md.Count(),40);
       if(n<5) return;
 
@@ -50,8 +76,7 @@ public:
       m_tickImbalance = (total>0)? (double)(up-down)/(double)total : 0.0;
 
       m_avgSpreadPts     = spreadSum/n;
-      m_currentSpreadPts = md.CurrentSpreadPts();
-      m_spreadDeltaPts   = m_currentSpreadPts - m_avgSpreadPts;
+      m_spreadDeltaPts   = m_currentSpreadPts - m_spreadHistoryAverage;
       m_spreadExpanding   = m_currentSpreadPts > m_avgSpreadPts*1.4 && m_currentSpreadPts>m_avgSpreadPts+0.5;
       m_spreadCompressing = m_currentSpreadPts < m_avgSpreadPts*0.7;
 
@@ -63,6 +88,19 @@ public:
 
    double            TickImbalance(void)     const { return(m_tickImbalance); }
    double            AvgSpreadPts(void)      const { return(m_avgSpreadPts); }
+   double            Rolling100SpreadAvgPts(void) const { return(m_spreadHistoryAverage); }
+   int               RollingSpreadSampleCount(void) const { return(m_spreadHistoryCount); }
+   long              StopsLevelPoints(void) const { return(m_stopsLevelPoints); }
+   long              FreezeLevelPoints(void) const { return(m_freezeLevelPoints); }
+   double            SpreadSpikeMultiple(void) const
+     {
+      return(m_spreadHistoryAverage>0.0 ? m_currentSpreadPts/m_spreadHistoryAverage : 0.0);
+     }
+   bool              SpreadSpikeDetected(const double multiple=3.0) const
+     {
+      return(m_spreadHistoryCount>=20 && multiple>1.0 &&
+             m_spreadHistoryAverage>0.0 && m_currentSpreadPts>m_spreadHistoryAverage*multiple);
+     }
    double            CurrentSpreadPts(void)  const { return(m_currentSpreadPts); }
    bool              SpreadExpanding(void)   const { return(m_spreadExpanding); }
    bool              SpreadCompressing(void) const { return(m_spreadCompressing); }
@@ -70,7 +108,8 @@ public:
 
    bool              SpreadAcceptable(const double maxSpreadPts) const
      {
-      return(m_currentSpreadPts>0 && m_currentSpreadPts<=maxSpreadPts);
+      return(MathIsValidNumber(m_currentSpreadPts) && m_currentSpreadPts>=0.0 &&
+             m_currentSpreadPts<=maxSpreadPts);
      }
 
    //--- 0..100 microstructure bias components, combined with momentum/liquidity in SignalScore ---
