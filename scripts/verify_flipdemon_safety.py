@@ -371,7 +371,7 @@ require("UNPROTECTED_POSITION" in account_risk and "UNPROTECTED_PENDING_ORDER" i
 require("AMBIGUOUS_NETTING_DUPLICATE_SYMBOL" in account_risk
         and "ACCOUNT_MARGIN_MODE_RETAIL_HEDGING" in account_risk,
         "netting and hedging exposure reconciliation paths are distinguished")
-require("PROPOSED_ORDER_EXCEEDS_ACCOUNT_WIDE_2_PERCENT_CAP" in account_risk
+require("PROPOSED_ORDER_EXCEEDS_CONFIGURED_ACCOUNT_STOP_RISK" in account_risk
         and "PROPOSED_ORDER_EXCEEDS_PER_ENTRY_RISK_LIMIT" in account_risk,
         "proposed order must pass both aggregate and configured per-entry monetary limits")
 require("RISK_AUDIT_PERSISTENCE_FAILED" in account_risk
