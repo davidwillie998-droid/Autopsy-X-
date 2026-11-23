@@ -438,6 +438,122 @@ public:
                   decision.remainingRiskBudgetMoney,decision.equity);
       return(true);
      }
+
+   // Passive limit risk is valued at the exact intended entry, not at the live
+   // bid/ask plus market-order slippage allowance. Broker snapshots later replace
+   // this estimate with actual remaining pending volume and its attached stop.
+   bool              EvaluatePendingLimit(const string symbol,const ENUM_AX_DIR direction,
+                                          const double volume,const double limitPrice,
+                                          const double stopPrice,const double perEntryRiskPercent,
+                                          SAxAccountRiskDecision &decision,string &reason) const
+     {
+      decision.evaluatedAt=TimeCurrent();
+      decision.login=AccountInfoInteger(ACCOUNT_LOGIN);
+      decision.server=AccountInfoString(ACCOUNT_SERVER);
+      decision.equity=AccountInfoDouble(ACCOUNT_EQUITY);
+      decision.existingRiskMoney=0.0;
+      decision.existingRiskPercent=0.0;
+      decision.proposedRiskMoney=0.0;
+      decision.adverseSlippagePoints=0;
+      decision.worstCaseEntryPrice=limitPrice;
+      decision.remainingRiskBudgetMoney=0.0;
+      decision.positionCount=0;
+      decision.pendingOrderCount=0;
+      decision.approved=false;
+      decision.decision="REJECTED";
+      decision.rejectionReason="";
+      decision.calculationError="";
+      reason="";
+
+      SAxAccountRiskSnapshot snapshot;
+      if(!Scan(snapshot))
+        {
+         reason="EXISTING_EXPOSURE_UNKNOWN";
+         decision.calculationError=snapshot.failureReason;
+        }
+      else
+        {
+         decision.equity=snapshot.equity;
+         decision.existingRiskMoney=snapshot.existingRiskMoney;
+         decision.existingRiskPercent=snapshot.existingRiskPercent;
+         decision.remainingRiskBudgetMoney=snapshot.remainingRiskBudgetMoney;
+         decision.positionCount=snapshot.positionCount;
+         decision.pendingOrderCount=snapshot.pendingOrderCount;
+
+         if(direction!=AX_DIR_BUY && direction!=AX_DIR_SELL)
+            reason="INVALID_PROPOSED_DIRECTION";
+         else if(!ValidNumber(volume) || volume<=0.0 ||
+                 !ValidNumber(limitPrice) || limitPrice<=0.0 ||
+                 !ValidNumber(stopPrice) || stopPrice<=0.0)
+            reason="INVALID_PENDING_LIMIT_VOLUME_OR_PRICE";
+         else if(!ValidNumber(perEntryRiskPercent) || perEntryRiskPercent<=0.0)
+            reason="INVALID_PER_ENTRY_RISK_LIMIT";
+         else if(perEntryRiskPercent>AX_ACCOUNT_RISK_HARD_CAP_PCT)
+            reason="PER_ENTRY_RISK_LIMIT_EXCEEDS_ABSOLUTE_CAP";
+         else
+           {
+            bool stopOnLossSide=(direction==AX_DIR_BUY)
+                                ?(stopPrice<limitPrice):(stopPrice>limitPrice);
+            if(!stopOnLossSide)
+               reason="PENDING_LIMIT_STOP_NOT_ON_LOSS_SIDE";
+            else
+              {
+               ENUM_ORDER_TYPE orderType=(direction==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
+               string calcError="";
+               if(!CalculateStopRisk(orderType,symbol,volume,limitPrice,stopPrice,true,
+                                     decision.proposedRiskMoney,calcError))
+                 {
+                  reason="PENDING_LIMIT_RISK_UNKNOWN";
+                  decision.calculationError=calcError;
+                 }
+               else if(snapshot.existingRiskMoney>snapshot.hardRiskBudgetMoney+0.01)
+                  reason="EXISTING_ACCOUNT_RISK_ALREADY_EXCEEDS_2_PERCENT";
+               else if(decision.proposedRiskMoney>
+                       snapshot.equity*perEntryRiskPercent/100.0+0.01)
+                  reason="PENDING_LIMIT_EXCEEDS_PER_ENTRY_RISK_LIMIT";
+               else if(snapshot.existingRiskMoney+decision.proposedRiskMoney>
+                       snapshot.hardRiskBudgetMoney+0.01)
+                  reason="PENDING_LIMIT_EXCEEDS_ACCOUNT_WIDE_2_PERCENT_CAP";
+              }
+           }
+        }
+
+      if(reason=="")
+        {
+         decision.approved=true;
+         decision.decision="APPROVED";
+         decision.rejectionReason="NONE";
+        }
+      else
+        {
+         decision.approved=false;
+         decision.decision="REJECTED";
+         decision.rejectionReason=reason;
+        }
+
+      if(!WriteAudit(decision))
+        {
+         decision.approved=false;
+         decision.decision="REJECTED";
+         decision.rejectionReason="RISK_AUDIT_PERSISTENCE_FAILED";
+         reason=decision.rejectionReason;
+         return(false);
+        }
+      if(!decision.approved)
+        {
+         reason=decision.rejectionReason;
+         PrintFormat("FLIPDEMON PENDING LIMIT RISK BLOCK: %s existing=%.2f proposed=%.2f remaining=%.2f equity=%.2f",
+                     reason,decision.existingRiskMoney,decision.proposedRiskMoney,
+                     decision.remainingRiskBudgetMoney,decision.equity);
+         return(false);
+        }
+
+      PrintFormat("FLIPDEMON PENDING LIMIT RISK APPROVED: entry=%.8f existing=%.2f proposed=%.2f remaining=%.2f equity=%.2f",
+                  limitPrice,decision.existingRiskMoney,decision.proposedRiskMoney,
+                  decision.remainingRiskBudgetMoney,decision.equity);
+      return(true);
+     }
+
   };
 //+------------------------------------------------------------------+
 
