@@ -88,8 +88,9 @@ require("broker-name allowlist" in ea and "broker names" in ea,
         "broker compatibility is metadata-driven rather than restricted to named providers")
 require("OrderCalcMargin(marginOrderType,_Symbol,lots,marginPrice,requiredMargin)" in ea,
         "final order size receives broker-aware OrderCalcMargin preflight")
-require("requiredMargin>freeMargin" in ea and "entry blocked" in ea,
-        "entry is blocked when estimated required margin exceeds available free margin")
+require("requiredMargin>additionalMarginBudget+0.01" in ea and "SELECTED_MARGIN_PROFILE_BUDGET_EXCEEDED" in ea
+        and "budget=MathMin(freeMargin,profileBudget)" in ea,
+        "entry is blocked when broker margin exceeds the selected profile budget or free margin")
 require("FLIPDEMON MARGIN OK" in ea and "FLIPDEMON MARGIN BLOCK" in ea,
         "margin preflight outcome is auditable in the terminal Journal")
 require(bool(re.search(r"InpExecutionMode\s*=\s*AX_EXEC_ANALYSIS_ONLY", ea)),
