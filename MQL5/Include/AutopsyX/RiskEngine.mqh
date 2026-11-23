@@ -44,9 +44,6 @@ private:
    //--- FLIPDEMON EXTREME upgrade (spec section 18): additional hard circuit breakers ---
    double            m_weeklyLossLimitPercent;
    int               m_maxPositionsPerSymbol;
-   double            m_maxMarginUsagePercent;   // ACCOUNT_MARGIN / ACCOUNT_EQUITY * 100 - distinct
-                                                  // from margin LEVEL (which is the broker's own
-                                                  // equity/margin ratio, already checked above)
    int               m_maxExecutionFailures;    // consecutive failed order attempts (send rejected,
                                                   // fill unconfirmed) before this becomes a hard block -
                                                   // distinct from AFE's poor-FILL-quality tracking,
@@ -102,7 +99,7 @@ public:
       m_maxTradesPerRollingPeriod=10; m_rollingPeriodSec=300;
       m_maxSpreadPts=250; m_maxSlippagePts=30; m_minFreeMarginPercent=150.0;
       m_weeklyLossLimitPercent=15.0; m_maxPositionsPerSymbol=1;
-      m_maxMarginUsagePercent=50.0; m_maxExecutionFailures=5;
+      m_maxExecutionFailures=5;
       m_dayStartEquity=0; m_dayStartTime=0; m_weekStartEquity=0; m_weekStartTime=0;
       m_consecutiveLosses=0; m_flipsToday=0; m_consecutiveExecutionFailures=0;
       m_dailyLockout=false; m_weeklyLockout=false; m_tradeTimeCount=0; m_killed=false;
@@ -116,7 +113,6 @@ public:
                                 const double minFreeMarginPercent,
                                 const double weeklyLossLimitPercent=15.0,
                                 const int maxPositionsPerSymbol=1,
-                                const double maxMarginUsagePercent=50.0,
                                 const int maxExecutionFailures=5)
      {
       m_riskPercent               = AxClampD(riskPercent,0.05,2.0);   // hard ceiling: never >2% (spec section 2)
@@ -135,7 +131,6 @@ public:
       m_weeklyLossLimitPercent    = weeklyLossLimitPercent;
       // Zero disables the per-symbol count ceiling, not symbol volume/risk controls.
       m_maxPositionsPerSymbol     = MathMax(0,maxPositionsPerSymbol);
-      m_maxMarginUsagePercent     = maxMarginUsagePercent;
       m_maxExecutionFailures      = maxExecutionFailures;
      }
 
@@ -273,21 +268,6 @@ public:
       return(false);
      }
 
-   //--- margin USAGE (how much of equity is currently tied up as margin) - distinct from margin     ---
-   //--- LEVEL (the broker's equity/margin ratio) already checked in PreTradeAllowed. A high margin   ---
-   //--- level can still coexist with heavy margin usage on a large account; this catches that. ---
-   //--- equity<=0 (no real account data) fails CLOSED here, deliberately NOT expressed as
-   //--- "MarginUsagePercent() < max" (0.0 < max would read as acceptable) - see MarginUsagePercent()'s
-   //--- own comment for why that reformulation would silently drop this exact guard. ---
-   bool              MarginUsageAcceptable(void) const
-     {
-      double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-      if(equity<=0) return(false);
-      double marginUsed = AccountInfoDouble(ACCOUNT_MARGIN);
-      double usagePct = (marginUsed/equity)*100.0;
-      return(usagePct<m_maxMarginUsagePercent);
-     }
-
    //--- consecutive execution failures (order send rejected, fill never confirmed) - distinct from  ---
    //--- AFE's poor-FILL-quality tracking (slippage/latency on orders that DID fill). A string of raw ---
    //--- failures to even get an order accepted is a different, more basic signal that something is   ---
@@ -348,7 +328,6 @@ public:
       if(m_maxTradesPerRollingPeriod>0 && TradesInRollingWindow()>=m_maxTradesPerRollingPeriod)
          { reason="Max trades in rolling window reached"; return(false); }
       if(spreadPts>m_maxSpreadPts) { reason="Spread above maximum allowed"; return(false); }
-      if(!MarginUsageAcceptable()) { reason="Margin usage above maximum allowed"; return(false); }
 
       double marginFree  = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
       double marginLevel = AccountInfoDouble(ACCOUNT_MARGIN_LEVEL); // 0 when no margin is currently used
@@ -404,9 +383,7 @@ public:
       return(WeeklyPnL()/m_weekStartEquity*100.0);
      }
    //--- dashboard/reporting accessor - returns 0.0 (not an error) when equity is unavailable, since  ---
-   //--- 0.0 reads correctly as "nothing to report" on a display. MarginUsageAcceptable() above does  ---
-   //--- its OWN equity<=0 check rather than calling this and testing "< max", precisely because 0.0   ---
-   //--- would then read as acceptable - do not collapse the two into one implementation. ---
+   //--- Observational margin utilisation metric for dashboard reporting only. ---
    double            MarginUsagePercent(void) const
      {
       double equity = AccountInfoDouble(ACCOUNT_EQUITY);
