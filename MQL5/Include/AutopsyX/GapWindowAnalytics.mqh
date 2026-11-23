@@ -117,7 +117,7 @@ public:
       m_magic=magic;
       m_initialized=(m_symbol!="");
       if(!m_initialized) return(false);
-      int historicalFiles=LoadHistoricalSummaries();
+      int historicalFiles=LoadHistoricalSummary();
       PrintFormat("AUTOPSY X GAP ANALYTICS: restored %d daily summary files for %s",
                   historicalFiles,m_symbol);
       return(true);
@@ -184,8 +184,8 @@ public:
       string day=TimeToString(serverTime,TIME_DATE);
       string dayKey=day;
       StringReplace(dayKey,".","");
-      m_filename=StringFormat("AUTOPSYX_GapHour_Analytics_%s_%I64u_%s.csv",
-                              SafePart(m_symbol),m_magic,dayKey);
+      m_filename=StringFormat("AUTOPSYX_GapHour_Analytics_%s_%I64u_HISTORY.csv",
+                              SafePart(m_symbol),m_magic);
       int h=FileOpen(m_filename,FILE_WRITE|FILE_CSV|FILE_ANSI|
                      FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON,',');
       if(h==INVALID_HANDLE)
@@ -261,9 +261,19 @@ public:
       int h=FileOpen(filename,FILE_READ|FILE_CSV|FILE_ANSI|FILE_COMMON,',');
       if(h==INVALID_HANDLE) return(false);
 
-      // Skip the 27-column header.
+      // Accept only the current 27-column schema. Older experimental files
+      // remain untouched and are not silently misparsed.
+      int headerFields=0;
       for(int col=0;col<27 && !FileIsEnding(h);col++)
+        {
          FileReadString(h);
+         headerFields++;
+        }
+      if(headerFields!=27)
+        {
+         FileClose(h);
+         return(false);
+        }
 
       int loaded=0;
       while(!FileIsEnding(h))
@@ -356,21 +366,14 @@ public:
       return(loaded>0);
      }
 
-   int LoadHistoricalSummaries(void)
+   int LoadHistoricalSummary(void)
      {
-      string pattern=StringFormat("AUTOPSYX_GapHour_Analytics_%s_%I64u_*.csv",
-                                  SafePart(m_symbol),m_magic);
-      string filename="";
-      long search=FileFindFirst(pattern,filename,FILE_COMMON);
-      if(search==INVALID_HANDLE) return(0);
-      int loadedFiles=0;
-      do
-        {
-         if(LoadSummaryFile(filename)) loadedFiles++;
-        }
-      while(FileFindNext(search,filename));
-      FileFindClose(search);
-      return(loadedFiles);
+      string filename=StringFormat("AUTOPSYX_GapHour_Analytics_%s_%I64u_HISTORY.csv",
+                                    SafePart(m_symbol),m_magic);
+      if(!FileIsExist(filename,FILE_COMMON)) return(0);
+      bool loaded=LoadSummaryFile(filename);
+      if(loaded) m_filename=filename;
+      return(loaded ? 1 : 0);
      }
 
    string FileName(void) const { return(m_filename); }
