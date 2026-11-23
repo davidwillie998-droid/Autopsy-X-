@@ -14,16 +14,29 @@ enum ENUM_AX_GAP_EXEC_STATE
    AX_GAP_EXEC_IDLE,
    AX_GAP_EXEC_POST_GAP_WAIT,
    AX_GAP_EXEC_POST_GAP_SPREAD_WAIT,
+   AX_GAP_EXEC_POST_GAP_CONFIRMATION_WAIT,
    AX_GAP_EXEC_POST_GAP_READY,
    AX_GAP_EXEC_POST_GAP_EXPIRED
+  };
+
+enum ENUM_AX_GAP_SETUP_TYPE
+  {
+   AX_GAP_SETUP_NONE = 0,
+   AX_GAP_SETUP_CONTINUATION,
+   AX_GAP_SETUP_SWEEP_REVERSAL
   };
 
 struct SAxGapExecutionSignal
   {
    ENUM_AX_GAP_EXEC_STATE state;
    ENUM_AX_DIR direction;
+   ENUM_AX_GAP_SETUP_TYPE setupType;
    datetime m1BarTime;
    double gapPoints;
+   double gapOpenPrice;
+   double priorClosePrice;
+   double currentMidPrice;
+   double confirmationDistancePoints;
    double currentSpreadPoints;
    double baselineSpreadPoints;
    ulong waitElapsedMs;
@@ -40,6 +53,9 @@ private:
    ulong m_gapDetectedAtMs;
    ENUM_AX_DIR m_pendingDirection;
    double m_pendingGapPoints;
+   double m_gapOpenPrice;
+   double m_priorClosePrice;
+   ENUM_AX_GAP_SETUP_TYPE m_setupType;
    bool m_pending;
    bool m_ready;
    bool m_expired;
@@ -80,6 +96,9 @@ public:
       m_gapDetectedAtMs=0;
       m_pendingDirection=AX_DIR_NONE;
       m_pendingGapPoints=0.0;
+      m_gapOpenPrice=0.0;
+      m_priorClosePrice=0.0;
+      m_setupType=AX_GAP_SETUP_NONE;
       m_pending=false;
       m_ready=false;
       m_expired=false;
@@ -95,7 +114,8 @@ public:
                const bool postGapEnabled,const double minGapPoints,
                const int waitSeconds,const int maxSignalAgeSeconds,
                const double maxSpreadPoints,const double spreadNormalizationMultiple,
-               const bool rolloverEnabled,const int rolloverStartMinute,
+               const double minFollowThroughPoints,const double minSweepPenetrationPoints,
+               const bool allowSweepReversal,const bool rolloverEnabled,const int rolloverStartMinute,
                const int rolloverEndMinute,const double rolloverSpikeMultiple,
                const double rollingSpreadAverage,const int rollingSpreadSamples,
                SAxGapExecutionSignal &out)
@@ -127,7 +147,8 @@ public:
 
       if(!postGapEnabled || minGapPoints<=0.0 || waitSeconds<0 ||
          maxSignalAgeSeconds<=0 || maxSpreadPoints<0.0 ||
-         spreadNormalizationMultiple<=0.0)
+         spreadNormalizationMultiple<=0.0 || minFollowThroughPoints<0.0 ||
+         minSweepPenetrationPoints<0.0)
         {
          out.state=(postGapEnabled ? AX_GAP_EXEC_DISABLED : AX_GAP_EXEC_IDLE);
          out.reason=(postGapEnabled ? "POST_GAP_PARAMETERS_NOT_VALIDATED" : "POST_GAP_MODE_DISABLED");
@@ -138,44 +159,51 @@ public:
       datetime currentBar=iTime(symbol,PERIOD_M1,0);
       if(currentBar>0 && currentBar!=m_lastM1BarTime)
         {
-         datetime previousBar=m_lastM1BarTime;
+         bool firstObservation=(m_lastM1BarTime==0);
          m_lastM1BarTime=currentBar;
          m_pending=false;
          m_ready=false;
          m_expired=false;
          m_pendingDirection=AX_DIR_NONE;
          m_pendingGapPoints=0.0;
-
-         // The first observed M1 bar only establishes a baseline. A gap is
-         // evaluated only at a real bar transition, against the prior close.
-         if(previousBar>0)
+         m_gapOpenPrice=0.0;
+         m_priorClosePrice=0.0;
+         m_setupType=AX_GAP_SETUP_NONE;
+         // Recover the current bar age on attach/restart, but reject stale gaps.
+         double currentOpen=iOpen(symbol,PERIOD_M1,0);
+         double previousClose=iClose(symbol,PERIOD_M1,1);
+         long barAgeSeconds=(long)(serverTime-currentBar);
+         bool ageKnown=(serverTime>0 && barAgeSeconds>=0);
+         bool ageAcceptable=(!firstObservation || (ageKnown && barAgeSeconds<=maxSignalAgeSeconds));
+         if(currentOpen>0.0 && previousClose>0.0 && ageAcceptable)
            {
-            double currentOpen=iOpen(symbol,PERIOD_M1,0);
-            double previousClose=iClose(symbol,PERIOD_M1,1);
-            if(currentOpen>0.0 && previousClose>0.0)
+            double signedGap=(currentOpen-previousClose)/point;
+            if(MathAbs(signedGap)>=minGapPoints)
               {
-               double signedGap=(currentOpen-previousClose)/point;
-               if(MathAbs(signedGap)>=minGapPoints)
-                 {
-                  m_pending=true;
-                  m_pendingM1BarTime=currentBar;
-                  m_gapDetectedAtMs=nowMs;
-                  m_pendingDirection=(signedGap>0.0 ? AX_DIR_BUY : AX_DIR_SELL);
-                  m_pendingGapPoints=signedGap;
-                 }
+               m_pending=true;
+               m_pendingM1BarTime=currentBar;
+               ulong ageMs=(firstObservation ? (ulong)barAgeSeconds*1000 : 0);
+               m_gapDetectedAtMs=(nowMs>=ageMs ? nowMs-ageMs : 0);
+               m_pendingDirection=(signedGap>0.0 ? AX_DIR_BUY : AX_DIR_SELL);
+               m_pendingGapPoints=signedGap;
+               m_gapOpenPrice=currentOpen;
+               m_priorClosePrice=previousClose;
               }
            }
         }
-
       out.m1BarTime=m_pendingM1BarTime;
       out.gapPoints=m_pendingGapPoints;
+      out.gapOpenPrice=m_gapOpenPrice;
+      out.priorClosePrice=m_priorClosePrice;
+      out.currentMidPrice=(bid+ask)*0.5;
       out.direction=m_pendingDirection;
+      out.setupType=m_setupType;
 
       if(m_ready)
         {
          out.state=AX_GAP_EXEC_POST_GAP_READY;
          out.postGapReady=true;
-         out.reason="POST_GAP_WAIT_AND_SPREAD_NORMALIZATION_CONFIRMED";
+         out.reason=(m_setupType==AX_GAP_SETUP_CONTINUATION ? "POST_GAP_CONTINUATION_CONFIRMED" : "POST_GAP_SWEEP_REVERSAL_CONFIRMED");
          out.rolloverSpikeObserved=out.rolloverSpikeObserved || m_rolloverSpikeLatched;
          return(true);
         }
@@ -227,10 +255,35 @@ public:
          return(false);
         }
 
+      // Confirm continuation or a failed gap auction before exposing a signal.
+      double mid=(bid+ask)*0.5;
+      double continuationDistance=(m_pendingDirection==AX_DIR_BUY ? (mid-m_priorClosePrice)/point : (m_priorClosePrice-mid)/point);
+      double sweepDistance=(m_pendingDirection==AX_DIR_BUY ? (m_priorClosePrice-mid)/point : (mid-m_priorClosePrice)/point);
+      out.confirmationDistancePoints=MathMax(continuationDistance,sweepDistance);
+      if(continuationDistance>=minFollowThroughPoints)
+        {
+         m_setupType=AX_GAP_SETUP_CONTINUATION;
+         m_pendingDirection=(m_pendingGapPoints>0.0 ? AX_DIR_BUY : AX_DIR_SELL);
+        }
+      else if(allowSweepReversal && sweepDistance>=minSweepPenetrationPoints)
+        {
+         m_setupType=AX_GAP_SETUP_SWEEP_REVERSAL;
+         m_pendingDirection=(m_pendingGapPoints>0.0 ? AX_DIR_SELL : AX_DIR_BUY);
+        }
+      else
+        {
+         out.state=AX_GAP_EXEC_POST_GAP_CONFIRMATION_WAIT;
+         out.reason="WAITING_FOR_CONTINUATION_OR_SWEEP_CONFIRMATION";
+         out.direction=m_pendingDirection;
+         out.rolloverSpikeObserved=out.rolloverSpikeObserved || m_rolloverSpikeLatched;
+         return(false);
+        }
       m_ready=true;
+      out.direction=m_pendingDirection;
+      out.setupType=m_setupType;
       out.state=AX_GAP_EXEC_POST_GAP_READY;
       out.postGapReady=true;
-      out.reason="POST_GAP_WAIT_AND_SPREAD_NORMALIZATION_CONFIRMED";
+      out.reason=(m_setupType==AX_GAP_SETUP_CONTINUATION ? "POST_GAP_CONTINUATION_CONFIRMED" : "POST_GAP_SWEEP_REVERSAL_CONFIRMED");
       out.rolloverSpikeObserved=out.rolloverSpikeObserved || m_rolloverSpikeLatched;
       return(true);
      }
