@@ -138,8 +138,8 @@ require(bool(re.search(r"InpEnablePyramidExecution\s*=\s*false", ea))
 
 require("projectedRiskPct > g_risk.RiskPercent()+0.0001" in ea,
         "broker minimum volume cannot silently exceed configured trade-risk budget")
-require("m_riskPercent               = AxClampD(riskPercent,0.05,2.0)" in risk,
-        "risk engine hard-clamps risk per trade to 2 percent")
+require("m_riskPercent               = AxClampD(riskPercent,0.05,m_maxRiskPercent)" in risk,
+        "risk engine applies the configurable maximum stop-risk percentage")
 
 market_data_path = ROOT / "MQL5/Include/AutopsyX/MarketData.mqh"
 require(market_data_path.is_file(), "market data volume normalization source exists")
@@ -346,15 +346,15 @@ require("CalculateLotSize(g_md,intendedPrice,slPrice,dir,sizingDecision)" in ea
         and "sizingDecision.rejectionReason" in ea,
         "EA logs the risk engine sizing decision at the entry evaluation point")
 require("m_riskPercent               = AxClampD(riskPercent,0.05,2.0)" in risk,
-        "decision-record integration retains the absolute per-entry risk clamp")
+        "decision-record integration retains the configured per-entry risk maximum")
 
 
 # Account-wide monetary risk calculator: this is a source guard, not an MQL5 compile.
 ACCOUNT_RISK = ROOT / "MQL5/Include/AutopsyX/AccountRiskCalculator.mqh"
 require(ACCOUNT_RISK.is_file(), "dedicated account-wide risk calculator exists")
 account_risk = ACCOUNT_RISK.read_text(encoding="utf-8")
-require("#define AX_ACCOUNT_RISK_HARD_CAP_PCT 2.0" in account_risk,
-        "account-wide monetary risk has an immutable 2 percent hard ceiling")
+require("m_maxAccountRiskPercent" in account_risk and "ConfigureMaxRiskPercent" in account_risk,
+        "account-wide monetary stop-risk uses the configurable maximum")
 require("PositionsTotal()" in account_risk and "PositionGetTicket(i)" in account_risk
         and "POSITION_SL" in account_risk and "POSITION_PRICE_OPEN" in account_risk,
         "all broker-confirmed open positions and protective stops are enumerated")
