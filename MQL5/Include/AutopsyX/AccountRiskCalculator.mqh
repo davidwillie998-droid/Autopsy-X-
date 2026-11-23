@@ -215,6 +215,132 @@ private:
       return(true);
      }
 
+   // Shared decision setup for market and pending-order risk evaluation.
+   void ResetDecision(SAxAccountRiskDecision &decision,const int slippagePoints,
+                      const double intendedEntry) const
+     {
+      decision.evaluatedAt=TimeCurrent();
+      decision.login=AccountInfoInteger(ACCOUNT_LOGIN);
+      decision.server=AccountInfoString(ACCOUNT_SERVER);
+      decision.equity=AccountInfoDouble(ACCOUNT_EQUITY);
+      decision.existingRiskMoney=0.0;
+      decision.existingRiskPercent=0.0;
+      decision.proposedRiskMoney=0.0;
+      decision.adverseSlippagePoints=slippagePoints;
+      decision.worstCaseEntryPrice=intendedEntry;
+      decision.remainingRiskBudgetMoney=0.0;
+      decision.positionCount=0;
+      decision.pendingOrderCount=0;
+      decision.approved=false;
+      decision.decision="REJECTED";
+      decision.rejectionReason="";
+      decision.calculationError="";
+     }
+
+   bool LoadSnapshot(SAxAccountRiskSnapshot &snapshot,
+                     SAxAccountRiskDecision &decision,string &reason) const
+     {
+      if(!Scan(snapshot))
+        {
+         reason="EXISTING_EXPOSURE_UNKNOWN";
+         decision.calculationError=snapshot.failureReason;
+         return(false);
+        }
+      decision.equity=snapshot.equity;
+      decision.existingRiskMoney=snapshot.existingRiskMoney;
+      decision.existingRiskPercent=snapshot.existingRiskPercent;
+      decision.remainingRiskBudgetMoney=snapshot.remainingRiskBudgetMoney;
+      decision.positionCount=snapshot.positionCount;
+      decision.pendingOrderCount=snapshot.pendingOrderCount;
+      return(true);
+     }
+
+   bool EvaluateAtEntry(const string symbol,const ENUM_AX_DIR direction,
+                        const double volume,const double entryPrice,
+                        const double stopPrice,const double perEntryRiskPercent,
+                        const bool pending,const SAxAccountRiskSnapshot &snapshot,
+                        SAxAccountRiskDecision &decision,string &reason) const
+     {
+      if(direction!=AX_DIR_BUY && direction!=AX_DIR_SELL)
+         reason="INVALID_PROPOSED_DIRECTION";
+      else if(!ValidNumber(volume) || volume<=0.0 ||
+              !ValidNumber(entryPrice) || entryPrice<=0.0 ||
+              !ValidNumber(stopPrice) || stopPrice<=0.0)
+         reason=pending?"INVALID_PENDING_LIMIT_VOLUME_OR_PRICE":"INVALID_PROPOSED_VOLUME_OR_PRICE";
+      else if(!ValidNumber(perEntryRiskPercent) || perEntryRiskPercent<=0.0)
+         reason="INVALID_PER_ENTRY_RISK_LIMIT";
+      else if(perEntryRiskPercent>AX_ACCOUNT_RISK_HARD_CAP_PCT)
+         reason="PER_ENTRY_RISK_LIMIT_EXCEEDS_ABSOLUTE_CAP";
+      else
+        {
+         bool stopOnLossSide=(direction==AX_DIR_BUY)?(stopPrice<entryPrice):(stopPrice>entryPrice);
+         if(!stopOnLossSide)
+            reason=pending?"PENDING_LIMIT_STOP_NOT_ON_LOSS_SIDE":"PROPOSED_STOP_NOT_ON_LOSS_SIDE";
+         else
+           {
+            ENUM_ORDER_TYPE orderType=(direction==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
+            string calcError="";
+            if(!CalculateStopRisk(orderType,symbol,volume,entryPrice,stopPrice,pending,
+                                  decision.proposedRiskMoney,calcError))
+              {
+               reason=pending?"PENDING_LIMIT_RISK_UNKNOWN":"PROPOSED_ORDER_RISK_UNKNOWN";
+               decision.calculationError=calcError;
+              }
+            else if(snapshot.existingRiskMoney>snapshot.hardRiskBudgetMoney+0.01)
+               reason="EXISTING_ACCOUNT_RISK_ALREADY_EXCEEDS_2_PERCENT";
+            else if(decision.proposedRiskMoney>
+                    snapshot.equity*perEntryRiskPercent/100.0+0.01)
+               reason=pending?"PENDING_LIMIT_EXCEEDS_PER_ENTRY_RISK_LIMIT"
+                             :"PROPOSED_ORDER_EXCEEDS_PER_ENTRY_RISK_LIMIT";
+            else if(snapshot.existingRiskMoney+decision.proposedRiskMoney>
+                    snapshot.hardRiskBudgetMoney+0.01)
+               reason=pending?"PENDING_LIMIT_EXCEEDS_ACCOUNT_WIDE_2_PERCENT_CAP"
+                             :"PROPOSED_ORDER_EXCEEDS_ACCOUNT_WIDE_2_PERCENT_CAP";
+           }
+        }
+      return(reason=="");
+     }
+
+   bool FinalizeDecision(SAxAccountRiskDecision &decision,string &reason,
+                         const string context) const
+     {
+      if(reason=="")
+        {
+         decision.approved=true;
+         decision.decision="APPROVED";
+         decision.rejectionReason="NONE";
+        }
+      else
+        {
+         decision.approved=false;
+         decision.decision="REJECTED";
+         decision.rejectionReason=reason;
+        }
+
+      if(!WriteAudit(decision))
+        {
+         decision.approved=false;
+         decision.decision="REJECTED";
+         decision.rejectionReason="RISK_AUDIT_PERSISTENCE_FAILED";
+         reason=decision.rejectionReason;
+         return(false);
+        }
+      if(!decision.approved)
+        {
+         reason=decision.rejectionReason;
+         PrintFormat("FLIPDEMON %s RISK BLOCK: %s existing=%.2f proposed=%.2f remaining=%.2f equity=%.2f",
+                     context,reason,decision.existingRiskMoney,decision.proposedRiskMoney,
+                     decision.remainingRiskBudgetMoney,decision.equity);
+         return(false);
+        }
+
+      PrintFormat("FLIPDEMON %s RISK APPROVED: entry=%.8f existing=%.2f proposed=%.2f remaining=%.2f equity=%.2f",
+                  context,decision.worstCaseEntryPrice,decision.existingRiskMoney,
+                  decision.proposedRiskMoney,decision.remainingRiskBudgetMoney,decision.equity);
+      return(true);
+     }
+
+
 public:
                      CAccountRiskCalculator(void)
      {
@@ -312,53 +438,23 @@ public:
       return(true);
      }
 
-   // Re-run this immediately before submission. It is a read-only check, not an
-   // atomic reservation; cross-terminal serialization is a separate coordinator task.
-   bool              Evaluate(const string symbol,const ENUM_AX_DIR direction,
-                              const double volume,const double stopPrice,
-                              const int maxAdverseSlippagePoints,
-                              const double perEntryRiskPercent,
-                              SAxAccountRiskDecision &decision,string &reason) const
+   // Market execution reserves configured adverse slippage before calculating risk.
+   // Pending limits use their exact intended entry. Both routes share all account-risk
+   // validation, audit persistence and approval/rejection handling.
+   bool Evaluate(const string symbol,const ENUM_AX_DIR direction,const double volume,
+                 const double stopPrice,const int maxAdverseSlippagePoints,
+                 const double perEntryRiskPercent,SAxAccountRiskDecision &decision,
+                 string &reason) const
      {
-      decision.evaluatedAt=TimeCurrent();
-      decision.login=AccountInfoInteger(ACCOUNT_LOGIN);
-      decision.server=AccountInfoString(ACCOUNT_SERVER);
-      decision.equity=AccountInfoDouble(ACCOUNT_EQUITY);
-      decision.existingRiskMoney=0.0;
-      decision.existingRiskPercent=0.0;
-      decision.proposedRiskMoney=0.0;
-      decision.adverseSlippagePoints=maxAdverseSlippagePoints;
-      decision.worstCaseEntryPrice=0.0;
-      decision.remainingRiskBudgetMoney=0.0;
-      decision.positionCount=0;
-      decision.pendingOrderCount=0;
-      decision.approved=false;
-      decision.decision="REJECTED";
-      decision.rejectionReason="";
-      decision.calculationError="";
+      ResetDecision(decision,maxAdverseSlippagePoints,0.0);
       reason="";
-
       SAxAccountRiskSnapshot snapshot;
-      if(!Scan(snapshot))
-        {
-         reason="EXISTING_EXPOSURE_UNKNOWN";
-         decision.calculationError=snapshot.failureReason;
-        }
-      else
-        {
-         decision.equity=snapshot.equity;
-         decision.existingRiskMoney=snapshot.existingRiskMoney;
-         decision.existingRiskPercent=snapshot.existingRiskPercent;
-         decision.remainingRiskBudgetMoney=snapshot.remainingRiskBudgetMoney;
-         decision.positionCount=snapshot.positionCount;
-         decision.pendingOrderCount=snapshot.pendingOrderCount;
+      bool snapshotKnown=LoadSnapshot(snapshot,decision,reason);
 
+      if(snapshotKnown && reason=="")
+        {
          if(direction!=AX_DIR_BUY && direction!=AX_DIR_SELL)
             reason="INVALID_PROPOSED_DIRECTION";
-         else if(!ValidNumber(perEntryRiskPercent) || perEntryRiskPercent<=0.0)
-            reason="INVALID_PER_ENTRY_RISK_LIMIT";
-         else if(perEntryRiskPercent>AX_ACCOUNT_RISK_HARD_CAP_PCT)
-            reason="PER_ENTRY_RISK_LIMIT_EXCEEDS_ABSOLUTE_CAP";
          else
            {
             MqlTick tick;
@@ -369,9 +465,6 @@ public:
                reason="INVALID_ADVERSE_SLIPPAGE_ALLOWANCE";
             else
               {
-               // Reserve the full configured CTrade deviation against adverse movement.
-               // BUY risk uses ask + allowance; SELL risk uses bid - allowance.
-               // Market-execution brokers may not enforce deviation as a hard bound.
                double slippageBuffer=maxAdverseSlippagePoints*point;
                double entry=(direction==AX_DIR_BUY)?tick.ask+slippageBuffer:tick.bid-slippageBuffer;
                if(!ValidNumber(entry) || entry<=0.0)
@@ -379,179 +472,30 @@ public:
                else
                  {
                   decision.worstCaseEntryPrice=entry;
-                  ENUM_ORDER_TYPE orderType=(direction==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
-                  string calcError="";
-                  bool stopOnLossSide=(direction==AX_DIR_BUY)?(stopPrice<entry):(stopPrice>entry);
-                  if(!stopOnLossSide)
-                     reason="PROPOSED_STOP_NOT_ON_LOSS_SIDE";
-                  else if(!CalculateStopRisk(orderType,symbol,volume,entry,stopPrice,false,
-                                             decision.proposedRiskMoney,calcError))
-                    {
-                     reason="PROPOSED_ORDER_RISK_UNKNOWN";
-                     decision.calculationError=calcError;
-                    }
-                  else if(snapshot.existingRiskMoney>snapshot.hardRiskBudgetMoney+0.01)
-                     reason="EXISTING_ACCOUNT_RISK_ALREADY_EXCEEDS_2_PERCENT";
-                  else if(decision.proposedRiskMoney>
-                          snapshot.equity*perEntryRiskPercent/100.0+0.01)
-                     reason="PROPOSED_ORDER_EXCEEDS_PER_ENTRY_RISK_LIMIT";
-                  else if(snapshot.existingRiskMoney+decision.proposedRiskMoney>
-                          snapshot.hardRiskBudgetMoney+0.01)
-                     reason="PROPOSED_ORDER_EXCEEDS_ACCOUNT_WIDE_2_PERCENT_CAP";
+                  EvaluateAtEntry(symbol,direction,volume,entry,stopPrice,perEntryRiskPercent,
+                                  false,snapshot,decision,reason);
                  }
               }
            }
         }
-
-      if(reason=="")
-        {
-         decision.approved=true;
-         decision.decision="APPROVED";
-         decision.rejectionReason="NONE";
-        }
-      else
-        {
-         decision.approved=false;
-         decision.decision="REJECTED";
-         decision.rejectionReason=reason;
-        }
-
-      if(!WriteAudit(decision))
-        {
-         decision.approved=false;
-         decision.decision="REJECTED";
-         decision.rejectionReason="RISK_AUDIT_PERSISTENCE_FAILED";
-         reason=decision.rejectionReason;
-         return(false);
-        }
-      if(!decision.approved)
-        {
-         reason=decision.rejectionReason;
-         PrintFormat("FLIPDEMON ACCOUNT RISK BLOCK: %s existing=%.2f proposed=%.2f remaining=%.2f equity=%.2f",
-                     reason,decision.existingRiskMoney,decision.proposedRiskMoney,
-                     decision.remainingRiskBudgetMoney,decision.equity);
-         return(false);
-        }
-
-      PrintFormat("FLIPDEMON ACCOUNT RISK APPROVED: existing=%.2f proposed=%.2f remaining=%.2f equity=%.2f",
-                  decision.existingRiskMoney,decision.proposedRiskMoney,
-                  decision.remainingRiskBudgetMoney,decision.equity);
-      return(true);
+      return(FinalizeDecision(decision,reason,"ACCOUNT"));
      }
 
    // Passive limit risk is valued at the exact intended entry, not at the live
-   // bid/ask plus market-order slippage allowance. Broker snapshots later replace
-   // this estimate with actual remaining pending volume and its attached stop.
-   bool              EvaluatePendingLimit(const string symbol,const ENUM_AX_DIR direction,
-                                          const double volume,const double limitPrice,
-                                          const double stopPrice,const double perEntryRiskPercent,
-                                          SAxAccountRiskDecision &decision,string &reason) const
+   // bid/ask plus market-order slippage allowance.
+   bool EvaluatePendingLimit(const string symbol,const ENUM_AX_DIR direction,
+                             const double volume,const double limitPrice,
+                             const double stopPrice,const double perEntryRiskPercent,
+                             SAxAccountRiskDecision &decision,string &reason) const
      {
-      decision.evaluatedAt=TimeCurrent();
-      decision.login=AccountInfoInteger(ACCOUNT_LOGIN);
-      decision.server=AccountInfoString(ACCOUNT_SERVER);
-      decision.equity=AccountInfoDouble(ACCOUNT_EQUITY);
-      decision.existingRiskMoney=0.0;
-      decision.existingRiskPercent=0.0;
-      decision.proposedRiskMoney=0.0;
-      decision.adverseSlippagePoints=0;
-      decision.worstCaseEntryPrice=limitPrice;
-      decision.remainingRiskBudgetMoney=0.0;
-      decision.positionCount=0;
-      decision.pendingOrderCount=0;
-      decision.approved=false;
-      decision.decision="REJECTED";
-      decision.rejectionReason="";
-      decision.calculationError="";
+      ResetDecision(decision,0,limitPrice);
       reason="";
-
       SAxAccountRiskSnapshot snapshot;
-      if(!Scan(snapshot))
-        {
-         reason="EXISTING_EXPOSURE_UNKNOWN";
-         decision.calculationError=snapshot.failureReason;
-        }
-      else
-        {
-         decision.equity=snapshot.equity;
-         decision.existingRiskMoney=snapshot.existingRiskMoney;
-         decision.existingRiskPercent=snapshot.existingRiskPercent;
-         decision.remainingRiskBudgetMoney=snapshot.remainingRiskBudgetMoney;
-         decision.positionCount=snapshot.positionCount;
-         decision.pendingOrderCount=snapshot.pendingOrderCount;
-
-         if(direction!=AX_DIR_BUY && direction!=AX_DIR_SELL)
-            reason="INVALID_PROPOSED_DIRECTION";
-         else if(!ValidNumber(volume) || volume<=0.0 ||
-                 !ValidNumber(limitPrice) || limitPrice<=0.0 ||
-                 !ValidNumber(stopPrice) || stopPrice<=0.0)
-            reason="INVALID_PENDING_LIMIT_VOLUME_OR_PRICE";
-         else if(!ValidNumber(perEntryRiskPercent) || perEntryRiskPercent<=0.0)
-            reason="INVALID_PER_ENTRY_RISK_LIMIT";
-         else if(perEntryRiskPercent>AX_ACCOUNT_RISK_HARD_CAP_PCT)
-            reason="PER_ENTRY_RISK_LIMIT_EXCEEDS_ABSOLUTE_CAP";
-         else
-           {
-            bool stopOnLossSide=(direction==AX_DIR_BUY)
-                                ?(stopPrice<limitPrice):(stopPrice>limitPrice);
-            if(!stopOnLossSide)
-               reason="PENDING_LIMIT_STOP_NOT_ON_LOSS_SIDE";
-            else
-              {
-               ENUM_ORDER_TYPE orderType=(direction==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
-               string calcError="";
-               if(!CalculateStopRisk(orderType,symbol,volume,limitPrice,stopPrice,true,
-                                     decision.proposedRiskMoney,calcError))
-                 {
-                  reason="PENDING_LIMIT_RISK_UNKNOWN";
-                  decision.calculationError=calcError;
-                 }
-               else if(snapshot.existingRiskMoney>snapshot.hardRiskBudgetMoney+0.01)
-                  reason="EXISTING_ACCOUNT_RISK_ALREADY_EXCEEDS_2_PERCENT";
-               else if(decision.proposedRiskMoney>
-                       snapshot.equity*perEntryRiskPercent/100.0+0.01)
-                  reason="PENDING_LIMIT_EXCEEDS_PER_ENTRY_RISK_LIMIT";
-               else if(snapshot.existingRiskMoney+decision.proposedRiskMoney>
-                       snapshot.hardRiskBudgetMoney+0.01)
-                  reason="PENDING_LIMIT_EXCEEDS_ACCOUNT_WIDE_2_PERCENT_CAP";
-              }
-           }
-        }
-
-      if(reason=="")
-        {
-         decision.approved=true;
-         decision.decision="APPROVED";
-         decision.rejectionReason="NONE";
-        }
-      else
-        {
-         decision.approved=false;
-         decision.decision="REJECTED";
-         decision.rejectionReason=reason;
-        }
-
-      if(!WriteAudit(decision))
-        {
-         decision.approved=false;
-         decision.decision="REJECTED";
-         decision.rejectionReason="RISK_AUDIT_PERSISTENCE_FAILED";
-         reason=decision.rejectionReason;
-         return(false);
-        }
-      if(!decision.approved)
-        {
-         reason=decision.rejectionReason;
-         PrintFormat("FLIPDEMON PENDING LIMIT RISK BLOCK: %s existing=%.2f proposed=%.2f remaining=%.2f equity=%.2f",
-                     reason,decision.existingRiskMoney,decision.proposedRiskMoney,
-                     decision.remainingRiskBudgetMoney,decision.equity);
-         return(false);
-        }
-
-      PrintFormat("FLIPDEMON PENDING LIMIT RISK APPROVED: entry=%.8f existing=%.2f proposed=%.2f remaining=%.2f equity=%.2f",
-                  limitPrice,decision.existingRiskMoney,decision.proposedRiskMoney,
-                  decision.remainingRiskBudgetMoney,decision.equity);
-      return(true);
+      bool snapshotKnown=LoadSnapshot(snapshot,decision,reason);
+      if(snapshotKnown && reason=="")
+         EvaluateAtEntry(symbol,direction,volume,limitPrice,stopPrice,perEntryRiskPercent,
+                         true,snapshot,decision,reason);
+      return(FinalizeDecision(decision,reason,"PENDING LIMIT"));
      }
 
   };
