@@ -9,7 +9,7 @@ import math
 import unittest
 
 
-ABSOLUTE_RISK_CAP_PCT = 2.0
+DEFAULT_MAX_STOP_RISK_PCT = 10.0
 MAX_GROWTH_MULTIPLIER = 1.50
 
 
@@ -26,7 +26,7 @@ def growth_multiplier(growth_pct: float) -> float:
 
 
 def effective_risk_pct(base_pct: float, growth_pct: float,
-                       drawdown_multiplier: float, configured_cap_pct: float = 2.0,
+                       drawdown_multiplier: float, configured_cap_pct: float = DEFAULT_MAX_STOP_RISK_PCT,
                        fresh_continuation: bool = True,
                        loss_since_peak: bool = False) -> float:
     vals = (base_pct, growth_pct, drawdown_multiplier, configured_cap_pct)
@@ -35,13 +35,11 @@ def effective_risk_pct(base_pct: float, growth_pct: float,
     if base_pct <= 0 or configured_cap_pct <= 0 or drawdown_multiplier <= 0:
         return 0.0
     if not fresh_continuation or loss_since_peak:
-        return min(base_pct * drawdown_multiplier,
-                   configured_cap_pct, ABSOLUTE_RISK_CAP_PCT)
+        return min(base_pct * drawdown_multiplier, configured_cap_pct)
     multiplier = min(growth_multiplier(growth_pct), MAX_GROWTH_MULTIPLIER)
     if multiplier <= 0:
         return 0.0
-    return min(base_pct * multiplier * drawdown_multiplier,
-               configured_cap_pct, ABSOLUTE_RISK_CAP_PCT)
+    return min(base_pct * multiplier * drawdown_multiplier, configured_cap_pct)
 
 
 def normalize_down(raw_lots: float, minimum: float, maximum: float,
@@ -68,12 +66,12 @@ def risk_sized_lots(equity: float, risk_pct: float, one_lot_stop_loss: float,
         return 0.0
     if equity <= 0 or risk_pct <= 0 or one_lot_stop_loss <= 0:
         return 0.0
-    raw_lots = equity * min(risk_pct, ABSOLUTE_RISK_CAP_PCT) / 100.0 / one_lot_stop_loss
+    raw_lots = equity * risk_pct / 100.0 / one_lot_stop_loss
     lots = normalize_down(raw_lots, min_lot, max_lot, step)
     if lots <= 0:
         return 0.0
     projected_risk = lots * one_lot_stop_loss / equity * 100.0
-    if projected_risk > min(risk_pct, ABSOLUTE_RISK_CAP_PCT) + 1e-9:
+    if projected_risk > risk_pct + 1e-9:
         return 0.0
     return lots
 
@@ -84,7 +82,7 @@ class Campaign:
     proposed_add_risk_pct: float
     entries: int
     max_entries: int = 10
-    campaign_limit_pct: float = 2.0
+    campaign_limit_pct: float = DEFAULT_MAX_STOP_RISK_PCT
     fresh_signal: bool = True
     campaign_profitable: bool = True
     protected: bool = True
@@ -120,8 +118,9 @@ class SizingPolicyTests(unittest.TestCase):
         self.assertEqual(normalize_down(0.5, 0.01, 1.0, 0.0), 0.0)
         self.assertEqual(risk_sized_lots(100, 1.0, 0.0, 0.01, 1.0, 0.01), 0.0)
 
-    def test_risk_hard_cap_is_two_percent(self):
-        self.assertEqual(effective_risk_pct(5.0, 70.0, 1.0, 5.0), 2.0)
+    def test_configured_stop_risk_maximum_is_not_fixed_at_two_percent(self):
+        self.assertEqual(effective_risk_pct(5.0, 70.0, 1.0, 5.0), 5.0)
+        self.assertEqual(effective_risk_pct(12.0, 70.0, 1.0, 8.0), 8.0)
 
     def test_growth_tiers(self):
         self.assertEqual(growth_multiplier(9.99), 1.0)
