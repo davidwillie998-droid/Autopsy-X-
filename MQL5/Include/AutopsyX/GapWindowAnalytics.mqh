@@ -20,6 +20,7 @@ struct SAxGapBucketStats
    long unlimitedLeverageSamples;
    long bothConditionsSamples;
    long costEvidenceSamples;
+   long costValueSamples;
    long commissionSamples;
    long latencySamples;
    long acceptableCostSamples;
@@ -69,6 +70,7 @@ private:
                m_stats[w][d][b].unlimitedLeverageSamples=0;
                m_stats[w][d][b].bothConditionsSamples=0;
                m_stats[w][d][b].costEvidenceSamples=0;
+               m_stats[w][d][b].costValueSamples=0;
                m_stats[w][d][b].commissionSamples=0;
                m_stats[w][d][b].latencySamples=0;
                m_stats[w][d][b].acceptableCostSamples=0;
@@ -144,7 +146,7 @@ public:
       if(o.executionCostAcceptable) v.acceptableCostSamples++;
       if(s.gapConditionsVerified) v.readySamples++;
 
-      if(MathIsValidNumber(s.spreadPoints) && s.spreadPoints>=0.0)
+      if(s.quoteFresh && MathIsValidNumber(s.spreadPoints) && s.spreadPoints>=0.0)
         {
          v.spreadSum+=s.spreadPoints;
          if(s.spreadPoints<v.spreadMin) v.spreadMin=s.spreadPoints;
@@ -161,6 +163,7 @@ public:
         {
          v.roundTripCostSum+=o.observedRoundTripCost;
          v.costToGrossRatioSum+=o.observedRoundTripCost/o.expectedGrossProfit;
+         v.costValueSamples++;
         }
       if(o.executionTelemetryVerified)
         {
@@ -192,7 +195,8 @@ public:
                 "window","day_of_week","bucket_start","bucket_end","samples",
                 "fresh_quote_rate","zero_spread_rate","unlimited_leverage_rate",
                 "zero_spread_and_unlimited_rate","cost_evidence_rate",
-                "acceptable_cost_rate","verified_gap_hour_rate",
+                "commission_verified_rate","acceptable_cost_given_cost_evidence_rate",
+                "verified_gap_hour_rate",
                 "average_spread_points","minimum_spread_points","maximum_spread_points",
                 "average_round_trip_commission","average_round_trip_cost",
                 "average_cost_to_gross_ratio","average_order_latency_p95_us");
@@ -209,25 +213,27 @@ public:
                int endMinute=startMinute+15;
                string start=StringFormat("%02d:%02d",startMinute/60,startMinute%60);
                string finish=StringFormat("%02d:%02d",endMinute/60,endMinute%60);
-               double avgSpread=v.spreadSum/n;
+               double freshN=(double)v.freshQuotes;
+               double costN=(double)v.costEvidenceSamples;
+               double avgSpread=(freshN>0.0 ? v.spreadSum/freshN : 0.0);
                double minSpread=(v.spreadMin==DBL_MAX ? 0.0 : v.spreadMin);
                double avgCommission=(v.commissionSamples>0 ? v.commissionSum/(double)v.commissionSamples : 0.0);
-               double avgRoundTrip=(v.costEvidenceSamples>0
-                                    ? v.roundTripCostSum/(double)v.costEvidenceSamples : 0.0);
-               double avgCostRatio=(v.costEvidenceSamples>0
-                                    ? v.costToGrossRatioSum/(double)v.costEvidenceSamples : 0.0);
+               double avgRoundTrip=(v.costValueSamples>0
+                                    ? v.roundTripCostSum/(double)v.costValueSamples : 0.0);
+               double avgCostRatio=(v.costValueSamples>0
+                                    ? v.costToGrossRatioSum/(double)v.costValueSamples : 0.0);
                double avgLatency=(v.latencySamples>0
                                   ? v.latencyP95SumUs/(double)v.latencySamples : 0.0);
                FileWrite(h,TimeToString(serverTime,TIME_DATE|TIME_SECONDS),
                          m_broker,m_server,m_accountType,m_symbol,
                          WindowName(w),d,start,finish,v.samples,
                          DoubleToString((double)v.freshQuotes/n,5),
-                         DoubleToString((double)v.zeroSpreadSamples/n,5),
+                         DoubleToString((freshN>0.0 ? (double)v.zeroSpreadSamples/freshN : 0.0),5),
                          DoubleToString((double)v.unlimitedLeverageSamples/n,5),
-                         DoubleToString((double)v.bothConditionsSamples/n,5),
+                         DoubleToString((freshN>0.0 ? (double)v.bothConditionsSamples/freshN : 0.0),5),
                          DoubleToString((double)v.costEvidenceSamples/n,5),
                          DoubleToString((double)v.commissionSamples/n,5),
-                         DoubleToString((double)v.acceptableCostSamples/n,5),
+                         DoubleToString((costN>0.0 ? (double)v.acceptableCostSamples/costN : 0.0),5),
                          DoubleToString((double)v.readySamples/n,5),
                          DoubleToString(avgSpread,6),DoubleToString(minSpread,6),
                          DoubleToString(v.spreadMax,6),
