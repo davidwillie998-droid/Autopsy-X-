@@ -34,6 +34,8 @@ function accountIdentity(input) {
 function snapshotFields(input, now, maxAgeMs) {
   const equity = finiteNumber(input?.equity, 'equity', { min: 0, exclusive: true });
   const brokerRiskMoney = finiteNumber(input?.existingRiskMoney, 'existingRiskMoney');
+  const maxStopRiskPercent = finiteNumber(input?.maxStopRiskPercent, 'maxStopRiskPercent', { min: 0.05 });
+  if (maxStopRiskPercent > 100.0) fail(400, 'INVALID_MAX_STOP_RISK_PERCENT', 'maxStopRiskPercent cannot exceed 100.');
   const snapshotAtMs = finiteNumber(input?.snapshotAtMs, 'snapshotAtMs', { min: 0, exclusive: true });
   const snapshotId = String(input?.snapshotId ?? '').trim();
   if (!snapshotId || snapshotId.length > 160) {
@@ -45,7 +47,8 @@ function snapshotFields(input, now, maxAgeMs) {
   return {
     equity,
     brokerRiskMoney,
-    hardCapMoney: equity * 0.02,
+    maxStopRiskPercent,
+    hardCapMoney: equity * maxStopRiskPercent / 100.0,
     snapshotAtMs,
     snapshotId,
   };
@@ -86,6 +89,7 @@ export function openRiskLedger(path, {
       equity REAL NOT NULL CHECK (equity > 0),
       broker_risk_money REAL NOT NULL CHECK (broker_risk_money >= 0),
       hard_cap_money REAL NOT NULL CHECK (hard_cap_money >= 0),
+      max_stop_risk_percent REAL NOT NULL DEFAULT 10.0 CHECK (max_stop_risk_percent >= 0.05 AND max_stop_risk_percent <= 100.0),
       snapshot_at_ms INTEGER NOT NULL,
       snapshot_id TEXT NOT NULL,
       updated_at_ms INTEGER NOT NULL
@@ -106,15 +110,20 @@ export function openRiskLedger(path, {
       ON risk_reservations(account_key, status, expires_at_ms);
   `);
 
+  const snapshotColumns = db.prepare('PRAGMA table_info(risk_account_snapshots)').all();
+  if (!snapshotColumns.some(column => column.name === 'max_stop_risk_percent')) {
+    db.exec('ALTER TABLE risk_account_snapshots ADD COLUMN max_stop_risk_percent REAL NOT NULL DEFAULT 10.0 CHECK (max_stop_risk_percent >= 0.05 AND max_stop_risk_percent <= 100.0)');
+  }
+
   const getSnapshot = db.prepare('SELECT * FROM risk_account_snapshots WHERE account_key = ?');
   const insertSnapshot = db.prepare(`
     INSERT INTO risk_account_snapshots
-      (account_key, login, server, equity, broker_risk_money, hard_cap_money, snapshot_at_ms, snapshot_id, updated_at_ms)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (account_key, login, server, equity, broker_risk_money, hard_cap_money, max_stop_risk_percent, snapshot_at_ms, snapshot_id, updated_at_ms)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(account_key) DO UPDATE SET
       login=excluded.login, server=excluded.server, equity=excluded.equity,
       broker_risk_money=excluded.broker_risk_money, hard_cap_money=excluded.hard_cap_money,
-      snapshot_at_ms=excluded.snapshot_at_ms, snapshot_id=excluded.snapshot_id,
+      max_stop_risk_percent=excluded.max_stop_risk_percent, snapshot_at_ms=excluded.snapshot_at_ms, snapshot_id=excluded.snapshot_id,
       updated_at_ms=excluded.updated_at_ms
   `);
 
@@ -124,13 +133,14 @@ export function openRiskLedger(path, {
     if (previous && fields.snapshotAtMs <= previous.snapshot_at_ms) {
       if (fields.snapshotId === previous.snapshot_id &&
           fields.equity === previous.equity &&
-          fields.brokerRiskMoney === previous.broker_risk_money) {
+          fields.brokerRiskMoney === previous.broker_risk_money &&
+          fields.maxStopRiskPercent === previous.max_stop_risk_percent) {
         return { ...fields, duplicate: true };
       }
       fail(409, 'OUT_OF_ORDER_SNAPSHOT', 'Snapshot is not newer than the last accepted broker snapshot.');
     }
     insertSnapshot.run(identity.accountKey, identity.login, identity.server,
-      fields.equity, fields.brokerRiskMoney, fields.hardCapMoney,
+      fields.equity, fields.brokerRiskMoney, fields.hardCapMoney, fields.maxStopRiskPercent,
       fields.snapshotAtMs, fields.snapshotId, now);
     return { ...fields, duplicate: false };
   }
@@ -203,7 +213,7 @@ export function openRiskLedger(path, {
       const totalAfterReservation = snapshot.broker_risk_money + pending + riskMoney;
       if (snapshot.broker_risk_money > snapshot.hard_cap_money + 0.01 ||
           totalAfterReservation > snapshot.hard_cap_money + 0.01) {
-        fail(409, 'ACCOUNT_RISK_BUDGET_EXCEEDED', 'Broker exposure plus active reservations would exceed the immutable 2% equity risk ceiling.');
+        fail(409, 'ACCOUNT_RISK_BUDGET_EXCEEDED', 'Broker exposure plus active reservations would exceed the configured account stop-risk maximum.');
       }
 
       const reservationId = randomUUID();
