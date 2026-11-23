@@ -50,7 +50,7 @@ public:
                                            const ENUM_ORDER_TYPE orderType,
                                            const double executablePrice,
                                            const double requestedLots,
-                                           const double maxFreeMarginUsagePct,
+                                           const double maxAdditionalMarginMoney,
                                            double &approvedLots,
                                            double &requiredMargin,
                                            string &reason) const
@@ -61,8 +61,8 @@ public:
 
       if(symbol=="" || (orderType!=ORDER_TYPE_BUY && orderType!=ORDER_TYPE_SELL) ||
          !Valid(executablePrice) || !Valid(requestedLots) ||
-         !MathIsValidNumber(maxFreeMarginUsagePct) ||
-         maxFreeMarginUsagePct<=0.0 || maxFreeMarginUsagePct>100.0)
+         !MathIsValidNumber(maxAdditionalMarginMoney) ||
+         maxAdditionalMarginMoney<=0.0)
         {
          reason="INVALID_MARGIN_GUARD_INPUT";
          return(false);
@@ -74,7 +74,7 @@ public:
          reason="FREE_MARGIN_UNAVAILABLE";
          return(false);
         }
-      double budget=freeMargin*maxFreeMarginUsagePct/100.0;
+      double budget=MathMin(freeMargin,maxAdditionalMarginMoney);
       if(!Valid(budget))
         {
          reason="MARGIN_BUDGET_INVALID";
