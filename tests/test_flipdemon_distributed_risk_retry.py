@@ -169,14 +169,14 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         self.assertIn("g_distributedRiskCoordinator.Reserve(riskDecision,reserveSnapshot,instanceId,", method)
 
     def test_account_risk_calculator_adds_existing_and_proposed_campaign_risk(self):
-        start = self.account_risk.index("bool              Evaluate(")
+        start = self.account_risk.index("bool Evaluate(")
         method = self.account_risk[start:]
         self.assertIn("if(!Scan(snapshot))", method)
         self.assertIn("snapshot.existingRiskMoney= snapshot.existingRiskMoney", method) if False else None
         self.assertIn("decision.proposedRiskMoney", method)
         self.assertIn("snapshot.existingRiskMoney+decision.proposedRiskMoney>", method)
         self.assertIn("snapshot.hardRiskBudgetMoney+0.01", method)
-        self.assertIn("PROPOSED_ORDER_EXCEEDS_ACCOUNT_WIDE_2_PERCENT_CAP", method)
+        self.assertIn("PROPOSED_ORDER_EXCEEDS_CONFIGURED_ACCOUNT_STOP_RISK", method)
 
     def test_broker_symbol_preflight_enforces_direction_market_and_volume_contract(self):
         start = self.expert.index("bool AxBrokerSymbolOrderPreflight(")
@@ -210,7 +210,7 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         self.assertIn("ACCOUNT_MARGIN_SO_SO", helper)
         self.assertIn("MathMax(marginCall,stopout)+InpBrokerStopOutBufferPercent", helper)
         self.assertIn("BROKER_MONEY_BASED_STOPOUT_UNSUPPORTED_FAIL_CLOSED", helper)
-        self.assertIn("MODE_MARGIN_UTILISATION_LIMIT_EXCEEDED", helper)
+        self.assertIn("SELECTED_MARGIN_PROFILE_BUDGET_EXCEEDED", helper)
         self.assertIn("BROKER_MARGIN_LEVEL_BUFFER_NOT_MET", helper)
         self.assertEqual(self.expert.count("AxBrokerMarginPreflight(requiredMargin,"), 3)
         self.assertIn("InpBrokerStopOutBufferPercent = 100.0", self.expert)
@@ -229,14 +229,15 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         self.assertRegex(self.expert, r"InpEnablePyramidExecution\s*=\s*false")
 
     def test_margin_utilisation_profiles_are_separate_from_stop_loss_risk(self):
-        helper_start = self.expert.index("double AxMarginUsageLimitForMode(void)")
+        helper_start = self.expert.index("double AxMarginUsageLimitForProfile(void)")
         helper_end = self.expert.index("\n  }", helper_start) + len("\n  }")
         helper = self.expert[helper_start:helper_end]
-        self.assertIn("if(InpMode==AX_MODE_NORMAL)      return(5.0);", helper)
-        self.assertIn("if(InpMode==AX_MODE_AGGRESSIVE)  return(20.0);", helper)
-        self.assertIn("AxClampD(InpExtremeMaxMarginUsagePercent,1.0,100.0)", helper)
-        self.assertIn("InpExtremeMaxMarginUsagePercent = 100.0", self.expert)
-        self.assertIn("AxMarginUsageLimitForMode()", self.expert)
+        self.assertIn("if(InpMarginProfile==AX_MARGIN_LOW)      return(5.0);", helper)
+        self.assertIn("if(InpMarginProfile==AX_MARGIN_MEDIUM)   return(50.0);", helper)
+        self.assertIn("if(InpMarginProfile==AX_MARGIN_MAXIMUM)  return(100.0);", helper)
+        self.assertIn("return(0.0); // invalid profile fails closed", helper)
+        self.assertIn("InpMarginProfile = AX_MARGIN_MEDIUM", self.expert)
+        self.assertIn("AxMarginUsageLimitForProfile()", self.expert)
         risk_helper = self.expert[
             self.expert.index("double AxRiskPercentForMode(void)"):
             self.expert.index("double AxMarginUsageLimitForMode(void)")
@@ -244,6 +245,7 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
         self.assertIn("return(0.5);", risk_helper)
         self.assertIn("return(1.0);", risk_helper)
         self.assertIn("AxClampD(InpExtremeRiskPercent,0.05,maximumRisk)", risk_helper)
+        self.assertIn("InpMaxAccountStopRiskPercent", risk_helper)
         self.assertIn("MathMax(InpMinFreeMarginPercent,brokerFloor)", self.expert)
 
     def test_pyramid_add_arms_uncertainty_before_broker_submission(self):
