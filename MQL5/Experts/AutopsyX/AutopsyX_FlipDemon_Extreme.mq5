@@ -4423,9 +4423,11 @@ void AxObserveGapHour(void)
    bool quoteOk=SymbolInfoTick(_Symbol,quote) &&
                 quote.bid>0.0 && quote.ask>=quote.bid &&
                 quote.time_msc>0;
-   ulong nowMsc=GetTickCount64();
    datetime serverNow=TimeTradeServer();
    if(serverNow<=0) serverNow=TimeCurrent();
+   // quote.time_msc is server-epoch milliseconds, not terminal uptime.
+   // Use the same time domain for quote-age validation.
+   ulong nowMsc=(ulong)serverNow*1000;
 
    observation.brokerCompany=g_brokerSnapshot.brokerCompany;
    observation.tradeServer=g_brokerSnapshot.tradeServer;
@@ -4510,7 +4512,6 @@ void AxObserveGapHour(void)
          // that the broker advertises a special Gap Hour product or promotion.
          observation.brokerWindowVerified=true;
          g_gapLastQuoteTimeMsc=quote.time_msc;
-         g_gapObservationInitialized=true;
         }
      }
 
@@ -4535,7 +4536,7 @@ void AxObserveGapHour(void)
      }
 
    SAxGapSnapshot previous=g_gapSnapshot;
-   bool ready=g_gapIntelligence.Evaluate(observation,nowMsc,g_gapSnapshot);
+   g_gapIntelligence.Evaluate(observation,nowMsc,g_gapSnapshot);
    if(InpVerboseLogging &&
       (g_gapSnapshot.state!=previous.state ||
        g_gapSnapshot.window!=previous.window ||
