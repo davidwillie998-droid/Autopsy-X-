@@ -60,6 +60,19 @@ test('uses the configured stop-risk percentage instead of a fixed two-percent ce
   } finally { f.close(); }
 });
 
+test('prevents stop-risk policy changes while an order reservation is unresolved', () => {
+  const f = fixture();
+  try {
+    f.ledger.reconcile(f.base);
+    f.ledger.reserve({ ...f.base, instanceId: 'terminal-a',
+      idempotencyKey: 'policy-lock-0001', riskMoney: 50 });
+    f.setNow(f.base.snapshotAtMs + 1);
+    expectCode(() => f.ledger.reconcile({ ...f.base, maxStopRiskPercent: 10.0,
+      snapshotAtMs: f.base.snapshotAtMs + 1, snapshotId: 'policy-change-0002' }),
+    'STOP_RISK_POLICY_CHANGE_WITH_ACTIVE_RESERVATIONS');
+  } finally { f.close(); }
+});
+
 test('rejects invalid configured stop-risk percentages', () => {
   const f = fixture();
   try {
