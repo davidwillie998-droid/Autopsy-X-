@@ -4540,7 +4540,9 @@ void AxObserveGapHour(void)
       observation.expectedGrossProfit=assessment.expectedGrossProfit;
      }
 
-   SAxGapSnapshot previous=g_gapSnapshot;
+   ENUM_AX_GAP_STATE previousState=g_gapSnapshot.state;
+   ENUM_AX_GAP_WINDOW previousWindow=g_gapSnapshot.window;
+   string previousReason=g_gapSnapshot.reason;
    g_gapIntelligence.Evaluate(observation,nowMsc,g_gapSnapshot);
 
    int journalInterval=MathMax(1,InpGapObservationIntervalSeconds);
