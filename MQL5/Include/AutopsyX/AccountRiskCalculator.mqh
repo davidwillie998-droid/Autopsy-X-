@@ -11,6 +11,7 @@
 struct SAxAccountRiskSnapshot
   {
    double equity;
+   double maxRiskPercent;
    double existingRiskMoney;
    double existingRiskPercent;
    double hardRiskBudgetMoney;
@@ -359,6 +360,7 @@ public:
    bool              Scan(SAxAccountRiskSnapshot &snapshot) const
      {
       snapshot.equity=AccountInfoDouble(ACCOUNT_EQUITY);
+      snapshot.maxRiskPercent=m_maxAccountRiskPercent;
       snapshot.existingRiskMoney=0.0;
       snapshot.existingRiskPercent=0.0;
       snapshot.hardRiskBudgetMoney=0.0;
