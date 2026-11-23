@@ -52,6 +52,7 @@
 #include <AutopsyX/AntiChop.mqh>
 #include <AutopsyX/RiskEngine.mqh>
 #include <AutopsyX/AccountRiskCalculator.mqh>
+#include <AutopsyX/MarginGuard.mqh>
 #include <AutopsyX/DistributedRiskCoordinator.mqh>
 #include <AutopsyX/EntryEngine.mqh>
 #include <AutopsyX/ExecutionEligibility.mqh>
@@ -259,7 +260,9 @@ input int            InpMaxTradesPerRollingPeriod = 0;       // 0 = no fixed rol
 input int            InpRollingPeriodSeconds    = 300;     // Rolling window length, seconds
 input double         InpMaxSpreadPoints         = 250;     // Max acceptable spread, points
 input double         InpMaxSlippagePoints       = 30;      // Max acceptable slippage, points
-input double         InpMinFreeMarginPercent    = 150.0;   // Min margin level %, refuse new entries below this
+input double         InpMinFreeMarginPercent    = 150.0;   // Existing minimum margin-level gate
+input double         InpMaxMarginUsagePct        = 40.0;    // Maximum of current free margin consumed by one new order
+input double         InpEmergencyMarginLevel     = 150.0;   // Close this EA's managed position below this broker margin level
 input double         InpWeeklyLossLimitPercent  = 15.0;    // Weekly loss limit (%), Monday-anchored - stops the week when hit
 input int            InpMaxPositionsPerSymbol   = 1;       // Max simultaneously open positions on this symbol specifically
 input double         InpExtremeMaxMarginUsagePercent = 100.0; // EXTREME ceiling for ACCOUNT_MARGIN / ACCOUNT_EQUITY; Normal=5%, Aggressive=20%
@@ -436,6 +439,7 @@ CSignalScorer         g_scorer;
 CFlipEngine           g_flip;
 CAntiChopEngine       g_chop;
 CRiskEngine           g_risk;
+CMarginGuard           g_marginGuard;
 CAccountRiskCalculator g_accountRisk;
 CAccountRiskCoordinator g_accountRiskCoordinator;
 CDistributedRiskCoordinator g_distributedRiskCoordinator;
@@ -3341,6 +3345,37 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       return(false);
      }
 
+   // Scale only the already risk-approved volume. OrderCalcMargin is called for
+   // the exact side and executable quote, so symbol-specific HMR is reflected even
+   // when ACCOUNT_LEVERAGE remains unchanged. Never force the broker minimum upward.
+   MqlTick guardedMarginTick;
+   if(!SymbolInfoTick(_Symbol,guardedMarginTick) ||
+      guardedMarginTick.bid<=0.0 || guardedMarginTick.ask<=0.0 ||
+      guardedMarginTick.ask<guardedMarginTick.bid)
+     {
+      Print("FLIPDEMON MARGIN GUARD: fresh executable quote unavailable; entry blocked.");
+      return(false);
+     }
+   ENUM_ORDER_TYPE guardedOrderType=(dir==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
+   double guardedPrice=(dir==AX_DIR_BUY)?guardedMarginTick.ask:guardedMarginTick.bid;
+   double marginScaledLots=0.0,guardedRequiredMargin=0.0;
+   string marginGuardReason="";
+   if(!g_marginGuard.FitVolumeToFreeMargin(_Symbol,guardedOrderType,guardedPrice,
+                                           lots,InpMaxMarginUsagePct,
+                                           marginScaledLots,guardedRequiredMargin,
+                                           marginGuardReason))
+     {
+      PrintFormat("FLIPDEMON MARGIN GUARD BLOCK: requested=%.8f cap=%.2f%% reason=%s",
+                  lots,InpMaxMarginUsagePct,marginGuardReason);
+      return(false);
+     }
+   if(marginScaledLots<lots-1e-8 && InpVerboseLogging)
+      PrintFormat("FLIPDEMON HMR SCALE: requested=%.8f approved=%.8f requiredMargin=%.2f freeMargin=%.2f cap=%.2f%% (%s)",
+                  lots,marginScaledLots,guardedRequiredMargin,
+                  AccountInfoDouble(ACCOUNT_MARGIN_FREE),InpMaxMarginUsagePct,
+                  marginGuardReason);
+   lots=marginScaledLots;
+
    string symbolOrderReason="";
    if(!AxBrokerSymbolOrderPreflight(dir,lots,symbolOrderReason))
      {
@@ -6113,7 +6148,21 @@ void AxProcessTick(void)
 
    //--- SCAN: cheap per-tick microstructure/momentum update ---
    g_mom.Update(g_md);
-   g_micro.Update(g_md,g_mom);
+   g_micro.Update(_Symbol,g_md,g_mom);
+
+   // Emergency protection uses the broker's live account margin level, not the
+   // leverage label. A breach closes the EA's exact managed position through the
+   // existing reconciled close lifecycle, then stops processing this tick.
+   double emergencyMarginLevel=0.0;
+   if(g_haveOpenPosition && g_posState.active && g_posState.ticket>0 &&
+      g_marginGuard.EmergencyMarginLevelBreached(InpEmergencyMarginLevel,emergencyMarginLevel))
+     {
+      PrintFormat("FLIPDEMON EMERGENCY MARGIN: level=%.2f%% threshold=%.2f%% ticket=%I64u; requesting reconciled protective close.",
+                  emergencyMarginLevel,InpEmergencyMarginLevel,g_posState.ticket);
+      if(!AxCloseAndRecord(AX_EXIT_RISK_SHUTDOWN))
+         g_engineState=AX_ENGINE_PAUSED;
+      return;
+     }
    if(InpEnableAdvancedTrendSuite)
      {
       ENUM_AX_SHADOW_EVENT shadowEvent=g_shadowRiver.Update(g_md.CurrentMid(),TimeCurrent());
