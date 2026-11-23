@@ -187,7 +187,7 @@ private:
       out.executionTelemetryVerified=false;
       out.orderLimitsVerified=false;
       out.executionCostAcceptable=false;
-      out.executionAllowed=false;
+      out.gapConditionsVerified=false;
       out.reason="OBSERVATION_NOT_EVALUATED";
      }
 
@@ -216,6 +216,7 @@ public:
                  SAxGapSnapshot &out)
      {
       ResetSnapshot(out);
+      m_lastEvaluationMsc=nowMsc;
       out.serverTime=observation.serverTime;
       out.window=observation.window;
       out.marketStatus=observation.marketStatus;
@@ -344,7 +345,7 @@ public:
         }
 
       out.executionCostAcceptable=true;
-      out.executionAllowed=true;
+      out.gapConditionsVerified=true;
       out.reason="GAP_HOUR_CONDITIONS_AND_COST_EVIDENCE_VERIFIED";
       return(SetState(AX_GAP_STATE_READY));
      }
