@@ -1066,6 +1066,120 @@ public:
                            errorReason,outcomeUncertain));
      }
 
+   // Submit a passive limit order only after the caller has acquired the account-risk
+   // mutex and obtained its account-wide reservation. This adapter confirms the exact
+   // broker order identity and never retries an accepted or ambiguous request.
+   bool              OpenPendingLimit(const string symbol,const ENUM_AX_DIR dir,const double lots,
+                                       const double limitPrice,const double slPrice,const double tpPrice,
+                                       const string comment,ulong &ticketOut,string &errorReason,
+                                       bool &outcomeUncertain)
+     {
+      ticketOut=0;
+      outcomeUncertain=false;
+      errorReason="";
+      if((dir!=AX_DIR_BUY && dir!=AX_DIR_SELL) || lots<=0.0 || limitPrice<=0.0 ||
+         !MathIsValidNumber(lots) || !MathIsValidNumber(limitPrice) ||
+         slPrice<=0.0 || !MathIsValidNumber(slPrice) ||
+         !MathIsValidNumber(tpPrice))
+        {
+         errorReason="PENDING_LIMIT_INVALID_DIRECTION_VOLUME_PRICE_OR_PROTECTION";
+         return(false);
+        }
+
+      double point=SymbolInfoDouble(symbol,SYMBOL_POINT);
+      double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+      double volumeMin=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MIN);
+      double volumeMax=SymbolInfoDouble(symbol,SYMBOL_VOLUME_MAX);
+      double volumeStep=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+      int digits=(int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
+      if(point<=0.0 || tickSize<=0.0 || volumeMin<=0.0 || volumeMax<volumeMin ||
+         volumeStep<=0.0 || digits<0)
+        {
+         errorReason="PENDING_LIMIT_BROKER_METADATA_INVALID";
+         return(false);
+        }
+
+      double priceUnits=limitPrice/tickSize;
+      double volumeUnits=lots/volumeStep;
+      double gridTolerance=MathMax(tickSize*0.000001,0.000000001);
+      double volumeTolerance=MathMax(volumeStep*0.000001,0.000000001);
+      if(MathAbs(priceUnits-MathRound(priceUnits))*tickSize>gridTolerance ||
+         lots<volumeMin-volumeTolerance || lots>volumeMax+volumeTolerance ||
+         MathAbs(volumeUnits-MathRound(volumeUnits))*volumeStep>volumeTolerance)
+        {
+         errorReason="PENDING_LIMIT_PRICE_OR_VOLUME_OFF_BROKER_GRID";
+         return(false);
+        }
+
+      MqlTick quote;
+      if(!SymbolInfoTick(symbol,quote) || quote.bid<=0.0 || quote.ask<=0.0 ||
+         quote.ask<quote.bid)
+        {
+         errorReason="PENDING_LIMIT_QUOTE_UNAVAILABLE";
+         return(false);
+        }
+      if((dir==AX_DIR_BUY && limitPrice>=quote.ask) ||
+         (dir==AX_DIR_SELL && limitPrice<=quote.bid))
+        {
+         errorReason="PENDING_LIMIT_PRICE_IS_NOT_PASSIVE";
+         return(false);
+        }
+      if((dir==AX_DIR_BUY && (slPrice>=limitPrice || (tpPrice>0.0 && tpPrice<=limitPrice))) ||
+         (dir==AX_DIR_SELL && (slPrice<=limitPrice || (tpPrice>0.0 && tpPrice>=limitPrice))))
+        {
+         errorReason="PENDING_LIMIT_PROTECTION_NOT_ON_CORRECT_SIDE";
+         return(false);
+        }
+
+      bool sent=(dir==AX_DIR_BUY)
+                ?m_trade.BuyLimit(lots,limitPrice,symbol,slPrice,tpPrice,ORDER_TIME_GTC,0,comment)
+                :m_trade.SellLimit(lots,limitPrice,symbol,slPrice,tpPrice,ORDER_TIME_GTC,0,comment);
+      uint retcode=m_trade.ResultRetcode();
+      ulong orderTicket=m_trade.ResultOrder();
+      if(orderTicket>0) ticketOut=orderTicket;
+
+      if(sent && orderTicket>0 && OrderSelect(orderTicket))
+        {
+         ENUM_ORDER_TYPE expected=(dir==AX_DIR_BUY)?ORDER_TYPE_BUY_LIMIT:ORDER_TYPE_SELL_LIMIT;
+         double actualVolume=OrderGetDouble(ORDER_VOLUME_INITIAL);
+         double actualPrice=OrderGetDouble(ORDER_PRICE_OPEN);
+         double actualSl=OrderGetDouble(ORDER_SL);
+         double actualTp=OrderGetDouble(ORDER_TP);
+         double tolerance=MathMax(tickSize*0.51,0.000000001);
+         bool identityOk=(OrderGetString(ORDER_SYMBOL)==symbol &&
+                          (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE)==expected &&
+                          (ulong)OrderGetInteger(ORDER_MAGIC)==m_magic &&
+                          MathAbs(actualVolume-lots)<=volumeTolerance &&
+                          MathAbs(actualPrice-limitPrice)<=tolerance &&
+                          MathAbs(actualSl-slPrice)<=tolerance &&
+                          MathAbs(actualTp-tpPrice)<=tolerance);
+         if(identityOk)
+           {
+            errorReason="";
+            return(true);
+           }
+         outcomeUncertain=true;
+         errorReason="PENDING_LIMIT_ACCEPTED_BUT_BROKER_ORDER_IDENTITY_OR_PROTECTION_MISMATCH";
+         return(false);
+        }
+
+      bool accepted=(retcode==TRADE_RETCODE_PLACED || retcode==TRADE_RETCODE_DONE ||
+                     retcode==TRADE_RETCODE_DONE_PARTIAL || sent);
+      bool ambiguous=(retcode==TRADE_RETCODE_TIMEOUT ||
+                      retcode==TRADE_RETCODE_CONNECTION || retcode==0);
+      if(accepted || ambiguous)
+        {
+         outcomeUncertain=true;
+         errorReason=StringFormat("PENDING_LIMIT_OUTCOME_UNCONFIRMED order=%I64u retcode=%u %s",
+                                  orderTicket,retcode,m_trade.ResultRetcodeDescription());
+         return(false);
+        }
+
+      errorReason=StringFormat("PENDING_LIMIT_REJECTED retcode=%u %s",
+                               retcode,m_trade.ResultRetcodeDescription());
+      return(false);
+     }
+
    //--- pending stop entry (spec section 19: "OPTIONAL BUY STOP / OPTIONAL SELL STOP"). Confirms   ---
    //--- the order genuinely exists in the terminal's order list afterward via OrderSelect - a       ---
    //--- successful CTrade send() result alone is never trusted, same discipline as OpenMarket. ---
