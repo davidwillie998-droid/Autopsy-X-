@@ -19,6 +19,7 @@
 #include <AutopsyX/MarketSnapshotRecorder.mqh>
 #include <AutopsyX/BrokerCompatibility.mqh>
 #include <AutopsyX/SpreadCostIntelligence.mqh>
+#include <AutopsyX/GapIntelligenceEngine.mqh>
 #include <AutopsyX/Momentum.mqh>
 #include <AutopsyX/Microstructure.mqh>
 #include <AutopsyX/Liquidity.mqh>
@@ -237,6 +238,14 @@ input int    InpSpreadCostMinSamples       = 20;
 input double InpSpreadCostMaxCostToGross  = 0.25;
 input double InpSpreadCostMaxSpreadToAtr  = 0.15;
 
+input group "=== GAP HOUR OBSERVATION ===";
+input bool   InpGapUnlimitedLeverageVerified = false; // Enable only after verifying broker policy for this account and symbol
+input bool   InpGapLeverageEligibilityVerified = false; // Enable only after confirming this account meets broker eligibility
+input bool   InpGapCommissionScheduleVerified = false; // Enable only after confirming round-trip commission from broker tariff
+input int    InpGapReopenStaleSeconds = 3600; // Quote outage duration required before classifying a market reopening
+input int    InpGapReopenObservationSeconds = 3600; // Observation window after a detected reopening
+input int    InpGapQuoteFreshnessMs = 2000; // Maximum quote age for a valid live observation
+
 input group "=== RISK ENGINE ===";
 input double         InpDailyLossLimitPercent   = 8.0;    // Daily loss limit (%) - stops session when hit
 input int            InpMaxConsecutiveLosses    = 5;      // Max consecutive losses before pausing
@@ -370,6 +379,11 @@ SAxBrokerCompatibilitySnapshot g_brokerSnapshot;
 CMarketData          g_md;
 CMarketSnapshotRecorder g_marketSnapshotRecorder;
 CSpreadCostIntelligence g_spreadCost;
+CGapIntelligenceEngine g_gapIntelligence;
+SAxGapSnapshot g_gapSnapshot;
+long g_gapLastQuoteTimeMsc=0;
+datetime g_gapReopenUntil=0;
+bool g_gapObservationInitialized=false;
 CMomentumEngine       g_mom;
 CMicrostructureEngine g_micro;
 CLiquidityEngine      g_liq;
@@ -4395,6 +4409,150 @@ bool AxSpreadCostAllowed(string &reason)
   }
 
 //====================================================================
+// GAP HOUR OBSERVATION
+//====================================================================
+// Samples broker/account conditions without granting trade permission.
+// Reopening classification is based on an observed quote outage followed by
+// a fresh quote. It is an observation label, not proof of a broker promotion.
+void AxObserveGapHour(void)
+  {
+   SAxGapObservation observation;
+   ZeroMemory(observation);
+
+   MqlTick quote;
+   bool quoteOk=SymbolInfoTick(_Symbol,quote) &&
+                quote.bid>0.0 && quote.ask>=quote.bid &&
+                quote.time_msc>0;
+   ulong nowMsc=GetTickCount64();
+   datetime serverNow=TimeTradeServer();
+   if(serverNow<=0) serverNow=TimeCurrent();
+
+   observation.brokerCompany=g_brokerSnapshot.brokerCompany;
+   observation.tradeServer=g_brokerSnapshot.tradeServer;
+   observation.accountCurrency=g_brokerSnapshot.accountCurrency;
+   observation.accountTypeLabel=g_brokerSnapshot.accountProfile;
+   observation.symbol=_Symbol;
+   observation.serverTime=serverNow;
+   observation.quoteAvailable=quoteOk;
+   observation.accountLeverage=AccountInfoInteger(ACCOUNT_LEVERAGE);
+   observation.leveragePolicy=InpGapUnlimitedLeverageVerified
+      ? AX_GAP_LEVERAGE_UNLIMITED_VERIFIED : AX_GAP_LEVERAGE_UNKNOWN;
+   observation.unlimitedLeverageVerified=InpGapUnlimitedLeverageVerified;
+   observation.leverageEligibilityVerified=InpGapLeverageEligibilityVerified;
+   observation.accountTradingAllowed=(AccountInfoInteger(ACCOUNT_TRADE_ALLOWED)!=0);
+   observation.expertTradingAllowed=(AccountInfoInteger(ACCOUNT_TRADE_EXPERT)!=0);
+   observation.symbolTradingAllowed=(SymbolInfoInteger(_Symbol,SYMBOL_TRADE_MODE)!=SYMBOL_TRADE_MODE_DISABLED &&
+                                     SymbolInfoInteger(_Symbol,SYMBOL_TRADE_MODE)!=SYMBOL_TRADE_MODE_CLOSEONLY);
+   observation.marketStatus=observation.symbolTradingAllowed
+      ? AX_GAP_MARKET_OPEN : AX_GAP_MARKET_CLOSED;
+
+   observation.commissionPerLotRoundTrip=InpCommissionPerLot;
+   observation.commissionVerified=InpGapCommissionScheduleVerified;
+   observation.executionTelemetryVerified=(g_executionLatency.OrderSampleCount()>0 &&
+                                            g_spreadCost.FillSlippageSampleCount()>0);
+   observation.confirmedFillSamples=g_spreadCost.FillSlippageSampleCount();
+   observation.orderLatencyP50Us=g_executionLatency.OrderPercentile(0.50);
+   observation.orderLatencyP95Us=g_executionLatency.OrderPercentile(0.95);
+   observation.orderLatencyP99Us=g_executionLatency.OrderPercentile(0.99);
+   observation.brokerMaxOrderVolume=g_brokerSnapshot.volumeMaximum;
+   observation.brokerMinOrderVolume=g_brokerSnapshot.volumeMinimum;
+   observation.brokerVolumeStep=g_brokerSnapshot.volumeStep;
+   observation.brokerVolumeLimit=g_brokerSnapshot.volumeLimit;
+   // MT5 has no universal property for broker-wide open-position or request-rate caps.
+   // Leave these unknown until verified from broker documentation or measured limits.
+   observation.brokerMaxOpenPositions=0;
+   observation.brokerMaxPendingOrders=0;
+   observation.brokerMaxRequestsPerSecond=0;
+   observation.brokerOrderLimitsVerified=false;
+
+   double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+   observation.freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   observation.requiredMargin=0.0;
+   observation.marginCalculationVerified=false;
+   observation.referenceVolumeLots=g_brokerSnapshot.volumeMinimum;
+   if(quoteOk && observation.referenceVolumeLots>0.0)
+     {
+      double required=0.0;
+      if(OrderCalcMargin(ORDER_TYPE_BUY,_Symbol,observation.referenceVolumeLots,
+                         quote.ask,required) &&
+         MathIsValidNumber(required) && required>=0.0)
+        {
+         observation.requiredMargin=required;
+         observation.marginCalculationVerified=true;
+        }
+     }
+
+   if(quoteOk)
+     {
+      observation.bid=quote.bid;
+      observation.ask=quote.ask;
+      observation.point=SymbolInfoDouble(_Symbol,SYMBOL_POINT);
+      observation.quoteTimeMsc=quote.time_msc;
+
+      bool fresh=((nowMsc>=(ulong)quote.time_msc) &&
+                  (nowMsc-(ulong)quote.time_msc)<=(ulong)InpGapQuoteFreshnessMs);
+      if(fresh)
+        {
+         bool reopening=false;
+         if(g_gapLastQuoteTimeMsc>0 &&
+            quote.time_msc>g_gapLastQuoteTimeMsc &&
+            (quote.time_msc-g_gapLastQuoteTimeMsc)>=(long)InpGapReopenStaleSeconds*1000)
+           {
+            reopening=true;
+            g_gapReopenUntil=serverNow+InpGapReopenObservationSeconds;
+           }
+         if(g_gapReopenUntil>serverNow) reopening=true;
+         observation.window=reopening
+            ? AX_GAP_WINDOW_MARKET_REOPEN : AX_GAP_WINDOW_REGULAR_SESSION;
+         observation.marketStatus=reopening
+            ? AX_GAP_MARKET_REOPENING : AX_GAP_MARKET_OPEN;
+         // This verifies the observed classification only. It does not certify
+         // that the broker advertises a special Gap Hour product or promotion.
+         observation.brokerWindowVerified=true;
+         g_gapLastQuoteTimeMsc=quote.time_msc;
+         g_gapObservationInitialized=true;
+        }
+     }
+
+   observation.executionCostAssessmentVerified=false;
+   observation.executionCostAcceptable=false;
+   if(quoteOk && observation.point>0.0 && g_regime.CurrentAtr()>0.0)
+     {
+      SAxSpreadCostAssessment assessment;
+      double atrPoints=g_regime.CurrentAtr()/observation.point;
+      bool costOk=g_spreadCost.Assess(quote.bid,quote.ask,observation.point,
+                                      atrPoints,InpEmergencySlPoints*InpDynamicTpRR,
+                                      observation.referenceVolumeLots,
+                                      SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE),
+                                      SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE),
+                                      InpCommissionPerLot,InpSlippageToleranceBufferPts,
+                                      assessment);
+      observation.executionCostAssessmentVerified=
+         (assessment.status==AX_SCI_READY || assessment.status==AX_SCI_COST_TOO_HIGH);
+      observation.executionCostAcceptable=costOk;
+      observation.observedRoundTripCost=assessment.estimatedRoundTripCost;
+      observation.expectedGrossProfit=assessment.expectedGrossProfit;
+     }
+
+   SAxGapSnapshot previous=g_gapSnapshot;
+   bool ready=g_gapIntelligence.Evaluate(observation,nowMsc,g_gapSnapshot);
+   if(InpVerboseLogging &&
+      (g_gapSnapshot.state!=previous.state ||
+       g_gapSnapshot.window!=previous.window ||
+       g_gapSnapshot.reason!=previous.reason))
+      PrintFormat("AUTOPSY X GAP HOUR: state=%d window=%d market=%d symbol=%s spread=%.5f leverage=1:%I64d margin=%.5f free=%.2f commission_verified=%s costs_verified=%s reason=%s",
+                  (int)g_gapSnapshot.state,(int)g_gapSnapshot.window,
+                  (int)g_gapSnapshot.marketStatus,_Symbol,
+                  g_gapSnapshot.spreadPoints,g_gapSnapshot.accountLeverage,
+                  g_gapSnapshot.requiredMargin,g_gapSnapshot.freeMargin,
+                  g_gapSnapshot.commissionVerified?"yes":"no",
+                  g_gapSnapshot.executionTelemetryVerified?"yes":"no",
+                  g_gapSnapshot.reason);
+   // 'ready' is intentionally observational. No entry, batch, or risk gate
+   // consumes it until a separately reviewed integration is approved.
+  }
+
+//====================================================================
 // LIFECYCLE
 //====================================================================
 int OnInit(void)
@@ -4526,6 +4684,7 @@ int OnInit(void)
      }
    g_spreadCost.Configure(InpSpreadCostMinSamples,InpSpreadCostMaxCostToGross,
                           InpSpreadCostMaxSpreadToAtr);
+   g_gapIntelligence.Configure(InpGapQuoteFreshnessMs);
    g_executionQualityJournalReady=g_executionQualityJournal.Init(_Symbol,InpMagicNumber);
    if(!g_executionQualityJournalReady)
       Print("FLIPDEMON EXECUTION JOURNAL WARNING: durable execution telemetry unavailable; trading decisions are unchanged.");
@@ -6488,6 +6647,7 @@ void OnTick(void)
 //====================================================================
 void OnTimer(void)
   {
+   AxObserveGapHour();
    // Flush bounded snapshot batches outside the tick handler to keep file I/O off the hot path.
    if(InpEnableMarketSnapshots) g_marketSnapshotRecorder.Flush(1024);
 
