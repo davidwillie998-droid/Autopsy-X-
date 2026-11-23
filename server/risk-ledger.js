@@ -157,7 +157,7 @@ export function openRiskLedger(path, {
       return {
         ok: true, accountKey: identity.accountKey, snapshotId: snapshot.snapshotId,
         equity: snapshot.equity, brokerRiskMoney: snapshot.brokerRiskMoney,
-        hardCapMoney: snapshot.hardCapMoney,
+        maxStopRiskPercent: snapshot.maxStopRiskPercent, hardCapMoney: snapshot.hardCapMoney,
         withinCap: snapshot.brokerRiskMoney <= snapshot.hardCapMoney + 0.01,
         duplicate: snapshot.duplicate,
       };
@@ -224,7 +224,8 @@ export function openRiskLedger(path, {
           instanceId, idempotencyKey, riskMoney, expiresAtMs, now, now);
       return { ok: true, duplicate: false, reservationId, expiresAtMs,
         reservedRiskMoney: riskMoney, totalReservedRiskMoney: pending + riskMoney,
-        brokerRiskMoney: snapshot.broker_risk_money, hardCapMoney: snapshot.hard_cap_money };
+        brokerRiskMoney: snapshot.broker_risk_money, maxStopRiskPercent: snapshot.max_stop_risk_percent,
+        hardCapMoney: snapshot.hard_cap_money };
     });
   }
 
@@ -273,7 +274,8 @@ export function openRiskLedger(path, {
       db.prepare(`UPDATE risk_reservations SET status='settled',updated_at_ms=?
         WHERE reservation_id=? AND status='active'`).run(now, reservationId);
       return { ok: true, settled: true, withinCap: snapshot.brokerRiskMoney <= snapshot.hardCapMoney + 0.01,
-        brokerRiskMoney: snapshot.brokerRiskMoney, hardCapMoney: snapshot.hardCapMoney,
+        brokerRiskMoney: snapshot.brokerRiskMoney, maxStopRiskPercent: snapshot.maxStopRiskPercent,
+        hardCapMoney: snapshot.hardCapMoney,
         remainingRiskMoney: Math.max(0, snapshot.hardCapMoney - snapshot.brokerRiskMoney) };
     });
   }
