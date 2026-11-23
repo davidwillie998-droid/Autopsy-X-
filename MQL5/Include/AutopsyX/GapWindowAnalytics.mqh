@@ -20,6 +20,8 @@ struct SAxGapBucketStats
    long unlimitedLeverageSamples;
    long bothConditionsSamples;
    long costEvidenceSamples;
+   long commissionSamples;
+   long latencySamples;
    long acceptableCostSamples;
    long readySamples;
    double spreadSum;
@@ -67,6 +69,8 @@ private:
                m_stats[w][d][b].unlimitedLeverageSamples=0;
                m_stats[w][d][b].bothConditionsSamples=0;
                m_stats[w][d][b].costEvidenceSamples=0;
+               m_stats[w][d][b].commissionSamples=0;
+               m_stats[w][d][b].latencySamples=0;
                m_stats[w][d][b].acceptableCostSamples=0;
                m_stats[w][d][b].readySamples=0;
                m_stats[w][d][b].spreadSum=0.0;
@@ -130,12 +134,12 @@ public:
       if(bucket<0 || bucket>=AX_GAP_ANALYTIC_BUCKETS)
          return(false);
 
-      SAxGapBucketStats &v=m_stats[w][dt.day_of_week][bucket];
+      SAxGapBucketStats v=m_stats[w][dt.day_of_week][bucket];
       v.samples++;
       if(s.quoteFresh) v.freshQuotes++;
-      if(s.zeroSpread) v.zeroSpreadSamples++;
+      if(s.quoteFresh && s.zeroSpread) v.zeroSpreadSamples++;
       if(s.unlimitedLeverage) v.unlimitedLeverageSamples++;
-      if(s.zeroSpread && s.unlimitedLeverage) v.bothConditionsSamples++;
+      if(s.quoteFresh && s.zeroSpread && s.unlimitedLeverage) v.bothConditionsSamples++;
       if(o.executionCostAssessmentVerified) v.costEvidenceSamples++;
       if(o.executionCostAcceptable) v.acceptableCostSamples++;
       if(s.gapConditionsVerified) v.readySamples++;
@@ -147,7 +151,10 @@ public:
          if(s.spreadPoints>v.spreadMax) v.spreadMax=s.spreadPoints;
         }
       if(o.commissionVerified && MathIsValidNumber(o.commissionPerLotRoundTrip))
+        {
          v.commissionSum+=o.commissionPerLotRoundTrip;
+         v.commissionSamples++;
+        }
       if(o.executionCostAssessmentVerified &&
          MathIsValidNumber(o.observedRoundTripCost) &&
          MathIsValidNumber(o.expectedGrossProfit) && o.expectedGrossProfit>0.0)
@@ -156,7 +163,11 @@ public:
          v.costToGrossRatioSum+=o.observedRoundTripCost/o.expectedGrossProfit;
         }
       if(o.executionTelemetryVerified)
+        {
          v.latencyP95SumUs+=(double)o.orderLatencyP95Us;
+         v.latencySamples++;
+        }
+      m_stats[w][dt.day_of_week][bucket]=v;
       return(true);
      }
 
@@ -200,13 +211,13 @@ public:
                string finish=StringFormat("%02d:%02d",endMinute/60,endMinute%60);
                double avgSpread=v.spreadSum/n;
                double minSpread=(v.spreadMin==DBL_MAX ? 0.0 : v.spreadMin);
-               double avgCommission=(v.commissionSum>0.0 ? v.commissionSum/n : 0.0);
+               double avgCommission=(v.commissionSamples>0 ? v.commissionSum/(double)v.commissionSamples : 0.0);
                double avgRoundTrip=(v.costEvidenceSamples>0
                                     ? v.roundTripCostSum/(double)v.costEvidenceSamples : 0.0);
                double avgCostRatio=(v.costEvidenceSamples>0
                                     ? v.costToGrossRatioSum/(double)v.costEvidenceSamples : 0.0);
-               double avgLatency=(v.freshQuotes>0
-                                  ? v.latencyP95SumUs/n : 0.0);
+               double avgLatency=(v.latencySamples>0
+                                  ? v.latencyP95SumUs/(double)v.latencySamples : 0.0);
                FileWrite(h,TimeToString(serverTime,TIME_DATE|TIME_SECONDS),
                          m_broker,m_server,m_accountType,m_symbol,
                          WindowName(w),d,start,finish,v.samples,
@@ -215,6 +226,7 @@ public:
                          DoubleToString((double)v.unlimitedLeverageSamples/n,5),
                          DoubleToString((double)v.bothConditionsSamples/n,5),
                          DoubleToString((double)v.costEvidenceSamples/n,5),
+                         DoubleToString((double)v.commissionSamples/n,5),
                          DoubleToString((double)v.acceptableCostSamples/n,5),
                          DoubleToString((double)v.readySamples/n,5),
                          DoubleToString(avgSpread,6),DoubleToString(minSpread,6),
