@@ -133,6 +133,15 @@ export function openRiskLedger(path, {
   function storeSnapshot(identity, input, now) {
     const fields = snapshotFields(input, now, maxSnapshotAgeMs);
     const previous = getSnapshot.get(identity.accountKey);
+    if (previous && fields.maxStopRiskPercent !== previous.max_stop_risk_percent) {
+      const activeReservations = db.prepare(
+        "SELECT COUNT(*) AS total FROM risk_reservations WHERE account_key=? AND status='active'"
+      ).get(identity.accountKey).total;
+      if (activeReservations > 0) {
+        fail(409, 'STOP_RISK_POLICY_CHANGE_WITH_ACTIVE_RESERVATIONS',
+          'The account stop-risk maximum cannot change while broker outcomes remain reserved.');
+      }
+    }
     if (previous && fields.snapshotAtMs <= previous.snapshot_at_ms) {
       if (fields.snapshotId === previous.snapshot_id &&
           fields.equity === previous.equity &&
