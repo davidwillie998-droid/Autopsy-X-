@@ -141,7 +141,7 @@ struct SAxGapSnapshot
    bool executionTelemetryVerified;
    bool orderLimitsVerified;
    bool executionCostAcceptable;
-   bool executionAllowed;
+   bool gapConditionsVerified;
    string reason;
   };
 
