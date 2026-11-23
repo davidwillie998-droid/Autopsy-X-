@@ -574,6 +574,20 @@ bool AxBrokerMarginPreflight(const double requiredMargin,
    projectedLevel=0.0;
    reason="";
    double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+   observation.grossNotional=0.0;
+   observation.effectiveLeverage=0.0;
+   observation.marginCalculationVerified=false;
+   string profitCurrency=SymbolInfoString(_Symbol,SYMBOL_CURRENCY_PROFIT);
+   double contractSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_CONTRACT_SIZE);
+   if(quoteOk && equity>0.0 && contractSize>0.0 &&
+      observation.referenceVolumeLots>0.0 &&
+      profitCurrency!="" && profitCurrency==observation.accountCurrency)
+     {
+      double midPrice=(quote.bid+quote.ask)*0.5;
+      observation.grossNotional=contractSize*observation.referenceVolumeLots*midPrice;
+      if(MathIsValidNumber(observation.grossNotional) && observation.grossNotional>0.0)
+         observation.effectiveLeverage=observation.grossNotional/equity;
+     }
    double usedMargin=AccountInfoDouble(ACCOUNT_MARGIN);
    double freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
    if(!MathIsValidNumber(requiredMargin) || requiredMargin<=0.0 ||
@@ -4467,6 +4481,12 @@ void AxObserveGapHour(void)
    observation.orderLatencyP50Us=g_executionLatency.OrderPercentile(0.50);
    observation.orderLatencyP95Us=g_executionLatency.OrderPercentile(0.95);
    observation.orderLatencyP99Us=g_executionLatency.OrderPercentile(0.99);
+   double entrySlipP95=0.0;
+   double exitSlipP95=0.0;
+   if(g_spreadCost.FillSlippagePercentile(0.95,entrySlipP95))
+      observation.entrySlippagePoints=entrySlipP95;
+   if(g_spreadCost.ExitSlippagePercentile(0.95,exitSlipP95))
+      observation.exitSlippagePoints=exitSlipP95;
    observation.brokerMaxOrderVolume=g_brokerSnapshot.volumeMaximum;
    observation.brokerMinOrderVolume=g_brokerSnapshot.volumeMinimum;
    observation.brokerVolumeStep=g_brokerSnapshot.volumeStep;
