@@ -200,7 +200,8 @@ public:
                 "verified_gap_hour_rate",
                 "average_spread_points","minimum_spread_points","maximum_spread_points",
                 "average_round_trip_commission","average_round_trip_cost",
-                "average_cost_to_gross_ratio","cost_value_sample_rate",\n                "latency_sample_rate","average_order_latency_p95_us");
+                "average_cost_to_gross_ratio","cost_value_sample_rate",
+                "latency_sample_rate","average_order_latency_p95_us");
 
       int rows=0;
       for(int w=0;w<AX_GAP_ANALYTIC_WINDOWS;w++)
