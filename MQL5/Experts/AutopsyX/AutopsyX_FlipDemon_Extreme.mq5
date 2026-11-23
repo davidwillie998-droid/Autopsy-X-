@@ -574,7 +574,7 @@ double AxRiskPercentForMode(void)
   }
 
 // Margin utilisation is selected independently from strategy aggression and stop-loss risk.
-double AxMarginUsageLimitForMode(void)
+double AxMarginUsageLimitForProfile(void)
   {
    if(InpMarginProfile==AX_MARGIN_LOW)      return(5.0);
    if(InpMarginProfile==AX_MARGIN_MEDIUM)   return(50.0);
@@ -591,7 +591,7 @@ bool AxAdditionalMarginBudgetMoney(double &budget,string &reason)
    double equity=AccountInfoDouble(ACCOUNT_EQUITY);
    double usedMargin=AccountInfoDouble(ACCOUNT_MARGIN);
    double freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
-   double limitPct=AxMarginUsageLimitForMode();
+   double limitPct=AxMarginUsageLimitForProfile();
    if(!MathIsValidNumber(equity) || equity<=0.0 ||
       !MathIsValidNumber(usedMargin) || usedMargin<0.0 ||
       !MathIsValidNumber(freeMargin) || freeMargin<0.0 ||
@@ -3414,12 +3414,12 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
                                            marginScaledLots,guardedRequiredMargin,
                                            marginGuardReason))
      {
-      PrintFormat("FLIPDEMON MARGIN GUARD BLOCK: requested=%.8f cap=%.2f%% reason=%s",
+      PrintFormat("FLIPDEMON MARGIN GUARD BLOCK: requested=%.8f additionalBudget=%.2f reason=%s",
                   lots,additionalMarginBudget,marginGuardReason);
       return(false);
      }
    if(marginScaledLots<lots-1e-8 && InpVerboseLogging)
-      PrintFormat("FLIPDEMON HMR SCALE: requested=%.8f approved=%.8f requiredMargin=%.2f freeMargin=%.2f cap=%.2f%% (%s)",
+      PrintFormat("FLIPDEMON HMR SCALE: requested=%.8f approved=%.8f requiredMargin=%.2f freeMargin=%.2f additionalBudget=%.2f (%s)",
                   lots,marginScaledLots,guardedRequiredMargin,
                   AccountInfoDouble(ACCOUNT_MARGIN_FREE),additionalMarginBudget,
                   marginGuardReason);
