@@ -14,7 +14,7 @@ Scale position size in response to account equity and verified continuation oppo
 - Existing `CRiskEngine::CalculateLotSize` already sizes from equity and a configured risk percentage, so ordinary percentage sizing compounds naturally.
 - The current defaults include `InpMaxOpenPositions=1` and `InpMaxPositionsPerSymbol=1`. There is no EA-imposed gross-lot or directional-lot ceiling. Each order is bounded by the broker's live `SYMBOL_VOLUME_MIN`, `SYMBOL_VOLUME_MAX`, `SYMBOL_VOLUME_STEP` and `SYMBOL_VOLUME_LIMIT`; account-wide stop-risk, campaign risk and margin checks remain authoritative.
 - `CMarketData::NormalizeVolume` rejects a raw size below broker minimum rather than rounding it up. Preserve this behavior.
-- The existing EA has a hard risk-engine ceiling of 2% per entry. Retain 2% as the absolute per-entry ceiling; configure a lower default for small-account deployment.
+- The former fixed configured maximum per-entry and account-wide ceilings are removed. `InpMaxAccountStopRiskPercent` is the operator-configurable maximum, independent of the 5%, 50% and 100% margin-utilisation profiles. The configured maximum is validated within 0.05%..100%.
 - MQL5 compilation, broker-specific contract validation, and Strategy Tester verification are outstanding. This document and the Python reference tests do not establish EA readiness.
 
 ## Sizing policy
@@ -22,11 +22,11 @@ Scale position size in response to account equity and verified continuation oppo
 ### Inputs (all validated at initialization)
 
 - `InpBaseRiskPercent`: default 0.50% of current equity per initial entry.
-- `InpMaxRiskPercentPerEntry`: hard-capped at 2.00%; no input may raise the ceiling.
-- `InpMaxCampaignRiskPercent`: default 2.00% of current equity for the sum of remaining stop-risk across all campaign entries, including the proposed addition.
-- `InpMaxAccountOpenRiskPercent`: hard-capped at 2.00% of current equity in aggregate across all EA-controlled open positions, pending orders and outstanding reservations. This is the same immutable account-wide ceiling enforced by `AccountRiskCalculator.mqh`, not an additional allowance on top of per-entry or campaign limits. Existing daily/weekly loss, margin and position-count limits remain independently active. No fixed EA gross-lot or directional-lot cap is applied.
+- `InpMaxAccountStopRiskPercent`: configurable maximum stop-risk percentage, default 10.00%, applied independently to per-entry and aggregate account stop-risk. It is not a margin-utilisation setting.
+- Campaign stop-risk must be bounded by the configured account maximum and recomputed across all campaign legs. A separate campaign percentage may be introduced only when explicitly configured.
+- The account-wide stop-risk budget is current equity multiplied by `InpMaxAccountStopRiskPercent`, across broker-visible open positions and pending orders. Execution reservations must reconcile against the same configured budget. Existing daily/weekly loss, margin and position-count limits remain independently active. No fixed EA gross-lot or directional-lot cap is applied.
 - `InpProgressiveSizingEnabled`: true for analysis calculations; this does not authorize orders while execution mode is ANALYSIS_ONLY.
-- `InpMaxProgressiveMultiplier`: 1.50 maximum risk multiplier from equity growth; this multiplier is still subject to the 2% per-entry cap and campaign/account risk caps.
+- `InpMaxProgressiveMultiplier`: 1.50 maximum risk multiplier from equity growth; this multiplier is still subject to the configured per-entry and account-wide stop-risk maximum.
 - `InpMinEquityForSizing`: configurable minimum equity. If equity is lower or unavailable, no trade.
 - Broker minimum lot, maximum lot, volume step, tick/contract metadata and margin calculation are read live from the symbol; never hard-code a universal minimum lot.
 
@@ -53,7 +53,7 @@ Use realized account-equity growth above a persisted starting-equity baseline fo
 
 The multiplier is configurable but bounded at 1.50. Apply drawdown and risk gates after this multiplier. Persist the baseline/high-water mark across restarts; fail closed if persisted state is malformed or inconsistent.
 
-Effective entry risk percent = min(base risk percent × growth multiplier × drawdown multiplier, configured per-entry risk cap, absolute 2.00% cap). The drawdown multiplier is 1.00 in NORMAL, 0.65 in CAUTION, 0.30 in DEFENSIVE, and 0.00 in LOCKED. Existing AFE gates may impose stricter limits and must never be bypassed.
+Effective entry risk percent = min(base risk percent × growth multiplier × drawdown multiplier, configured per-entry risk cap, configured maximum stop-risk percentage). The drawdown multiplier is 1.00 in NORMAL, 0.65 in CAUTION, 0.30 in DEFENSIVE, and 0.00 in LOCKED. Existing AFE gates may impose stricter limits and must never be bypassed.
 
 ### Step C — small-account / broker minimum handling
 
@@ -94,7 +94,7 @@ Effective entry risk percent = min(base risk percent × growth multiplier × dra
 - Invalid/non-positive equity, invalid stop, missing contract values or failed broker profit calculation -> zero lots.
 - Small-account raw size below broker minimum -> zero lots; never round up.
 - Valid raw size -> rounded down to broker volume step and never exceeds broker maximum.
-- Effective risk cannot exceed configured per-entry cap or absolute 2.00%.
+- Effective risk cannot exceed configured per-entry cap or absolute configured maximum.
 - Growth multiplier is 1.00 below 10% realized growth, then increases only at defined tiers and never exceeds 1.50.
 - Growth progression never applies after a loss or without a fresh continuation setup.
 - Drawdown multipliers reduce risk; LOCKED returns zero.
@@ -137,7 +137,7 @@ Do not treat a broker position as an independent campaign leg on a netting accou
 1. Validate equity, contract metadata, entry, stop, direction and current recovery state.
 2. Compute one-lot monetary loss to the proposed stop using broker-aware profit calculation; fail closed if unavailable.
 3. Derive the base equity risk budget; apply only the approved bounded growth tier when its realized-equity and fresh-signal conditions are met.
-4. Apply drawdown state and the existing AFE multiplier, then enforce the configured per-entry ceiling and absolute 2% hard cap.
+4. Apply drawdown state and the existing AFE multiplier, then enforce the configured per-entry ceiling and configured maximum stop-risk percentage.
 5. Normalize volume downward to the broker step; reject below-minimum volumes instead of rounding upward.
 6. Recompute actual risk at the normalized lot size and reject if it exceeds the risk budget.
 7. Calculate remaining risk for every existing campaign leg and account-wide EA position; include proposed risk. Reject if campaign/account cap, gross-lot, directional-lot, margin, loss-lockout or execution gate fails.
