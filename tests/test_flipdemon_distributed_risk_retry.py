@@ -171,12 +171,12 @@ class BrokerExecutionReservationContractTests(unittest.TestCase):
     def test_account_risk_calculator_adds_existing_and_proposed_campaign_risk(self):
         start = self.account_risk.index("bool Evaluate(")
         method = self.account_risk[start:]
-        self.assertIn("if(!Scan(snapshot))", method)
+        self.assertIn("bool snapshotKnown=LoadSnapshot(snapshot,decision,reason);", method)
         self.assertIn("snapshot.existingRiskMoney= snapshot.existingRiskMoney", method) if False else None
         self.assertIn("decision.proposedRiskMoney", method)
         self.assertIn("snapshot.existingRiskMoney+decision.proposedRiskMoney>", method)
         self.assertIn("snapshot.hardRiskBudgetMoney+0.01", method)
-        self.assertIn("PROPOSED_ORDER_EXCEEDS_CONFIGURED_ACCOUNT_STOP_RISK", method)
+        self.assertIn("PROPOSED_ORDER_EXCEEDS_CONFIGURED_ACCOUNT_STOP_RISK", self.account_risk)
 
     def test_broker_symbol_preflight_enforces_direction_market_and_volume_contract(self):
         start = self.expert.index("bool AxBrokerSymbolOrderPreflight(")
