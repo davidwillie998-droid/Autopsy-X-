@@ -181,8 +181,9 @@ public:
    bool WriteSummary(const datetime serverTime)
      {
       if(!m_initialized || serverTime<=0) return(false);
-      m_filename=StringFormat("AUTOPSYX_GapHour_Analytics_%s_%I64u_HISTORY.csv",
-                              SafePart(m_symbol),m_magic);
+      m_filename=StringFormat("AUTOPSYX_GapHour_Analytics_%s_%s_%s_%s_%I64u_HISTORY.csv",
+                              SafePart(m_broker),SafePart(m_server),
+                              SafePart(m_accountType),SafePart(m_symbol),m_magic);
       int h=FileOpen(m_filename,FILE_WRITE|FILE_CSV|FILE_ANSI|
                      FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_COMMON,',');
       if(h==INVALID_HANDLE)
@@ -366,8 +367,9 @@ public:
 
    int LoadHistoricalSummary(void)
      {
-      string filename=StringFormat("AUTOPSYX_GapHour_Analytics_%s_%I64u_HISTORY.csv",
-                                    SafePart(m_symbol),m_magic);
+      string filename=StringFormat("AUTOPSYX_GapHour_Analytics_%s_%s_%s_%s_%I64u_HISTORY.csv",
+                                    SafePart(m_broker),SafePart(m_server),
+                                    SafePart(m_accountType),SafePart(m_symbol),m_magic);
       if(!FileIsExist(filename,FILE_COMMON)) return(0);
       bool loaded=LoadSummaryFile(filename);
       if(loaded) m_filename=filename;
