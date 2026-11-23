@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from math import isfinite
 import unittest
 
-HARD_CAP_PCT = 2.0
+DEFAULT_MAX_STOP_RISK_PCT = 10.0
 
 
 @dataclass(frozen=True)
@@ -105,30 +105,35 @@ def proposed_entry_risk(side: str, volume: float, quote_entry: float, stop: floa
 
 def scan(positions: list[Exposure], pending: list[Exposure], equity: float,
          rates: dict[str, float], hedging: bool = False,
-         conversions: dict[str, float] | None = None) -> tuple[float, float]:
+         conversions: dict[str, float] | None = None,
+         max_stop_risk_pct: float = DEFAULT_MAX_STOP_RISK_PCT) -> tuple[float, float]:
     if not isfinite(equity) or equity <= 0:
         raise ValueError("INVALID_EQUITY")
+    if not isfinite(max_stop_risk_pct) or not 0.05 <= max_stop_risk_pct <= 100.0:
+        raise ValueError("INVALID_CONFIGURED_STOP_RISK_MAXIMUM")
     if not hedging:
         symbols = [p.symbol for p in positions]
         if len(symbols) != len(set(symbols)):
             raise ValueError("AMBIGUOUS_NETTING_DUPLICATE_SYMBOL")
     total = sum(exposure_risk(p, rates, conversions) for p in positions + pending)
-    return total, max(0.0, equity * HARD_CAP_PCT / 100.0 - total)
+    return total, max(0.0, equity * max_stop_risk_pct / 100.0 - total)
 
 
 def approve(equity: float, existing: float, proposed: float,
-            per_entry_pct: float = 1.0) -> bool:
-    if not all(isfinite(x) for x in (equity, existing, proposed, per_entry_pct)):
+            per_entry_pct: float = 1.0,
+            max_stop_risk_pct: float = DEFAULT_MAX_STOP_RISK_PCT) -> bool:
+    if not all(isfinite(x) for x in (equity, existing, proposed, per_entry_pct, max_stop_risk_pct)):
         return False
-    if equity <= 0 or existing < 0 or proposed < 0 or per_entry_pct <= 0:
+    if equity <= 0 or existing < 0 or proposed < 0 or per_entry_pct <= 0 or not 0.05 <= max_stop_risk_pct <= 100.0:
         return False
-    return (existing <= equity * HARD_CAP_PCT / 100.0 + 0.01
+    return (per_entry_pct <= max_stop_risk_pct
+            and existing <= equity * max_stop_risk_pct / 100.0 + 0.01
             and proposed <= equity * per_entry_pct / 100.0 + 0.01
-            and existing + proposed <= equity * HARD_CAP_PCT / 100.0 + 0.01)
+            and existing + proposed <= equity * max_stop_risk_pct / 100.0 + 0.01)
 
 
 def post_fill_within_cap(equity: float, broker_confirmed_risk: float,
-                         snapshot_known: bool, hard_cap_pct: float = HARD_CAP_PCT) -> bool:
+                         snapshot_known: bool, hard_cap_pct: float = DEFAULT_MAX_STOP_RISK_PCT) -> bool:
     """Only retain a new fill when broker-confirmed aggregate stop risk is known and capped."""
     if not snapshot_known or not all(isfinite(x) for x in (equity, broker_confirmed_risk, hard_cap_pct)):
         return False
@@ -157,19 +162,19 @@ class AccountRiskCalculatorTests(unittest.TestCase):
         p = Exposure("EURUSD", "BUY", 0.1, 1.10, 1.099)
         risk, remaining = scan([p], [], 10000, self.rates)
         self.assertAlmostEqual(risk, 10.0)
-        self.assertAlmostEqual(remaining, 190.0)
+        self.assertAlmostEqual(remaining, 990.0)
 
-    def test_multiple_symbols_aggregate_above_two_percent(self):
+    def test_multiple_symbols_aggregate_under_configured_maximum(self):
         positions = [
             Exposure("EURUSD", "BUY", 1.0, 1.10, 1.09),
             Exposure("XAUUSD", "SELL", 1.0, 2000, 2002),
         ]
         risk, _ = scan(positions, [], 10000, self.rates)
         self.assertGreater(risk, 200.0)
-        self.assertFalse(approve(10000, risk, 1.0))
+        self.assertTrue(approve(10000, risk, 1.0, max_stop_risk_pct=10.0))
 
     def test_proposed_entry_exceeding_remaining_budget_is_rejected(self):
-        self.assertFalse(approve(10000, 190, 20, per_entry_pct=1.0))
+        self.assertFalse(approve(10000, 990, 20, per_entry_pct=1.0, max_stop_risk_pct=10.0))
 
     def test_missing_stop_is_unknown_not_zero(self):
         with self.assertRaisesRegex(ValueError, "UNKNOWN_STOP"):
@@ -292,10 +297,10 @@ class AccountRiskCalculatorTests(unittest.TestCase):
             proposed_entry_risk("BUY", 1.0, 1.1, 1.099, 100000.0, 1, 0.0)
 
     def test_post_fill_actual_exposure_inside_cap_is_retained(self):
-        self.assertTrue(post_fill_within_cap(10000, 199.99, True))
+        self.assertTrue(post_fill_within_cap(10000, 999.99, True))
 
     def test_post_fill_slippage_breach_triggers_defensive_close(self):
-        self.assertFalse(post_fill_within_cap(10000, 205.0, True))
+        self.assertFalse(post_fill_within_cap(10000, 1005.0, True))
 
     def test_post_fill_unknown_broker_snapshot_triggers_defensive_close(self):
         self.assertFalse(post_fill_within_cap(10000, 50.0, False))
@@ -336,13 +341,22 @@ class AccountRiskCalculatorTests(unittest.TestCase):
         # Separate MT5 terminals have separate terminal-global-variable stores.
         self.assertTrue(terminal_b.acquire("chart-B"))
 
-    def test_existing_exposure_already_over_cap_rejects_any_new_order(self):
-        self.assertFalse(approve(10000, 201, 0.01))
+    def test_existing_exposure_above_configured_maximum_rejects_any_new_order(self):
+        self.assertFalse(approve(10000, 1001, 0.01, max_stop_risk_pct=10.0))
 
     def test_zero_or_invalid_equity_fails_closed(self):
         for equity in (0, -1, float("nan")):
             with self.assertRaisesRegex(ValueError, "INVALID_EQUITY"):
                 scan([], [], equity, self.rates)
+
+    def test_configured_stop_risk_maximum_is_independent_and_variable(self):
+        self.assertTrue(approve(10000, 400, 50, per_entry_pct=5.0, max_stop_risk_pct=10.0))
+        self.assertFalse(approve(10000, 400, 50, per_entry_pct=5.0, max_stop_risk_pct=4.0))
+
+    def test_invalid_configured_stop_risk_maximum_fails_closed(self):
+        for value in (0.0, -1.0, 100.1, float("nan")):
+            with self.assertRaisesRegex(ValueError, "INVALID_CONFIGURED_STOP_RISK_MAXIMUM"):
+                scan([], [], 10000, self.rates, max_stop_risk_pct=value)
 
 
 if __name__ == "__main__":
