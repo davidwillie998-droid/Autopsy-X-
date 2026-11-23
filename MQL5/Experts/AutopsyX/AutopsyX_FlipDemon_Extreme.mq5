@@ -4427,7 +4427,7 @@ void AxObserveGapHour(void)
    if(serverNow<=0) serverNow=TimeCurrent();
    // quote.time_msc is server-epoch milliseconds, not terminal uptime.
    // Use the same time domain for quote-age validation.
-   ulong nowMsc=(ulong)serverNow*1000;
+   ulong nowMsc=(ulong)serverNow*1000+999;
 
    observation.brokerCompany=g_brokerSnapshot.brokerCompany;
    observation.tradeServer=g_brokerSnapshot.tradeServer;
@@ -4547,7 +4547,7 @@ void AxObserveGapHour(void)
                   g_gapSnapshot.spreadPoints,g_gapSnapshot.accountLeverage,
                   g_gapSnapshot.requiredMargin,g_gapSnapshot.freeMargin,
                   g_gapSnapshot.commissionVerified?"yes":"no",
-                  g_gapSnapshot.executionTelemetryVerified?"yes":"no",
+                  g_gapSnapshot.executionCostAssessmentVerified?"yes":"no",
                   g_gapSnapshot.reason);
    // 'ready' is intentionally observational. No entry, batch, or risk gate
    // consumes it until a separately reviewed integration is approved.
