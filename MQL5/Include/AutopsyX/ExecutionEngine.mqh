@@ -28,6 +28,7 @@ private:
       return(code==TRADE_RETCODE_REQUOTE ||
              code==TRADE_RETCODE_PRICE_CHANGED ||
              code==TRADE_RETCODE_PRICE_OFF ||
+             code==TRADE_RETCODE_MARKET_CLOSED ||
              code==TRADE_RETCODE_REJECT);
      }
 
@@ -63,7 +64,11 @@ private:
       if(tp>0.0)
          tp=NormalizeDouble((roundUp ? MathCeil(tp/tickSize-1e-10) : MathFloor(tp/tickSize+1e-10))*tickSize,(int)digits);
       double reference=(dir==AX_DIR_BUY)?quote.bid:quote.ask;
-      double stopDistance=(double)stopsLevel*point;
+      // Conservative initial protection distance includes both broker limits
+      // and the live spread. Freeze checks for modifications remain ticket/price
+      // specific below, rather than disabling every modification when freeze>0.
+      double liveSpread=MathMax(0.0,quote.ask-quote.bid);
+      double stopDistance=(double)MathMax(stopsLevel,freezeLevel)*point+liveSpread;
       double freezeDistance=(double)freezeLevel*point;
       if(dir==AX_DIR_BUY)
         {
