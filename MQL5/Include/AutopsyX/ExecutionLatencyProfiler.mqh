@@ -78,6 +78,14 @@ public:
       m_orderTotal++;
      }
 
+   int OrderSampleCount(void) const { return(m_orderCount); }
+
+   ulong OrderPercentile(const double percentile) const
+     {
+      return(Percentile(m_orderSamples,m_orderCount,
+                        MathMax(0.0,MathMin(1.0,percentile))));
+     }
+
    // Reporting is intentionally outside OnTick and OnTradeTransaction.
    void Report(void) const
      {
