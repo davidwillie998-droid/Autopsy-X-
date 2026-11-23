@@ -43,9 +43,9 @@ public:
                      CMarginGuard(void) {}
 
    // The strategy/risk engine supplies requestedLots. This method only scales
-   // that approved risk-sized volume down to fit a percentage of current free
-   // margin. Every candidate is re-priced through OrderCalcMargin, so symbol
-   // HMR and broker-specific margin tiers are respected without reading leverage.
+   // that approved risk-sized volume down to fit the remaining account margin
+   // budget supplied by the single profile policy. Every candidate is re-priced
+   // through OrderCalcMargin, preserving broker-specific HMR and margin tiers.
    bool              FitVolumeToFreeMargin(const string symbol,
                                            const ENUM_ORDER_TYPE orderType,
                                            const double executablePrice,
