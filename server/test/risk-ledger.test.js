@@ -36,7 +36,7 @@ test('requires a fresh broker snapshot before any reservation', () => {
   } finally { f.close(); }
 });
 
-test('reconciles broker risk and derives the immutable 2% equity cap server-side', () => {
+test('reconciles broker risk and derives the selected stop-risk budget from equity server-side', () => {
   const f = fixture();
   try {
     const result = f.ledger.reconcile({ ...f.base, existingRiskMoney: 30 });
@@ -70,7 +70,7 @@ test('rejects stale and out-of-order broker snapshots', () => {
   } finally { f.close(); }
 });
 
-test('atomically counts broker exposure and every active reservation against 2%', () => {
+test('atomically counts broker exposure and every active reservation against the configured account stop-risk maximum', () => {
   const f = fixture();
   try {
     f.ledger.reconcile({ ...f.base, existingRiskMoney: 50 });
@@ -283,7 +283,7 @@ test('a client cannot raise the server-calculated cap by supplying extra fields'
   } finally { f.close(); }
 });
 
-test('simultaneous reservations from separate Node processes cannot oversubscribe the 2% account cap', async () => {
+test('simultaneous reservations from separate Node processes cannot oversubscribe the configured account stop-risk budget', async () => {
   const f = fixture();
   try {
     f.ledger.reconcile(f.base);
