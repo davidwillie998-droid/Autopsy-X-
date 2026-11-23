@@ -258,6 +258,9 @@ input int    InpGapPostGapWaitSeconds = 90; // Monotonic wait after the M1 gap i
 input int    InpGapPostGapMaxAgeSeconds = 300; // Expire stale post-gap candidates
 input double InpGapPostGapMaxSpreadPoints = 15.0; // Absolute spread ceiling after the wait
 input double InpGapSpreadNormalizationMultiple = 1.5; // Current spread must also normalize to rolling 100-tick baseline
+input double InpGapPostGapMinFollowThroughPoints = 5.0; // Minimum price displacement beyond prior close in gap direction
+input double InpGapPostGapMinSweepPenetrationPoints = 5.0; // Minimum penetration beyond prior close to classify a failed gap
+input bool   InpGapPostGapAllowSweepReversal = true; // Expose a separately labelled sweep-reversal candidate
 input bool   InpGapRolloverSignalEnabled = false; // Observe rollover spread spikes; direction is not inferred from spread
 input int    InpGapRolloverStartMinute = 0; // Broker-server minute of day, 0-1439; equal start/end disables window
 input int    InpGapRolloverEndMinute = 0; // Broker-server minute of day, 0-1439
@@ -6169,7 +6172,8 @@ void AxProcessTick(void)
                          InpGapPostGapSignalEnabled,InpGapPostGapMinPoints,
                          InpGapPostGapWaitSeconds,InpGapPostGapMaxAgeSeconds,
                          InpGapPostGapMaxSpreadPoints,InpGapSpreadNormalizationMultiple,
-                         InpGapRolloverSignalEnabled,InpGapRolloverStartMinute,
+                         InpGapPostGapMinFollowThroughPoints,InpGapPostGapMinSweepPenetrationPoints,
+                         InpGapPostGapAllowSweepReversal,InpGapRolloverSignalEnabled,InpGapRolloverStartMinute,
                          InpGapRolloverEndMinute,InpGapRolloverSpikeMultiple,
                          g_micro.Rolling100SpreadAvgPts(),g_micro.RollingSpreadSampleCount(),
                          gapSignal);
@@ -6177,10 +6181,11 @@ void AxProcessTick(void)
      {
       if(InpVerboseLogging && (gapSignal.postGapReady || gapSignal.rolloverSpikeObserved ||
                                gapSignal.state==AX_GAP_EXEC_POST_GAP_EXPIRED))
-         PrintFormat("AUTOPSY X GAP EXECUTION QUALIFIER: state=%d dir=%s gap=%.2f pts spread=%.2f baseline=%.2f elapsed=%I64u ms rollover_spike=%s reason=%s. Signal-only; no order submitted.",
-                     (int)gapSignal.state,AxDirToString(gapSignal.direction),gapSignal.gapPoints,
+         PrintFormat("AUTOPSY X GAP EXECUTION QUALIFIER: state=%d setup=%d dir=%s gap=%.2f pts spread=%.2f baseline=%.2f elapsed=%I64u ms confirm=%.2f pts rollover_spike=%s reason=%s. Signal-only; no order submitted.",
+                     (int)gapSignal.state,(int)gapSignal.setupType,AxDirToString(gapSignal.direction),gapSignal.gapPoints,
                      gapSignal.currentSpreadPoints,gapSignal.baselineSpreadPoints,
-                     gapSignal.waitElapsedMs,gapSignal.rolloverSpikeObserved?"yes":"no",gapSignal.reason);
+                     gapSignal.waitElapsedMs,gapSignal.confirmationDistancePoints,
+                     gapSignal.rolloverSpikeObserved?"yes":"no",gapSignal.reason);
       g_gapExecutionLastState=gapSignal.state;
      }
    g_gapExecutionSignal=gapSignal;
