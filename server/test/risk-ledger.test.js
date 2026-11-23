@@ -45,6 +45,20 @@ test('reconciles broker risk and derives the immutable 2% equity cap server-side
   } finally { f.close(); }
 });
 
+test('uses the configured stop-risk percentage instead of a fixed two-percent ceiling', () => {
+  const f = fixture();
+  try {
+    const configured = { ...f.base, maxStopRiskPercent: 10.0 };
+    const result = f.ledger.reconcile(configured);
+    assert.equal(result.hardCapMoney, 1000);
+    const first = f.ledger.reserve({ ...configured, instanceId: 'terminal-a',
+      idempotencyKey: 'config-entry-0001', riskMoney: 800 });
+    assert.equal(first.ok, true);
+    expectCode(() => f.ledger.reserve({ ...configured, instanceId: 'terminal-b',
+      idempotencyKey: 'config-entry-0002', riskMoney: 201 }), 'ACCOUNT_RISK_BUDGET_EXCEEDED');
+  } finally { f.close(); }
+});
+
 test('rejects stale and out-of-order broker snapshots', () => {
   const f = fixture();
   try {
