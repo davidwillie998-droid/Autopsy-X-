@@ -49,13 +49,15 @@ public:
       m_currentSpreadPts=md.CurrentSpreadPts();
       if(MathIsValidNumber(m_currentSpreadPts) && m_currentSpreadPts>=0.0)
         {
-         m_spreadHistory[m_spreadHistoryNext]=m_currentSpreadPts;
-         m_spreadHistoryNext=(m_spreadHistoryNext+1)%100;
-         if(m_spreadHistoryCount<100) m_spreadHistoryCount++;
+         // Compute the baseline from prior ticks before inserting this tick. A
+         // spread spike must not inflate its own denominator and hide a 3x event.
          double sum=0.0;
          for(int spreadIndex=0;spreadIndex<m_spreadHistoryCount;spreadIndex++)
             sum+=m_spreadHistory[spreadIndex];
          m_spreadHistoryAverage=(m_spreadHistoryCount>0)?sum/(double)m_spreadHistoryCount:0.0;
+         m_spreadHistory[m_spreadHistoryNext]=m_currentSpreadPts;
+         m_spreadHistoryNext=(m_spreadHistoryNext+1)%100;
+         if(m_spreadHistoryCount<100) m_spreadHistoryCount++;
         }
       m_stopsLevelPoints=SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL);
       m_freezeLevelPoints=SymbolInfoInteger(symbol,SYMBOL_TRADE_FREEZE_LEVEL);
