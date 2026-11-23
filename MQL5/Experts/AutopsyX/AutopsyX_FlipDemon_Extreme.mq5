@@ -96,10 +96,11 @@ input group "=== MODE ===";
 input bool          InpEnableMarketSnapshots = true; // Export timestamped market/decision rows for deterministic replay; observational only
 input ENUM_AX_MODE   InpMode                    = AX_MODE_AGGRESSIVE; // Strategy aggression and stop-risk sizing mode
 input ENUM_AX_MARGIN_PROFILE InpMarginProfile = AX_MARGIN_MEDIUM; // Independent account margin utilisation profile
-input double         InpExtremeRiskPercent      = 2.0;                // EXTREME mode risk % per trade (hard-capped at 2.0)
+input double         InpExtremeRiskPercent      = 5.0;                // EXTREME mode stop-risk % per trade
+input double         InpMaxAccountStopRiskPercent = 10.0;              // Configurable per-entry and aggregate stop-risk ceiling, independent of margin profile (0.05..100%)
 
 input group "=== ACCOUNT FLIP GROWTH ===";
-input bool            InpEnableAccountFlipEngine = true;   // Milestone sizing only scales risk down; never overrides the 2% aggregate ceiling
+input bool            InpEnableAccountFlipEngine = true;   // Equity milestones adapt sizing within configured stop-risk and broker limits
 input double          InpAccountFlipStartingEquity = 100.0; // Starting account equity, in deposit currency
 input double          InpAccountFlipTargetEquity = 10000.0; // Initial target; compounding may continue beyond this level
 
@@ -568,9 +569,10 @@ datetime              g_lastAccSignalTime = 0;
 //====================================================================
 double AxRiskPercentForMode(void)
   {
-   if(InpMode==AX_MODE_NORMAL)      return(0.5);
-   if(InpMode==AX_MODE_AGGRESSIVE)  return(1.0);
-   return(AxClampD(InpExtremeRiskPercent,0.05,2.0));
+   double maximumRisk=AxClampD(InpMaxAccountStopRiskPercent,0.05,100.0);
+   if(InpMode==AX_MODE_NORMAL)      return(MathMin(0.5,maximumRisk));
+   if(InpMode==AX_MODE_AGGRESSIVE)  return(MathMin(1.0,maximumRisk));
+   return(AxClampD(InpExtremeRiskPercent,0.05,maximumRisk));
   }
 
 // Margin utilisation is selected independently from strategy aggression and stop-loss risk.
@@ -3150,7 +3152,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       if(!g_accountRisk.Scan(unlockSnapshot) || !unlockSnapshot.exposureKnown ||
          unlockSnapshot.existingRiskMoney>unlockSnapshot.hardRiskBudgetMoney+0.01)
         {
-         if(InpVerboseLogging) PrintFormat("FLIPDEMON ACCOUNT RISK LOCK: entries remain blocked; broker exposure is unknown or above cap (%s).",unlockSnapshot.failureReason);
+         if(InpVerboseLogging) PrintFormat("FLIPDEMON ACCOUNT RISK LOCK: entries remain blocked; broker exposure is unknown or above configured maximum (%s).",unlockSnapshot.failureReason);
          return(false);
         }
       g_accountRiskIntegrityLock=false;
@@ -3348,9 +3350,8 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
         }
      }
 
-   // AFE only ever SCALES DOWN from RiskEngine's already-configured, already-capped risk percent -
-   // afeRiskMultiplier is clamped to [0,1] inside CAdaptiveFlipEngine, so this can never push size
-   // past what RiskEngine itself already decided was the maximum acceptable for this stop distance.
+   // AFE only ever SCALES DOWN from RiskEngine's configured stop-risk allocation.
+   // Its multiplier remains clamped to [0,1], so it cannot exceed the configured maximum.
    // NormalizeVolume() clamps UP to the broker's minimum rather than down to zero, so a scaled size
    // that falls below half a volume step must be treated as "AFE wants this skipped", not silently
    // promoted back up to the broker minimum - that would defeat DEFENSIVE/CAUTION sizing outright
@@ -3811,7 +3812,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       g_accountRiskIntegrityLock=true;
       string postFillReason=postFillRisk.failureReason;
       if(postFillRisk.exposureKnown)
-         postFillReason=StringFormat("POST_FILL_ACCOUNT_RISK_OVER_CAP risk=%.2f budget=%.2f",
+         postFillReason=StringFormat("POST_FILL_ACCOUNT_RISK_OVER_CONFIGURED_MAXIMUM risk=%.2f budget=%.2f",
                                      postFillRisk.existingRiskMoney,postFillRisk.hardRiskBudgetMoney);
       PrintFormat("FLIPDEMON POST-FILL RISK BREACH: ticket=%I64u actualLots=%.8f fill=%.8f; %s. New entries locked; attempting defensive close.",
                   newTicket,actualLots,fillPrice,postFillReason);
@@ -4983,7 +4984,14 @@ int OnInit(void)
                      InpMaxTradesPerRollingPeriod,InpRollingPeriodSeconds,
                      InpMaxSpreadPoints,InpMaxSlippagePoints,InpMinFreeMarginPercent,
                      InpWeeklyLossLimitPercent,InpMaxPositionsPerSymbol,
-                     InpMaxExecutionFailures);
+                     InpMaxExecutionFailures,InpMaxAccountStopRiskPercent);
+   if(!MathIsValidNumber(InpMaxAccountStopRiskPercent) || InpMaxAccountStopRiskPercent<0.05 || InpMaxAccountStopRiskPercent>100.0 ||
+      !MathIsValidNumber(InpExtremeRiskPercent) || InpExtremeRiskPercent<0.05)
+     {
+      Print("FLIPDEMON INIT FAILED: stop-risk maximum must be 0.05..100%, and Extreme risk must be finite and >=0.05%.");
+      return(INIT_PARAMETERS_INCORRECT);
+     }
+   g_accountRisk.ConfigureMaxRiskPercent(InpMaxAccountStopRiskPercent);
    g_emergency.Configure(InpExecutionMode,InpEnableTrading,InpEnableLong,InpEnableShort);
 
    //--- IMMEDIATE and CONFIRMED_CROSS_PLUS_STRUCTURE VWAP exit modes need live-price and structure-
@@ -6103,7 +6111,7 @@ void AxProcessTick(void)
                !distributedWithinCap)
               {
                g_accountRiskIntegrityLock=true;
-               PrintFormat("FLIPDEMON TRANSACTION RECONCILIATION: local/central account risk breach; local=%.2f budget=%.2f centralWithinCap=%s; new entries locked.",
+               PrintFormat("FLIPDEMON TRANSACTION RECONCILIATION: local/central configured account stop-risk breach; local=%.2f budget=%.2f centralWithinCap=%s; new entries locked.",
                            transactionRisk.existingRiskMoney,transactionRisk.hardRiskBudgetMoney,
                            distributedWithinCap?"true":"false");
               }
@@ -6507,7 +6515,7 @@ void AxProcessTick(void)
        // candidate; broker submission is separately opt-in and guarded by AX_EXEC_LIVE.
        // A candidate must be profitable, directionally valid on completed H1 bars,
        // beyond the last broker-confirmed tier by an ATR gap, and inside the fresh
-       // account-wide 2% stop-risk budget.
+       // configured account-wide stop-risk budget.
        datetime pyramidClosedBar=iTime(_Symbol,PERIOD_H1,1);
       if(InpEnablePyramidDecision && g_pyramidReady && !g_pyramidReconcilePending &&
          !g_accountRiskIntegrityLock && !g_nettingReversalQuarantined &&
