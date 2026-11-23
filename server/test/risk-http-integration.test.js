@@ -129,6 +129,7 @@ test('HTTP lost response after committed reservation returns the same reservatio
     server: 'Integration-Test-Broker',
     equity: 10000,
     existingRiskMoney: 0,
+    maxStopRiskPercent: 2.0,
     snapshotAtMs: Date.now(),
     snapshotId: 'http-snapshot-0001',
   };
