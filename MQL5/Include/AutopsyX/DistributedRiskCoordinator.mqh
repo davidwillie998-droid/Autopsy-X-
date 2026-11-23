@@ -219,7 +219,9 @@ private:
       if(!snapshot.exposureKnown || snapshot.equity<=0.0 ||
          !MathIsValidNumber(snapshot.equity) ||
          snapshot.existingRiskMoney<0.0 ||
-         !MathIsValidNumber(snapshot.existingRiskMoney))
+         !MathIsValidNumber(snapshot.existingRiskMoney) ||
+         snapshot.maxRiskPercent<0.05 || snapshot.maxRiskPercent>100.0 ||
+         !MathIsValidNumber(snapshot.maxRiskPercent))
         {
          error="DISTRIBUTED_RISK_SNAPSHOT_UNKNOWN_OR_INVALID";
          return(false);
@@ -229,6 +231,7 @@ private:
       body="{"+AccountFields()+","+
            "\"equity\":"+DoubleToString(snapshot.equity,8)+","+
            "\"existingRiskMoney\":"+DoubleToString(snapshot.existingRiskMoney,8)+","+
+           "\"maxStopRiskPercent\":"+DoubleToString(snapshot.maxRiskPercent,4)+","+
            "\"snapshotAtMs\":"+(string)snapshotAtMs+","+
            "\"snapshotId\":\""+snapshotId+"\"}";
       return(true);
