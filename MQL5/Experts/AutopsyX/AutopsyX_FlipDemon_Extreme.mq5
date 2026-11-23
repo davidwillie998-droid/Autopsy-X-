@@ -94,7 +94,8 @@
 //====================================================================
 input group "=== MODE ===";
 input bool          InpEnableMarketSnapshots = true; // Export timestamped market/decision rows for deterministic replay; observational only
-input ENUM_AX_MODE   InpMode                    = AX_MODE_AGGRESSIVE; // Aggression mode
+input ENUM_AX_MODE   InpMode                    = AX_MODE_AGGRESSIVE; // Strategy aggression and stop-risk sizing mode
+input ENUM_AX_MARGIN_PROFILE InpMarginProfile = AX_MARGIN_MEDIUM; // Independent account margin utilisation profile
 input double         InpExtremeRiskPercent      = 2.0;                // EXTREME mode risk % per trade (hard-capped at 2.0)
 
 input group "=== ACCOUNT FLIP GROWTH ===";
@@ -276,11 +277,9 @@ input int            InpRollingPeriodSeconds    = 300;     // Rolling window len
 input double         InpMaxSpreadPoints         = 250;     // Max acceptable spread, points
 input double         InpMaxSlippagePoints       = 30;      // Max acceptable slippage, points
 input double         InpMinFreeMarginPercent    = 150.0;   // Existing minimum margin-level gate
-input double         InpMaxMarginUsagePct        = 40.0;    // Maximum of current free margin consumed by one new order
 input double         InpEmergencyMarginLevel     = 150.0;   // Close this EA's managed position below this broker margin level
 input double         InpWeeklyLossLimitPercent  = 15.0;    // Weekly loss limit (%), Monday-anchored - stops the week when hit
 input int            InpMaxPositionsPerSymbol   = 1;       // Max simultaneously open positions on this symbol specifically
-input double         InpExtremeMaxMarginUsagePercent = 100.0; // EXTREME ceiling for ACCOUNT_MARGIN / ACCOUNT_EQUITY; Normal=5%, Aggressive=20%
 input double         InpBrokerStopOutBufferPercent = 100.0; // Keep projected margin level this many percentage points above broker call/stop-out thresholds
 input int            InpMaxExecutionFailures    = 5;        // Max consecutive order-send failures before blocking new entries
 
@@ -574,14 +573,42 @@ double AxRiskPercentForMode(void)
    return(AxClampD(InpExtremeRiskPercent,0.05,2.0));
   }
 
- // Margin utilisation is a separate exposure constraint, never a stop-loss risk
- // percentage. The 100% Extreme value is only a ceiling; broker margin-level and
- // free-margin protections remain active and can reject an order much earlier.
+// Margin utilisation is selected independently from strategy aggression and stop-loss risk.
 double AxMarginUsageLimitForMode(void)
   {
-   if(InpMode==AX_MODE_NORMAL)      return(5.0);
-   if(InpMode==AX_MODE_AGGRESSIVE)  return(20.0);
-   return(AxClampD(InpExtremeMaxMarginUsagePercent,1.0,100.0));
+   if(InpMarginProfile==AX_MARGIN_LOW)      return(5.0);
+   if(InpMarginProfile==AX_MARGIN_MEDIUM)   return(50.0);
+   if(InpMarginProfile==AX_MARGIN_MAXIMUM)  return(100.0);
+   return(0.0); // invalid profile fails closed
+  }
+
+// Maximum additional margin permitted by the selected account utilisation profile.
+// The budget is capped by actual free margin and never assumes leverage.
+bool AxAdditionalMarginBudgetMoney(double &budget,string &reason)
+  {
+   budget=0.0;
+   reason="";
+   double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+   double usedMargin=AccountInfoDouble(ACCOUNT_MARGIN);
+   double freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   double limitPct=AxMarginUsageLimitForMode();
+   if(!MathIsValidNumber(equity) || equity<=0.0 ||
+      !MathIsValidNumber(usedMargin) || usedMargin<0.0 ||
+      !MathIsValidNumber(freeMargin) || freeMargin<0.0 ||
+      !MathIsValidNumber(limitPct) || limitPct<=0.0 || limitPct>100.0)
+     {
+      reason="MARGIN_PROFILE_OR_ACCOUNT_SNAPSHOT_INVALID";
+      return(false);
+     }
+   double profileBudget=equity*limitPct/100.0-usedMargin;
+   budget=MathMin(freeMargin,profileBudget);
+   if(!MathIsValidNumber(budget) || budget<=0.0)
+     {
+      budget=0.0;
+      reason="MARGIN_PROFILE_BUDGET_EXHAUSTED";
+      return(false);
+     }
+   return(true);
   }
 
  // Uses broker-reported stop-out settings, not a guessed universal threshold.
@@ -606,9 +633,16 @@ bool AxBrokerMarginPreflight(const double requiredMargin,
       reason="BROKER_MARGIN_ACCOUNT_VALUES_INVALID";
       return(false);
      }
-   if(requiredMargin>freeMargin)
+   double additionalMarginBudget=0.0;
+   string budgetReason="";
+   if(!AxAdditionalMarginBudgetMoney(additionalMarginBudget,budgetReason))
      {
-      reason="BROKER_FREE_MARGIN_INSUFFICIENT";
+      reason=budgetReason;
+      return(false);
+     }
+   if(requiredMargin>additionalMarginBudget+0.01)
+     {
+      reason="SELECTED_MARGIN_PROFILE_BUDGET_EXCEEDED";
       return(false);
      }
    ENUM_ACCOUNT_STOPOUT_MODE stopoutMode=(ENUM_ACCOUNT_STOPOUT_MODE)AccountInfoInteger(ACCOUNT_MARGIN_SO_MODE);
@@ -631,11 +665,6 @@ bool AxBrokerMarginPreflight(const double requiredMargin,
    projectedLevel=(projectedMargin>0.0)?equity/projectedMargin*100.0:1000000.0;
    double brokerFloor=MathMax(marginCall,stopout)+InpBrokerStopOutBufferPercent;
    double requiredLevel=MathMax(InpMinFreeMarginPercent,brokerFloor);
-   if(projectedUsage>AxMarginUsageLimitForMode())
-     {
-      reason="MODE_MARGIN_UTILISATION_LIMIT_EXCEEDED";
-      return(false);
-     }
    if(projectedLevel<requiredLevel)
      {
       reason="BROKER_MARGIN_LEVEL_BUFFER_NOT_MET";
@@ -3377,20 +3406,22 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    ENUM_ORDER_TYPE guardedOrderType=(dir==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
    double guardedPrice=(dir==AX_DIR_BUY)?guardedMarginTick.ask:guardedMarginTick.bid;
    double marginScaledLots=0.0,guardedRequiredMargin=0.0;
+   double additionalMarginBudget=0.0;
    string marginGuardReason="";
-   if(!g_marginGuard.FitVolumeToFreeMargin(_Symbol,guardedOrderType,guardedPrice,
-                                           lots,InpMaxMarginUsagePct,
+   if(!AxAdditionalMarginBudgetMoney(additionalMarginBudget,marginGuardReason) ||
+      !g_marginGuard.FitVolumeToFreeMargin(_Symbol,guardedOrderType,guardedPrice,
+                                           lots,additionalMarginBudget,
                                            marginScaledLots,guardedRequiredMargin,
                                            marginGuardReason))
      {
       PrintFormat("FLIPDEMON MARGIN GUARD BLOCK: requested=%.8f cap=%.2f%% reason=%s",
-                  lots,InpMaxMarginUsagePct,marginGuardReason);
+                  lots,additionalMarginBudget,marginGuardReason);
       return(false);
      }
    if(marginScaledLots<lots-1e-8 && InpVerboseLogging)
       PrintFormat("FLIPDEMON HMR SCALE: requested=%.8f approved=%.8f requiredMargin=%.2f freeMargin=%.2f cap=%.2f%% (%s)",
                   lots,marginScaledLots,guardedRequiredMargin,
-                  AccountInfoDouble(ACCOUNT_MARGIN_FREE),InpMaxMarginUsagePct,
+                  AccountInfoDouble(ACCOUNT_MARGIN_FREE),additionalMarginBudget,
                   marginGuardReason);
    lots=marginScaledLots;
 
@@ -3500,7 +3531,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    string eligibilityReason="";
    ENUM_AX_ELIGIBILITY eligibility=g_executionEligibility.Check(
       executionThesis,compositeDirection,g_risk,accountOpenPositions,accountExposureLots,
-      g_md.CurrentSpreadPts(),requiredMargin,eligibilityReason);
+      g_md.CurrentSpreadPts(),eligibilityReason);
    if(eligibility!=AX_ELIGIBLE_LONG && eligibility!=AX_ELIGIBLE_SHORT)
      {
       g_tradeLifecycle.TransitionTo(AX_LIFECYCLE_CANCELLED);
@@ -4952,7 +4983,7 @@ int OnInit(void)
                      InpMaxTradesPerRollingPeriod,InpRollingPeriodSeconds,
                      InpMaxSpreadPoints,InpMaxSlippagePoints,InpMinFreeMarginPercent,
                      InpWeeklyLossLimitPercent,InpMaxPositionsPerSymbol,
-                     AxMarginUsageLimitForMode(),InpMaxExecutionFailures);
+                     InpMaxExecutionFailures);
    g_emergency.Configure(InpExecutionMode,InpEnableTrading,InpEnableLong,InpEnableShort);
 
    //--- IMMEDIATE and CONFIRMED_CROSS_PLUS_STRUCTURE VWAP exit modes need live-price and structure-
@@ -4972,7 +5003,7 @@ int OnInit(void)
       g_effectiveVwapExitMode = InpVWAPExitMode;
 
    g_entryEngine.Configure(InpMinConfidenceToEnter);
-   g_executionEligibility.Configure(1.2,0.0,50.0);
+   g_executionEligibility.Configure(1.2,0.0);
    if(!g_exec.Init(_Symbol,InpMagicNumber,InpDeviationPoints,InpMaxExecRetries))
      {
       Print("FLIPDEMON INIT FAILED: broker execution filling policy is unsupported.");
