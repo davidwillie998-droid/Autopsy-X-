@@ -20,6 +20,7 @@
 #include <AutopsyX/BrokerCompatibility.mqh>
 #include <AutopsyX/SpreadCostIntelligence.mqh>
 #include <AutopsyX/GapIntelligenceEngine.mqh>
+#include <AutopsyX/GapExecutionEngine.mqh>
 #include <AutopsyX/GapObservationJournal.mqh>
 #include <AutopsyX/GapWindowAnalytics.mqh>
 #include <AutopsyX/Momentum.mqh>
@@ -250,6 +251,17 @@ input int    InpGapReopenObservationSeconds = 3600; // Observation window after 
 input int    InpGapQuoteFreshnessMs = 2000; // Maximum quote age for a valid live observation
 input int    InpGapObservationIntervalSeconds = 5; // Persist one observation at this interval
 input int    InpGapAnalyticsSummaryIntervalSeconds = 900; // Refresh time-of-week summary every 15 minutes
+input group "=== GAP HOUR POST-GAP QUALIFICATION (SIGNAL ONLY) ===";
+input bool   InpGapPostGapSignalEnabled = false; // Qualify post-gap continuation; no order is sent by this module
+input double InpGapPostGapMinPoints = 0.0; // Symbol-specific M1 open gap threshold; zero disables qualification
+input int    InpGapPostGapWaitSeconds = 90; // Monotonic wait after the M1 gap is detected
+input int    InpGapPostGapMaxAgeSeconds = 300; // Expire stale post-gap candidates
+input double InpGapPostGapMaxSpreadPoints = 15.0; // Absolute spread ceiling after the wait
+input double InpGapSpreadNormalizationMultiple = 1.5; // Current spread must also normalize to rolling 100-tick baseline
+input bool   InpGapRolloverSignalEnabled = false; // Observe rollover spread spikes; direction is not inferred from spread
+input int    InpGapRolloverStartMinute = 0; // Broker-server minute of day, 0-1439; equal start/end disables window
+input int    InpGapRolloverEndMinute = 0; // Broker-server minute of day, 0-1439
+input double InpGapRolloverSpikeMultiple = 3.0; // Current spread / prior rolling baseline
 
 input group "=== RISK ENGINE ===";
 input double         InpDailyLossLimitPercent   = 8.0;    // Daily loss limit (%) - stops session when hit
@@ -387,6 +399,9 @@ CMarketData          g_md;
 CMarketSnapshotRecorder g_marketSnapshotRecorder;
 CSpreadCostIntelligence g_spreadCost;
 CGapIntelligenceEngine g_gapIntelligence;
+CGapExecutionEngine g_gapExecution;
+SAxGapExecutionSignal g_gapExecutionSignal;
+ENUM_AX_GAP_EXEC_STATE g_gapExecutionLastState=AX_GAP_EXEC_IDLE;
 CGapObservationJournal g_gapJournal;
 CGapWindowAnalytics g_gapAnalytics;
 bool g_gapAnalyticsReady=false;
@@ -6149,6 +6164,26 @@ void AxProcessTick(void)
    //--- SCAN: cheap per-tick microstructure/momentum update ---
    g_mom.Update(g_md);
    g_micro.Update(_Symbol,g_md,g_mom);
+   SAxGapExecutionSignal gapSignal;
+   g_gapExecution.Update(_Symbol,TimeTradeServer(),g_md.CurrentBid(),g_md.CurrentAsk(),g_md.Point(),
+                         InpGapPostGapSignalEnabled,InpGapPostGapMinPoints,
+                         InpGapPostGapWaitSeconds,InpGapPostGapMaxAgeSeconds,
+                         InpGapPostGapMaxSpreadPoints,InpGapSpreadNormalizationMultiple,
+                         InpGapRolloverSignalEnabled,InpGapRolloverStartMinute,
+                         InpGapRolloverEndMinute,InpGapRolloverSpikeMultiple,
+                         g_micro.Rolling100SpreadAvgPts(),g_micro.RollingSpreadSampleCount(),
+                         gapSignal);
+   if(gapSignal.state!=g_gapExecutionLastState || gapSignal.rolloverSpikeObserved)
+     {
+      if(InpVerboseLogging && (gapSignal.postGapReady || gapSignal.rolloverSpikeObserved ||
+                               gapSignal.state==AX_GAP_EXEC_POST_GAP_EXPIRED))
+         PrintFormat("AUTOPSY X GAP EXECUTION QUALIFIER: state=%d dir=%s gap=%.2f pts spread=%.2f baseline=%.2f elapsed=%I64u ms rollover_spike=%s reason=%s. Signal-only; no order submitted.",
+                     (int)gapSignal.state,AxDirToString(gapSignal.direction),gapSignal.gapPoints,
+                     gapSignal.currentSpreadPoints,gapSignal.baselineSpreadPoints,
+                     gapSignal.waitElapsedMs,gapSignal.rolloverSpikeObserved?"yes":"no",gapSignal.reason);
+      g_gapExecutionLastState=gapSignal.state;
+     }
+   g_gapExecutionSignal=gapSignal;
 
    // Emergency protection uses the broker's live account margin level, not the
    // leverage label. A breach closes the EA's exact managed position through the
