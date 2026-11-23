@@ -137,7 +137,7 @@ def post_fill_within_cap(equity: float, broker_confirmed_risk: float,
     """Only retain a new fill when broker-confirmed aggregate stop risk is known and capped."""
     if not snapshot_known or not all(isfinite(x) for x in (equity, broker_confirmed_risk, hard_cap_pct)):
         return False
-    if equity <= 0 or broker_confirmed_risk < 0 or hard_cap_pct <= 0:
+    if equity <= 0 or broker_confirmed_risk < 0 or not 0.05 <= hard_cap_pct <= 100.0:
         return False
     return broker_confirmed_risk <= equity * hard_cap_pct / 100.0 + 0.01
 
@@ -171,7 +171,7 @@ class AccountRiskCalculatorTests(unittest.TestCase):
         ]
         risk, _ = scan(positions, [], 10000, self.rates)
         self.assertGreater(risk, 200.0)
-        self.assertTrue(approve(10000, risk, 1.0, max_stop_risk_pct=10.0))
+        self.assertFalse(approve(10000, risk, 1.0, max_stop_risk_pct=10.0))
 
     def test_proposed_entry_exceeding_remaining_budget_is_rejected(self):
         self.assertFalse(approve(10000, 990, 20, per_entry_pct=1.0, max_stop_risk_pct=10.0))
