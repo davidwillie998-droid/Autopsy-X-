@@ -574,20 +574,6 @@ bool AxBrokerMarginPreflight(const double requiredMargin,
    projectedLevel=0.0;
    reason="";
    double equity=AccountInfoDouble(ACCOUNT_EQUITY);
-   observation.grossNotional=0.0;
-   observation.effectiveLeverage=0.0;
-   observation.marginCalculationVerified=false;
-   string profitCurrency=SymbolInfoString(_Symbol,SYMBOL_CURRENCY_PROFIT);
-   double contractSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_CONTRACT_SIZE);
-   if(quoteOk && equity>0.0 && contractSize>0.0 &&
-      observation.referenceVolumeLots>0.0 &&
-      profitCurrency!="" && profitCurrency==observation.accountCurrency)
-     {
-      double midPrice=(quote.bid+quote.ask)*0.5;
-      observation.grossNotional=contractSize*observation.referenceVolumeLots*midPrice;
-      if(MathIsValidNumber(observation.grossNotional) && observation.grossNotional>0.0)
-         observation.effectiveLeverage=observation.grossNotional/equity;
-     }
    double usedMargin=AccountInfoDouble(ACCOUNT_MARGIN);
    double freeMargin=AccountInfoDouble(ACCOUNT_MARGIN_FREE);
    if(!MathIsValidNumber(requiredMargin) || requiredMargin<=0.0 ||
@@ -4503,6 +4489,20 @@ void AxObserveGapHour(void)
    observation.requiredMargin=0.0;
    observation.marginCalculationVerified=false;
    observation.referenceVolumeLots=g_brokerSnapshot.volumeMinimum;
+   observation.grossNotional=0.0;
+   observation.effectiveLeverage=0.0;
+   string profitCurrency=SymbolInfoString(_Symbol,SYMBOL_CURRENCY_PROFIT);
+   double contractSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_CONTRACT_SIZE);
+   double equity=AccountInfoDouble(ACCOUNT_EQUITY);
+   if(quoteOk && equity>0.0 && contractSize>0.0 &&
+      observation.referenceVolumeLots>0.0 &&
+      profitCurrency!="" && profitCurrency==observation.accountCurrency)
+     {
+      double midPrice=(quote.bid+quote.ask)*0.5;
+      observation.grossNotional=contractSize*observation.referenceVolumeLots*midPrice;
+      if(MathIsValidNumber(observation.grossNotional) && observation.grossNotional>0.0)
+         observation.effectiveLeverage=observation.grossNotional/equity;
+     }
    if(quoteOk && observation.referenceVolumeLots>0.0)
      {
       double required=0.0;
