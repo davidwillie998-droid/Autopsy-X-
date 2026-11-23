@@ -1131,6 +1131,24 @@ public:
          return(false);
         }
 
+      double stopDistance=(double)SymbolInfoInteger(symbol,SYMBOL_TRADE_STOPS_LEVEL)*point;
+      double slUnits=slPrice/tickSize;
+      double tpUnits=(tpPrice>0.0)?tpPrice/tickSize:0.0;
+      if(MathAbs(slUnits-MathRound(slUnits))*tickSize>gridTolerance ||
+         (tpPrice>0.0 && MathAbs(tpUnits-MathRound(tpUnits))*tickSize>gridTolerance))
+        {
+         errorReason="PENDING_LIMIT_PROTECTION_PRICE_OFF_TICK_GRID";
+         return(false);
+        }
+      if((dir==AX_DIR_BUY && (limitPrice-slPrice+tickSize*1e-8<stopDistance ||
+                              (tpPrice>0.0 && tpPrice-limitPrice+tickSize*1e-8<stopDistance))) ||
+         (dir==AX_DIR_SELL && (slPrice-limitPrice+tickSize*1e-8<stopDistance ||
+                               (tpPrice>0.0 && limitPrice-tpPrice+tickSize*1e-8<stopDistance))))
+        {
+         errorReason="PENDING_LIMIT_PROTECTION_INSIDE_STOPS_LEVEL";
+         return(false);
+        }
+
       bool sent=(dir==AX_DIR_BUY)
                 ?m_trade.BuyLimit(lots,limitPrice,symbol,slPrice,tpPrice,ORDER_TIME_GTC,0,comment)
                 :m_trade.SellLimit(lots,limitPrice,symbol,slPrice,tpPrice,ORDER_TIME_GTC,0,comment);
