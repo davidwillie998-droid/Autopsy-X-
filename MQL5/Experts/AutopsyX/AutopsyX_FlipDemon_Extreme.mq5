@@ -21,6 +21,7 @@
 #include <AutopsyX/SpreadCostIntelligence.mqh>
 #include <AutopsyX/GapIntelligenceEngine.mqh>
 #include <AutopsyX/GapObservationJournal.mqh>
+#include <AutopsyX/GapWindowAnalytics.mqh>
 #include <AutopsyX/Momentum.mqh>
 #include <AutopsyX/Microstructure.mqh>
 #include <AutopsyX/Liquidity.mqh>
@@ -247,6 +248,7 @@ input int    InpGapReopenStaleSeconds = 3600; // Quote outage duration required 
 input int    InpGapReopenObservationSeconds = 3600; // Observation window after a detected reopening
 input int    InpGapQuoteFreshnessMs = 2000; // Maximum quote age for a valid live observation
 input int    InpGapObservationIntervalSeconds = 5; // Persist one observation at this interval
+input int    InpGapAnalyticsSummaryIntervalSeconds = 900; // Refresh time-of-week summary every 15 minutes
 
 input group "=== RISK ENGINE ===";
 input double         InpDailyLossLimitPercent   = 8.0;    // Daily loss limit (%) - stops session when hit
@@ -383,6 +385,10 @@ CMarketSnapshotRecorder g_marketSnapshotRecorder;
 CSpreadCostIntelligence g_spreadCost;
 CGapIntelligenceEngine g_gapIntelligence;
 CGapObservationJournal g_gapJournal;
+CGapWindowAnalytics g_gapAnalytics;
+bool g_gapAnalyticsReady=false;
+datetime g_gapLastAnalysisTime=0;
+datetime g_gapLastSummaryTime=0;
 bool g_gapJournalReady=false;
 datetime g_gapLastJournalTime=0;
 SAxGapSnapshot g_gapSnapshot;
@@ -4545,6 +4551,22 @@ void AxObserveGapHour(void)
    string previousReason=g_gapSnapshot.reason;
    g_gapIntelligence.Evaluate(observation,nowMsc,g_gapSnapshot);
 
+   int analysisInterval=MathMax(1,InpGapObservationIntervalSeconds);
+   if(g_gapAnalyticsReady &&
+      (g_gapLastAnalysisTime==0 || serverNow-g_gapLastAnalysisTime>=analysisInterval))
+     {
+      if(g_gapAnalytics.Record(observation,g_gapSnapshot))
+         g_gapLastAnalysisTime=serverNow;
+     }
+
+   int summaryInterval=MathMax(60,InpGapAnalyticsSummaryIntervalSeconds);
+   if(g_gapAnalyticsReady &&
+      (g_gapLastSummaryTime==0 || serverNow-g_gapLastSummaryTime>=summaryInterval))
+     {
+      if(g_gapAnalytics.WriteSummary(serverNow))
+         g_gapLastSummaryTime=serverNow;
+     }
+
    int journalInterval=MathMax(1,InpGapObservationIntervalSeconds);
    if(g_gapJournalReady &&
       (g_gapLastJournalTime==0 || serverNow-g_gapLastJournalTime>=journalInterval))
@@ -4707,6 +4729,12 @@ int OnInit(void)
                           InpSpreadCostMaxSpreadToAtr);
    g_gapIntelligence.Configure(InpGapQuoteFreshnessMs);
    g_gapJournalReady=g_gapJournal.Init(_Symbol,InpMagicNumber);
+   g_gapAnalyticsReady=g_gapAnalytics.Init(g_brokerSnapshot.brokerCompany,
+                                               g_brokerSnapshot.tradeServer,
+                                               g_brokerSnapshot.accountProfile,
+                                               _Symbol,InpMagicNumber);
+   if(!g_gapAnalyticsReady)
+      Print("AUTOPSY X GAP ANALYTICS: initialization failed; raw observation journal remains available.");
    if(!g_gapJournalReady)
       Print("AUTOPSY X GAP JOURNAL: daily CSV unavailable; broker observation continues without persistence.");
    else
@@ -5052,6 +5080,11 @@ int OnInit(void)
 
 void OnDeinit(const int reason)
   {
+   datetime gapSummaryTime=TimeTradeServer();
+   if(gapSummaryTime<=0) gapSummaryTime=TimeCurrent();
+   if(g_gapAnalyticsReady)
+      g_gapAnalytics.WriteSummary(gapSummaryTime);
+   g_gapAnalytics.Deinit();
    g_gapJournal.Deinit();
    g_marketSnapshotRecorder.Deinit();
    g_advancedSessionOrb.Cleanup();
