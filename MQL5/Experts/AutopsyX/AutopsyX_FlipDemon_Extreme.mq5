@@ -4705,6 +4705,15 @@ void AxObserveGapHour(void)
 //====================================================================
 int OnInit(void)
   {
+   if(!MathIsValidNumber(InpMaxAccountStopRiskPercent) || InpMaxAccountStopRiskPercent<0.05 || InpMaxAccountStopRiskPercent>100.0 ||
+      !MathIsValidNumber(InpExtremeRiskPercent) || InpExtremeRiskPercent<0.05)
+     {
+      Print("FLIPDEMON INIT FAILED: stop-risk maximum must be 0.05..100%, and Extreme risk must be finite and >=0.05%.");
+      return(INIT_PARAMETERS_INCORRECT);
+     }
+   // Configure the account-wide calculator before startup reconciliation or any Scan call.
+   g_accountRisk.ConfigureMaxRiskPercent(InpMaxAccountStopRiskPercent);
+
    // Account-wide order approval is serialized across every FLIPDEMON instance
    // attached to this MT5 terminal. Separate terminals require an external coordinator.
    if(!g_accountRiskCoordinator.Init())
@@ -4985,13 +4994,6 @@ int OnInit(void)
                      InpMaxSpreadPoints,InpMaxSlippagePoints,InpMinFreeMarginPercent,
                      InpWeeklyLossLimitPercent,InpMaxPositionsPerSymbol,
                      InpMaxExecutionFailures,InpMaxAccountStopRiskPercent);
-   if(!MathIsValidNumber(InpMaxAccountStopRiskPercent) || InpMaxAccountStopRiskPercent<0.05 || InpMaxAccountStopRiskPercent>100.0 ||
-      !MathIsValidNumber(InpExtremeRiskPercent) || InpExtremeRiskPercent<0.05)
-     {
-      Print("FLIPDEMON INIT FAILED: stop-risk maximum must be 0.05..100%, and Extreme risk must be finite and >=0.05%.");
-      return(INIT_PARAMETERS_INCORRECT);
-     }
-   g_accountRisk.ConfigureMaxRiskPercent(InpMaxAccountStopRiskPercent);
    g_emergency.Configure(InpExecutionMode,InpEnableTrading,InpEnableLong,InpEnableShort);
 
    //--- IMMEDIATE and CONFIRMED_CROSS_PLUS_STRUCTURE VWAP exit modes need live-price and structure-
