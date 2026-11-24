@@ -119,15 +119,21 @@ def test_scope_audit_does_not_attribute_ea_only_commits_to_phase3c():
     ):
         assert ea_commit not in phase3c_scope_commits()
 
-def test_dashboard_index_is_unchanged_from_reviewed_pr_base():
-    """The scope allowlist must not mask unrelated dashboard edits."""
-    # Compare raw bytes so newline conversion or text decoding cannot conceal a change.
+def test_dashboard_index_matches_reviewed_base_plus_bridge_auth_header():
+    """Preserve the reviewed dashboard byte-for-byte except its single bridge-auth header fix."""
+    # The branch's only dashboard delta from the reviewed base is the required
+    # x-bridge-key header on /state. Keep the guard byte-exact and reject every
+    # other dashboard change, including whitespace and line-ending changes.
     baseline = subprocess.run(
         ["git", "show", f"{UI_BASELINE_COMMIT}:index.html"],
         cwd=ROOT, capture_output=True, check=True,
     ).stdout
+    prior = b"const res=await fetch(bridge.url+'/state');"
+    approved = b"const res=await fetch(bridge.url+'/state',{headers:{'x-bridge-key':bridge.key}});"
+    assert baseline.count(prior) == 1, "reviewed dashboard baseline no longer has the expected bridge state request"
+    expected = baseline.replace(prior, approved, 1)
     current = (ROOT / "index.html").read_bytes()
-    assert current == baseline, "index.html differs from the reviewed PR-base snapshot"
+    assert current == expected, "index.html contains an unreviewed change beyond the exact bridge-auth header fix"
 
 
 def test_phase3c_workflow_mirrors_phase3a_workflow_procedure():
