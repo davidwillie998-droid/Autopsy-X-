@@ -431,18 +431,22 @@ public:
       if((dir!=AX_DIR_BUY && dir!=AX_DIR_SELL) || lots<=0.0 ||
          !MathIsValidNumber(lots))
         { errorReason="Invalid direction/lots"; return(false); }
-      // This is a fresh-entry API. Do not merge into or accidentally adopt an
-      // existing same-symbol position, regardless of account margin mode.
-      if(PositionSelect(symbol))
-        { errorReason="Fresh entry blocked: a same-symbol position already exists"; return(false); }
+      // On netting/exchange accounts, a same-symbol deal modifies the existing
+      // aggregate position and must use the dedicated netting-add lifecycle.
+      // Hedging accounts create a distinct position ticket, so existing positions
+      // are permitted here; caller-side position-count and aggregate-risk gates
+      // remain authoritative.
+      bool hedgingAccount=(AccountInfoInteger(ACCOUNT_MARGIN_MODE)==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING);
+      if(!hedgingAccount && PositionSelect(symbol))
+        { errorReason="Fresh entry blocked: netting symbol position already exists; use the netting-add lifecycle"; return(false); }
 
       for(int attempt=0;attempt<=m_maxRetries;attempt++)
         {
          if(attempt>0) Sleep(m_retryDelayMs);
-         if(PositionSelect(symbol))
+         if(!hedgingAccount && PositionSelect(symbol))
            {
             outcomeUncertain=true;
-            errorReason="Same-symbol position appeared before retry; broker reconciliation required";
+            errorReason="Netting symbol position appeared before retry; broker reconciliation required";
             latencyMsOut=(int)(GetTickCount()-startTick);
             return(false);
            }
