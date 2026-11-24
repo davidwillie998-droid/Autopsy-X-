@@ -6752,7 +6752,45 @@ void AxProcessTick(void)
       //--- before committing capital (better price, no chasing); legacy mode uses a plain
       //--- one-tick confirmation delay. Either way, conditions are re-verified immediately
       //--- before committing capital.
-      if(InpUseSniperEntry)
+      // A confirmed Gap Hour setup is an independent trigger, but never an
+      // independent execution path. Require the live composite score to agree,
+      // then send it through the same preflight and AxAttemptEntry risk pipeline.
+      // Keep the ready event latched while the directional score is not aligned;
+      // the gap engine expires/resets it on its own M1 lifecycle.
+      if(gapSignal.postGapReady)
+        {
+         string gapEntryReason="";
+         bool gapDirectionConfirmed=(gapSignal.direction!=AX_DIR_NONE &&
+                                     score.action==gapSignal.direction);
+         bool gapPreflightOk=false;
+         if(!gapDirectionConfirmed)
+            gapEntryReason="GAP_DIRECTION_NOT_CONFIRMED_BY_LIVE_SCORE";
+         else
+            gapPreflightOk=(AxSpreadCostAllowed(gapEntryReason) &&
+                            g_entryEngine.PreFlightCheck(_Symbol,g_md,score,g_risk,g_chop,
+                                                         InpEmergencySlPoints,0,0.0,
+                                                         InpSessionStartHour,InpSessionEndHour,
+                                                         InpAvoidRolloverMinutes,gapEntryReason) &&
+                            AxHtfConfluenceOk(gapSignal.direction));
+         if(gapPreflightOk)
+           {
+            g_engineState=AX_ENGINE_ATTACKING;
+            bool gapEntryAccepted=AxAttemptEntry(gapSignal.direction,score,0,"GAP_HOUR");
+            // Consume after the complete shared entry pipeline has been attempted,
+            // whether accepted or rejected, so a single M1 event cannot duplicate orders.
+            if(!g_gapExecution.ConsumePostGapSignal())
+               Print("FLIPDEMON GAP EXECUTION ERROR: qualified event could not be consumed.");
+            if(InpVerboseLogging)
+               PrintFormat("FLIPDEMON GAP EXECUTION: %s direction=%s setup=%d gap=%.2f pts reason=%s.",
+                           gapEntryAccepted?"ENTRY_PIPELINE_ACCEPTED":"ENTRY_PIPELINE_REJECTED",
+                           AxDirToString(gapSignal.direction),(int)gapSignal.setupType,
+                           gapSignal.gapPoints,gapSignal.reason);
+           }
+         else if(InpVerboseLogging)
+            PrintFormat("FLIPDEMON GAP EXECUTION: qualified event is waiting for entry confirmation (%s).",
+                        gapEntryReason);
+        }
+      else if(InpUseSniperEntry)
         {
          if(g_sniper.IsArmed())
            {
