@@ -244,6 +244,10 @@ input int    InpSpreadCostMinSamples       = 20;
 input double InpSpreadCostMaxCostToGross  = 0.25;
 input double InpSpreadCostMaxSpreadToAtr  = 0.15;
 
+input group "=== GAP HOUR CONTINUOUS EXECUTION ===";
+input bool   InpGapContinuousExecutionEnabled = true; // Continuously classify spread conditions; all entries use the adaptive market-state gate
+input int    InpGapContinuousMinSpreadSamples = 20; // Valid rolling observations required before new entries are permitted
+input double InpGapContinuousNormalizationMultiple = 1.5; // Current spread must remain within this multiple of the rolling baseline
 input group "=== GAP HOUR OBSERVATION ===";
 input bool   InpGapUnlimitedLeverageVerified = false; // Enable only after verifying broker policy for this account and symbol
 input bool   InpGapLeverageEligibilityVerified = false; // Enable only after confirming this account meets broker eligibility
@@ -406,6 +410,8 @@ CSpreadCostIntelligence g_spreadCost;
 CGapIntelligenceEngine g_gapIntelligence;
 CGapExecutionEngine g_gapExecution;
 SAxGapExecutionSignal g_gapExecutionSignal;
+SAxGapMarketCondition g_gapMarketCondition;
+ENUM_AX_GAP_MARKET_STATE g_gapMarketLastState=AX_GAP_MARKET_INVALID;
 ENUM_AX_GAP_EXEC_STATE g_gapExecutionLastState=AX_GAP_EXEC_IDLE;
 CGapObservationJournal g_gapJournal;
 CGapWindowAnalytics g_gapAnalytics;
@@ -4493,6 +4499,20 @@ bool AxLogBrokerCompatibility(void)
 //--- Additional fail-closed entry filter. Existing absolute spread and risk gates remain intact.
 bool AxSpreadCostAllowed(string &reason)
   {
+   if(InpGapContinuousExecutionEnabled)
+     {
+      if(!g_gapMarketCondition.executionConditionsAcceptable)
+        {
+         reason=g_gapMarketCondition.reason;
+         if(InpVerboseLogging)
+            PrintFormat("FLIPDEMON GAP CONTINUOUS GATE: blocked (%s), state=%d spread=%.2f baseline=%.2f samples=%d.",
+                        reason,(int)g_gapMarketCondition.state,
+                        g_gapMarketCondition.currentSpreadPoints,
+                        g_gapMarketCondition.baselineSpreadPoints,
+                        g_gapMarketCondition.samples);
+         return(false);
+        }
+     }
    if(!InpUseSpreadCostIntelligence) { reason=""; return(true); }
    double point=g_md.Point();
    double atrPoints=(point>0.0) ? g_regime.CurrentAtr()/point : 0.0;
@@ -6222,6 +6242,28 @@ void AxProcessTick(void)
    //--- SCAN: cheap per-tick microstructure/momentum update ---
    g_mom.Update(g_md);
    g_micro.Update(_Symbol,g_md,g_mom);
+   if(InpGapContinuousExecutionEnabled)
+     {
+      g_gapExecution.AssessContinuousMarket(g_md.CurrentBid(),g_md.CurrentAsk(),g_md.Point(),
+         g_micro.Rolling100SpreadAvgPts(),g_micro.RollingSpreadSampleCount(),
+         InpGapContinuousMinSpreadSamples,InpMaxSpreadPoints,
+         InpGapContinuousNormalizationMultiple,g_gapMarketCondition);
+      if(g_gapMarketCondition.state!=g_gapMarketLastState)
+        {
+         if(InpVerboseLogging)
+            PrintFormat("AUTOPSY X GAP CONTINUOUS: state=%d spread=%.2f baseline=%.2f samples=%d allowed=%s reason=%s.",
+                        (int)g_gapMarketCondition.state,g_gapMarketCondition.currentSpreadPoints,
+                        g_gapMarketCondition.baselineSpreadPoints,g_gapMarketCondition.samples,
+                        g_gapMarketCondition.executionConditionsAcceptable?"yes":"no",
+                        g_gapMarketCondition.reason);
+         g_gapMarketLastState=g_gapMarketCondition.state;
+        }
+     }
+   else
+     {
+      g_gapMarketCondition.executionConditionsAcceptable=true;
+      g_gapMarketCondition.reason="CONTINUOUS_GAP_MODE_DISABLED";
+     }
    SAxGapExecutionSignal gapSignal;
    g_gapExecution.Update(_Symbol,TimeTradeServer(),g_md.CurrentBid(),g_md.CurrentAsk(),g_md.Point(),
                          InpGapPostGapSignalEnabled,InpGapPostGapMinPoints,
