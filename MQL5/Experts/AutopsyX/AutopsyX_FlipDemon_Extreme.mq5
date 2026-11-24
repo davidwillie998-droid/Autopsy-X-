@@ -340,6 +340,8 @@ input group "=== SESSION / ROLLOVER FILTER ===";
 input int             InpSessionStartHour       = 0;   // Broker-time session start hour (0-23); equal to end = no restriction
 input int             InpSessionEndHour         = 0;   // Broker-time session end hour (0-23)
 input int             InpAvoidRolloverMinutes   = 5;   // Minutes around broker midnight to avoid (spread spikes)
+input bool            InpGapHourBypassSessionHours = false; // Let qualified Gap Hour setups ignore the ordinary session-hour window
+input bool            InpGapHourAllowRollover      = false; // Explicitly permit Gap Hour entries inside the rollover avoidance window
 
 input group "=== ADAPTIVE TUNING ===";
 input bool            InpAdaptiveTuning         = true;   // Nudge the confidence bar from trailing live performance
@@ -3127,7 +3129,8 @@ void AxCountAccountExposure(int &positionsOut,double &grossLotsOut)
      }
   }
 
-bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSeq,const string tag)
+bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSeq,const string tag,
+                    const bool gapHourRoute=false)
   {
    if(!g_autopsy.IsPersisting())
      {
@@ -3196,7 +3199,18 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
       return(false);
      }
-   if(!g_entryEngine.SessionAllowed(InpSessionStartHour,InpSessionEndHour,InpAvoidRolloverMinutes,gateReason))
+   int effectiveSessionStart=InpSessionStartHour;
+   int effectiveSessionEnd=InpSessionEndHour;
+   int effectiveRolloverAvoidance=InpAvoidRolloverMinutes;
+   if(gapHourRoute && InpGapHourBypassSessionHours)
+     {
+      effectiveSessionStart=0;
+      effectiveSessionEnd=0; // preserve rollover protection unless separately permitted
+     }
+   if(gapHourRoute && InpGapHourAllowRollover)
+      effectiveRolloverAvoidance=0;
+   if(!g_entryEngine.SessionAllowed(effectiveSessionStart,effectiveSessionEnd,
+                                    effectiveRolloverAvoidance,gateReason))
      {
       if(InpVerboseLogging) PrintFormat("AUTOPSY X: entry blocked (%s)",gateReason);
       return(false);
@@ -6767,11 +6781,21 @@ void AxProcessTick(void)
             gapEntryReason="GAP_DIRECTION_NOT_CONFIRMED_BY_LIVE_SCORE";
          else
            {
+            int gapSessionStart=InpSessionStartHour;
+            int gapSessionEnd=InpSessionEndHour;
+            int gapRolloverAvoidance=InpAvoidRolloverMinutes;
+            if(InpGapHourBypassSessionHours)
+              {
+               gapSessionStart=0;
+               gapSessionEnd=0;
+              }
+            if(InpGapHourAllowRollover)
+               gapRolloverAvoidance=0;
             gapPreflightOk=(AxSpreadCostAllowed(gapEntryReason) &&
                             g_entryEngine.PreFlightCheck(_Symbol,g_md,score,g_risk,g_chop,
                                                          InpEmergencySlPoints,0,0.0,
-                                                         InpSessionStartHour,InpSessionEndHour,
-                                                         InpAvoidRolloverMinutes,gapEntryReason));
+                                                         gapSessionStart,gapSessionEnd,
+                                                         gapRolloverAvoidance,gapEntryReason));
             if(gapPreflightOk && !AxHtfConfluenceOk(gapSignal.direction))
               {
                gapPreflightOk=false;
@@ -6781,7 +6805,7 @@ void AxProcessTick(void)
          if(gapPreflightOk)
            {
             g_engineState=AX_ENGINE_ATTACKING;
-            bool gapEntryAccepted=AxAttemptEntry(gapSignal.direction,score,0,"GAP_HOUR");
+            bool gapEntryAccepted=AxAttemptEntry(gapSignal.direction,score,0,"GAP_HOUR",true);
             // Consume after the complete shared entry pipeline has been attempted,
             // whether accepted or rejected, so a single M1 event cannot duplicate orders.
             if(!g_gapExecution.ConsumePostGapSignal())
