@@ -43,7 +43,7 @@
 #define AX_RESTARTRECOVERY_MQH
 #include "Defs.mqh"
 
-#define AX_RECOVERY_MAX_ENTRIES 64
+#define AX_RECOVERY_MAX_ENTRIES 2048 // Supports large hedging campaigns; broker and EA risk limits remain authoritative
 #define AX_RECOVERY_FIELD_COUNT 6
 
 struct SAxOpenSetupRecord
@@ -368,8 +368,14 @@ public:
       // to reconstruct the final trade from broker deals.
       if(removeStaleRecords)
         {
-         SAxOpenSetupRecord snapshot[AX_RECOVERY_MAX_ENTRIES];
          int previousCount=m_count;
+         SAxOpenSetupRecord snapshot[];
+         if(ArrayResize(snapshot,previousCount)!=previousCount)
+           {
+            m_persistOk=false;
+            Print("FLIPDEMON RECOVERY ERROR: could not allocate rollback snapshot; stale cleanup deferred and new entries remain blocked.");
+            return;
+           }
          for(int i=0;i<previousCount;i++) snapshot[i]=m_records[i];
 
          bool anyRemoved=false;
