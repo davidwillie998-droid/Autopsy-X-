@@ -38,7 +38,7 @@ private:
    double            MultiplierForMilestone(const int milestone) const
      {
       // These are capital-preservation scalers, not risk increases.
-      // The existing 2% aggregate stop-risk ceiling remains authoritative.
+      // The configured account-wide stop-risk ceiling remains authoritative.
       if(milestone>=6) return(0.50); // 100x and beyond
       if(milestone>=5) return(0.55); // 50x
       if(milestone>=4) return(0.60); // 25x
