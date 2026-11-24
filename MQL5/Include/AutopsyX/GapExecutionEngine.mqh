@@ -26,6 +26,25 @@ enum ENUM_AX_GAP_SETUP_TYPE
    AX_GAP_SETUP_SWEEP_REVERSAL
   };
 
+enum ENUM_AX_GAP_MARKET_STATE
+  {
+   AX_GAP_MARKET_INVALID = 0,
+   AX_GAP_MARKET_WARMING,
+   AX_GAP_MARKET_ZERO_SPREAD,
+   AX_GAP_MARKET_NORMALIZED,
+   AX_GAP_MARKET_SPREAD_EXPANSION
+  };
+
+struct SAxGapMarketCondition
+  {
+   ENUM_AX_GAP_MARKET_STATE state;
+   double currentSpreadPoints;
+   double baselineSpreadPoints;
+   int samples;
+   bool executionConditionsAcceptable;
+   string reason;
+  };
+
 struct SAxGapExecutionSignal
   {
    ENUM_AX_GAP_EXEC_STATE state;
@@ -103,6 +122,67 @@ public:
       m_ready=false;
       m_expired=false;
       m_rolloverSpikeLatched=false;
+     }
+
+   // Continuous market-state assessment. This runs independently of M1 gap events
+   // so the EA can adapt its execution posture on every valid tick.
+   bool AssessContinuousMarket(const double bid,const double ask,const double point,
+                               const double rollingSpreadAverage,const int rollingSpreadSamples,
+                               const int minimumSamples,const double maximumSpreadPoints,
+                               const double normalizationMultiple,
+                               SAxGapMarketCondition &out) const
+     {
+      ZeroMemory(out);
+      out.state=AX_GAP_MARKET_INVALID;
+      out.executionConditionsAcceptable=false;
+      out.reason="INVALID_MARKET_QUOTE";
+      if(!MathIsValidNumber(bid) || !MathIsValidNumber(ask) ||
+         !MathIsValidNumber(point) || bid<=0.0 || ask<bid || point<=0.0 ||
+         !MathIsValidNumber(rollingSpreadAverage) || rollingSpreadAverage<0.0 ||
+         rollingSpreadSamples<0 || minimumSamples<1 ||
+         !MathIsValidNumber(maximumSpreadPoints) || maximumSpreadPoints<0.0 ||
+         !MathIsValidNumber(normalizationMultiple) || normalizationMultiple<=0.0)
+         return(false);
+
+      out.currentSpreadPoints=(ask-bid)/point;
+      out.baselineSpreadPoints=rollingSpreadAverage;
+      out.samples=rollingSpreadSamples;
+      if(!MathIsValidNumber(out.currentSpreadPoints) || out.currentSpreadPoints<0.0)
+         return(false);
+
+      if(rollingSpreadSamples<minimumSamples)
+        {
+         out.state=AX_GAP_MARKET_WARMING;
+         out.reason="CONTINUOUS_SPREAD_BASELINE_WARMING";
+         return(true);
+        }
+
+      if(out.currentSpreadPoints>maximumSpreadPoints)
+        {
+         out.state=AX_GAP_MARKET_SPREAD_EXPANSION;
+         out.reason="CONTINUOUS_SPREAD_ABOVE_ABSOLUTE_CAP";
+         return(true);
+        }
+
+      bool normalized=(rollingSpreadAverage==0.0
+                       ? out.currentSpreadPoints==0.0
+                       : out.currentSpreadPoints<=rollingSpreadAverage*normalizationMultiple);
+      if(!normalized)
+        {
+         out.state=AX_GAP_MARKET_SPREAD_EXPANSION;
+         out.reason=(rollingSpreadAverage==0.0
+                     ? "ZERO_BASELINE_POSITIVE_CURRENT_SPREAD"
+                     : "CONTINUOUS_SPREAD_NOT_NORMALIZED");
+         return(true);
+        }
+
+      out.state=(out.currentSpreadPoints==0.0
+                 ? AX_GAP_MARKET_ZERO_SPREAD : AX_GAP_MARKET_NORMALIZED);
+      out.executionConditionsAcceptable=true;
+      out.reason=(out.currentSpreadPoints==0.0
+                  ? "CONTINUOUS_ZERO_SPREAD_QUALIFIED"
+                  : "CONTINUOUS_SPREAD_NORMALIZED");
+      return(true);
      }
 
    // A post-gap continuation candidate follows the M1 opening gap direction.
