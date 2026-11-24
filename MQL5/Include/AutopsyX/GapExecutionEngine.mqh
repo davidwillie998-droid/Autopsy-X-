@@ -241,16 +241,25 @@ public:
          return(false);
         }
 
-      bool enoughSpreadHistory=(rollingSpreadSamples>=100 && rollingSpreadAverage>0.0);
+      // A true zero-spread feed is a valid baseline, not missing history.
+      // With a zero baseline, only an exactly zero current spread is normalized;
+      // any positive spread must wait for a measurable baseline or fail the cap.
+      bool spreadBaselineValid=(MathIsValidNumber(rollingSpreadAverage) &&
+                                rollingSpreadAverage>=0.0);
+      bool enoughSpreadHistory=(rollingSpreadSamples>=100 && spreadBaselineValid);
       bool spreadWithinAbsoluteCap=(out.currentSpreadPoints<=maxSpreadPoints);
       bool spreadNormalized=(enoughSpreadHistory &&
-                             out.currentSpreadPoints<=rollingSpreadAverage*spreadNormalizationMultiple);
+                             (rollingSpreadAverage==0.0
+                              ? out.currentSpreadPoints==0.0
+                              : out.currentSpreadPoints<=rollingSpreadAverage*spreadNormalizationMultiple));
       if(!spreadWithinAbsoluteCap || !spreadNormalized)
         {
          out.state=AX_GAP_EXEC_POST_GAP_SPREAD_WAIT;
          out.reason=(!enoughSpreadHistory ? "ROLLING_SPREAD_BASELINE_NOT_READY" :
                      !spreadWithinAbsoluteCap ? "CURRENT_SPREAD_ABOVE_ABSOLUTE_CAP" :
-                     "CURRENT_SPREAD_NOT_NORMALIZED");
+                     (rollingSpreadAverage==0.0
+                      ? "ZERO_SPREAD_BASELINE_REQUIRES_ZERO_CURRENT_SPREAD"
+                      : "CURRENT_SPREAD_NOT_NORMALIZED"));
          out.rolloverSpikeObserved=out.rolloverSpikeObserved || m_rolloverSpikeLatched;
          return(false);
         }
