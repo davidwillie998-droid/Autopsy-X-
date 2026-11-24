@@ -6766,12 +6766,18 @@ void AxProcessTick(void)
          if(!gapDirectionConfirmed)
             gapEntryReason="GAP_DIRECTION_NOT_CONFIRMED_BY_LIVE_SCORE";
          else
+           {
             gapPreflightOk=(AxSpreadCostAllowed(gapEntryReason) &&
                             g_entryEngine.PreFlightCheck(_Symbol,g_md,score,g_risk,g_chop,
                                                          InpEmergencySlPoints,0,0.0,
                                                          InpSessionStartHour,InpSessionEndHour,
-                                                         InpAvoidRolloverMinutes,gapEntryReason) &&
-                            AxHtfConfluenceOk(gapSignal.direction));
+                                                         InpAvoidRolloverMinutes,gapEntryReason));
+            if(gapPreflightOk && !AxHtfConfluenceOk(gapSignal.direction))
+              {
+               gapPreflightOk=false;
+               gapEntryReason="GAP_HTF_CONFLUENCE_NOT_CONFIRMED";
+              }
+           }
          if(gapPreflightOk)
            {
             g_engineState=AX_ENGINE_ATTACKING;
