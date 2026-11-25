@@ -3,6 +3,8 @@ import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
+IQ = (ROOT / "MQL5/Include/AutopsyX/IQ200Telemetry.mqh").read_text(encoding="utf-8-sig")
+EA = (ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(encoding="utf-8-sig")
 SOURCE = ROOT / "MQL5/Include/AutopsyX/IQ200Telemetry.mqh"
 
 
@@ -191,3 +193,15 @@ def test_iq200_deal_events_distinguish_partial_from_cumulative_full_fill():
     assert "AX_IQ200_DEAL_PARTIAL" in ea
     assert "AX_IQ200_DEAL_FILLED" in ea
     assert "bool MarkDealTicketSeen(const ulong dealTicket)" in telemetry
+
+
+def test_iq200_uses_bounded_high_throughput_batch_persistence():
+    assert "#define AX_IQ200_QUEUE_CAPACITY 2048" in IQ
+    assert "bool WriteBatch(const string payload)" in IQ
+    flush = IQ[IQ.index("int Flush(const int maxRows=1024)"):IQ.index("// Bind broker order identifiers", IQ.index("int Flush(const int maxRows=1024)"))]
+    assert "payload+=Serialize(m_queue[slot]);" in flush
+    assert "if(!WriteBatch(payload))" in flush
+    assert "m_head=(m_head+batchRows)%AX_IQ200_QUEUE_CAPACITY;" in flush
+    assert "m_count-=batchRows;" in flush
+    assert "m_iq200Telemetry.Flush(1024)" not in EA  # global instance name is g_iq200Telemetry
+    assert "g_iq200Telemetry.Flush(1024);" in EA
