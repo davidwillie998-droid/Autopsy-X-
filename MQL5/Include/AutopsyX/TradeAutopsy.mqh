@@ -40,7 +40,8 @@ private:
                 "NewsState","Session","Provenance","PositionIdentifier",
                 "VWAPPullbackBullBonus","VWAPPullbackBearBonus",
                 "OvernightBiasBullBonus","OvernightBiasBearBonus",
-                "TwinContinuationBullBonus","TwinContinuationBearBonus");
+                "TwinContinuationBullBonus","TwinContinuationBearBonus",
+                "AccountLogin","MagicNumber","AccountServer");
       FileFlush(m_fileHandle);
       return(headerWrite>0 && FileSize(m_fileHandle)>0);
      }
@@ -290,7 +291,7 @@ private:
                                               SAxTradeRecord &rec) const
      {
       int fieldCount=ArraySize(fields);
-      if(fieldCount!=44 && fieldCount!=50) return(false);
+      if(fieldCount!=44 && fieldCount!=50 && fieldCount!=53) return(false);
       double values[19];
       int numericIndexes[19]={7,8,9,10,11,13,14,15,19,20,21,22,23,24,30,31,32,33,34};
       for(int i=0;i<19;i++)
@@ -384,6 +385,13 @@ private:
       rec.overnightBiasBearBonus=(fieldCount>=50)?StringToDouble(fields[47]):0.0;
       rec.twinContinuationBullBonus=(fieldCount>=50)?StringToDouble(fields[48]):0.0;
       rec.twinContinuationBearBonus=(fieldCount>=50)?StringToDouble(fields[49]):0.0;
+      rec.accountLogin=0;
+      rec.magicNumber=0;
+      rec.accountServer="";
+      if(fieldCount>=53 &&
+         (!ParseUnsigned(fields[50],rec.accountLogin) ||
+          !ParseUnsigned(fields[51],rec.magicNumber))) return(false);
+      if(fieldCount>=53) rec.accountServer=fields[52];
       if(!MathIsValidNumber(rec.vwapPullbackBullBonus) || !MathIsValidNumber(rec.vwapPullbackBearBonus) ||
          !MathIsValidNumber(rec.overnightBiasBullBonus) || !MathIsValidNumber(rec.overnightBiasBearBonus) ||
          !MathIsValidNumber(rec.twinContinuationBullBonus) || !MathIsValidNumber(rec.twinContinuationBearBonus) ||
@@ -421,7 +429,8 @@ private:
       while(!FileIsEnding(handle))
         {
          bool rowRead=false;
-         int expectedFields=(StringFind(sourceFile,"_v5")>=0)?50:44;
+         int expectedFields=(StringFind(sourceFile,"_v6")>=0)?53:
+                            ((StringFind(sourceFile,"_v5")>=0)?50:44);
          if(ArrayResize(fields,expectedFields)!=expectedFields)
            {
             FileClose(handle);
@@ -524,12 +533,15 @@ private:
      {
       int handle=FileOpen(sourceFile,FILE_READ|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,',');
       if(handle==INVALID_HANDLE) return(true); // absent legacy file is not a startup failure
-      string fields[44];
+      int fieldCount=(StringFind(sourceFile,"_v6")>=0)?53:
+                     ((StringFind(sourceFile,"_v5")>=0)?50:44);
+      string fields[];
+      if(ArrayResize(fields,fieldCount)!=fieldCount) return(false);
       bool header=true;
       while(!FileIsEnding(handle))
         {
          bool rowRead=false;
-         for(int f=0;f<44;f++)
+         for(int f=0;f<fieldCount;f++)
            {
             if(FileIsEnding(handle) && f==0) { rowRead=false; break; }
             fields[f]=FileReadString(handle);
@@ -577,9 +589,16 @@ public:
      {
       m_persistenceHealthy=false;
       m_digits = (int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
-      //--- v5 adds six continuation attribution fields. v4 and v3 remain read-only history.
-      //--- v3 ambiguous zero-R rows remain excluded; v4 retains explicit NA R-multiple values.
-      m_fileName = StringFormat("%s_%s_TradeAutopsy_v5.csv",eaName,symbol);
+      //--- v6 persists account/server/magic identity on every row. Legacy journals remain read-only.
+      //--- Symbol files are durable shards; a later account-wide reader can safely consolidate by identity.
+      string serverKey=AccountInfoString(ACCOUNT_SERVER);
+      StringReplace(serverKey,"/","_"); StringReplace(serverKey,"\\","_");
+      StringReplace(serverKey,":","_"); StringReplace(serverKey,".","_");
+      StringReplace(serverKey," ","_");
+      ulong login=(ulong)AccountInfoInteger(ACCOUNT_LOGIN);
+      ulong magic=(ulong)ChartGetInteger(0,CHART_EXPERT_ID);
+      m_fileName = StringFormat("%s_%I64u_%s_%I64u_%s_TradeAutopsy_v6.csv",
+                                eaName,login,serverKey,magic,symbol);
       m_v4FileName = StringFormat("%s_%s_TradeAutopsy_v4.csv",eaName,symbol);
       m_legacyFileName = StringFormat("%s_%s_TradeAutopsy_v3.csv",eaName,symbol);
       m_fileHandle = FileOpen(m_fileName,FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ,',');
@@ -655,6 +674,9 @@ public:
      {
       rec.tradeClass = Classify(rec);
       rec.provenance = AxDetectProvenance();
+      rec.accountLogin=(ulong)AccountInfoInteger(ACCOUNT_LOGIN);
+      rec.magicNumber=(ulong)ChartGetInteger(0,CHART_EXPERT_ID);
+      rec.accountServer=AccountInfoString(ACCOUNT_SERVER);
       if(rec.dealIdOut>0 && rec.positionIdentifier>0 && rec.dealIdOut<=LastAccountedDealTicket(rec.positionIdentifier))
          return(rec.tradeClass);
 
@@ -696,7 +718,8 @@ public:
                    rec.sessionAtEntry,AxProvenanceToString(rec.provenance),rec.positionIdentifier,
                    DoubleToString(rec.vwapPullbackBullBonus,3),DoubleToString(rec.vwapPullbackBearBonus,3),
                    DoubleToString(rec.overnightBiasBullBonus,3),DoubleToString(rec.overnightBiasBearBonus,3),
-                   DoubleToString(rec.twinContinuationBullBonus,3),DoubleToString(rec.twinContinuationBearBonus,3));
+                   DoubleToString(rec.twinContinuationBullBonus,3),DoubleToString(rec.twinContinuationBearBonus,3),
+                   rec.accountLogin,rec.magicNumber,rec.accountServer);
       FileFlush(m_fileHandle);
       ulong fileSizeAfter=FileSize(m_fileHandle);
       if(writeResult==0 || fileSizeAfter<=fileSizeBefore)
