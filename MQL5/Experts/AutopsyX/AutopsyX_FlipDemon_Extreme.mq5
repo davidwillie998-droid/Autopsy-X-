@@ -2178,6 +2178,12 @@ bool AxFinalizeHedgingFullClose(const SAxVirtualExitRecord &saved)
       MathAbs(verified.totalClosedVolume-finalRecord.totalClosedVolume)>0.0000001 ||
       MathAbs(verified.netProfit-finalRecord.netProfit)>0.0000001)
       return(false);
+   // Keep the virtual-exit action lock until both durable lifecycle ledgers
+   // have committed. A failed state removal must remain recoverable on restart.
+   if(!g_positionStateRegistryReady ||
+      !g_positionStateRegistry.Remove(saved.positionIdentifier) ||
+      !g_positionStateRegistry.IsPersisting())
+      return(false);
    if(!g_virtualExitRegistry.Remove(saved.positionIdentifier) ||
       !g_virtualExitRegistry.IsPersisting())
       return(false);
@@ -5443,6 +5449,64 @@ bool AxCloseHedgingPositionByTicket(const SAxManagedPosition &live)
    return(true);
   }
 
+// Enforce each hedging leg's persisted virtual SL/TP through its exact-ticket
+// full-close transaction path. One close is attempted per tick; the broker
+// snapshot is refreshed by the close routine before another leg can be considered.
+bool AxManageHedgingVirtualExitTickets(void)
+  {
+   if(!g_hedgingPositionManager.IsComplete() ||
+      !g_virtualExitInitialized || !g_virtualExitRegistry.IsPersisting() ||
+      !g_hedgingFullCloseLedgerReady || !g_hedgingFullCloseLedger.IsPersisting())
+      return(false);
+
+   for(int i=0;i<g_hedgingPositionManager.Count();i++)
+     {
+      SAxManagedPosition live;
+      if(!g_hedgingPositionManager.GetAt(i,live))
+         return(false);
+      SAxVirtualExitRecord saved;
+      if(!g_virtualExitRegistry.Find(live.positionIdentifier,saved) ||
+         saved.actionLocked || saved.ticket!=live.ticket ||
+         saved.symbol!=live.symbol || saved.dir!=live.direction ||
+         saved.virtualSlPrice<=0.0)
+         return(false);
+
+      MqlTick quote;
+      if(!SymbolInfoTick(live.symbol,quote) || quote.bid<=0.0 ||
+         quote.ask<quote.bid || quote.ask<=0.0)
+         return(false);
+
+      bool stopHit=(live.direction==AX_DIR_BUY)
+                   ?(quote.bid<=saved.virtualSlPrice)
+                   :(live.direction==AX_DIR_SELL)
+                     ?(quote.ask>=saved.virtualSlPrice):false;
+      bool targetHit=(saved.virtualTpPrice>0.0 &&
+                      ((live.direction==AX_DIR_BUY && quote.bid>=saved.virtualTpPrice) ||
+                       (live.direction==AX_DIR_SELL && quote.ask<=saved.virtualTpPrice)));
+      if(!stopHit && !targetHit) continue;
+
+      if(!AxCloseHedgingPositionByTicket(live))
+         return(false);
+
+      // The close helper can return after a definitive broker rejection.
+      // Verify the exact stable identifier before treating the leg as closed.
+      if(!g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber))
+         return(false);
+      SAxManagedPosition stillLive;
+      if(g_hedgingPositionManager.FindByIdentifier(live.positionIdentifier,stillLive))
+        {
+         if(InpVerboseLogging)
+            PrintFormat("FLIPDEMON HEDGING VIRTUAL EXIT: broker did not close identifier=%I64u on this attempt; no duplicate request issued in this tick.",
+                        live.positionIdentifier);
+         return(true);
+        }
+      PrintFormat("FLIPDEMON HEDGING VIRTUAL EXIT CONFIRMED: identifier=%I64u ticket=%I64u reason=%s.",
+                  live.positionIdentifier,live.ticket,stopHit?"VIRTUAL_SL":"VIRTUAL_TP");
+      return(true);
+     }
+   return(true);
+  }
+
 // Execute one profitable-only scale-out per hedging leg. This path is deliberately
 // separate from the legacy g_posState journal and is only called for multi-leg accounts.
 bool AxManageHedgingPartialCloseTickets(void)
@@ -6148,6 +6212,14 @@ void AxProcessTick(void)
          return;
       if(!AxManageHedgingPartialCloseTickets())
          return;
+      if(!AxManageHedgingVirtualExitTickets())
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         Print("FLIPDEMON HEDGING VIRTUAL EXIT: ticket-specific full-close orchestration failed; campaign quarantined.");
+         return;
+        }
       // Stop/partial-close requests invalidate the earlier broker snapshot.
       // Refresh every leg and reconcile durable cursors before campaign audit.
       if(!g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber) ||
@@ -6162,8 +6234,8 @@ void AxProcessTick(void)
      }
 
    // Audit every leg against its durable exit and campaign records. Ticket-specific
-   // break-even, trailing and one-shot partial-close actions are active; full-close
-   // journaling and campaign-level exit orchestration remain quarantined.
+   // break-even, trailing, partial-close and virtual SL/TP full-close actions are active.
+   // Signal-driven campaign exits remain quarantined pending per-position signal evaluation.
    SAxHedgingCampaignSnapshot hedgingSnapshot;
    if(!g_hedgingCampaignLifecycle.Evaluate(g_hedgingPositionManager,
                                             g_virtualExitRegistry,
