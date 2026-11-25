@@ -57,6 +57,7 @@ private:
    double m_lastMid;
    bool   m_haveMid;
    bool   m_configValid;
+   bool   m_requireBaseline;
    SAxHawkesSnapshot m_snapshot;
 
    void ClearSnapshot(void)
@@ -126,6 +127,7 @@ public:
       m_acceleration=0.0;
       m_lastTimeMsc=0; m_lastSequence=0;
       m_eventCount=0; m_lastMid=0.0; m_haveMid=false;
+      m_requireBaseline=false;
       ClearSnapshot();
      }
 
@@ -150,12 +152,21 @@ public:
       if(tick.sequence<=m_lastSequence) return(false);
       if(m_lastTimeMsc>0 && tick.timeMsc<m_lastTimeMsc)
         {
-         Reset();
+         // Keep the chronology watermark. A delayed tick must not erase it
+         // and allow an older sample to seed a fresh model after the reset.
+         m_buyState=0.0; m_sellState=0.0;
+         m_lastBuyIntensity=0.0; m_lastSellIntensity=0.0;
+         m_acceleration=0.0; m_eventCount=0;
+         m_lastMid=0.0; m_haveMid=false;
+         m_requireBaseline=true;
+         ClearSnapshot();
          m_snapshot.status=AX_HAWKES_INVALID;
          return(false);
         }
 
-      if(m_lastTimeMsc==0)
+      if(m_requireBaseline || m_lastTimeMsc==0)
+        {
+         m_requireBaseline=false;
         {
          m_lastTimeMsc=tick.timeMsc;
          m_lastSequence=tick.sequence;
