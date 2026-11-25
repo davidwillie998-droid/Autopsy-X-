@@ -92,6 +92,23 @@ void TestOrderingAndInvalidTimestamp(void)
    Check(!engine.UpdateSample(tick,1.0),"zero timestamp rejected");
   }
 
+void TestStalenessAndConfigurationGuard(void)
+  {
+   CHawkesEventIntensityEngine engine;
+   Check(engine.Configure(0.05,0.05,0.12,0.04,0.04,0.12,1.0,5,100,0.0),
+         "valid bounded configuration accepted");
+   SAxTick tick;
+   MakeSample(tick,1,1000,100.0,0);
+   engine.UpdateSample(tick,1.0);
+   SAxHawkesSnapshot snap;
+   Check(!engine.Evaluate(1200,snap) && snap.status==AX_HAWKES_STALE,
+         "stale snapshot is rejected");
+
+   CHawkesEventIntensityEngine invalid;
+   Check(!invalid.Configure(0.05,0.05,0.90,0.90,0.04,0.12,1.0,5,10000,0.0),
+         "unstable excitation configuration rejected");
+  }
+
 void TestDeterministicReplay(void)
   {
    CHawkesEventIntensityEngine first;
@@ -122,6 +139,7 @@ void OnStart(void)
    TestDirectionalIntensity();
    TestThresholdAccumulation();
    TestOrderingAndInvalidTimestamp();
+   TestStalenessAndConfigurationGuard();
    TestDeterministicReplay();
    PrintFormat("HAWKES REPLAY COMPLETE | passed=%d failed=%d | no trade requests issued",
                g_passed,g_failed);
