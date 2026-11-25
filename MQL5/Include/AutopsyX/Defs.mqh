@@ -9,17 +9,17 @@
 //--- Risk / aggression mode ------------------------------------------------
 enum ENUM_AX_MODE
   {
-   AX_MODE_NORMAL = 0,      // 0.5% risk per trade
-   AX_MODE_AGGRESSIVE = 1,  // 1.0% risk per trade
-   AX_MODE_EXTREME = 2      // up to 2.0% risk per trade (configurable)
+   AX_MODE_NORMAL = 0,      // Uses the configured Normal stop-risk percentage
+   AX_MODE_AGGRESSIVE = 1,  // Uses the configured Aggressive stop-risk percentage
+   AX_MODE_EXTREME = 2      // Uses the independently configurable Extreme stop-risk percentage
   };
 
 //--- Margin utilisation is an independent account-exposure profile. ---
 enum ENUM_AX_MARGIN_PROFILE
   {
-   AX_MARGIN_LOW = 0,       // 5% of equity allocated to used margin
-   AX_MARGIN_MEDIUM = 1,    // 50% of equity allocated to used margin
-   AX_MARGIN_MAXIMUM = 2    // 100% ceiling, still subject to broker stop-out protections
+   AX_MARGIN_LOW = 0,       // 5% of equity allocated to used margin; independent of stop-risk
+   AX_MARGIN_MEDIUM = 1,    // 50% of equity allocated to used margin; independent of stop-risk
+   AX_MARGIN_MAXIMUM = 2    // 100% ceiling, still subject to broker stop-out protections and independent stop-risk limits
   };
 
 //--- Trade direction ---------------------------------------------------------
