@@ -609,7 +609,7 @@ require("CTrade" not in pyramid_campaign
         "campaign registry cannot submit orders or bypass execution and risk gates")
 
 # Stable restart identity guardrails: broker position identifiers survive ticket changes.
-require("AX_RECOVERY_FIELD_COUNT 6" in recovery,
+require("AX_RECOVERY_FIELD_COUNT 12" in recovery,
         "restart registry schema includes stable position identity")
 require("positionIdentifier" in recovery and "FindByPositionIdentifier" in recovery,
         "recovery matching is keyed by stable POSITION_IDENTIFIER rather than ticket alone")
