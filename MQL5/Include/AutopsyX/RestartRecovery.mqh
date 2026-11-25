@@ -44,7 +44,7 @@
 #include "Defs.mqh"
 
 #define AX_RECOVERY_MAX_ENTRIES 2048 // Supports large hedging campaigns; broker and EA risk limits remain authoritative
-#define AX_RECOVERY_FIELD_COUNT 6
+#define AX_RECOVERY_FIELD_COUNT 12
 
 struct SAxOpenSetupRecord
   {
@@ -54,6 +54,12 @@ struct SAxOpenSetupRecord
    string      symbol;
    ENUM_AX_DIR dir;
    datetime    entryTime;
+   double      vwapPullbackBullBonus;
+   double      vwapPullbackBearBonus;
+   double      overnightBiasBullBonus;
+   double      overnightBiasBearBonus;
+   double      twinContinuationBullBonus;
+   double      twinContinuationBearBonus;
   };
 
 class CRestartRecovery
@@ -84,13 +90,16 @@ private:
       bool writeOk=true;
       for(int i=0;i<m_count;i++)
         {
-         string line = StringFormat("%s|%s|%s|%s|%d|%s",
+         string line = StringFormat("%s|%s|%s|%s|%d|%s|%.6f|%.6f|%.6f|%.6f|%.6f|%.6f",
                         IntegerToString((long)m_records[i].ticket),
                         IntegerToString((long)m_records[i].positionIdentifier),
                         m_records[i].setupId,
                         m_records[i].symbol,
                         (int)m_records[i].dir,
-                        TimeToString(m_records[i].entryTime,TIME_DATE|TIME_SECONDS));
+                        TimeToString(m_records[i].entryTime,TIME_DATE|TIME_SECONDS),
+                        m_records[i].vwapPullbackBullBonus,m_records[i].vwapPullbackBearBonus,
+                        m_records[i].overnightBiasBullBonus,m_records[i].overnightBiasBearBonus,
+                        m_records[i].twinContinuationBullBonus,m_records[i].twinContinuationBearBonus);
          string payload=line+"\\r\\n";
          uint expected=(uint)StringLen(payload);
          uint written=FileWriteString(handle,payload);
@@ -170,7 +179,7 @@ public:
 
          string fields[];
          int n = StringSplit(line,'|',fields);
-         if(n!=AX_RECOVERY_FIELD_COUNT)
+         if(n!=6 && n!=AX_RECOVERY_FIELD_COUNT)
            {
             PrintFormat("FLIPDEMON RECOVERY ERROR: malformed registry row; refusing to rewrite %s.",m_fileName);
             registryValid=false;
@@ -208,6 +217,12 @@ public:
          m_records[m_count].symbol    = fields[3];
          m_records[m_count].dir       = (ENUM_AX_DIR)dirLong;
          m_records[m_count].entryTime = entryTime;
+         m_records[m_count].vwapPullbackBullBonus=(n>=12)?StringToDouble(fields[6]):0.0;
+         m_records[m_count].vwapPullbackBearBonus=(n>=12)?StringToDouble(fields[7]):0.0;
+         m_records[m_count].overnightBiasBullBonus=(n>=12)?StringToDouble(fields[8]):0.0;
+         m_records[m_count].overnightBiasBearBonus=(n>=12)?StringToDouble(fields[9]):0.0;
+         m_records[m_count].twinContinuationBullBonus=(n>=12)?StringToDouble(fields[10]):0.0;
+         m_records[m_count].twinContinuationBearBonus=(n>=12)?StringToDouble(fields[11]):0.0;
          m_count++;
         }
       FileClose(readHandle);
@@ -232,7 +247,10 @@ public:
    // Returns true only when the registry update is durable. Callers must block new
    // entries if this returns false; in-memory state is rolled back on a failed write.
    bool               RecordOpenSetup(const ulong ticket,const ulong positionIdentifier,const string setupId,const string symbol,
-                                       const ENUM_AX_DIR dir,const datetime entryTime)
+                                       const ENUM_AX_DIR dir,const datetime entryTime,
+                                       const double vwapBull,const double vwapBear,
+                                       const double overnightBull,const double overnightBear,
+                                       const double twinBull,const double twinBear)
      {
       if(ticket==0 || positionIdentifier==0 || StringLen(setupId)==0 || StringLen(symbol)==0 || entryTime<=0 ||
          (dir!=AX_DIR_BUY && dir!=AX_DIR_SELL))
@@ -261,6 +279,9 @@ public:
       int previousCount=m_count;
       m_records[m_count].ticket=ticket; m_records[m_count].positionIdentifier=positionIdentifier; m_records[m_count].setupId=setupId;
       m_records[m_count].symbol=symbol; m_records[m_count].dir=dir; m_records[m_count].entryTime=entryTime;
+      m_records[m_count].vwapPullbackBullBonus=vwapBull; m_records[m_count].vwapPullbackBearBonus=vwapBear;
+      m_records[m_count].overnightBiasBullBonus=overnightBull; m_records[m_count].overnightBiasBearBonus=overnightBear;
+      m_records[m_count].twinContinuationBullBonus=twinBull; m_records[m_count].twinContinuationBearBonus=twinBear;
       m_count++;
 
       if(RewriteFile()) return(true);
