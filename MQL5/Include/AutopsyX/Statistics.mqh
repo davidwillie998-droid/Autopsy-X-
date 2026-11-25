@@ -148,81 +148,167 @@ public:
 
       double equity = startingEquity;
       double peak = startingEquity;
-      double maxDd = 0;
-      double sumHold=0, sumNetFull=0, sumGrossFull=0;
-      int entryOk=0;
-      double exitEffSum=0; int exitEffCount=0;
-      double netProfitAll=0;
+      double maxDd = 0.0;
+      double netProfitAll=0.0;
+      double todayNet=0.0;
+      datetime now=TimeCurrent();
+      MqlDateTime dayParts;
+      TimeToStruct(now,dayParts);
+      dayParts.hour=0; dayParts.min=0; dayParts.sec=0;
+      datetime dayStart=StructToTime(dayParts);
 
+      // First pass: cash/equity accounting uses every persisted exit slice exactly once.
+      // Daily P&L is restricted to today's exit timestamps, not the journal's lifetime total.
       for(int i=0;i<n;i++)
         {
          SAxTradeRecord r;
          if(!autopsy.GetRecord(i,r)) continue;
+         netProfitAll+=r.netProfit;
+         equity+=r.netProfit;
+         if(r.exitTime>=dayStart && r.exitTime<=now) todayNet+=r.netProfit;
+         if(equity>peak) peak=equity;
+         double dd=peak-equity;
+         if(dd>maxDd) maxDd=dd;
+        }
 
-         // every record moves real money - reflected in net P&L and the drawdown curve
-         // regardless of whether it's a full close or a scale-out slice
-         netProfitAll += r.netProfit;
-         equity += r.netProfit;
-         if(equity>peak) peak = equity;
-         double dd = peak-equity;
-         if(dd>maxDd) maxDd = dd;
+      // Second pass: aggregate every partial and final exit by stable broker position
+      // identifier. One completed position campaign contributes exactly one win/loss.
+      // This prevents profitable scale-outs from being discarded when the final slice
+      // is negative, and prevents a multi-part close from becoming several trades.
+      ulong positionIds[];
+      double campaignNet[],campaignGross[];
+      int finalRecordIndex[];
+      if(ArrayResize(positionIds,n)!=n ||
+         ArrayResize(campaignNet,n)!=n ||
+         ArrayResize(campaignGross,n)!=n ||
+         ArrayResize(finalRecordIndex,n)!=n)
+        {
+         // Fail closed on statistics allocation: return an empty, explicitly unscored snapshot.
+         s.totalTrades=0; s.wins=0; s.losses=0; s.breakEvenTrades=0;
+         s.decisiveTrades=0; s.winRate=0.0; s.netProfitTotal=netProfitAll;
+         s.dailyPnL=todayNet;
+         Print("FLIPDEMON STATISTICS ERROR: campaign aggregation allocation failed; win rate withheld.");
+         return(s);
+        }
 
-         // a partial is a banked slice of an still-open position, not a standalone trade
-         // outcome - it never counts toward win/loss, expectancy, or accuracy statistics
-         if(r.isPartial) continue;
+      int campaignCount=0;
+      for(int i=0;i<n;i++)
+        {
+         SAxTradeRecord r;
+         if(!autopsy.GetRecord(i,r) || r.positionIdentifier==0) continue;
+         int group=-1;
+         for(int j=0;j<campaignCount;j++)
+            if(positionIds[j]==r.positionIdentifier) { group=j; break; }
+         if(group<0)
+           {
+            group=campaignCount++;
+            positionIds[group]=r.positionIdentifier;
+            campaignNet[group]=0.0;
+            campaignGross[group]=0.0;
+            finalRecordIndex[group]=-1;
+           }
+         campaignNet[group]+=r.netProfit;
+         campaignGross[group]+=r.grossProfit;
+         if(!r.isPartial)
+           {
+            int prior=finalRecordIndex[group];
+            if(prior<0)
+               finalRecordIndex[group]=i;
+            else
+              {
+               SAxTradeRecord priorRecord;
+               if(autopsy.GetRecord(prior,priorRecord) && r.exitTime>=priorRecord.exitTime)
+                  finalRecordIndex[group]=i;
+              }
+           }
+        }
 
-         // Track the current chronological loss run using completed full trades only.
-         if(r.netProfit<0) lossStreak++;
+      // Sort completed campaigns by final exit time so loss streak and closed-trade
+      // statistics follow actual completion order, even after journal recovery.
+      int campaignOrder[];
+      if(ArrayResize(campaignOrder,campaignCount)!=campaignCount)
+        {
+         Print("FLIPDEMON STATISTICS ERROR: campaign ordering allocation failed; win rate withheld.");
+         return(s);
+        }
+      for(int i=0;i<campaignCount;i++) campaignOrder[i]=i;
+      for(int i=1;i<campaignCount;i++)
+        {
+         int key=campaignOrder[i];
+         SAxTradeRecord keyRecord;
+         if(!autopsy.GetRecord(finalRecordIndex[key],keyRecord)) continue;
+         int j=i-1;
+         while(j>=0)
+           {
+            SAxTradeRecord priorRecord;
+            if(!autopsy.GetRecord(finalRecordIndex[campaignOrder[j]],priorRecord) ||
+               priorRecord.exitTime<=keyRecord.exitTime) break;
+            campaignOrder[j+1]=campaignOrder[j];
+            j--;
+           }
+         campaignOrder[j+1]=key;
+        }
+
+      double sumHold=0.0,sumNetFull=0.0,sumGrossFull=0.0;
+      int entryOk=0,lossStreak=0;
+      double exitEffSum=0.0;
+      int exitEffCount=0;
+      for(int order=0;order<campaignCount;order++)
+        {
+         int group=campaignOrder[order];
+         int finalIndex=finalRecordIndex[group];
+         if(finalIndex<0) continue; // partial-only/open campaigns are not completed outcomes
+         SAxTradeRecord r;
+         if(!autopsy.GetRecord(finalIndex,r)) continue;
+         double campaignResult=campaignNet[group];
+         double campaignGrossResult=campaignGross[group];
+
+         s.totalTrades++;
+         sumNetFull+=campaignResult;
+         sumGrossFull+=campaignGrossResult;
+         sumHold+=r.holdSeconds;
+         if(campaignResult<0.0) lossStreak++;
          else lossStreak=0;
          s.consecutiveLosses=lossStreak;
 
-         s.totalTrades++;
-         sumNetFull   += r.netProfit;
-         sumGrossFull += r.grossProfit;
-         sumHold      += r.holdSeconds;
-
-         // win/loss classification is always by net (post-cost) outcome; the gross sums
-         // track the same trades' pre-cost P&L so a true before/after-cost comparison is possible
-         if(r.netProfit>0)
+         if(campaignResult>0.0)
            {
             s.wins++;
-            s.netWinSum   += r.netProfit;
-            s.grossWinSum += r.grossProfit;
+            s.netWinSum+=campaignResult;
+            s.grossWinSum+=campaignGrossResult;
            }
-         else if(r.netProfit<0)
+         else if(campaignResult<0.0)
            {
             s.losses++;
-            s.netLossSum   += r.netProfit;
-            s.grossLossSum += r.grossProfit;
+            s.netLossSum+=campaignResult;
+            s.grossLossSum+=campaignGrossResult;
            }
          else
             s.breakEvenTrades++;
 
-         if(r.mfe > MathAbs(r.mae)) entryOk++;
-
-         if(r.netProfit>0 && r.mfe>0)
+         if(r.mfe>MathAbs(r.mae)) entryOk++;
+         if(campaignResult>0.0 && r.mfe>0.0)
            {
-            exitEffSum += AxClampD(r.netProfit/r.mfe,0.0,1.0);
+            exitEffSum+=AxClampD(campaignResult/r.mfe,0.0,1.0);
             exitEffCount++;
            }
         }
 
-      s.netProfitTotal   = netProfitAll;
-      // Break-even closes remain in totalTrades and expectancy, but are neither wins nor losses.
-      s.decisiveTrades     = s.wins+s.losses;
-      s.winRate            = (s.decisiveTrades>0)? 100.0*s.wins/s.decisiveTrades : 0;
-      s.profitFactor       = (MathAbs(s.netLossSum)>1e-8)? s.netWinSum/MathAbs(s.netLossSum) : ((s.netWinSum>0)?999.0:0.0);
-      s.grossProfitFactor   = (MathAbs(s.grossLossSum)>1e-8)? s.grossWinSum/MathAbs(s.grossLossSum) : ((s.grossWinSum>0)?999.0:0.0);
-      s.netExpectancy       = (s.totalTrades>0)? sumNetFull/s.totalTrades : 0;
-      s.grossExpectancy      = (s.totalTrades>0)? sumGrossFull/s.totalTrades : 0;
-      s.avgWin               = (s.wins>0)? s.netWinSum/s.wins : 0;
-      s.avgLoss               = (s.losses>0)? s.netLossSum/s.losses : 0;
-      s.maxDrawdownCurrency     = maxDd;
-      s.maxDrawdownPercent      = (peak>0)? 100.0*maxDd/peak : 0;
-      s.avgHoldSeconds           = (s.totalTrades>0)? sumHold/s.totalTrades : 0;
-      s.entryAccuracyPct          = (s.totalTrades>0)? 100.0*entryOk/s.totalTrades : 0;
-      s.exitEfficiencyPct          = (exitEffCount>0)? 100.0*exitEffSum/exitEffCount : 0;
-      s.dailyPnL = netProfitAll;
+      s.netProfitTotal=netProfitAll;
+      s.dailyPnL=todayNet;
+      s.decisiveTrades=s.wins+s.losses;
+      s.winRate=(s.decisiveTrades>0)?100.0*s.wins/s.decisiveTrades:0.0;
+      s.profitFactor=(MathAbs(s.netLossSum)>1e-8)?s.netWinSum/MathAbs(s.netLossSum):((s.netWinSum>0.0)?999.0:0.0);
+      s.grossProfitFactor=(MathAbs(s.grossLossSum)>1e-8)?s.grossWinSum/MathAbs(s.grossLossSum):((s.grossWinSum>0.0)?999.0:0.0);
+      s.netExpectancy=(s.totalTrades>0)?sumNetFull/s.totalTrades:0.0;
+      s.grossExpectancy=(s.totalTrades>0)?sumGrossFull/s.totalTrades:0.0;
+      s.avgWin=(s.wins>0)?s.netWinSum/s.wins:0.0;
+      s.avgLoss=(s.losses>0)?s.netLossSum/s.losses:0.0;
+      s.maxDrawdownCurrency=maxDd;
+      s.maxDrawdownPercent=(peak>0.0)?100.0*maxDd/peak:0.0;
+      s.avgHoldSeconds=(s.totalTrades>0)?sumHold/s.totalTrades:0.0;
+      s.entryAccuracyPct=(s.totalTrades>0)?100.0*entryOk/s.totalTrades:0.0;
+      s.exitEfficiencyPct=(exitEffCount>0)?100.0*exitEffSum/exitEffCount:0.0;
 
       // Rebuild the adaptive risk sequence from the durable journal on every calculation.
       // Only records from the current tester/demo/live provenance contribute. Partial exits
