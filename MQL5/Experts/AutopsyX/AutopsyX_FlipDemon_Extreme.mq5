@@ -2981,6 +2981,13 @@ void AxApplyContinuationIntelligenceBonus(SAxScore &score)
    if(r.overnightBias==AX_DIR_SELL && g_w1Institutional.AllowsDirection(AX_DIR_SELL) && g_d1Institutional.AllowsDirection(AX_DIR_SELL)) sell+=(r.overnightBiasScore/100.0)*AxClampD(InpOvernightBiasScoreWeight,0.0,5.0);
    if(r.twinDirection==AX_DIR_BUY && g_w1Institutional.AllowsDirection(AX_DIR_BUY) && g_d1Institutional.AllowsDirection(AX_DIR_BUY)) buy+=(r.twinContinuationScore/100.0)*AxClampD(InpTwinContinuationScoreWeight,0.0,8.0);
    if(r.twinDirection==AX_DIR_SELL && g_w1Institutional.AllowsDirection(AX_DIR_SELL) && g_d1Institutional.AllowsDirection(AX_DIR_SELL)) sell+=(r.twinContinuationScore/100.0)*AxClampD(InpTwinContinuationScoreWeight,0.0,8.0);
+   // Preserve strategy-level attribution after the W1/D1 authority filters.
+   score.vwapPullbackBullBonus=(r.vwapPullbackDirection==AX_DIR_BUY && g_w1Institutional.AllowsDirection(AX_DIR_BUY) && g_d1Institutional.AllowsDirection(AX_DIR_BUY)) ? (r.vwapPullbackScore/100.0)*AxClampD(InpVWAPPullbackScoreWeight,0.0,8.0) : 0.0;
+   score.vwapPullbackBearBonus=(r.vwapPullbackDirection==AX_DIR_SELL && g_w1Institutional.AllowsDirection(AX_DIR_SELL) && g_d1Institutional.AllowsDirection(AX_DIR_SELL)) ? (r.vwapPullbackScore/100.0)*AxClampD(InpVWAPPullbackScoreWeight,0.0,8.0) : 0.0;
+   score.overnightBiasBullBonus=(r.overnightBias==AX_DIR_BUY && g_w1Institutional.AllowsDirection(AX_DIR_BUY) && g_d1Institutional.AllowsDirection(AX_DIR_BUY)) ? (r.overnightBiasScore/100.0)*AxClampD(InpOvernightBiasScoreWeight,0.0,5.0) : 0.0;
+   score.overnightBiasBearBonus=(r.overnightBias==AX_DIR_SELL && g_w1Institutional.AllowsDirection(AX_DIR_SELL) && g_d1Institutional.AllowsDirection(AX_DIR_SELL)) ? (r.overnightBiasScore/100.0)*AxClampD(InpOvernightBiasScoreWeight,0.0,5.0) : 0.0;
+   score.twinContinuationBullBonus=(r.twinDirection==AX_DIR_BUY && g_w1Institutional.AllowsDirection(AX_DIR_BUY) && g_d1Institutional.AllowsDirection(AX_DIR_BUY)) ? (r.twinContinuationScore/100.0)*AxClampD(InpTwinContinuationScoreWeight,0.0,8.0) : 0.0;
+   score.twinContinuationBearBonus=(r.twinDirection==AX_DIR_SELL && g_w1Institutional.AllowsDirection(AX_DIR_SELL) && g_d1Institutional.AllowsDirection(AX_DIR_SELL)) ? (r.twinContinuationScore/100.0)*AxClampD(InpTwinContinuationScoreWeight,0.0,8.0) : 0.0;
    if(buy<=0.0 && sell<=0.0) return;
    score.buyScore=AxClampD(score.buyScore+buy,0.0,100.0);
    score.sellScore=AxClampD(score.sellScore+sell,0.0,100.0);
