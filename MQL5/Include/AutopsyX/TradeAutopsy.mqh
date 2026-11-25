@@ -383,6 +383,15 @@ private:
       rec.overnightBiasBearBonus=(fieldCount>=50)?StringToDouble(fields[47]):0.0;
       rec.twinContinuationBullBonus=(fieldCount>=50)?StringToDouble(fields[48]):0.0;
       rec.twinContinuationBearBonus=(fieldCount>=50)?StringToDouble(fields[49]):0.0;
+      if(!MathIsValidNumber(rec.vwapPullbackBullBonus) || !MathIsValidNumber(rec.vwapPullbackBearBonus) ||
+         !MathIsValidNumber(rec.overnightBiasBullBonus) || !MathIsValidNumber(rec.overnightBiasBearBonus) ||
+         !MathIsValidNumber(rec.twinContinuationBullBonus) || !MathIsValidNumber(rec.twinContinuationBearBonus) ||
+         rec.vwapPullbackBullBonus<0.0 || rec.vwapPullbackBullBonus>8.0 ||
+         rec.vwapPullbackBearBonus<0.0 || rec.vwapPullbackBearBonus>8.0 ||
+         rec.overnightBiasBullBonus<0.0 || rec.overnightBiasBullBonus>5.0 ||
+         rec.overnightBiasBearBonus<0.0 || rec.overnightBiasBearBonus>5.0 ||
+         rec.twinContinuationBullBonus<0.0 || rec.twinContinuationBullBonus>8.0 ||
+         rec.twinContinuationBearBonus<0.0 || rec.twinContinuationBearBonus>8.0) return(false);
 
       if(rec.dealIdOut==0 || rec.positionIdentifier==0 ||
          rec.lots<=0.0 || rec.entryPrice<=0.0 || rec.exitPrice<=0.0 ||
