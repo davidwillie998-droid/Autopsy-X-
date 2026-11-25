@@ -82,6 +82,12 @@ public:
       s.preBonusSellScore=0.0;
       s.orderFlowBullBonus=0.0;
       s.orderFlowBearBonus=0.0;
+      s.vwapPullbackBullBonus=0.0;
+      s.vwapPullbackBearBonus=0.0;
+      s.overnightBiasBullBonus=0.0;
+      s.overnightBiasBearBonus=0.0;
+      s.twinContinuationBullBonus=0.0;
+      s.twinContinuationBearBonus=0.0;
       s.scoreGap=0.0;
       s.minimumScoreToAct=m_minScoreToAct;
       s.minimumGapToAct=m_minGapToAct;
