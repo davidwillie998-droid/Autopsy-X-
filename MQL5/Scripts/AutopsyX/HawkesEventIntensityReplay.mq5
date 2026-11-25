@@ -92,6 +92,50 @@ void TestOrderingAndInvalidTimestamp(void)
    Check(!engine.UpdateSample(tick,1.0),"zero timestamp rejected");
   }
 
+void TestMalformedDirection(void)
+  {
+   CHawkesEventIntensityEngine engine;
+   SAxTick tick;
+   MakeSample(tick,1,1000,100.0,0);
+   engine.UpdateSample(tick,1.0);
+   MakeSample(tick,2,1100,101.0,2);
+   Check(!engine.UpdateSample(tick,1.0),
+         "out-of-range directional classification rejected");
+   Check(engine.EventCount()==0,
+         "malformed direction cannot create an event");
+  }
+
+void RunHighFrequencyBenchmark(void)
+  {
+   const int samples=100000;
+   CHawkesEventIntensityEngine engine;
+   engine.Configure(0.05,0.05,0.12,0.04,0.04,0.12,1.0,30,10000,0.0);
+   SAxTick tick;
+   MakeSample(tick,1,1000,100.0,0);
+   engine.UpdateSample(tick,0.01);
+   ulong started=GetMicrosecondCount();
+   int accepted=0;
+   for(int i=1;i<=samples;i++)
+     {
+      int direction=((i%2)==0)?1:-1;
+      MakeSample(tick,(ulong)i+1,1000+(long)i,100.0,direction);
+      if(engine.UpdateSample(tick,0.01))
+         accepted++;
+     }
+   ulong elapsed=GetMicrosecondCount()-started;
+   SAxHawkesSnapshot snap;
+   bool ready=engine.Snapshot(snap);
+   bool finite=ready && MathIsValidNumber(snap.buyIntensity) &&
+               MathIsValidNumber(snap.sellIntensity) &&
+               MathIsValidNumber(snap.imbalance) &&
+               MathIsValidNumber(snap.clustering);
+   Check(accepted==samples,"100k synthetic tick stream fully accepted");
+   Check(finite,"100k tick stream retains finite Hawkes outputs");
+   double rate=(elapsed>0)?(double)accepted*1000000.0/(double)elapsed:0.0;
+   PrintFormat("HAWKES BENCHMARK | samples=%d accepted=%d elapsed_us=%I64u ticks_per_sec=%.0f",
+               samples,accepted,elapsed,rate);
+  }
+
 void TestStalenessAndConfigurationGuard(void)
   {
    CHawkesEventIntensityEngine engine;
@@ -139,7 +183,9 @@ void OnStart(void)
    TestDirectionalIntensity();
    TestThresholdAccumulation();
    TestOrderingAndInvalidTimestamp();
+   TestMalformedDirection();
    TestStalenessAndConfigurationGuard();
+   RunHighFrequencyBenchmark();
    TestDeterministicReplay();
    PrintFormat("HAWKES REPLAY COMPLETE | passed=%d failed=%d | no trade requests issued",
                g_passed,g_failed);
