@@ -56,6 +56,7 @@ private:
    double m_minMovePoints;
    double m_lastMid;
    bool   m_haveMid;
+   bool   m_configValid;
    SAxHawkesSnapshot m_snapshot;
 
    void ClearSnapshot(void)
@@ -106,12 +107,14 @@ public:
       m_minEvents=(minEvents<5)?5:minEvents;
       m_maxAgeMsc=(maxAgeMsc<100)?100:maxAgeMsc;
       m_minMovePoints=minMovePoints;
+      m_configValid=false;
       if(!StableParameters())
         {
          Reset();
          m_snapshot.status=AX_HAWKES_INVALID;
          return(false);
         }
+      m_configValid=true;
       Reset();
       return(true);
      }
@@ -130,6 +133,12 @@ public:
    // script harness can inject synthetic accepted samples without a broker feed.
    bool UpdateSample(const SAxTick &tick,const double point)
      {
+      if(!m_configValid)
+        {
+         m_snapshot.status=AX_HAWKES_INVALID;
+         m_snapshot.valid=false;
+         return(false);
+        }
       if(tick.timeMsc<=0 || tick.sequence==0 || !MathIsValidNumber(tick.mid) ||
          !MathIsValidNumber(point) || point<=0.0 ||
          tick.dir<-1 || tick.dir>1)
