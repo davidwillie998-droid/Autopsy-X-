@@ -98,6 +98,8 @@ struct SAxStatsSnapshot
    int    totalTrades;
    int    wins;
    int    losses;
+   int    breakEvenTrades;       // completed full trades with exactly zero net P&L
+   int    decisiveTrades;        // wins + losses; break-even outcomes excluded from win-rate denominator
    double winRate;
    double netWinSum;           // sum of net (post-cost) profit on winning trades
    double netLossSum;          // sum of net (post-cost) profit on losing trades (<=0)
@@ -131,7 +133,8 @@ public:
    SAxStatsSnapshot  Compute(const CTradeAutopsy &autopsy,const double startingEquity) const
      {
       SAxStatsSnapshot s;
-      s.totalTrades=0; s.wins=0; s.losses=0; s.winRate=0;
+      s.totalTrades=0; s.wins=0; s.losses=0;
+      s.breakEvenTrades=0; s.decisiveTrades=0; s.winRate=0;
       s.netWinSum=0; s.netLossSum=0; s.profitFactor=0;
       s.grossWinSum=0; s.grossLossSum=0; s.grossProfitFactor=0;
       s.netExpectancy=0; s.grossExpectancy=0; s.avgWin=0; s.avgLoss=0;
@@ -192,6 +195,8 @@ public:
             s.netLossSum   += r.netProfit;
             s.grossLossSum += r.grossProfit;
            }
+         else
+            s.breakEvenTrades++;
 
          if(r.mfe > MathAbs(r.mae)) entryOk++;
 
@@ -203,7 +208,9 @@ public:
         }
 
       s.netProfitTotal   = netProfitAll;
-      s.winRate           = (s.totalTrades>0)? 100.0*s.wins/s.totalTrades : 0;
+      // Break-even closes remain in totalTrades and expectancy, but are neither wins nor losses.
+      s.decisiveTrades     = s.wins+s.losses;
+      s.winRate            = (s.decisiveTrades>0)? 100.0*s.wins/s.decisiveTrades : 0;
       s.profitFactor       = (MathAbs(s.netLossSum)>1e-8)? s.netWinSum/MathAbs(s.netLossSum) : ((s.netWinSum>0)?999.0:0.0);
       s.grossProfitFactor   = (MathAbs(s.grossLossSum)>1e-8)? s.grossWinSum/MathAbs(s.grossLossSum) : ((s.grossWinSum>0)?999.0:0.0);
       s.netExpectancy       = (s.totalTrades>0)? sumNetFull/s.totalTrades : 0;
