@@ -226,6 +226,7 @@ input double          InpVWAPAlignmentBonus  = 1.15;   // Sizing bonus applied O
 input group "=== VWAP / ADX / OVERNIGHT / TWIN CONTINUATION INTELLIGENCE ===";
 input bool InpUseContinuationIntelligence = true; // Bounded confirmation evidence only
 input int InpContinuationADXPeriod = 14;
+input double InpContinuationADXTrendThreshold = 25.0; // Require a confirmed trend, not the 20-25 transition zone
 input int InpOvernightStartServerHour = 22; // Broker server time, verify DST
 input int InpOvernightEndServerHour = 7;
 input double InpVWAPPullbackScoreWeight = 5.0;
@@ -5147,6 +5148,7 @@ int OnInit(void)
    if(InpUseContinuationIntelligence)
      {
       bool continuationReady=g_continuationIntelligence.Init(_Symbol,InpRegimeTimeframe,InpContinuationADXPeriod);
+      g_continuationIntelligence.ConfigureTrendThreshold(InpContinuationADXTrendThreshold);
       g_continuationIntelligence.ConfigureOvernight(InpOvernightStartServerHour,InpOvernightEndServerHour);
       if(!continuationReady) Print("AUTOPSY X CONTINUATION INTELLIGENCE: ADX unavailable; evidence disabled.");
       else PrintFormat("AUTOPSY X CONTINUATION INTELLIGENCE: ADX(%d), overnight %02d:00-%02d:00 server time; evidence engines ready.",InpContinuationADXPeriod,InpOvernightStartServerHour,InpOvernightEndServerHour);
