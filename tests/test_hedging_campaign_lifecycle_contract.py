@@ -42,3 +42,27 @@ def test_verified_multi_leg_state_does_not_latch_the_integrity_quarantine():
     assert "g_engineState=AX_ENGINE_PAUSED;" in block
     assert "AxManageHedgingVirtualExitTickets()" in EA
     assert "fresh entries are blocked until the multi-leg set is resolved" in block
+
+
+def test_startup_multi_leg_detection_does_not_latch_sticky_lock():
+    init_start = EA.index("int OnInit(void)")
+    init_end = EA.index("void OnDeinit", init_start)
+    init_block = EA[init_start:init_end]
+    multi_start = init_block.index("else if(g_hedgingPositionManager.HasMultiplePositions())")
+    multi_end = init_block.index("// Rehydrate complete state by stable POSITION_IDENTIFIER", multi_start)
+    multi_block = init_block[multi_start:multi_end]
+    assert "g_hedgingLifecycleLock=true" not in multi_block
+    assert "g_pyramidReady=false" in multi_block
+
+
+def test_single_leg_handoff_rehydrates_exact_remaining_identifier():
+    tick_start = EA.index("void AxProcessTick(void)")
+    tick_block = EA[tick_start:]
+    handoff_start = tick_block.index("Rehydrate the legacy single-position controller")
+    handoff_end = tick_block.index("if(g_hedgingLifecycleLock)", handoff_start)
+    handoff = tick_block[handoff_start:handoff_end]
+    assert "FindByIdentifier(remainingPosition.positionIdentifier,remainingState)" in handoff
+    assert "remainingState.ticket!=remainingPosition.ticket" in handoff
+    assert "g_posState=remainingState.state;" in handoff
+    assert "g_haveOpenPosition=true;" in handoff
+    assert "g_positionIdentifier=0;" in handoff
