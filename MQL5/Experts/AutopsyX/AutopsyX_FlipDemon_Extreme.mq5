@@ -75,6 +75,7 @@
 #include <AutopsyX/AdaptiveFlipEngine.mqh>
 #include <AutopsyX/AccountFlipEngine.mqh>
 #include <AutopsyX/VWAPEngine.mqh>
+#include <AutopsyX/ContinuationIntelligence.mqh>
 #include <AutopsyX/EmergencyControls.mqh>
 #include <AutopsyX/TradeReconciliation.mqh>
 #include <AutopsyX/RestartRecovery.mqh>
@@ -221,6 +222,15 @@ input bool            InpRequireVWAPDirection = true;   // Paper rule: only ente
 input bool            InpUseVWAPExit         = true;   // Paper rule: arm the confirmed closed-bar exit when price crosses VWAP against the position
 input ENUM_AX_VWAP_EXIT_MODE InpVWAPExitMode  = AX_VWAP_EXIT_CONFIRMED_CROSS; // Only relevant when InpUseVWAPExit is on. CONFIRMED_CROSS is the original/default behavior (closed-bar confirmation) - see ExitEngine.mqh for all four modes
 input double          InpVWAPAlignmentBonus  = 1.15;   // Sizing bonus applied ONLY when InpUseVWAPExit is on and this signal agrees with VWAP trend - see AdaptiveFlipEngine.mqh for how this is bounded
+
+input group "=== VWAP / ADX / OVERNIGHT / TWIN CONTINUATION INTELLIGENCE ===";
+input bool InpUseContinuationIntelligence = true; // Bounded confirmation evidence only
+input int InpContinuationADXPeriod = 14;
+input int InpOvernightStartServerHour = 22; // Broker server time, verify DST
+input int InpOvernightEndServerHour = 7;
+input double InpVWAPPullbackScoreWeight = 5.0;
+input double InpOvernightBiasScoreWeight = 3.0;
+input double InpTwinContinuationScoreWeight = 5.0;
 
 input group "=== ADVANCED MULTI-SESSION ORB ===";
 input bool            InpEnableAdvancedSessionORB = false; // Opt in only after broker-server session hours are verified
@@ -494,6 +504,8 @@ CHeatmapEngine        g_heatmap;
 CAdaptiveFlipEngine   g_afe;
 CAccountFlipEngine    g_accountFlip;
 CVWAPEngine           g_vwap;
+CContinuationIntelligence g_continuationIntelligence;
+datetime g_lastContinuationDiagnosticBar=0;
 CAdvancedSessionORBEngine g_advancedSessionOrb;
 datetime g_lastOrbDiagnosticBar=0;
 CTradeAutopsy         g_autopsy;
@@ -2955,6 +2967,37 @@ void AxApplyOrderBlockScoreBonus(SAxScore &score)
                    bonus,g_marketMakerModel.Summary());
    }
 
+//--- VWAP pullback, overnight bias and twin continuation are bounded confirmation evidence.
+void AxApplyContinuationIntelligenceBonus(SAxScore &score)
+  {
+   if(!InpUseContinuationIntelligence || !g_regime.TradingAllowed()) return;
+   SAxContinuationSnapshot r=g_continuationIntelligence.Read();
+   if(!r.available) return;
+   double buy=0.0,sell=0.0;
+   if(r.vwapPullbackDirection==AX_DIR_BUY && g_w1Institutional.AllowsDirection(AX_DIR_BUY) && g_d1Institutional.AllowsDirection(AX_DIR_BUY)) buy+=(r.vwapPullbackScore/100.0)*AxClampD(InpVWAPPullbackScoreWeight,0.0,8.0);
+   if(r.vwapPullbackDirection==AX_DIR_SELL && g_w1Institutional.AllowsDirection(AX_DIR_SELL) && g_d1Institutional.AllowsDirection(AX_DIR_SELL)) sell+=(r.vwapPullbackScore/100.0)*AxClampD(InpVWAPPullbackScoreWeight,0.0,8.0);
+   if(r.overnightBias==AX_DIR_BUY && g_w1Institutional.AllowsDirection(AX_DIR_BUY) && g_d1Institutional.AllowsDirection(AX_DIR_BUY)) buy+=(r.overnightBiasScore/100.0)*AxClampD(InpOvernightBiasScoreWeight,0.0,5.0);
+   if(r.overnightBias==AX_DIR_SELL && g_w1Institutional.AllowsDirection(AX_DIR_SELL) && g_d1Institutional.AllowsDirection(AX_DIR_SELL)) sell+=(r.overnightBiasScore/100.0)*AxClampD(InpOvernightBiasScoreWeight,0.0,5.0);
+   if(r.twinDirection==AX_DIR_BUY && g_w1Institutional.AllowsDirection(AX_DIR_BUY) && g_d1Institutional.AllowsDirection(AX_DIR_BUY)) buy+=(r.twinContinuationScore/100.0)*AxClampD(InpTwinContinuationScoreWeight,0.0,8.0);
+   if(r.twinDirection==AX_DIR_SELL && g_w1Institutional.AllowsDirection(AX_DIR_SELL) && g_d1Institutional.AllowsDirection(AX_DIR_SELL)) sell+=(r.twinContinuationScore/100.0)*AxClampD(InpTwinContinuationScoreWeight,0.0,8.0);
+   if(buy<=0.0 && sell<=0.0) return;
+   score.buyScore=AxClampD(score.buyScore+buy,0.0,100.0);
+   score.sellScore=AxClampD(score.sellScore+sell,0.0,100.0);
+   score.scoreGap=MathAbs(score.buyScore-score.sellScore);
+   score.confidence=AxClampD(score.scoreGap*1.15,0.0,100.0);
+   score.action=AX_DIR_NONE;
+   if(score.scoreGap>=score.minimumGapToAct)
+     {
+      if(score.buyScore>score.sellScore && score.buyScore>=score.minimumScoreToAct) score.action=AX_DIR_BUY;
+      else if(score.sellScore>score.buyScore && score.sellScore>=score.minimumScoreToAct) score.action=AX_DIR_SELL;
+     }
+   if(InpVerboseLogging && r.barTime!=g_lastContinuationDiagnosticBar)
+     {
+      g_lastContinuationDiagnosticBar=r.barTime;
+      PrintFormat("AUTOPSY X CONTINUATION INTELLIGENCE: BUY +%.2f SELL +%.2f | %s",buy,sell,g_continuationIntelligence.Summary());
+     }
+  }
+
 //--- Session ORB is bounded confirmation evidence, never an independent order signal.
 void AxApplyAdvancedORBScoreBonus(SAxScore &score)
   {
@@ -5101,6 +5144,13 @@ int OnInit(void)
 
    g_vwap.Configure(InpVWAPMode,InpVWAPRollingBars,InpVWAPSydneyHour,InpVWAPTokyoHour,
                      InpVWAPLondonHour,InpVWAPNewYorkHour,InpVWAPDeadbandATRMult);
+   if(InpUseContinuationIntelligence)
+     {
+      bool continuationReady=g_continuationIntelligence.Init(_Symbol,InpRegimeTimeframe,InpContinuationADXPeriod);
+      g_continuationIntelligence.ConfigureOvernight(InpOvernightStartServerHour,InpOvernightEndServerHour);
+      if(!continuationReady) Print("AUTOPSY X CONTINUATION INTELLIGENCE: ADX unavailable; evidence disabled.");
+      else PrintFormat("AUTOPSY X CONTINUATION INTELLIGENCE: ADX(%d), overnight %02d:00-%02d:00 server time; evidence engines ready.",InpContinuationADXPeriod,InpOvernightStartServerHour,InpOvernightEndServerHour);
+     }
 
    if(!g_autopsy.Init("AutopsyX_FlipDemon_Extreme",_Symbol))
       Print("AUTOPSY X: warning - could not open trade autopsy CSV log");
@@ -5316,6 +5366,7 @@ void OnDeinit(const int reason)
    if(g_gapAnalyticsReady)
       g_gapAnalytics.WriteSummary(gapSummaryTime);
    g_gapAnalytics.Deinit();
+   g_continuationIntelligence.Deinit();
    g_gapJournal.Deinit();
    g_marketSnapshotRecorder.Deinit();
    g_advancedSessionOrb.Cleanup();
@@ -6659,6 +6710,8 @@ void AxProcessTick(void)
          g_vwapValue = -1.0;
          g_vwapTrend = "NEUTRAL";
         }
+      if(InpUseContinuationIntelligence)
+         g_continuationIntelligence.Update(TimeTradeServer()>0?TimeTradeServer():TimeCurrent(),g_vwapValue,g_regime.CurrentAtr(),g_vwapTrend,true);
      }
    //--- HTF confluence structure refreshes on its own, slower bar clock ---
    datetime htfBarTime = iTime(_Symbol,InpHtfTimeframe,0);
@@ -6755,6 +6808,7 @@ void AxProcessTick(void)
    AxApplyFvgRetestScoreBonus(score);
    AxApplyOrderBlockScoreBonus(score);
     AxApplyMarketMakerModelScoreBonus(score);
+   AxApplyContinuationIntelligenceBonus(score);
    g_lastScore = score; // dashboard reads this, not g_scorer.Last(), so it shows the blended score
    // Attach the exact same-tick blended decision to the raw snapshot captured at handler entry.
    if(snapshotCaptured)
