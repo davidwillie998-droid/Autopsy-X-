@@ -31,3 +31,13 @@ def test_ticket_lifecycle_is_observation_only_and_does_not_authorize_multi_leg_e
     assert 'if(g_hedgingPositionManager.HasMultiplePositions())' in EA
     assert 'g_engineState=AX_ENGINE_PAUSED;' in EA
     assert 'InpExecutionMode = AX_EXEC_ANALYSIS_ONLY' in EA
+
+
+def test_verified_multi_leg_state_does_not_latch_the_integrity_quarantine():
+    start = EA.index("if(g_hedgingPositionManager.HasMultiplePositions())", EA.index("void AxProcessTick(void)"))
+    end = EA.index("if(g_hedgingLifecycleLock)", start)
+    block = EA[start:end]
+    assert "g_hedgingLifecycleLock=true" not in block
+    assert "g_engineState=AX_ENGINE_PAUSED;" in block
+    assert "AxManageHedgingVirtualExitTickets()" in EA
+    assert "fresh entries are blocked until the multi-leg set is resolved" in block
