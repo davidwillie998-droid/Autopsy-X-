@@ -5533,6 +5533,25 @@ bool AxManageHedgingSignalExitTickets(const SAxScore &score,const bool vwapExitC
    return(true);
   }
 
+// Close one exact hedging leg during an account-level kill or daily-loss shutdown.
+// The next tick refreshes the broker set and advances to the next leg.
+bool AxCloseOneHedgingPositionForRiskShutdown(void)
+  {
+   if(!g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber))
+     {
+      g_hedgingLifecycleLock=true;
+      g_recoveryReady=false;
+      g_engineState=AX_ENGINE_PAUSED;
+      Print("FLIPDEMON HEDGING RISK SHUTDOWN: broker position snapshot incomplete; no close request sent.");
+      return(false);
+     }
+   if(g_hedgingPositionManager.Count()==0) return(true);
+   SAxManagedPosition live;
+   if(!g_hedgingPositionManager.GetAt(0,live))
+      return(false);
+   return(AxCloseHedgingPositionByTicket(live));
+  }
+
 // Manage break-even independently for every leg in a hedging campaign.
 // The single-position ExitEngine remains responsible for the one-position path.
 // Exact-ticket full liquidation entry point for the campaign exit controller.
@@ -7015,21 +7034,6 @@ void AxProcessTick(void)
    else
       g_lastAccSignalDir = AX_DIR_NONE;
 
-   // Multi-leg signal exits run only after this tick's blended score and accuracy
-   // snapshot are complete. A close refreshes broker state, so remaining legs are
-   // re-evaluated on the next accepted tick. This return also blocks all new entries.
-   if(multiPositionLifecycleActive)
-     {
-      bool hedgingCloseAttempted=false;
-      if(!AxManageHedgingSignalExitTickets(g_lastScore,isNewBarThisTick,
-                                            hedgingCloseAttempted))
-         return;
-      if(hedgingCloseAttempted)
-         return;
-      g_engineState=AX_ENGINE_PAUSED;
-      return;
-     }
-
    //--- KILL SWITCH / catastrophic execution guard ---
    if(g_consecutiveExecFailures>=InpMaxConsecutiveExecFailures && !g_risk.IsKilled())
       g_risk.ActivateKillSwitch("Catastrophic execution failures");
@@ -7037,6 +7041,12 @@ void AxProcessTick(void)
    if(g_risk.IsKilled())
      {
       g_engineState = AX_ENGINE_KILLED;
+      if(multiPositionLifecycleActive && InpCloseAllOnKill)
+        {
+         if(!AxCloseOneHedgingPositionForRiskShutdown())
+            Print("FLIPDEMON HEDGING KILL SHUTDOWN: one-leg close did not complete; durable action state retained.");
+         return;
+        }
       if(g_haveOpenPosition && InpCloseAllOnKill)
          AxCloseAndRecord(AX_EXIT_MANUAL_KILL);
       return;
@@ -7046,8 +7056,28 @@ void AxProcessTick(void)
    if(g_risk.DailyLossLimitBreached())
      {
       g_engineState = AX_ENGINE_PAUSED;
+      if(multiPositionLifecycleActive)
+        {
+         if(!AxCloseOneHedgingPositionForRiskShutdown())
+            Print("FLIPDEMON HEDGING DAILY-LOSS SHUTDOWN: one-leg close did not complete; durable action state retained.");
+         return;
+        }
       if(g_haveOpenPosition)
          AxCloseAndRecord(AX_EXIT_RISK_SHUTDOWN);
+      return;
+     }
+
+   // Multi-leg signal exits run after this tick's blended score and accuracy
+   // snapshot, but before legacy single-position management or any entry route.
+   if(multiPositionLifecycleActive)
+     {
+      bool hedgingCloseAttempted=false;
+      if(!AxManageHedgingSignalExitTickets(g_lastScore,isNewBarThisTick,
+                                            hedgingCloseAttempted))
+         return;
+      if(hedgingCloseAttempted)
+         return; // close path refreshed broker state; re-evaluate remaining legs next tick
+      g_engineState=AX_ENGINE_PAUSED;
       return;
      }
 
