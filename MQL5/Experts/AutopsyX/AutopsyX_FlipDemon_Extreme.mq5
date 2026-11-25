@@ -7736,7 +7736,10 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
       else if(trans.type==TRADE_TRANSACTION_DEAL_ADD && trans.deal>0 &&
               HistoryDealSelect(trans.deal) &&
               HistoryDealGetInteger(trans.deal,DEAL_ENTRY)==DEAL_ENTRY_IN &&
-              g_iq200Telemetry.MarkDealTicketSeen(trans.deal))
+              g_iq200Telemetry.RecordConfirmedEntryDeal(
+                 trans.deal,
+                 (long)HistoryDealGetInteger(trans.deal,DEAL_TIME_MSC),
+                 HistoryDealGetDouble(trans.deal,DEAL_VOLUME)))
         {
          // Capture the current deal before selecting the complete position history.
          ulong dealOrder=(ulong)HistoryDealGetInteger(trans.deal,DEAL_ORDER);
