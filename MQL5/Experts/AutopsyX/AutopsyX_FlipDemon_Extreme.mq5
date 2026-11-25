@@ -4314,6 +4314,9 @@ double AxAdaptiveConfidenceMultiplier(void)
       SAxTradeRecord r;
       if(!g_autopsy.GetRecord(i,r)) continue;
       if(r.isPartial) continue;
+      // Break-even closes are not directional wins or losses. Exclude them from
+      // both the adaptive win-rate denominator and its minimum decisive sample.
+      if(r.netProfit==0.0) continue;
       if(r.netProfit>0) wins++;
       netSum += r.netProfit;
       counted++;
