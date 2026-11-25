@@ -48,8 +48,23 @@ def test_signal_exit_closes_only_one_exact_ticket_per_tick_and_blocks_new_entrie
     controller = EA[start:end]
     assert "AxCloseHedgingPositionByTicket(live)" in controller
     assert "return(true);" in controller
-    tick = EA.index("if(multiPositionLifecycleActive)", EA.index("g_lastScore = score;"))
-    block = EA[tick:tick+700]
+    controller_call = EA.index("AxManageHedgingSignalExitTickets(g_lastScore,isNewBarThisTick")
+    tick = EA.rfind("if(multiPositionLifecycleActive)", EA.index("g_lastScore = score;"), controller_call)
+    block = EA[tick:controller_call+500]
     assert "if(hedgingCloseAttempted)" in block
     assert "return;" in block
     assert "g_engineState=AX_ENGINE_PAUSED;" in block
+
+
+def test_account_shutdown_routes_through_exact_ticket_closes_for_multi_leg_campaigns():
+    start = EA.index("bool AxCloseOneHedgingPositionForRiskShutdown(")
+    end = EA.index("// Manage break-even independently", start)
+    shutdown = EA[start:end]
+    assert "g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber)" in shutdown
+    assert "g_hedgingPositionManager.GetAt(0,live)" in shutdown
+    assert "AxCloseHedgingPositionByTicket(live)" in shutdown
+    kill = EA[EA.index('if(g_risk.IsKilled())'):EA.index("//--- RISK SHUTDOWN")]
+    assert "multiPositionLifecycleActive && InpCloseAllOnKill" in kill
+    daily = EA[EA.index("if(g_risk.DailyLossLimitBreached())"):EA.index("// Multi-leg signal exits run")]
+    assert "if(multiPositionLifecycleActive)" in daily
+    assert "AxCloseOneHedgingPositionForRiskShutdown()" in daily
