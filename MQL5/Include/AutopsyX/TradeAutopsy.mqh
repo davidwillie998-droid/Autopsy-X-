@@ -8,8 +8,6 @@
 #define AX_TRADEAUTOPSY_MQH
 #include "Defs.mqh"
 
-#define AX_AUTOPSY_MAX_MEMORY 5000
-
 class CTradeAutopsy
   {
 private:
@@ -458,23 +456,17 @@ private:
            }
          if(HasLoadedDeal(record)) continue;
 
-         if(m_count<AX_AUTOPSY_MAX_MEMORY)
+         // Retain every valid row from the durable journal. No rolling 5,000-row
+         // window is permitted for lifetime performance statistics.
+         if(ArrayResize(m_records,m_count+1,256)!=m_count+1)
            {
-            if(ArrayResize(m_records,m_count+1)!=m_count+1)
-              {
-               FileClose(handle);
-               m_persistenceHealthy=false;
-               Print("AUTOPSY JOURNAL ERROR: trade-record recovery memory allocation failed.");
-               return(false);
-              }
-            m_records[m_count]=record;
-            m_count++;
+            FileClose(handle);
+            m_persistenceHealthy=false;
+            Print("AUTOPSY JOURNAL ERROR: full-history recovery allocation failed.");
+            return(false);
            }
-         else
-           {
-            for(int i=1;i<AX_AUTOPSY_MAX_MEMORY;i++) m_records[i-1]=m_records[i];
-            m_records[AX_AUTOPSY_MAX_MEMORY-1]=record;
-           }
+         m_records[m_count]=record;
+         m_count++;
          loaded++;
         }
       FileClose(handle);
@@ -495,30 +487,21 @@ private:
       if(!LoadTradeRecordsFile(m_v4FileName,false,loaded,rejected)) return(false);
       if(!LoadTradeRecordsFile(m_v5FileName,false,loaded,rejected)) return(false);
       if(!LoadTradeRecordsFile(m_fileName,false,loaded,rejected)) return(false);
-      PrintFormat("FLIPDEMON AUTOPSY RECOVERY: restored=%d rejected=%d duplicate_deals_skipped; memory_limit=%d.",
-                  loaded,rejected,AX_AUTOPSY_MAX_MEMORY);
+      PrintFormat("FLIPDEMON AUTOPSY RECOVERY: restored=%d rejected=%d duplicate_deals_skipped; full_history=true.",
+                  loaded,rejected);
       return(true);
      }
 
    bool              AddRiskHistory(const double netProfit,const double rMultiple,
                                     const bool isPartial,const string provenance)
      {
-      if(m_riskCount>=AX_AUTOPSY_MAX_MEMORY)
-        {
-         for(int i=1;i<AX_AUTOPSY_MAX_MEMORY;i++)
-           {
-            m_riskNetProfit[i-1]=m_riskNetProfit[i];
-            m_riskMultiple[i-1]=m_riskMultiple[i];
-            m_riskPartial[i-1]=m_riskPartial[i];
-            m_riskProvenance[i-1]=m_riskProvenance[i];
-           }
-         m_riskCount=AX_AUTOPSY_MAX_MEMORY-1;
-        }
+      // Keep the complete recovered risk sequence. The journal is the durable source;
+      // dynamic arrays grow in reserved blocks to avoid a fixed historical cutoff.
       int requiredCount=m_riskCount+1;
-      if(ArrayResize(m_riskNetProfit,requiredCount)!=requiredCount ||
-         ArrayResize(m_riskMultiple,requiredCount)!=requiredCount ||
-         ArrayResize(m_riskPartial,requiredCount)!=requiredCount ||
-         ArrayResize(m_riskProvenance,requiredCount)!=requiredCount)
+      if(ArrayResize(m_riskNetProfit,requiredCount,256)!=requiredCount ||
+         ArrayResize(m_riskMultiple,requiredCount,256)!=requiredCount ||
+         ArrayResize(m_riskPartial,requiredCount,256)!=requiredCount ||
+         ArrayResize(m_riskProvenance,requiredCount,256)!=requiredCount)
         {
          m_persistenceHealthy=false;
          Print("AUTOPSY JOURNAL ERROR: risk-history memory allocation failed; new entries must remain blocked.");
@@ -739,23 +722,15 @@ public:
          return(rec.tradeClass);
         }
 
-      if(m_count<AX_AUTOPSY_MAX_MEMORY)
+      // Keep the in-memory learning/statistics view aligned with the complete CSV.
+      if(ArrayResize(m_records,m_count+1,256)!=m_count+1)
         {
-         if(ArrayResize(m_records,m_count+1)!=m_count+1)
-           {
-            m_persistenceHealthy=false;
-            Print("AUTOPSY JOURNAL ERROR: durable trade was written but in-memory record allocation failed; new entries must remain blocked.");
-            return(rec.tradeClass);
-           }
-         m_records[m_count] = rec;
-         m_count++;
+         m_persistenceHealthy=false;
+         Print("AUTOPSY JOURNAL ERROR: durable trade was written but full-history memory allocation failed; new entries must remain blocked.");
+         return(rec.tradeClass);
         }
-      else
-        {
-         // ring-shift memory buffer once capacity is reached; file remains the full record
-         for(int i=1;i<AX_AUTOPSY_MAX_MEMORY;i++) m_records[i-1]=m_records[i];
-         m_records[AX_AUTOPSY_MAX_MEMORY-1]=rec;
-        }
+      m_records[m_count]=rec;
+      m_count++;
 
       if(!AddRiskHistory(rec.netProfit,rec.rMultiple,rec.isPartial,AxProvenanceToString(rec.provenance)))
          return(rec.tradeClass);
