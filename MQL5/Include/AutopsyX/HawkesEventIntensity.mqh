@@ -208,7 +208,10 @@ public:
       m_lastSellIntensity=sellNow;
       m_lastTimeMsc=tick.timeMsc;
       m_lastSequence=tick.sequence;
-      m_lastMid=tick.mid;
+      // With a non-zero threshold, retain the last event reference until a
+      // cumulative displacement actually creates an event.
+      if(m_minMovePoints<=0.0 || direction!=0)
+         m_lastMid=tick.mid;
       m_haveMid=true;
 
       m_snapshot.buyIntensity=buyNow;
