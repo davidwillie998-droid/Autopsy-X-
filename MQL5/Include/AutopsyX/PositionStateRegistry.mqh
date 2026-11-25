@@ -143,13 +143,11 @@ private:
       long id=StringToInteger(f[0]),ticket=StringToInteger(f[1]),magic=StringToInteger(f[3]);
       long stateTicket=StringToInteger(f[4]);
       if(id<=0 || ticket<=0 || magic<=0 || stateTicket<=0) return(false);
-      ZeroMemory(r.state);
       r.positionIdentifier=(ulong)id;
       r.ticket=(ulong)ticket;
       r.symbol=Decode(f[2]);
       r.magic=(ulong)magic;
       SAxPositionState s;
-      ZeroMemory(s);
       s.ticket=(ulong)stateTicket;
       s.entryTime=(datetime)StringToInteger(f[5]);
       s.entryPrice=StringToDouble(f[6]);
@@ -248,6 +246,10 @@ public:
          SAxPositionLifecycleRecord record;
          if(!Deserialize(line,record) || FindIndex(record.positionIdentifier)>=0)
            { valid=false; break; }
+         for(int duplicateIndex=0;duplicateIndex<m_count;duplicateIndex++)
+            if(m_records[duplicateIndex].ticket==record.ticket)
+              { valid=false; break; }
+         if(!valid) break;
          int next=m_count+1;
          if(ArrayResize(m_records,next)!=next) { valid=false; break; }
          m_records[m_count]=record;
@@ -273,6 +275,9 @@ public:
       candidate.symbol=symbol; candidate.magic=magic; candidate.state=state;
       if(!ValidState(candidate)) { m_failureReason="INVALID_POSITION_STATE_RECORD"; return(false); }
       int index=FindIndex(id);
+      for(int ticketIndex=0;ticketIndex<m_count;ticketIndex++)
+         if(m_records[ticketIndex].ticket==ticket && ticketIndex!=index)
+           { m_failureReason="BROKER_TICKET_OWNERSHIP_CONFLICT"; return(false); }
       if(index<0)
         {
          if(m_count>=AX_POSITION_STATE_MAX_RECORDS) { m_failureReason="POSITION_STATE_CAPACITY_REACHED"; return(false); }
