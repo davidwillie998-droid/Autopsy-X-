@@ -18,6 +18,7 @@ private:
    string            m_legacyFileName;
    string            m_v4FileName;
    int               m_digits;
+   ulong             m_magicNumber;
    SAxTradeRecord    m_records[];
    int               m_count;
    double            m_riskNetProfit[];
@@ -585,7 +586,7 @@ private:
 public:
                      CTradeAutopsy(void) { m_fileHandle=INVALID_HANDLE; m_count=0; m_riskCount=0; m_persistenceHealthy=false; }
 
-   bool              Init(const string eaName,const string symbol)
+   bool              Init(const string eaName,const string symbol,const ulong magicNumber)
      {
       m_persistenceHealthy=false;
       m_digits = (int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
@@ -596,9 +597,9 @@ public:
       StringReplace(serverKey,":","_"); StringReplace(serverKey,".","_");
       StringReplace(serverKey," ","_");
       ulong login=(ulong)AccountInfoInteger(ACCOUNT_LOGIN);
-      ulong magic=(ulong)ChartGetInteger(0,CHART_EXPERT_ID);
+      m_magicNumber=magicNumber;
       m_fileName = StringFormat("%s_%I64u_%s_%I64u_%s_TradeAutopsy_v6.csv",
-                                eaName,login,serverKey,magic,symbol);
+                                eaName,login,serverKey,m_magicNumber,symbol);
       m_v4FileName = StringFormat("%s_%s_TradeAutopsy_v4.csv",eaName,symbol);
       m_legacyFileName = StringFormat("%s_%s_TradeAutopsy_v3.csv",eaName,symbol);
       m_fileHandle = FileOpen(m_fileName,FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ,',');
@@ -675,7 +676,7 @@ public:
       rec.tradeClass = Classify(rec);
       rec.provenance = AxDetectProvenance();
       rec.accountLogin=(ulong)AccountInfoInteger(ACCOUNT_LOGIN);
-      rec.magicNumber=(ulong)ChartGetInteger(0,CHART_EXPERT_ID);
+      rec.magicNumber=m_magicNumber;
       rec.accountServer=AccountInfoString(ACCOUNT_SERVER);
       if(rec.dealIdOut>0 && rec.positionIdentifier>0 && rec.dealIdOut<=LastAccountedDealTicket(rec.positionIdentifier))
          return(rec.tradeClass);
