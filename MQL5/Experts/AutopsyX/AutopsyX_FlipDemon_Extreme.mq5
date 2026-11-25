@@ -5442,7 +5442,15 @@ void OnDeinit(const int reason)
    g_executionLatency.Report();
    g_executionQualityJournal.Deinit();
    if(g_iq200TelemetryReady)
+     {
       g_iq200Telemetry.Flush(AX_IQ200_QUEUE_CAPACITY);
+      PrintFormat("FLIPDEMON BROKER ENTRY THROUGHPUT: confirmed_deal_slices=%I64u confirmed_volume=%.4f peak_deal_slices_per_second=%I64u first_deal_time_msc=%I64d last_deal_time_msc=%I64d. This is broker-confirmed entry-deal throughput, not order-request rate or completed-order count.",
+                  g_iq200Telemetry.ConfirmedEntryDealCount(),
+                  g_iq200Telemetry.ConfirmedEntryVolume(),
+                  g_iq200Telemetry.PeakConfirmedEntryDealsPerSecond(),
+                  g_iq200Telemetry.FirstConfirmedEntryTimeMsc(),
+                  g_iq200Telemetry.LastConfirmedEntryTimeMsc());
+     }
    g_iq200Telemetry.Deinit();
    g_distributedRiskCoordinator.Shutdown();
    if(!g_accountRiskCoordinator.Release())
