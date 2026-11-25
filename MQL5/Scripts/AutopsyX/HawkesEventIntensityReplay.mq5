@@ -88,6 +88,15 @@ void TestOrderingAndInvalidTimestamp(void)
    Check(!engine.UpdateSample(tick,1.0),"duplicate sequence rejected");
    MakeSample(tick,2,900,101.0,1);
    Check(!engine.UpdateSample(tick,1.0),"out-of-order timestamp rejected");
+   MakeSample(tick,2,950,101.0,1);
+   Check(!engine.UpdateSample(tick,1.0),
+         "older tick remains rejected after chronology reset");
+   MakeSample(tick,3,1100,102.0,0);
+   Check(engine.UpdateSample(tick,1.0) && engine.EventCount()==0,
+         "first chronological tick rebuilds a clean baseline");
+   MakeSample(tick,4,1200,103.0,1);
+   Check(engine.UpdateSample(tick,1.0) && engine.EventCount()==1,
+         "event accumulation resumes only after clean baseline");
    MakeSample(tick,3,0,101.0,1);
    Check(!engine.UpdateSample(tick,1.0),"zero timestamp rejected");
   }
