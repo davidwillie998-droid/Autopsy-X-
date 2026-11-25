@@ -371,6 +371,12 @@ struct SAxScore
    double        preBonusSellScore;
    double        orderFlowBullBonus;
    double        orderFlowBearBonus;
+   double        vwapPullbackBullBonus;
+   double        vwapPullbackBearBonus;
+   double        overnightBiasBullBonus;
+   double        overnightBiasBearBonus;
+   double        twinContinuationBullBonus;
+   double        twinContinuationBearBonus;
    double        scoreGap;
    double        minimumScoreToAct;
    double        minimumGapToAct;
