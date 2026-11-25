@@ -466,7 +466,13 @@ class BrokerExecutionCompatibilityTests(unittest.TestCase):
         self.assertIn("ConfirmMarketOrder(symbol,dir,lots,orderTicket", entry)
         self.assertIn("outcomeUncertain=true;", entry)
         self.assertIn("never resend an accepted or ambiguous market request", entry)
-        self.assertIn("a same-symbol position already exists", entry)
+        # Hedging accounts may open a distinct same-symbol position ticket.
+        # Netting accounts must use the dedicated aggregate-position add path.
+        self.assertIn("ACCOUNT_MARGIN_MODE_RETAIL_HEDGING", entry)
+        self.assertIn("bool hedgingAccount=", entry)
+        self.assertIn("if(!hedgingAccount && PositionSelect(symbol))", entry)
+        self.assertIn("use the netting-add lifecycle", entry)
+        self.assertNotIn("a same-symbol position already exists", entry)
 
     def test_legacy_symbol_stop_modify_routes_through_ticket_confirmation(self):
         modify = self.execution[
