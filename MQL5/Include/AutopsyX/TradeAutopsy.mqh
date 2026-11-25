@@ -747,80 +747,75 @@ public:
       int minCount=minimumSamples;
       if(minCount<1) minCount=1;
 
-      ulong positionIds[];
-      double campaignNet[],campaignCommission[];
-      int finalRecordIndex[],campaignOrder[];
-      if(ArrayResize(positionIds,m_count)!=m_count ||
-         ArrayResize(campaignNet,m_count)!=m_count ||
-         ArrayResize(campaignCommission,m_count)!=m_count ||
-         ArrayResize(finalRecordIndex,m_count)!=m_count)
+      // Build compact keys and sort once. The previous nested campaign search
+      // and insertion ordering became quadratic as the durable journal grew.
+      SAxCampaignKey keys[];
+      if(ArrayResize(keys,m_count)!=m_count)
         {
-         Print("FLIPDEMON VWAP RESEARCH WARNING: campaign aggregation allocation failed; no cohort report produced.");
+         Print("FLIPDEMON VWAP RESEARCH WARNING: campaign-key allocation failed; no cohort report produced.");
          return;
         }
 
-      int campaignCount=0;
+      int keyCount=0;
       for(int i=0;i<m_count;i++)
         {
          SAxTradeRecord rec=m_records[i];
          if(rec.positionIdentifier==0) continue;
+         keys[keyCount].positionIdentifier=rec.positionIdentifier;
+         keys[keyCount].recordIndex=i;
+         keyCount++;
+        }
+      if(keyCount>1) AxSortCampaignKeys(keys,keyCount);
 
-         int group=-1;
-         for(int j=0;j<campaignCount;j++)
+      SAxCampaignAggregate campaigns[];
+      if(ArrayResize(campaigns,keyCount)!=keyCount)
+        {
+         Print("FLIPDEMON VWAP RESEARCH WARNING: campaign allocation failed; no cohort report produced.");
+         return;
+        }
+
+      int campaignCount=0;
+      for(int k=0;k<keyCount;k++)
+        {
+         SAxTradeRecord rec=m_records[keys[k].recordIndex];
+         if(campaignCount==0 ||
+            campaigns[campaignCount-1].positionIdentifier!=keys[k].positionIdentifier)
            {
-            if(positionIds[j]==rec.positionIdentifier)
-              {
-               group=j;
-               break;
-              }
-           }
-         if(group<0)
-           {
-            group=campaignCount;
-            positionIds[group]=rec.positionIdentifier;
-            campaignNet[group]=0.0;
-            campaignCommission[group]=0.0;
-            finalRecordIndex[group]=-1;
+            campaigns[campaignCount].positionIdentifier=keys[k].positionIdentifier;
+            campaigns[campaignCount].net=0.0;
+            campaigns[campaignCount].gross=0.0; // commission accumulator for this report
+            campaigns[campaignCount].finalRecordIndex=-1;
+            campaigns[campaignCount].finalExitTime=0;
             campaignCount++;
            }
 
-         // Partial and final deal rows are slices of one broker position. Sum each
-         // persisted slice once, but count only after a durable non-partial close exists.
-         campaignNet[group]+=rec.netProfit;
-         campaignCommission[group]+=rec.commission;
-         if(!rec.isPartial)
+         int group=campaignCount-1;
+         campaigns[group].net+=rec.netProfit;
+         campaigns[group].gross+=rec.commission;
+         if(!rec.isPartial &&
+            (campaigns[group].finalRecordIndex<0 ||
+             rec.exitTime>=campaigns[group].finalExitTime))
            {
-            int priorFinal=finalRecordIndex[group];
-            if(priorFinal<0 || rec.exitTime>=m_records[priorFinal].exitTime)
-               finalRecordIndex[group]=i;
+            campaigns[group].finalRecordIndex=keys[k].recordIndex;
+            campaigns[group].finalExitTime=rec.exitTime;
            }
         }
 
-      if(ArrayResize(campaignOrder,campaignCount)!=campaignCount)
+      SAxCampaignAggregate completed[];
+      int completedCount=0;
+      for(int i=0;i<campaignCount;i++)
+         if(campaigns[i].finalRecordIndex>=0) completedCount++;
+      if(ArrayResize(completed,completedCount)!=completedCount)
         {
-         Print("FLIPDEMON VWAP RESEARCH WARNING: campaign ordering allocation failed; no cohort report produced.");
+         Print("FLIPDEMON VWAP RESEARCH WARNING: completed-campaign allocation failed; no cohort report produced.");
          return;
         }
-      for(int i=0;i<campaignCount;i++) campaignOrder[i]=i;
-      // Journal recovery can load legacy and current schemas in separate passes.
-      // Sort closed campaigns by their final exit timestamp before calculating drawdown.
-      for(int i=1;i<campaignCount;i++)
-        {
-         int key=campaignOrder[i];
-         datetime keyTime=(finalRecordIndex[key]>=0)
-                          ? m_records[finalRecordIndex[key]].exitTime : 0;
-         int j=i-1;
-         while(j>=0)
-           {
-            int prior=campaignOrder[j];
-            datetime priorTime=(finalRecordIndex[prior]>=0)
-                               ? m_records[finalRecordIndex[prior]].exitTime : 0;
-            if(priorTime<=keyTime) break;
-            campaignOrder[j+1]=prior;
-            j--;
-           }
-         campaignOrder[j+1]=key;
-        }
+
+      int completedIndex=0;
+      for(int i=0;i<campaignCount;i++)
+         if(campaigns[i].finalRecordIndex>=0)
+            completed[completedIndex++]=campaigns[i];
+      if(completedCount>1) AxSortCampaignAggregates(completed,completedCount);
 
       int samples[12],wins[12],losses[12],rSamples[12];
       double net[12],grossWins[12],grossLosses[12],rTotal[12];
@@ -843,11 +838,9 @@ public:
       ArrayInitialize(peakPnl,0.0);
       ArrayInitialize(maxClosedPnlDd,0.0);
 
-      for(int orderIndex=0;orderIndex<campaignCount;orderIndex++)
+      for(int orderIndex=0;orderIndex<completedCount;orderIndex++)
         {
-         int g=campaignOrder[orderIndex];
-         int finalIndex=finalRecordIndex[g];
-         if(finalIndex<0) continue; // partial-only/open campaigns are not closed outcomes
+         int finalIndex=completed[orderIndex].finalRecordIndex;
          SAxTradeRecord finalRec=m_records[finalIndex];
 
          int provenance=3;
@@ -864,7 +857,7 @@ public:
            }
 
          int slot=provenance*3+cohort;
-         double campaignResult=campaignNet[g];
+         double campaignResult=completed[orderIndex].net;
          samples[slot]++;
          net[slot]+=campaignResult;
          runningPnl[slot]+=campaignResult;
@@ -887,7 +880,7 @@ public:
          maeTotal[slot]+=finalRec.mae;
          spreadTotal[slot]+=finalRec.spreadAtEntry;
          slippageTotal[slot]+=finalRec.slippagePts;
-         commissionTotal[slot]+=campaignCommission[g];
+         commissionTotal[slot]+=completed[orderIndex].gross;
 
          // The final-slice R value shares the original campaign-risk denominator.
          // Recover that denominator to express aggregated campaign P/L in R.
