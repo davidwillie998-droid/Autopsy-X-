@@ -17,6 +17,7 @@ private:
    string            m_fileName;
    string            m_legacyFileName;
    string            m_v4FileName;
+   string            m_v5FileName;
    int               m_digits;
    ulong             m_magicNumber;
    SAxTradeRecord    m_records[];
@@ -492,6 +493,7 @@ private:
       int loaded=0,rejected=0;
       if(!LoadTradeRecordsFile(m_legacyFileName,true,loaded,rejected)) return(false);
       if(!LoadTradeRecordsFile(m_v4FileName,false,loaded,rejected)) return(false);
+      if(!LoadTradeRecordsFile(m_v5FileName,false,loaded,rejected)) return(false);
       if(!LoadTradeRecordsFile(m_fileName,false,loaded,rejected)) return(false);
       PrintFormat("FLIPDEMON AUTOPSY RECOVERY: restored=%d rejected=%d duplicate_deals_skipped; memory_limit=%d.",
                   loaded,rejected,AX_AUTOPSY_MAX_MEMORY);
@@ -580,6 +582,7 @@ private:
         }
       if(!ReadRiskHistoryFile(m_legacyFileName,true)) return(false);
       if(!ReadRiskHistoryFile(m_v4FileName,false)) return(false);
+      if(!ReadRiskHistoryFile(m_v5FileName,false)) return(false);
       return(ReadRiskHistoryFile(m_fileName,false));
      }
 
@@ -617,6 +620,7 @@ public:
          return(false);
         }
       m_count=0;
+      m_v5FileName = StringFormat("%s_%s_TradeAutopsy_v5.csv",eaName,symbol);
       if(!LoadRiskHistory() || !LoadTradeRecords())
         {
          FileClose(m_fileHandle); m_fileHandle=INVALID_HANDLE;
@@ -962,27 +966,32 @@ public:
      {
       ulong currentLast=LastAccountedDealTicketInFile(m_fileName,positionIdentifier);
       ulong v4Last=LastAccountedDealTicketInFile(m_v4FileName,positionIdentifier);
+      ulong v5Last=LastAccountedDealTicketInFile(m_v5FileName,positionIdentifier);
       ulong legacyLast=LastAccountedDealTicketInFile(m_legacyFileName,positionIdentifier);
-      return(MathMax(currentLast,MathMax(v4Last,legacyLast)));
+      return(MathMax(currentLast,MathMax(v5Last,MathMax(v4Last,legacyLast))));
      }
 
    bool              LastAccountedRecord(const ulong positionIdentifier,
                                           ulong &dealTicket,bool &isPartial,
                                           double &lots,double &netProfit) const
      {
-      ulong currentTicket=0,v4Ticket=0,legacyTicket=0;
-      bool currentPartial=false,v4Partial=false,legacyPartial=false;
-      double currentLots=0.0,v4Lots=0.0,legacyLots=0.0;
-      double currentNet=0.0,v4Net=0.0,legacyNet=0.0;
+      ulong currentTicket=0,v4Ticket=0,v5Ticket=0,legacyTicket=0;
+      bool currentPartial=false,v4Partial=false,v5Partial=false,legacyPartial=false;
+      double currentLots=0.0,v4Lots=0.0,v5Lots=0.0,legacyLots=0.0;
+      double currentNet=0.0,v4Net=0.0,v5Net=0.0,legacyNet=0.0;
       bool currentFound=LastAccountedRecordInFile(m_fileName,positionIdentifier,
                                                    currentTicket,currentPartial,currentLots,currentNet);
       bool v4Found=LastAccountedRecordInFile(m_v4FileName,positionIdentifier,
                                               v4Ticket,v4Partial,v4Lots,v4Net);
+      bool v5Found=LastAccountedRecordInFile(m_v5FileName,positionIdentifier,
+                                              v5Ticket,v5Partial,v5Lots,v5Net);
       bool legacyFound=LastAccountedRecordInFile(m_legacyFileName,positionIdentifier,
                                                   legacyTicket,legacyPartial,legacyLots,legacyNet);
-      if(!currentFound && !v4Found && !legacyFound) return(false);
-      if(currentFound && currentTicket>=v4Ticket && currentTicket>=legacyTicket)
+      if(!currentFound && !v4Found && !v5Found && !legacyFound) return(false);
+      if(currentFound && currentTicket>=v4Ticket && currentTicket>=v5Ticket && currentTicket>=legacyTicket)
         { dealTicket=currentTicket; isPartial=currentPartial; lots=currentLots; netProfit=currentNet; }
+      else if(v5Found && v5Ticket>=v4Ticket && v5Ticket>=legacyTicket)
+        { dealTicket=v5Ticket; isPartial=v5Partial; lots=v5Lots; netProfit=v5Net; }
       else if(v4Found && v4Ticket>=legacyTicket)
         { dealTicket=v4Ticket; isPartial=v4Partial; lots=v4Lots; netProfit=v4Net; }
       else
