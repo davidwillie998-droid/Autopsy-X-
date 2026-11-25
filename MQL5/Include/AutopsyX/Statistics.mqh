@@ -124,6 +124,95 @@ struct SAxStatsSnapshot
    int    tailRiskSample;        // valid R-multiple observations held in current-run memory
   };
 
+struct SAxCampaignKey
+  {
+   ulong positionIdentifier;
+   int   recordIndex;
+  };
+
+struct SAxCampaignAggregate
+  {
+   ulong    positionIdentifier;
+   double   net;
+   double   gross;
+   int      finalRecordIndex;
+   datetime finalExitTime;
+  };
+
+bool AxCampaignKeyGreater(const SAxCampaignKey &a,const SAxCampaignKey &b)
+  {
+   if(a.positionIdentifier!=b.positionIdentifier)
+      return(a.positionIdentifier>b.positionIdentifier);
+   return(a.recordIndex>b.recordIndex);
+  }
+
+void AxCampaignKeySiftDown(SAxCampaignKey &items[],const int root,const int count)
+  {
+   int parent=root;
+   while(true)
+     {
+      int child=parent*2+1;
+      if(child>=count) break;
+      if(child+1<count && AxCampaignKeyGreater(items[child+1],items[child]))
+         child++;
+      if(!AxCampaignKeyGreater(items[child],items[parent])) break;
+      SAxCampaignKey temp=items[parent];
+      items[parent]=items[child];
+      items[child]=temp;
+      parent=child;
+     }
+  }
+
+void AxSortCampaignKeys(SAxCampaignKey &items[],const int count)
+  {
+   for(int start=count/2-1;start>=0;start--)
+      AxCampaignKeySiftDown(items,start,count);
+   for(int end=count-1;end>0;end--)
+     {
+      SAxCampaignKey temp=items[0];
+      items[0]=items[end];
+      items[end]=temp;
+      AxCampaignKeySiftDown(items,0,end);
+     }
+  }
+
+bool AxCampaignAggregateGreater(const SAxCampaignAggregate &a,const SAxCampaignAggregate &b)
+  {
+   if(a.finalExitTime!=b.finalExitTime)
+      return(a.finalExitTime>b.finalExitTime);
+   return(a.positionIdentifier>b.positionIdentifier);
+  }
+
+void AxCampaignAggregateSiftDown(SAxCampaignAggregate &items[],const int root,const int count)
+  {
+   int parent=root;
+   while(true)
+     {
+      int child=parent*2+1;
+      if(child>=count) break;
+      if(child+1<count && AxCampaignAggregateGreater(items[child+1],items[child]))
+         child++;
+      if(!AxCampaignAggregateGreater(items[child],items[parent])) break;
+      SAxCampaignAggregate temp=items[parent];
+      items[parent]=items[child];
+      items[child]=temp;
+      parent=child;
+     }
+  }
+
+void AxSortCampaignAggregates(SAxCampaignAggregate &items[],const int count)
+  {
+   for(int start=count/2-1;start>=0;start--)
+      AxCampaignAggregateSiftDown(items,start,count);
+   for(int end=count-1;end>0;end--)
+     {
+      SAxCampaignAggregate temp=items[0];
+      items[0]=items[end];
+      items[end]=temp;
+      AxCampaignAggregateSiftDown(items,0,end);
+     }
+  }
+
 //+------------------------------------------------------------------+
 //| CStatistics - trade-level performance metrics                     |
 //+------------------------------------------------------------------+
@@ -171,102 +260,102 @@ public:
          if(dd>maxDd) maxDd=dd;
         }
 
-      // Second pass: aggregate every partial and final exit by stable broker position
-      // identifier. One completed position campaign contributes exactly one win/loss.
-      // This prevents profitable scale-outs from being discarded when the final slice
-      // is negative, and prevents a multi-part close from becoming several trades.
-      ulong positionIds[];
-      double campaignNet[],campaignGross[];
-      int finalRecordIndex[];
-      if(ArrayResize(positionIds,n)!=n ||
-         ArrayResize(campaignNet,n)!=n ||
-         ArrayResize(campaignGross,n)!=n ||
-         ArrayResize(finalRecordIndex,n)!=n)
+      // Second pass: sort compact record keys by stable position identifier.
+      // This replaces the former nested campaign lookup (O(n^2)) with O(n log n)
+      // sorting followed by one linear aggregation pass.
+      SAxCampaignKey keys[];
+      if(ArrayResize(keys,n)!=n)
         {
-         // Fail closed on statistics allocation: return an empty, explicitly unscored snapshot.
-         s.totalTrades=0; s.wins=0; s.losses=0; s.breakEvenTrades=0;
-         s.decisiveTrades=0; s.winRate=0.0; s.netProfitTotal=netProfitAll;
+         s.netProfitTotal=netProfitAll;
          s.dailyPnL=todayNet;
-         Print("FLIPDEMON STATISTICS ERROR: campaign aggregation allocation failed; win rate withheld.");
+         Print("FLIPDEMON STATISTICS ERROR: campaign-key allocation failed; win rate withheld.");
          return(s);
         }
 
-      int campaignCount=0;
+      int keyCount=0;
       for(int i=0;i<n;i++)
         {
          SAxTradeRecord r;
          if(!autopsy.GetRecord(i,r) || r.positionIdentifier==0) continue;
-         int group=-1;
-         for(int j=0;j<campaignCount;j++)
-            if(positionIds[j]==r.positionIdentifier) { group=j; break; }
-         if(group<0)
+         keys[keyCount].positionIdentifier=r.positionIdentifier;
+         keys[keyCount].recordIndex=i;
+         keyCount++;
+        }
+      if(keyCount>1) AxSortCampaignKeys(keys,keyCount);
+
+      SAxCampaignAggregate campaigns[];
+      if(ArrayResize(campaigns,keyCount)!=keyCount)
+        {
+         s.netProfitTotal=netProfitAll;
+         s.dailyPnL=todayNet;
+         Print("FLIPDEMON STATISTICS ERROR: campaign aggregate allocation failed; win rate withheld.");
+         return(s);
+        }
+
+      int campaignCount=0;
+      for(int k=0;k<keyCount;k++)
+        {
+         SAxTradeRecord r;
+         if(!autopsy.GetRecord(keys[k].recordIndex,r)) continue;
+
+         if(campaignCount==0 ||
+            campaigns[campaignCount-1].positionIdentifier!=keys[k].positionIdentifier)
            {
-            group=campaignCount++;
-            positionIds[group]=r.positionIdentifier;
-            campaignNet[group]=0.0;
-            campaignGross[group]=0.0;
-            finalRecordIndex[group]=-1;
+            campaigns[campaignCount].positionIdentifier=keys[k].positionIdentifier;
+            campaigns[campaignCount].net=0.0;
+            campaigns[campaignCount].gross=0.0;
+            campaigns[campaignCount].finalRecordIndex=-1;
+            campaigns[campaignCount].finalExitTime=0;
+            campaignCount++;
            }
-         campaignNet[group]+=r.netProfit;
-         campaignGross[group]+=r.grossProfit;
-         if(!r.isPartial)
+
+         int group=campaignCount-1;
+         campaigns[group].net+=r.netProfit;
+         campaigns[group].gross+=r.grossProfit;
+         // Keys are secondarily ordered by original record index. For equal exit
+         // timestamps, the later journal row therefore remains the final record.
+         if(!r.isPartial &&
+            (campaigns[group].finalRecordIndex<0 ||
+             r.exitTime>=campaigns[group].finalExitTime))
            {
-            int prior=finalRecordIndex[group];
-            if(prior<0)
-               finalRecordIndex[group]=i;
-            else
-              {
-               SAxTradeRecord priorRecord;
-               if(autopsy.GetRecord(prior,priorRecord) && r.exitTime>=priorRecord.exitTime)
-                  finalRecordIndex[group]=i;
-              }
+            campaigns[group].finalRecordIndex=keys[k].recordIndex;
+            campaigns[group].finalExitTime=r.exitTime;
            }
         }
 
-      // Sort completed campaigns by final exit time so loss streak and closed-trade
-      // statistics follow actual completion order, even after journal recovery.
-      int completedCampaigns=0;
+      // Retain only completed campaigns, then heap-sort by completion time.
+      // This preserves trailing-loss-streak semantics without insertion-sort growth.
+      SAxCampaignAggregate completed[];
+      int completedCount=0;
       for(int i=0;i<campaignCount;i++)
-         if(finalRecordIndex[i]>=0) completedCampaigns++;
-      int campaignOrder[];
-      if(ArrayResize(campaignOrder,completedCampaigns)!=completedCampaigns)
+         if(campaigns[i].finalRecordIndex>=0) completedCount++;
+
+      if(ArrayResize(completed,completedCount)!=completedCount)
         {
-         Print("FLIPDEMON STATISTICS ERROR: campaign ordering allocation failed; win rate withheld.");
+         s.netProfitTotal=netProfitAll;
+         s.dailyPnL=todayNet;
+         Print("FLIPDEMON STATISTICS ERROR: completed-campaign allocation failed; win rate withheld.");
          return(s);
         }
+
       int completedIndex=0;
       for(int i=0;i<campaignCount;i++)
-         if(finalRecordIndex[i]>=0) campaignOrder[completedIndex++]=i;
-      for(int i=1;i<campaignCount;i++)
-        {
-         int key=campaignOrder[i];
-         SAxTradeRecord keyRecord;
-         if(!autopsy.GetRecord(finalRecordIndex[key],keyRecord)) continue;
-         int j=i-1;
-         while(j>=0)
-           {
-            SAxTradeRecord priorRecord;
-            if(!autopsy.GetRecord(finalRecordIndex[campaignOrder[j]],priorRecord) ||
-               priorRecord.exitTime<=keyRecord.exitTime) break;
-            campaignOrder[j+1]=campaignOrder[j];
-            j--;
-           }
-         campaignOrder[j+1]=key;
-        }
+         if(campaigns[i].finalRecordIndex>=0)
+            completed[completedIndex++]=campaigns[i];
+
+      if(completedCount>1) AxSortCampaignAggregates(completed,completedCount);
 
       double sumHold=0.0,sumNetFull=0.0,sumGrossFull=0.0;
       int entryOk=0,lossStreak=0;
       double exitEffSum=0.0;
       int exitEffCount=0;
-      for(int order=0;order<campaignCount;order++)
+      for(int order=0;order<completedCount;order++)
         {
-         int group=campaignOrder[order];
-         int finalIndex=finalRecordIndex[group];
-         if(finalIndex<0) continue; // partial-only/open campaigns are not completed outcomes
+         int finalIndex=completed[order].finalRecordIndex;
          SAxTradeRecord r;
          if(!autopsy.GetRecord(finalIndex,r)) continue;
-         double campaignResult=campaignNet[group];
-         double campaignGrossResult=campaignGross[group];
+         double campaignResult=completed[order].net;
+         double campaignGrossResult=completed[order].gross;
 
          s.totalTrades++;
          sumNetFull+=campaignResult;
