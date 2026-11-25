@@ -5308,9 +5308,12 @@ int OnInit(void)
      }
    else if(g_hedgingPositionManager.HasMultiplePositions())
      {
-      g_hedgingLifecycleLock=true;
+      // Multi-leg recovery is now handled by the per-identifier state registry
+      // and ticket-specific exit managers below. Do not convert a valid multi-leg
+      // snapshot into a sticky integrity lock, or the EA could never resume after
+      // the campaign naturally returns to one or zero live positions.
       g_pyramidReady=false;
-      PrintFormat("FLIPDEMON HEDGING QUARANTINE: %d EA-owned positions detected. Ticket-specific lifecycle management is not yet active; no further execution will be permitted.",
+      PrintFormat("FLIPDEMON HEDGING RECOVERY: %d EA-owned positions detected; each leg must pass durable state and exit-ledger reconciliation before management is enabled.",
                   g_hedgingPositionManager.Count());
       if(!g_hedgingPositionManager.AllProtected())
          PrintFormat("FLIPDEMON HEDGING WARNING: at least one live leg lacks a valid broker-side stop (%s).",
@@ -6480,6 +6483,40 @@ void AxProcessTick(void)
                      g_hedgingPositionManager.Count());
       return;
      }
+   // Rehydrate the legacy single-position controller when a managed multi-leg
+   // campaign has reduced to one remaining position. The registry is authoritative;
+   // never reuse the state of a leg that has already closed.
+   if(g_hedgingPositionManager.Count()==1)
+     {
+      SAxManagedPosition remainingPosition;
+      SAxPositionLifecycleRecord remainingState;
+      if(!g_hedgingPositionManager.GetAt(0,remainingPosition) ||
+         !g_positionStateRegistryReady || !g_positionStateRegistry.IsPersisting() ||
+         !g_positionStateRegistry.FindByIdentifier(remainingPosition.positionIdentifier,remainingState) ||
+         !remainingState.state.active ||
+         remainingState.positionIdentifier!=remainingPosition.positionIdentifier ||
+         remainingState.ticket!=remainingPosition.ticket ||
+         remainingState.symbol!=remainingPosition.symbol ||
+         remainingState.magic!=remainingPosition.magic ||
+         remainingState.state.dir!=remainingPosition.direction)
+        {
+         g_recoveryReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         Print("FLIPDEMON POSITION HANDOFF: remaining position has no exact durable state; legacy exits and new entries remain blocked.");
+         return;
+        }
+      g_posState=remainingState.state;
+      g_positionIdentifier=remainingState.positionIdentifier;
+      g_haveOpenPosition=true;
+     }
+   else if(g_hedgingPositionManager.Count()==0)
+     {
+      g_haveOpenPosition=false;
+      g_positionIdentifier=0;
+      g_posState.active=false;
+     }
+
    if(g_hedgingLifecycleLock)
      {
       g_engineState=AX_ENGINE_PAUSED;
