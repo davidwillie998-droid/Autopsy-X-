@@ -166,9 +166,17 @@ public:
       int direction=tick.dir;
       double point=md.Point();
       if(point<=0.0) point=0.00001;
-      if(m_haveMid && m_minMovePoints>0.0 &&
-         MathAbs(tick.mid-m_lastMid)/point<m_minMovePoints)
-         direction=0;
+      if(m_haveMid && m_minMovePoints>0.0)
+        {
+         // Threshold is measured from the last classified event reference,
+         // not from the immediately preceding quote. Small consecutive moves
+         // therefore accumulate instead of being discarded forever.
+         double displacementPoints=(tick.mid-m_lastMid)/point;
+         if(MathAbs(displacementPoints)<m_minMovePoints)
+            direction=0;
+         else
+            direction=(displacementPoints>0.0)?1:-1;
+        }
 
       double buyBefore=m_muBuy+m_alphaBB*m_buyState+m_alphaBS*m_sellState;
       double sellBefore=m_muSell+m_alphaSB*m_buyState+m_alphaSS*m_sellState;
