@@ -36,7 +36,10 @@ private:
                 "NetProfit","RMultiple","Classification","FlipSeq","IsPartial",
                 "AfeCapitalState","AfeRiskOfRuinPct","AfeExpectedValueR","AfeWinProbability","AfeRiskMultiplier",
                 "ImpactCostPct","VWAPState","VPMACDState","OrderFlowState","StructureState","LiquidityState",
-                "NewsState","Session","Provenance","PositionIdentifier");
+                "NewsState","Session","Provenance","PositionIdentifier",
+                "VWAPPullbackBullBonus","VWAPPullbackBearBonus",
+                "OvernightBiasBullBonus","OvernightBiasBearBonus",
+                "TwinContinuationBullBonus","TwinContinuationBearBonus");
       FileFlush(m_fileHandle);
       return(headerWrite>0 && FileSize(m_fileHandle)>0);
      }
@@ -285,7 +288,8 @@ private:
    bool              ParseTradeRecordFields(string &fields[],const bool legacyV3,
                                               SAxTradeRecord &rec) const
      {
-      if(ArraySize(fields)!=44) return(false);
+      int fieldCount=ArraySize(fields);
+      if(fieldCount!=44 && fieldCount!=50) return(false);
       double values[19];
       int numericIndexes[19]={7,8,9,10,11,13,14,15,19,20,21,22,23,24,30,31,32,33,34};
       for(int i=0;i<19;i++)
@@ -373,6 +377,12 @@ private:
       rec.newsStateAtEntry=fields[40];
       rec.sessionAtEntry=fields[41];
       rec.provenance=ParseProvenanceField(fields[42]);
+      rec.vwapPullbackBullBonus=(fieldCount>=50)?StringToDouble(fields[44]):0.0;
+      rec.vwapPullbackBearBonus=(fieldCount>=50)?StringToDouble(fields[45]):0.0;
+      rec.overnightBiasBullBonus=(fieldCount>=50)?StringToDouble(fields[46]):0.0;
+      rec.overnightBiasBearBonus=(fieldCount>=50)?StringToDouble(fields[47]):0.0;
+      rec.twinContinuationBullBonus=(fieldCount>=50)?StringToDouble(fields[48]):0.0;
+      rec.twinContinuationBearBonus=(fieldCount>=50)?StringToDouble(fields[49]):0.0;
 
       if(rec.dealIdOut==0 || rec.positionIdentifier==0 ||
          rec.lots<=0.0 || rec.entryPrice<=0.0 || rec.exitPrice<=0.0 ||
@@ -396,12 +406,14 @@ private:
      {
       int handle=FileOpen(sourceFile,FILE_READ|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,',');
       if(handle==INVALID_HANDLE) return(true); // absent legacy file is expected
-      string fields[44];
+      string fields[];
+      ArrayResize(fields,50);
       bool header=true;
       while(!FileIsEnding(handle))
         {
          bool rowRead=false;
-         for(int f=0;f<44;f++)
+         int expectedFields=(StringFind(sourceFile,"_v3")>=0)?44:50;
+         for(int f=0;f<expectedFields;f++)
            {
             if(FileIsEnding(handle) && f==0) { rowRead=false; break; }
             if(FileIsEnding(handle)) { rowRead=false; break; }
@@ -662,7 +674,10 @@ public:
                    DoubleToString(rec.afeRiskMultiplier,2),DoubleToString(rec.impactCostPct,3),
                    rec.vwapStateAtEntry,rec.vpMacdStateAtEntry,rec.orderFlowStateAtEntry,
                    rec.structureStateAtEntry,rec.liquidityStateAtEntry,rec.newsStateAtEntry,
-                   rec.sessionAtEntry,AxProvenanceToString(rec.provenance),rec.positionIdentifier);
+                   rec.sessionAtEntry,AxProvenanceToString(rec.provenance),rec.positionIdentifier,
+                   DoubleToString(rec.vwapPullbackBullBonus,3),DoubleToString(rec.vwapPullbackBearBonus,3),
+                   DoubleToString(rec.overnightBiasBullBonus,3),DoubleToString(rec.overnightBiasBearBonus,3),
+                   DoubleToString(rec.twinContinuationBullBonus,3),DoubleToString(rec.twinContinuationBearBonus,3));
       FileFlush(m_fileHandle);
       ulong fileSizeAfter=FileSize(m_fileHandle);
       if(writeResult==0 || fileSizeAfter<=fileSizeBefore)
