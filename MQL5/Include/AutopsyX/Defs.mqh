@@ -18,6 +18,7 @@ struct SAxCampaignAggregate
    double   net;
    double   gross;
    int      finalRecordIndex;
+   int      firstRecordIndex;
    datetime finalExitTime;
   };
 
@@ -62,7 +63,7 @@ bool AxCampaignAggregateGreater(const SAxCampaignAggregate &a,const SAxCampaignA
   {
    if(a.finalExitTime!=b.finalExitTime)
       return(a.finalExitTime>b.finalExitTime);
-   return(a.positionIdentifier>b.positionIdentifier);
+   return(a.firstRecordIndex>b.firstRecordIndex);
   }
 
 void AxCampaignAggregateSiftDown(SAxCampaignAggregate &items[],const int root,const int count)
