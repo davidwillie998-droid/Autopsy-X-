@@ -187,6 +187,11 @@ void TestStalenessAndConfigurationGuard(void)
    CHawkesEventIntensityEngine invalid;
    Check(!invalid.Configure(0.05,0.05,0.90,0.90,0.04,0.12,1.0,5,10000,0.0),
          "unstable excitation configuration rejected");
+   MakeSample(tick,1,1000,100.0,0);
+   Check(!invalid.UpdateSample(tick,1.0),
+         "engine refuses samples after invalid configuration");
+   Check(invalid.EventCount()==0,
+         "invalid configuration cannot accumulate events");
   }
 
 void TestDeterministicReplay(void)
