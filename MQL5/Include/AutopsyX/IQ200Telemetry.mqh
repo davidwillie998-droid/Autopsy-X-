@@ -258,7 +258,18 @@ public:
       Deinit();
       m_seenDealCount=0;
       m_seenDealNext=0;
-      for(int i=0;i<512;i++) m_seenDealTickets[i]=0;
+      for(int i=0;i<AX_IQ200_DEAL_DEDUPE_CAPACITY;i++) m_seenDealTickets[i]=0;
+      for(int i=0;i<AX_IQ200_THROUGHPUT_BUCKETS;i++)
+        {
+         m_throughputSecond[i]=0;
+         m_throughputCount[i]=0;
+         m_throughputVolume[i]=0.0;
+        }
+      m_confirmedEntryDealCount=0;
+      m_confirmedEntryVolume=0.0;
+      m_peakConfirmedEntryDealsPerSecond=0;
+      m_firstConfirmedEntryTimeMsc=0;
+      m_lastConfirmedEntryTimeMsc=0;
       m_orderMapCount=0;
       m_orderMapNext=0;
       m_markoutCount=0;
