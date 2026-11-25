@@ -5217,7 +5217,7 @@ int OnInit(void)
       else PrintFormat("AUTOPSY X CONTINUATION INTELLIGENCE: ADX(%d), overnight %02d:00-%02d:00 server time; evidence engines ready.",InpContinuationADXPeriod,InpOvernightStartServerHour,InpOvernightEndServerHour);
      }
 
-   if(!g_autopsy.Init("AutopsyX_FlipDemon_Extreme",_Symbol))
+   if(!g_autopsy.Init("AutopsyX_FlipDemon_Extreme",_Symbol,InpMagicNumber))
       Print("AUTOPSY X: warning - could not open trade autopsy CSV log");
 
    // Load and reconcile restart state before allowing any new entry. A corrupt/unreadable
