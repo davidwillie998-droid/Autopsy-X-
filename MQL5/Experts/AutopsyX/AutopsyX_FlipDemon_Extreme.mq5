@@ -7824,7 +7824,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,const MqlTradeRequest &
          telemetryEvent.direction=(dealType==DEAL_TYPE_BUY)?1:
                                   (dealType==DEAL_TYPE_SELL)?-1:0;
          telemetryEvent.eventTimeMsc=dealTimeMsc;
-         telemetryEvent.timeSource=1;
+         telemetryEvent.timeSource=(dealTimeMsc>0)?1:2;
+         if(dealTimeMsc<=0) telemetryEvent.missingMask|=8;
          MqlTick fillTick;
          telemetryEvent.pointSize=SymbolInfoDouble(symbol,SYMBOL_POINT);
          telemetryEvent.tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
