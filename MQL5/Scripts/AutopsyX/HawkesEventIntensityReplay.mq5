@@ -192,6 +192,14 @@ void TestStalenessAndConfigurationGuard(void)
          "engine refuses samples after invalid configuration");
    Check(invalid.EventCount()==0,
          "invalid configuration cannot accumulate events");
+   Check(invalid.Configure(0.05,0.05,0.12,0.04,0.04,0.12,1.0,5,10000,0.0),
+         "valid configuration restores a locked engine");
+   MakeSample(tick,1,2000,100.0,0);
+   Check(invalid.UpdateSample(tick,1.0),
+         "reconfigured engine accepts a fresh baseline sample");
+   MakeSample(tick,2,2001,101.0,1);
+   Check(invalid.UpdateSample(tick,1.0) && invalid.EventCount()==1,
+         "reconfigured engine resumes event accumulation from clean state");
   }
 
 void TestDeterministicReplay(void)
