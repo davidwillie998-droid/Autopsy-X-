@@ -36,6 +36,7 @@ private:
    string m_symbol;
    ENUM_TIMEFRAMES m_tf;
    int m_adxPeriod;
+   double m_adxTrendThreshold;
    int m_adxHandle;
    int m_overnightStartHour;
    int m_overnightEndHour;
@@ -120,6 +121,7 @@ public:
      {
       m_adxHandle=INVALID_HANDLE;
       m_adxPeriod=14;
+      m_adxTrendThreshold=25.0;
       m_overnightStartHour=22;
       m_overnightEndHour=7;
       m_lastBar=0;
@@ -136,6 +138,11 @@ public:
       m_lastBar=0;
       Reset();
       return(m_adxHandle!=INVALID_HANDLE);
+     }
+
+   void ConfigureTrendThreshold(const double threshold)
+     {
+      m_adxTrendThreshold=AxClampD(threshold,20.0,50.0);
      }
 
    void ConfigureOvernight(const int startHour,const int endHour)
@@ -195,7 +202,7 @@ public:
       if(vwap>0.0 && atr>0.0 && MathIsValidNumber(atr))
         {
          double zone=atr*0.25;
-         bool adxTrend=(adx[0]>=20.0 && adx[0]>=adx[1]);
+         bool adxTrend=(adx[0]>=m_adxTrendThreshold && adx[0]>=adx[1]);
          bool bullishDI=(plus[0]>minus[0]);
          bool bearishDI=(minus[0]>plus[0]);
          bool bullTouch=(rates[1].low<=vwap+zone && rates[1].close>=vwap-zone);
@@ -263,12 +270,12 @@ public:
          bool secondBear=(rates[0].close<rates[0].open &&
                           rates[0].close<rates[1].low &&
                           rates[0].close<rates[2].close);
-         if(firstBull && pullbackBull && secondBull && plus[0]>minus[0] && adx[0]>=20.0)
+         if(firstBull && pullbackBull && secondBull && plus[0]>minus[0] && adx[0]>=m_adxTrendThreshold)
            {
             m_read.twinDirection=AX_DIR_BUY;
             m_read.twinContinuationScore=AxClampD(60.0+(adx[0]-20.0),0.0,90.0);
            }
-         else if(firstBear && pullbackBear && secondBear && minus[0]>plus[0] && adx[0]>=20.0)
+         else if(firstBear && pullbackBear && secondBear && minus[0]>plus[0] && adx[0]>=m_adxTrendThreshold)
            {
             m_read.twinDirection=AX_DIR_SELL;
             m_read.twinContinuationScore=AxClampD(60.0+(adx[0]-20.0),0.0,90.0);
