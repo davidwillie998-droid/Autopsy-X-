@@ -7423,7 +7423,7 @@ void OnTimer(void)
       for(int markoutIndex=0;markoutIndex<ArraySize(markoutValues);markoutIndex++)
          if(markoutIndex<ArraySize(markoutValid) && markoutValid[markoutIndex])
             g_executionFeedback.RecordMarkout(markoutValues[markoutIndex]);
-      g_iq200Telemetry.Flush(64);
+      g_iq200Telemetry.Flush(1024);
      }
 
    if(!InpShowDashboard) return;
