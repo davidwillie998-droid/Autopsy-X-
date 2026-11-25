@@ -6991,17 +6991,6 @@ void AxProcessTick(void)
     AxApplyMarketMakerModelScoreBonus(score);
    AxApplyContinuationIntelligenceBonus(score);
    g_lastScore = score; // dashboard reads this, not g_scorer.Last(), so it shows the blended score
-   if(multiPositionLifecycleActive)
-     {
-      bool hedgingCloseAttempted=false;
-      if(!AxManageHedgingSignalExitTickets(g_lastScore,isNewBarThisTick,
-                                            hedgingCloseAttempted))
-         return;
-      if(hedgingCloseAttempted)
-         return; // close path refreshed broker state; re-evaluate remaining legs next tick
-      g_engineState=AX_ENGINE_PAUSED;
-      return; // never enter legacy single-position management or fresh-entry logic
-     }
    // Attach the exact same-tick blended decision to the raw snapshot captured at handler entry.
    if(snapshotCaptured)
       g_marketSnapshotRecorder.UpdateLastDecision(g_lastScore,(int)g_engineState,
@@ -7025,6 +7014,21 @@ void AxProcessTick(void)
      }
    else
       g_lastAccSignalDir = AX_DIR_NONE;
+
+   // Multi-leg signal exits run only after this tick's blended score and accuracy
+   // snapshot are complete. A close refreshes broker state, so remaining legs are
+   // re-evaluated on the next accepted tick. This return also blocks all new entries.
+   if(multiPositionLifecycleActive)
+     {
+      bool hedgingCloseAttempted=false;
+      if(!AxManageHedgingSignalExitTickets(g_lastScore,isNewBarThisTick,
+                                            hedgingCloseAttempted))
+         return;
+      if(hedgingCloseAttempted)
+         return;
+      g_engineState=AX_ENGINE_PAUSED;
+      return;
+     }
 
    //--- KILL SWITCH / catastrophic execution guard ---
    if(g_consecutiveExecFailures>=InpMaxConsecutiveExecFailures && !g_risk.IsKilled())
