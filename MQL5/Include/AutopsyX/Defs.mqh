@@ -459,6 +459,12 @@ struct SAxTradeRecord
    //--- never guessed. This is what lets adaptive learning (spec section 29) separate historical/    ---
    //--- forward-demo/live data instead of silently mixing them. ---
    ENUM_AX_DATASET_PROVENANCE provenance;
+   double              vwapPullbackBullBonus;
+   double              vwapPullbackBearBonus;
+   double              overnightBiasBullBonus;
+   double              overnightBiasBearBonus;
+   double              twinContinuationBullBonus;
+   double              twinContinuationBearBonus;
   };
 
 //--- Formal Trade Thesis (FLIPDEMON EXTREME upgrade, spec section 3) - the frozen, auditable
@@ -869,6 +875,12 @@ struct SAxPositionState
    double         entryBuyScore;
    double         entrySellScore;
    double         entryConfidence;
+   double              vwapPullbackBullBonus;
+   double              vwapPullbackBearBonus;
+   double              overnightBiasBullBonus;
+   double              overnightBiasBearBonus;
+   double              twinContinuationBullBonus;
+   double              twinContinuationBearBonus;
    ENUM_AX_REGIME entryRegime;
    string         entryReason;
    // Frozen engine evidence captured immediately after a broker-confirmed fill.
