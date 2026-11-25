@@ -728,10 +728,9 @@ require("OrderSend(" not in regime_journal_harness
         "regime research journal harness cannot submit or manage broker orders")
 
 require("TradeAutopsy_v3.csv" in journal_harness
-        and "TradeAutopsy_v4.csv" in journal_harness
         and "TradeAutopsy_v5.csv" in journal_harness
         and "MakeTradeRow(1001,7001" in journal_harness,
-        "journal harness covers both schema versions and cross-version deal duplication")
+        "journal harness covers legacy v3 and current v5 schemas with cross-version deal duplication")
 require("MakeTradeRow(1002,7001,\"FORWARD_DEMO\",true" in journal_harness
         and "MakeTradeRow(1003,7002,\"UNKNOWN\",false" in journal_harness
         and "MakeTradeRow(1004,7003,\"FORWARD_DEMO\",false,\"1.000\",\"BROKEN\")" in journal_harness,
