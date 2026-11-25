@@ -17,14 +17,17 @@ class PositionStateRegistryContractTests(unittest.TestCase):
         self.assertIn("m_records[i].positionIdentifier==id", REGISTRY)
 
     def test_broker_ticket_cannot_be_owned_by_two_position_identifiers(self):
-        self.assertIn("FindTicketIndex(const ulong ticket)", REGISTRY)
-        self.assertIn("int ticketIndex=FindTicketIndex(ticket);", REGISTRY)
-        self.assertIn("ticketIndex>=0 && ticketIndex!=index", REGISTRY)
+        self.assertIn("for(int ticketIndex=0;ticketIndex<m_count;ticketIndex++)", REGISTRY)
+        self.assertIn("m_records[ticketIndex].ticket==ticket && ticketIndex!=index", REGISTRY)
         self.assertIn('BROKER_TICKET_OWNERSHIP_CONFLICT', REGISTRY)
+        self.assertIn("for(int duplicateIndex=0;duplicateIndex<m_count;duplicateIndex++)", REGISTRY)
 
     def test_ticket_refresh_for_same_identifier_remains_supported(self):
-        self.assertIn("m_records[index].ticket=ticket;", REGISTRY)
-        self.assertIn("m_records[index].state=state;", REGISTRY)
+        self.assertIn("candidate.positionIdentifier=id; candidate.ticket=ticket;", REGISTRY)
+        self.assertIn("candidate.symbol=symbol; candidate.magic=magic; candidate.state=state;", REGISTRY)
+        self.assertIn("SAxPositionLifecycleRecord previous=m_records[index];", REGISTRY)
+        self.assertIn("m_records[index]=candidate;", REGISTRY)
+        self.assertIn("m_records[index]=previous;", REGISTRY)
 
     def test_identity_ownership_conflict_still_fails_closed(self):
         self.assertIn('POSITION_IDENTITY_OWNERSHIP_CONFLICT', REGISTRY)
