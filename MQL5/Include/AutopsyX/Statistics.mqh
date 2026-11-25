@@ -225,13 +225,18 @@ public:
 
       // Sort completed campaigns by final exit time so loss streak and closed-trade
       // statistics follow actual completion order, even after journal recovery.
+      int completedCampaigns=0;
+      for(int i=0;i<campaignCount;i++)
+         if(finalRecordIndex[i]>=0) completedCampaigns++;
       int campaignOrder[];
-      if(ArrayResize(campaignOrder,campaignCount)!=campaignCount)
+      if(ArrayResize(campaignOrder,completedCampaigns)!=completedCampaigns)
         {
          Print("FLIPDEMON STATISTICS ERROR: campaign ordering allocation failed; win rate withheld.");
          return(s);
         }
-      for(int i=0;i<campaignCount;i++) campaignOrder[i]=i;
+      int completedIndex=0;
+      for(int i=0;i<campaignCount;i++)
+         if(finalRecordIndex[i]>=0) campaignOrder[completedIndex++]=i;
       for(int i=1;i<campaignCount;i++)
         {
          int key=campaignOrder[i];
