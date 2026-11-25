@@ -123,7 +123,7 @@ void OnStart(void)
    string eaName="AXJournalRecoveryHarness";
    string symbol=_Symbol;
    string v3=StringFormat("%s_%s_TradeAutopsy_v3.csv",eaName,symbol);
-   string v4=StringFormat("%s_%s_TradeAutopsy_v4.csv",eaName,symbol);
+   string v4=StringFormat("%s_%s_TradeAutopsy_v5.csv",eaName,symbol);
 
    FileDelete(v3);
    FileDelete(v4);
