@@ -134,6 +134,42 @@ void RunHighFrequencyBenchmark(void)
    double rate=(elapsed>0)?(double)accepted*1000000.0/(double)elapsed:0.0;
    PrintFormat("HAWKES BENCHMARK | samples=%d accepted=%d elapsed_us=%I64u ticks_per_sec=%.0f",
                samples,accepted,elapsed,rate);
+   // Burst profile: 100 groups of 1,000 uniquely sequenced ticks sharing
+   // one millisecond timestamp. This tests arrival bursts, not broker capacity.
+   CHawkesEventIntensityEngine burst;
+   burst.Configure(0.05,0.05,0.12,0.04,0.04,0.12,1.0,30,10000,0.0);
+   MakeSample(tick,1,2000,100.0,0);
+   burst.UpdateSample(tick,0.01);
+   int burstAccepted=0;
+   ulong maxBlockUs=0;
+   ulong burstStarted=GetMicrosecondCount();
+   for(int group=0;group<100;group++)
+     {
+      ulong blockStarted=GetMicrosecondCount();
+      for(int j=0;j<1000;j++)
+        {
+         int index=group*1000+j+1;
+         int direction=((index%2)==0)?1:-1;
+         MakeSample(tick,(ulong)index+1,2001+(long)group,
+                    100.0,direction);
+         if(burst.UpdateSample(tick,0.01))
+            burstAccepted++;
+        }
+      ulong blockElapsed=GetMicrosecondCount()-blockStarted;
+      if(blockElapsed>maxBlockUs) maxBlockUs=blockElapsed;
+     }
+   ulong burstElapsed=GetMicrosecondCount()-burstStarted;
+   SAxHawkesSnapshot burstSnap;
+   bool burstReady=burst.Snapshot(burstSnap);
+   bool burstFinite=burstReady &&
+                    MathIsValidNumber(burstSnap.buyIntensity) &&
+                    MathIsValidNumber(burstSnap.sellIntensity);
+   Check(burstAccepted==samples,"same-millisecond burst accepts all 100k sequenced samples");
+   Check(burstFinite,"same-millisecond burst retains finite outputs");
+   double burstRate=(burstElapsed>0)?
+                    (double)burstAccepted*1000000.0/(double)burstElapsed:0.0;
+   PrintFormat("HAWKES BURST | samples=%d accepted=%d elapsed_us=%I64u ticks_per_sec=%.0f max_1k_block_us=%I64u",
+               samples,burstAccepted,burstElapsed,burstRate,maxBlockUs);
   }
 
 void TestStalenessAndConfigurationGuard(void)
