@@ -339,6 +339,8 @@ enum ENUM_AX_LIFECYCLE_STATE
 struct SAxTick
   {
    datetime time;
+   long     timeMsc;      // broker tick timestamp in milliseconds; time remains for legacy consumers
+   ulong    sequence;     // monotonically increasing accepted-tick sequence within this MarketData instance
    double   bid;
    double   ask;
    double   mid;
