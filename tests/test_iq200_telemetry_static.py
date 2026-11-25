@@ -29,7 +29,7 @@ def _method_body(source: str, signature: str) -> str:
 def test_iq200_queue_is_fixed_capacity_and_versioned():
     source = _source()
     assert "#define AX_IQ200_SCHEMA_VERSION 1" in source
-    assert "#define AX_IQ200_QUEUE_CAPACITY 256" in source
+    assert "#define AX_IQ200_QUEUE_CAPACITY 2048" in source
     assert "SAxIQ200Event m_queue[AX_IQ200_QUEUE_CAPACITY]" in source
 
 
@@ -57,9 +57,9 @@ def test_iq200_captures_complete_order_lifecycle_event_vocabulary():
 
 def test_iq200_flush_is_separate_from_hot_callbacks():
     source = _source()
-    flush = _method_body(source, "int Flush(const int maxRows=64)")
+    flush = _method_body(source, "int Flush(const int maxRows=1024)")
     assert "FileWriteString" not in flush
-    assert "WriteLine(line)" in flush
+    assert "WriteBatch(payload)" in flush
     assert "OnTick" not in flush
     assert "OnTradeTransaction" not in flush
     assert "Call only from OnTimer" in source
@@ -97,7 +97,7 @@ def test_iq200_is_flushed_only_from_timer_and_controlled_shutdown():
     ea = (ROOT / "MQL5/Experts/AutopsyX/AutopsyX_FlipDemon_Extreme.mq5").read_text(
         encoding="utf-8"
     )
-    assert "g_iq200Telemetry.Flush(64);" in ea
+    assert "g_iq200Telemetry.Flush(1024);" in ea
     assert "g_iq200Telemetry.Flush(AX_IQ200_QUEUE_CAPACITY);" in ea
     assert "g_iq200Telemetry.Enqueue(telemetryEvent);" in ea
     assert "g_iq200Telemetry.Init(_Symbol,InpMagicNumber)" in ea
@@ -203,5 +203,4 @@ def test_iq200_uses_bounded_high_throughput_batch_persistence():
     assert "if(!WriteBatch(payload))" in flush
     assert "m_head=(m_head+batchRows)%AX_IQ200_QUEUE_CAPACITY;" in flush
     assert "m_count-=batchRows;" in flush
-    assert "m_iq200Telemetry.Flush(1024)" not in EA  # global instance name is g_iq200Telemetry
     assert "g_iq200Telemetry.Flush(1024);" in EA
