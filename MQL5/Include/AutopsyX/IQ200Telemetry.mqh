@@ -535,12 +535,15 @@ public:
    bool RecordConfirmedEntryDeal(const ulong dealTicket,const long dealTimeMsc,
                                  const double dealVolume)
      {
-      if(dealTicket==0 || dealTimeMsc<=0 || !MathIsValidNumber(dealVolume) || dealVolume<=0.0)
+      if(dealTicket==0 || !MathIsValidNumber(dealVolume) || dealVolume<=0.0)
          return(false);
       if(!MarkDealTicketSeen(dealTicket)) return(false);
 
       m_confirmedEntryDealCount++;
       m_confirmedEntryVolume+=dealVolume;
+      // Keep the confirmed deal in lifetime totals even if the broker timestamp
+      // is missing. It cannot contribute to a defensible per-second rate bucket.
+      if(dealTimeMsc<=0) return(true);
       if(m_firstConfirmedEntryTimeMsc==0 || dealTimeMsc<m_firstConfirmedEntryTimeMsc)
          m_firstConfirmedEntryTimeMsc=dealTimeMsc;
       if(dealTimeMsc>m_lastConfirmedEntryTimeMsc)
