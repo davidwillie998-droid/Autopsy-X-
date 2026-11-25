@@ -5766,6 +5766,39 @@ bool AxManageHedgingPartialCloseTickets(void)
          return(false);
         }
 
+      // Update the complete position record only after broker volume, deal
+      // history, partial ledger and virtual-exit cursor have all reconciled.
+      SAxPositionLifecycleRecord positionState;
+      if(!g_positionStateRegistryReady ||
+         !g_positionStateRegistry.FindByIdentifier(live.positionIdentifier,positionState) ||
+         positionState.ticket!=live.ticket || !positionState.state.active ||
+         positionState.symbol!=live.symbol || positionState.magic!=live.magic)
+        {
+         g_recoveryReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING PARTIAL: durable position-state row missing for id=%I64u; lifecycle quarantined.",
+                     live.positionIdentifier);
+         return(false);
+        }
+      positionState.state.lots=remainingVolume;
+      positionState.state.ticket=live.ticket;
+      positionState.state.partialTaken=true;
+      positionState.state.lastAccountedDealTicket=lastDeal;
+      positionState.state.initialSlPrice=live.stopLoss;
+      positionState.state.initialTpPrice=live.takeProfit;
+      if(!g_positionStateRegistry.Upsert(live.positionIdentifier,live.ticket,
+                                          live.symbol,live.magic,positionState.state) ||
+         !g_positionStateRegistry.IsPersisting())
+        {
+         g_recoveryReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING PARTIAL: updated position state could not be persisted for id=%I64u; lifecycle quarantined.",
+                     live.positionIdentifier);
+         return(false);
+        }
+
       PrintFormat("FLIPDEMON HEDGING PARTIAL: ticket=%I64u id=%I64u RR=%.2f closed=%.8f remaining=%.8f deal=%I64u; per-leg ledger durable.",
                   live.ticket,live.positionIdentifier,achievedRR,historyClosedVolume,
                   remainingVolume,lastDeal);
@@ -5948,6 +5981,34 @@ bool AxManageHedgingBreakEvenTickets(void)
          g_engineState=AX_ENGINE_PAUSED;
          PrintFormat("FLIPDEMON HEDGING BREAK-EVEN: confirmed stop but action lock release failed, ticket=%I64u; campaign quarantined.",
                      live.ticket);
+         return(false);
+        }
+
+      SAxPositionLifecycleRecord positionState;
+      if(!g_positionStateRegistryReady ||
+         !g_positionStateRegistry.FindByIdentifier(live.positionIdentifier,positionState) ||
+         positionState.ticket!=live.ticket || !positionState.state.active ||
+         positionState.symbol!=live.symbol || positionState.magic!=live.magic)
+        {
+         g_recoveryReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING BREAK-EVEN: durable position-state row missing for id=%I64u.",
+                     live.positionIdentifier);
+         return(false);
+        }
+      positionState.state.initialSlPrice=confirmedSl;
+      positionState.state.breakEvenDone=true;
+      positionState.state.ticket=live.ticket;
+      if(!g_positionStateRegistry.Upsert(live.positionIdentifier,live.ticket,
+                                          live.symbol,live.magic,positionState.state) ||
+         !g_positionStateRegistry.IsPersisting())
+        {
+         g_recoveryReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING BREAK-EVEN: state checkpoint failed for id=%I64u.",
+                     live.positionIdentifier);
          return(false);
         }
 
@@ -6142,6 +6203,33 @@ bool AxManageHedgingTrailingTickets(void)
          g_hedgingLifecycleLock=true;
          g_engineState=AX_ENGINE_PAUSED;
          PrintFormat("FLIPDEMON HEDGING TRAIL: confirmed stop but action lock release failed, ticket=%I64u; campaign quarantined.",live.ticket);
+         return(false);
+        }
+
+      SAxPositionLifecycleRecord positionState;
+      if(!g_positionStateRegistryReady ||
+         !g_positionStateRegistry.FindByIdentifier(live.positionIdentifier,positionState) ||
+         positionState.ticket!=live.ticket || !positionState.state.active ||
+         positionState.symbol!=live.symbol || positionState.magic!=live.magic)
+        {
+         g_recoveryReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING TRAIL: durable position-state row missing for id=%I64u.",
+                     live.positionIdentifier);
+         return(false);
+        }
+      positionState.state.initialSlPrice=confirmedSl;
+      positionState.state.ticket=live.ticket;
+      if(!g_positionStateRegistry.Upsert(live.positionIdentifier,live.ticket,
+                                          live.symbol,live.magic,positionState.state) ||
+         !g_positionStateRegistry.IsPersisting())
+        {
+         g_recoveryReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING TRAIL: state checkpoint failed for id=%I64u.",
+                     live.positionIdentifier);
          return(false);
         }
 
