@@ -4314,11 +4314,15 @@ double AxAdaptiveConfidenceMultiplier(void)
       SAxTradeRecord r;
       if(!g_autopsy.GetRecord(i,r)) continue;
       if(r.isPartial) continue;
-      // Break-even closes are not directional wins or losses. Exclude them from
-      // both the adaptive win-rate denominator and its minimum decisive sample.
-      if(r.netProfit==0.0) continue;
-      if(r.netProfit>0) wins++;
-      netSum += r.netProfit;
+      double campaignNet=0.0;
+      bool campaignClosed=false;
+      if(!g_autopsy.GetCampaignNetProfit(r.positionIdentifier,campaignNet,campaignClosed) ||
+         !campaignClosed) continue;
+      // Only the final row represents a completed campaign. Its outcome includes
+      // every partial scale-out plus the final close, net of recorded costs.
+      if(campaignNet==0.0) continue;
+      if(campaignNet>0.0) wins++;
+      netSum+=campaignNet;
       counted++;
      }
    if(counted<10) return(1.0);
