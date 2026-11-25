@@ -25,6 +25,7 @@
 #include <AutopsyX/GapWindowAnalytics.mqh>
 #include <AutopsyX/Momentum.mqh>
 #include <AutopsyX/Microstructure.mqh>
+#include <AutopsyX/HawkesEventIntensity.mqh>
 #include <AutopsyX/Liquidity.mqh>
 #include <AutopsyX/Regime.mqh>
 #include <AutopsyX/MacroRegime.mqh>
@@ -437,6 +438,8 @@ datetime g_gapReopenUntil=0;
 bool g_gapObservationInitialized=false;
 CMomentumEngine       g_mom;
 CMicrostructureEngine g_micro;
+CHawkesEventIntensityEngine g_hawkesEventIntensity;
+SAxHawkesSnapshot g_hawkesSnapshot;
 CLiquidityEngine      g_liq;
 CRegimeEngine         g_regime;
 CRegimeEngine         g_regimeHtf;
@@ -6352,6 +6355,10 @@ void AxProcessTick(void)
   {
    bool snapshotCaptured=false;
    if(!g_md.OnTickUpdate()) return;
+
+   // Observational Hawkes update. This consumes the accepted tick only and has no execution authority.
+   g_hawkesEventIntensity.Update(g_md);
+   g_hawkesEventIntensity.Snapshot(g_hawkesSnapshot);
 
    // Capture every valid accepted tick before downstream integrity/risk gates can return early.
    // The decision snapshot is attached later if this tick reaches score evaluation.
