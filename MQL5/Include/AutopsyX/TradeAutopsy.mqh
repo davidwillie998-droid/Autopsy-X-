@@ -417,14 +417,18 @@ private:
       int handle=FileOpen(sourceFile,FILE_READ|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,',');
       if(handle==INVALID_HANDLE) return(true); // absent legacy file is expected
       string fields[];
-      ArrayResize(fields,50);
       bool header=true;
       while(!FileIsEnding(handle))
         {
          bool rowRead=false;
          int expectedFields=(StringFind(sourceFile,"_v5")>=0)?50:44;
          if(ArrayResize(fields,expectedFields)!=expectedFields)
-           { FileClose(handle); m_persistenceHealthy=false; return(false); }
+           {
+            FileClose(handle);
+            m_persistenceHealthy=false;
+            Print("AUTOPSY JOURNAL ERROR: CSV recovery field allocation failed.");
+            return(false);
+           }
          for(int f=0;f<expectedFields;f++)
            {
             if(FileIsEnding(handle) && f==0) { rowRead=false; break; }
