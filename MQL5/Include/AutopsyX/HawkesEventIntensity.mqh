@@ -108,7 +108,7 @@ public:
       m_minMovePoints=minMovePoints;
       if(!StableParameters())
         {
-         ClearSnapshot();
+         Reset();
          m_snapshot.status=AX_HAWKES_INVALID;
          return(false);
         }
@@ -188,6 +188,13 @@ public:
       double sellNow=m_muSell+m_alphaSB*m_buyState+m_alphaSS*m_sellState;
       double totalBefore=buyBefore+sellBefore;
       double totalNow=buyNow+sellNow;
+      if(!MathIsValidNumber(buyNow) || !MathIsValidNumber(sellNow) ||
+         !MathIsValidNumber(totalBefore) || !MathIsValidNumber(totalNow))
+        {
+         Reset();
+         m_snapshot.status=AX_HAWKES_INVALID;
+         return(false);
+        }
       m_acceleration=totalNow-(m_lastBuyIntensity+m_lastSellIntensity);
       m_lastBuyIntensity=buyNow;
       m_lastSellIntensity=sellNow;
