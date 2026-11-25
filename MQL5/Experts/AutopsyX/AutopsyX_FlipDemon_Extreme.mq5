@@ -5474,6 +5474,65 @@ void OnDeinit(const int reason)
    g_pyramidCampaignRegistry.Deinit();
   }
 
+// Evaluate the current tick's blended signal against every independently recovered
+// hedging leg. Durable state supplies each leg's own direction and entry thesis.
+// At most one exact-ticket close is issued per tick.
+bool AxManageHedgingSignalExitTickets(const SAxScore &score,const bool vwapExitCheckDue,
+                                      bool &closeAttempted)
+  {
+   closeAttempted=false;
+   if(!g_hedgingPositionManager.IsComplete() ||
+      !g_positionStateRegistryReady || !g_positionStateRegistry.IsPersisting() ||
+      !g_virtualExitInitialized || !g_virtualExitRegistry.IsPersisting() ||
+      !g_hedgingFullCloseLedgerReady || !g_hedgingFullCloseLedger.IsPersisting())
+      return(false);
+
+   for(int i=0;i<g_hedgingPositionManager.Count();i++)
+     {
+      SAxManagedPosition live;
+      SAxPositionLifecycleRecord saved;
+      double tickSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+      if(!g_hedgingPositionManager.GetAt(i,live) ||
+         !g_positionStateRegistry.FindByIdentifier(live.positionIdentifier,saved) ||
+         !saved.state.active || saved.positionIdentifier!=live.positionIdentifier ||
+         saved.ticket!=live.ticket || saved.state.ticket!=live.ticket ||
+         saved.symbol!=live.symbol || saved.magic!=live.magic ||
+         saved.state.dir!=live.direction ||
+         tickSize<=0.0 ||
+         MathAbs(saved.state.entryPrice-live.openPrice)>MathMax(tickSize*2.0,0.0000001))
+        {
+         g_recoveryReady=false;
+         g_hedgingLifecycleLock=true;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING SIGNAL EXIT: exact durable state mismatch for position id=%I64u ticket=%I64u; no close request sent.",
+                     live.positionIdentifier,live.ticket);
+         return(false);
+        }
+
+      const double currentPrice=(live.direction==AX_DIR_BUY)
+                                ?g_md.CurrentBid():g_md.CurrentAsk();
+      const ENUM_AX_VWAP_EXIT_MODE effectiveMode=
+         InpUseVWAPExit?g_effectiveVwapExitMode:AX_VWAP_EXIT_OFF;
+      SAxExitDecision decision=g_exit.Evaluate(saved.state,g_md,g_mom,g_micro,score,
+         InpMaxSpreadPoints,effectiveMode,vwapExitCheckDue,g_vwapValue,
+         g_lastClosedBarClose,currentPrice,false);
+      if(!decision.shouldExit) continue;
+
+      closeAttempted=true;
+      PrintFormat("FLIPDEMON HEDGING SIGNAL EXIT: reason=%d direction=%s ticket=%I64u identifier=%I64u; closing only this leg.",
+                  (int)decision.reason,
+                  live.direction==AX_DIR_BUY?"BUY":"SELL",
+                  live.ticket,live.positionIdentifier);
+      if(!AxCloseHedgingPositionByTicket(live))
+        {
+         g_engineState=AX_ENGINE_PAUSED;
+         return(false);
+        }
+      return(true);
+     }
+   return(true);
+  }
+
 // Manage break-even independently for every leg in a hedging campaign.
 // The single-position ExitEngine remains responsible for the one-position path.
 // Exact-ticket full liquidation entry point for the campaign exit controller.
@@ -6372,6 +6431,7 @@ bool AxManageHedgingTrailingTickets(void)
 void AxProcessTick(void)
   {
    bool snapshotCaptured=false;
+   bool multiPositionLifecycleActive=false;
    if(!g_md.OnTickUpdate()) return;
 
    // Observational Hawkes update. This consumes the accepted tick only and has no execution authority.
@@ -6487,9 +6547,11 @@ void AxProcessTick(void)
       g_pyramidReady=false;
       g_engineState=AX_ENGINE_PAUSED;
       if(InpVerboseLogging)
-         PrintFormat("FLIPDEMON HEDGING MULTI-LEG MANAGEMENT: %d live legs reconciled; per-ticket exits remain active and fresh entries are blocked until the multi-leg set is resolved.",
+         PrintFormat("FLIPDEMON HEDGING MULTI-LEG MANAGEMENT: %d live legs reconciled; per-ticket protective exits remain active; fresh entries are blocked pending same-tick signal evaluation.",
                      g_hedgingPositionManager.Count());
-      return;
+      // Defer the return until this tick's blended score is available. The
+      // per-position controller evaluates each durable leg against that snapshot.
+      multiPositionLifecycleActive=true;
      }
    // Rehydrate the legacy single-position controller when a managed multi-leg
    // campaign has reduced to one remaining position. The registry is authoritative;
@@ -6929,6 +6991,17 @@ void AxProcessTick(void)
     AxApplyMarketMakerModelScoreBonus(score);
    AxApplyContinuationIntelligenceBonus(score);
    g_lastScore = score; // dashboard reads this, not g_scorer.Last(), so it shows the blended score
+   if(multiPositionLifecycleActive)
+     {
+      bool hedgingCloseAttempted=false;
+      if(!AxManageHedgingSignalExitTickets(g_lastScore,isNewBarThisTick,
+                                            hedgingCloseAttempted))
+         return;
+      if(hedgingCloseAttempted)
+         return; // close path refreshed broker state; re-evaluate remaining legs next tick
+      g_engineState=AX_ENGINE_PAUSED;
+      return; // never enter legacy single-position management or fresh-entry logic
+     }
    // Attach the exact same-tick blended decision to the raw snapshot captured at handler entry.
    if(snapshotCaptured)
       g_marketSnapshotRecorder.UpdateLastDecision(g_lastScore,(int)g_engineState,
