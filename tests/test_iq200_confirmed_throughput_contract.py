@@ -37,7 +37,7 @@ def test_throughput_uses_broker_second_buckets_and_handles_delayed_callbacks():
 
 
 def test_deal_deduplication_capacity_and_reinitialization_cover_all_slots():
-    assert "#define AX_IQ200_DEAL_DEDUPE_CAPACITY 4096" in TELEMETRY
+    assert "#define AX_IQ200_DEAL_DEDUPE_CAPACITY 65536" in TELEMETRY
     assert "m_seenDealNext=(m_seenDealNext+1)%AX_IQ200_DEAL_DEDUPE_CAPACITY;" in TELEMETRY
     assert TELEMETRY.count("for(int i=0;i<AX_IQ200_DEAL_DEDUPE_CAPACITY;i++) m_seenDealTickets[i]=0;") >= 2
     assert "m_confirmedEntryDealCount=0;" in TELEMETRY
