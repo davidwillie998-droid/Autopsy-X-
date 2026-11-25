@@ -6467,11 +6467,16 @@ void AxProcessTick(void)
      }
    if(g_hedgingPositionManager.HasMultiplePositions())
      {
-      g_hedgingLifecycleLock=true;
+      // A verified multi-leg snapshot is an operating condition, not a state
+      // corruption event. Ticket-specific managers above continue to protect
+      // every leg; fresh entries and legacy single-position orchestration remain
+      // blocked until the account returns to one or zero managed positions.
+      // Do not set the sticky integrity lock here, or the EA would remain paused
+      // permanently after the final extra leg had been closed.
       g_pyramidReady=false;
       g_engineState=AX_ENGINE_PAUSED;
       if(InpVerboseLogging)
-         PrintFormat("FLIPDEMON HEDGING QUARANTINE: %d live legs. Legacy single-position exits are bypassed; ticket-specific break-even, trailing and partial-close managers are active, while full-close lifecycle remains blocked.",
+         PrintFormat("FLIPDEMON HEDGING MULTI-LEG MANAGEMENT: %d live legs reconciled; per-ticket exits remain active and fresh entries are blocked until the multi-leg set is resolved.",
                      g_hedgingPositionManager.Count());
       return;
      }
