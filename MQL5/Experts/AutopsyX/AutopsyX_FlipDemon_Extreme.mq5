@@ -5464,6 +5464,14 @@ bool AxManageHedgingVirtualExitTickets(void)
       SAxManagedPosition live;
       if(!g_hedgingPositionManager.GetAt(i,live))
          return(false);
+      SAxPositionLifecycleRecord positionState;
+      if(!g_positionStateRegistryReady ||
+         !g_positionStateRegistry.FindByIdentifier(live.positionIdentifier,positionState) ||
+         !positionState.state.active || positionState.ticket!=live.ticket ||
+         positionState.symbol!=live.symbol || positionState.magic!=live.magic ||
+         positionState.state.dir!=live.direction)
+         return(false);
+
       SAxVirtualExitRecord saved;
       if(!g_virtualExitRegistry.Find(live.positionIdentifier,saved) ||
          saved.actionLocked || saved.ticket!=live.ticket ||
