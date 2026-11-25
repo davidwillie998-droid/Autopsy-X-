@@ -785,6 +785,7 @@ public:
             campaigns[campaignCount].net=0.0;
             campaigns[campaignCount].gross=0.0; // commission accumulator for this report
             campaigns[campaignCount].finalRecordIndex=-1;
+            campaigns[campaignCount].firstRecordIndex=keys[k].recordIndex;
             campaigns[campaignCount].finalExitTime=0;
             campaignCount++;
            }
