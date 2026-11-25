@@ -206,10 +206,12 @@ require("previous registry retained" in recovery
 require("written!=expected" in recovery
         and "short registry write" in recovery,
         "short writes are detected before the staged registry can replace the active file")
-require("SAxOpenSetupRecord snapshot[AX_RECOVERY_MAX_ENTRIES];" in recovery
+require("SAxOpenSetupRecord snapshot[];" in recovery
+        and "ArrayResize(snapshot,previousCount)!=previousCount" in recovery
+        and "for(int i=0;i<previousCount;i++) snapshot[i]=m_records[i];" in recovery
         and "original registry restored in memory" in recovery
         and "staleRemovedOut=0;" in recovery,
-        "failed stale-record cleanup restores the prior in-memory registry snapshot")
+        "failed stale-record cleanup restores the prior in-memory registry snapshot using a sized rollback copy")
 
 require("metadata does not match broker state" in recovery
         and "liveMagic==magic" in recovery
