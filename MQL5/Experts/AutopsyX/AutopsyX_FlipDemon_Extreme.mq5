@@ -339,7 +339,7 @@ input double         InpOpposingExitConfidence  = 55.0;    // Confidence require
 input bool           InpUseAtrStops             = true;    // Widen the emergency SL by ATR when volatility warrants it
 input double          InpAtrStopMultiplier      = 1.8;     // ATR multiple compared against the fixed SL floor
 
-input group "=== PARTIAL PROFIT (SCALE-OUT) ===";
+// Intentional partial-profit exits are disabled. Positions remain full-size until a full exit decision.
 input bool            InpEnablePartialTP        = false;   // Bank part of the position at a defined R-multiple
 input double          InpPartialTriggerRR       = 1.0;     // Favorable move required, as a multiple of the SL distance
 input double          InpPartialClosePercent    = 50.0;    // % of current position volume to close on trigger
@@ -7048,14 +7048,6 @@ void AxProcessTick(void)
          else
            {
             double curPrice = (g_posState.dir==AX_DIR_BUY) ? g_md.CurrentBid() : g_md.CurrentAsk();
-
-            if(InpEnablePartialTP && !g_posState.partialTaken)
-              {
-               double volToClose;
-               if(g_exit.CheckPartialTakeProfit(g_posState,g_md,curPrice,InpPartialTriggerRR,
-                                                 InpPartialClosePercent,volToClose))
-                  AxExecutePartialClose(volToClose);
-              }
 
             double newSl;
             bool wantModify=false;
