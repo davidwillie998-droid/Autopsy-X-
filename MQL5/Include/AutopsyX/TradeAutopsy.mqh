@@ -942,24 +942,23 @@ public:
                                           ulong &dealTicket,bool &isPartial,
                                           double &lots,double &netProfit) const
      {
-      ulong tickets[3]={0,0,0};
-      bool partials[3]={false,false,false};
-      double lotsByFile[3]={0.0,0.0,0.0};
-      double netByFile[3]={0.0,0.0,0.0};
-      string files[3]={m_fileName,m_v4FileName,m_legacyFileName};
-      bool found[3];
-      int best=-1;
-      for(int i=0;i<3;i++)
-        {
-         found[i]=LastAccountedRecordInFile(files[i],positionIdentifier,
-                                            tickets[i],partials[i],lotsByFile[i],netByFile[i]);
-         if(found[i] && (best<0 || tickets[i]>tickets[best])) best=i;
-        }
-      if(best<0) return(false);
-      dealTicket=tickets[best];
-      isPartial=partials[best];
-      lots=lotsByFile[best];
-      netProfit=netByFile[best];
+      ulong currentTicket=0,v4Ticket=0,legacyTicket=0;
+      bool currentPartial=false,v4Partial=false,legacyPartial=false;
+      double currentLots=0.0,v4Lots=0.0,legacyLots=0.0;
+      double currentNet=0.0,v4Net=0.0,legacyNet=0.0;
+      bool currentFound=LastAccountedRecordInFile(m_fileName,positionIdentifier,
+                                                   currentTicket,currentPartial,currentLots,currentNet);
+      bool v4Found=LastAccountedRecordInFile(m_v4FileName,positionIdentifier,
+                                              v4Ticket,v4Partial,v4Lots,v4Net);
+      bool legacyFound=LastAccountedRecordInFile(m_legacyFileName,positionIdentifier,
+                                                  legacyTicket,legacyPartial,legacyLots,legacyNet);
+      if(!currentFound && !v4Found && !legacyFound) return(false);
+      if(currentFound && currentTicket>=v4Ticket && currentTicket>=legacyTicket)
+        { dealTicket=currentTicket; isPartial=currentPartial; lots=currentLots; netProfit=currentNet; }
+      else if(v4Found && v4Ticket>=legacyTicket)
+        { dealTicket=v4Ticket; isPartial=v4Partial; lots=v4Lots; netProfit=v4Net; }
+      else
+        { dealTicket=legacyTicket; isPartial=legacyPartial; lots=legacyLots; netProfit=legacyNet; }
       return(true);
      }
 
