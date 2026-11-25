@@ -126,13 +126,12 @@ public:
       ClearSnapshot();
      }
 
-   // Call once after CMarketData::OnTickUpdate() accepts a new sample.
-   // The event classification is signed mid-price movement, not trade aggressor side.
-   bool Update(const CMarketData &md)
+   // Deterministic sample entry point. Production calls Update(md); the
+   // script harness can inject synthetic accepted samples without a broker feed.
+   bool UpdateSample(const SAxTick &tick,const double point)
      {
-      SAxTick tick;
-      if(!md.GetSample(0,tick)) return(false);
-      if(tick.timeMsc<=0 || tick.sequence==0)
+      if(tick.timeMsc<=0 || tick.sequence==0 || !MathIsValidNumber(tick.mid) ||
+         !MathIsValidNumber(point) || point<=0.0)
         {
          Reset();
          m_snapshot.status=AX_HAWKES_INVALID;
@@ -164,13 +163,9 @@ public:
       m_sellState*=decay;
 
       int direction=tick.dir;
-      double point=md.Point();
-      if(point<=0.0) point=0.00001;
       if(m_haveMid && m_minMovePoints>0.0)
         {
-         // Threshold is measured from the last classified event reference,
-         // not from the immediately preceding quote. Small consecutive moves
-         // therefore accumulate instead of being discarded forever.
+         // Threshold is measured from the last classified event reference.
          double displacementPoints=(tick.mid-m_lastMid)/point;
          if(MathAbs(displacementPoints)<m_minMovePoints)
             direction=0;
@@ -208,8 +203,6 @@ public:
       m_lastSellIntensity=sellNow;
       m_lastTimeMsc=tick.timeMsc;
       m_lastSequence=tick.sequence;
-      // With a non-zero threshold, retain the last event reference until a
-      // cumulative displacement actually creates an event.
       if(m_minMovePoints<=0.0 || direction!=0)
          m_lastMid=tick.mid;
       m_haveMid=true;
@@ -227,6 +220,14 @@ public:
       m_snapshot.valid=(m_eventCount>=m_minEvents);
       m_snapshot.status=m_snapshot.valid?AX_HAWKES_READY:AX_HAWKES_WARMUP;
       return(true);
+     }
+
+   // Call once after CMarketData::OnTickUpdate() accepts a new sample.
+   bool Update(const CMarketData &md)
+     {
+      SAxTick tick;
+      if(!md.GetSample(0,tick)) return(false);
+      return(UpdateSample(tick,md.Point()));
      }
 
    bool Evaluate(const long nowMsc,SAxHawkesSnapshot &out) const
