@@ -16,6 +16,7 @@ private:
    int               m_fileHandle;
    string            m_fileName;
    string            m_legacyFileName;
+   string            m_v4FileName;
    int               m_digits;
    SAxTradeRecord    m_records[];
    int               m_count;
@@ -421,7 +422,9 @@ private:
       while(!FileIsEnding(handle))
         {
          bool rowRead=false;
-         int expectedFields=(StringFind(sourceFile,"_v3")>=0)?44:50;
+         int expectedFields=(StringFind(sourceFile,"_v5")>=0)?50:44;
+         if(ArrayResize(fields,expectedFields)!=expectedFields)
+           { FileClose(handle); m_persistenceHealthy=false; return(false); }
          for(int f=0;f<expectedFields;f++)
            {
             if(FileIsEnding(handle) && f==0) { rowRead=false; break; }
@@ -474,6 +477,7 @@ private:
         }
       int loaded=0,rejected=0;
       if(!LoadTradeRecordsFile(m_legacyFileName,true,loaded,rejected)) return(false);
+      if(!LoadTradeRecordsFile(m_v4FileName,false,loaded,rejected)) return(false);
       if(!LoadTradeRecordsFile(m_fileName,false,loaded,rejected)) return(false);
       PrintFormat("FLIPDEMON AUTOPSY RECOVERY: restored=%d rejected=%d duplicate_deals_skipped; memory_limit=%d.",
                   loaded,rejected,AX_AUTOPSY_MAX_MEMORY);
@@ -558,6 +562,7 @@ private:
          return(false);
         }
       if(!ReadRiskHistoryFile(m_legacyFileName,true)) return(false);
+      if(!ReadRiskHistoryFile(m_v4FileName,false)) return(false);
       return(ReadRiskHistoryFile(m_fileName,false));
      }
 
@@ -568,9 +573,10 @@ public:
      {
       m_persistenceHealthy=false;
       m_digits = (int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
-      //--- v4 retains the 44-column schema and gives R-multiple an explicit EMPTY_VALUE sentinel.
-      //--- v3 rows are read as legacy history, but ambiguous zero-R rows are excluded safely.
-      m_fileName = StringFormat("%s_%s_TradeAutopsy_v4.csv",eaName,symbol);
+      //--- v5 adds six continuation attribution fields. v4 and v3 remain read-only history.
+      //--- v3 ambiguous zero-R rows remain excluded; v4 retains explicit NA R-multiple values.
+      m_fileName = StringFormat("%s_%s_TradeAutopsy_v5.csv",eaName,symbol);
+      m_v4FileName = StringFormat("%s_%s_TradeAutopsy_v4.csv",eaName,symbol);
       m_legacyFileName = StringFormat("%s_%s_TradeAutopsy_v3.csv",eaName,symbol);
       m_fileHandle = FileOpen(m_fileName,FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ,',');
       if(m_fileHandle==INVALID_HANDLE) return(false);
@@ -927,41 +933,33 @@ public:
    ulong             LastAccountedDealTicket(const ulong positionIdentifier) const
      {
       ulong currentLast=LastAccountedDealTicketInFile(m_fileName,positionIdentifier);
+      ulong v4Last=LastAccountedDealTicketInFile(m_v4FileName,positionIdentifier);
       ulong legacyLast=LastAccountedDealTicketInFile(m_legacyFileName,positionIdentifier);
-      return((currentLast>legacyLast) ? currentLast : legacyLast);
+      return(MathMax(currentLast,MathMax(v4Last,legacyLast)));
      }
 
-   // Returns the newest durable row for a position, including whether it is
-   // a partial slice and the volume that row accounted. Used only by restart
-   // reconciliation to distinguish a journal-first partial commit from a
-   // final close that was already written before a crash.
    bool              LastAccountedRecord(const ulong positionIdentifier,
-                                         ulong &dealTicket,bool &isPartial,
-                                         double &lots,double &netProfit) const
+                                          ulong &dealTicket,bool &isPartial,
+                                          double &lots,double &netProfit) const
      {
-      ulong currentTicket=0,legacyTicket=0;
-      bool currentPartial=false,legacyPartial=false;
-      double currentLots=0.0,legacyLots=0.0;
-      double currentNetProfit=0.0,legacyNetProfit=0.0;
-      bool currentFound=LastAccountedRecordInFile(m_fileName,positionIdentifier,
-                                                   currentTicket,currentPartial,currentLots,currentNetProfit);
-      bool legacyFound=LastAccountedRecordInFile(m_legacyFileName,positionIdentifier,
-                                                  legacyTicket,legacyPartial,legacyLots,legacyNetProfit);
-      if(!currentFound && !legacyFound) return(false);
-      if(currentTicket>=legacyTicket)
+      ulong tickets[3]={0,0,0};
+      bool partials[3]={false,false,false};
+      double lotsByFile[3]={0.0,0.0,0.0};
+      double netByFile[3]={0.0,0.0,0.0};
+      string files[3]={m_fileName,m_v4FileName,m_legacyFileName};
+      bool found[3];
+      int best=-1;
+      for(int i=0;i<3;i++)
         {
-         dealTicket=currentTicket;
-         isPartial=currentPartial;
-         lots=currentLots;
-         netProfit=currentNetProfit;
+         found[i]=LastAccountedRecordInFile(files[i],positionIdentifier,
+                                            tickets[i],partials[i],lotsByFile[i],netByFile[i]);
+         if(found[i] && (best<0 || tickets[i]>tickets[best])) best=i;
         }
-      else
-        {
-         dealTicket=legacyTicket;
-         isPartial=legacyPartial;
-         lots=legacyLots;
-         netProfit=legacyNetProfit;
-        }
+      if(best<0) return(false);
+      dealTicket=tickets[best];
+      isPartial=partials[best];
+      lots=lotsByFile[best];
+      netProfit=netByFile[best];
       return(true);
      }
 
