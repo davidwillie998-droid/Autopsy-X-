@@ -511,7 +511,8 @@ CPyramidEngine         g_pyramidEngine; // calculation engine; campaign executio
 CPyramidCampaignRegistry g_pyramidCampaignRegistry; // durable campaign state; execution integration is not active yet
 CHedgingPositionManager g_hedgingPositionManager;
 CHedgingCampaignLifecycle g_hedgingCampaignLifecycle;
-CPositionStateRegistry g_positionStateRegistry; // dynamic per-position state store; not yet used for execution
+CPositionStateRegistry g_positionStateRegistry; // durable state keyed by broker POSITION_IDENTIFIER
+bool g_positionStateRegistryReady=false;
 bool g_hedgingLifecycleLock=false; // sticky fail-closed lock after multiple live legs are detected
 bool                   g_virtualExitInitialized = false;
 bool                   g_virtualExitReady = false; // persistence and broker-state reconciliation must both be verified
@@ -1060,6 +1061,15 @@ void AxFinalizeTrade(const double closePrice,const double grossProfit,const doub
      {
       g_virtualExitReady=false;
       Print("FLIPDEMON VIRTUAL EXIT ERROR: position closed but state removal failed; new entries remain blocked.");
+     }
+   if(g_positionStateRegistryReady &&
+      (!g_positionStateRegistry.Remove(g_positionIdentifier) ||
+       !g_positionStateRegistry.IsPersisting()))
+     {
+      g_recoveryReady=false;
+      g_hedgingLifecycleLock=true;
+      PrintFormat("FLIPDEMON POSITION STATE ERROR: closed identifier=%I64u could not be removed from durable lifecycle ledger; new entries remain blocked.",
+                  g_positionIdentifier);
      }
    // Do not re-enable entries from an exit callback. Recovery may have been blocked because
    // startup reconciliation found an untracked/mismatched live position, not merely a failed write.
@@ -2614,17 +2624,14 @@ void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double l
                           const double slPrice,const double tpPrice,const SAxScore &score,
                           const string entryReason,const int flipSeq,const double intendedPrice)
   {
-   g_posState.ticket             = ticket;
+   g_posState.ticket=ticket;
    g_positionIdentifier=0;
-   if(PositionSelect(_Symbol) && (ulong)PositionGetInteger(POSITION_TICKET)==ticket)
-      g_positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
-
-   g_positionIdentifier          = 0;
-
-   if(PositionSelect(_Symbol) && (ulong)PositionGetInteger(POSITION_TICKET)==ticket &&
-
+   // PositionSelect(symbol) is ambiguous on hedging accounts. Select the exact
+   // broker-confirmed ticket, then verify symbol and magic before accepting its ID.
+   if(PositionSelectByTicket(ticket) &&
+      (ulong)PositionGetInteger(POSITION_TICKET)==ticket &&
+      PositionGetString(POSITION_SYMBOL)==_Symbol &&
       (ulong)PositionGetInteger(POSITION_MAGIC)==InpMagicNumber)
-
       g_positionIdentifier=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
    g_posState.entryTime          = TimeCurrent();
    g_posState.entryPrice         = fillPrice;
@@ -3801,6 +3808,17 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    // arms CExitEngine's mechanical VWAP exit for THIS position only - reuses vwapAlignedForThisEntry
    // (already computed above, same dir/g_vwapTrend comparison) rather than re-deriving it
    g_posState.vwapAlignedAtEntry = InpUseVWAPExit && vwapAlignedForThisEntry;
+   if(g_positionIdentifier==0 || !g_positionStateRegistryReady ||
+      !g_positionStateRegistry.Upsert(g_positionIdentifier,g_posState.ticket,_Symbol,
+                                      InpMagicNumber,g_posState) ||
+      !g_positionStateRegistry.IsPersisting())
+     {
+      g_recoveryReady=false;
+      g_hedgingLifecycleLock=true;
+      g_engineState=AX_ENGINE_PAUSED;
+      PrintFormat("FLIPDEMON POSITION STATE ERROR: confirmed fill ticket=%I64u has no verified durable per-position state; existing broker protection retained and new entries blocked.",
+                  g_posState.ticket);
+     }
    AxRegisterFillQuality(g_posState.entrySlippagePts,fillLatencyMs);
 
    // Reconcile the broker-confirmed fill, not the requested size or pre-trade estimate.
@@ -5104,6 +5122,17 @@ int OnInit(void)
       Print("FLIPDEMON RECOVERY ERROR: registry initialization failed. Existing positions will still be managed; new entries are blocked.");
      }
 
+   g_positionStateRegistryReady=g_positionStateRegistry.Init("FlipDemon_Extreme_HFT",_Symbol,InpMagicNumber);
+   if(!g_positionStateRegistryReady || !g_positionStateRegistry.IsPersisting())
+     {
+      g_recoveryReady=false;
+      PrintFormat("FLIPDEMON POSITION STATE ERROR: durable per-position ledger unavailable (%s); existing broker positions remain protected, new entries blocked.",
+                  g_positionStateRegistry.FailureReason());
+     }
+   else
+      PrintFormat("FLIPDEMON POSITION STATE: loaded %d durable position records.",
+                  g_positionStateRegistry.Count());
+
    g_virtualExitInitialized=g_virtualExitRegistry.Init("FlipDemon_Extreme_HFT",_Symbol,InpMagicNumber);
    if(!g_virtualExitInitialized || !g_virtualExitRegistry.IsPersisting())
      {
@@ -5166,6 +5195,54 @@ int OnInit(void)
          PrintFormat("FLIPDEMON HEDGING WARNING: at least one live leg lacks a valid broker-side stop (%s).",
                      g_hedgingPositionManager.FailureReason());
      }
+   // Rehydrate complete state by stable POSITION_IDENTIFIER. Never invent
+   // historical signal metadata for a broker position absent from the ledger.
+   if(g_positionStateRegistryReady && g_positionStateRegistry.IsPersisting())
+     {
+      for(int stateIndex=0;stateIndex<g_hedgingPositionManager.Count();stateIndex++)
+        {
+         SAxManagedPosition liveStatePosition;
+         SAxPositionLifecycleRecord savedStateRecord;
+         if(!g_hedgingPositionManager.GetAt(stateIndex,liveStatePosition) ||
+            !g_positionStateRegistry.FindByIdentifier(liveStatePosition.positionIdentifier,savedStateRecord) ||
+            savedStateRecord.symbol!=liveStatePosition.symbol ||
+            savedStateRecord.magic!=liveStatePosition.magic)
+           {
+            g_recoveryReady=false;
+            g_hedgingLifecycleLock=true;
+            PrintFormat("FLIPDEMON POSITION STATE RECOVERY: no valid durable state for live identifier=%I64u ticket=%I64u; no synthetic state created.",
+                        liveStatePosition.positionIdentifier,liveStatePosition.ticket);
+            continue;
+           }
+         if(savedStateRecord.ticket!=liveStatePosition.ticket)
+           {
+            savedStateRecord.ticket=liveStatePosition.ticket;
+            savedStateRecord.state.ticket=liveStatePosition.ticket;
+            if(!g_positionStateRegistry.Upsert(savedStateRecord.positionIdentifier,
+                 savedStateRecord.ticket,savedStateRecord.symbol,savedStateRecord.magic,
+                 savedStateRecord.state))
+              {
+               g_recoveryReady=false;
+               g_hedgingLifecycleLock=true;
+               PrintFormat("FLIPDEMON POSITION STATE RECOVERY: ticket refresh could not be persisted for identifier=%I64u.",
+                           savedStateRecord.positionIdentifier);
+               continue;
+              }
+           }
+         if(g_hedgingPositionManager.Count()==1)
+           {
+            g_posState=savedStateRecord.state;
+            g_positionIdentifier=savedStateRecord.positionIdentifier;
+            g_haveOpenPosition=true;
+           }
+        }
+     }
+   else if(g_hedgingPositionManager.Count()>0)
+     {
+      g_recoveryReady=false;
+      g_hedgingLifecycleLock=true;
+     }
+
    if(g_virtualExitInitialized && g_virtualExitRegistry.IsPersisting())
      {
       if(AxRecoverLockedHedgingFullCloseActions() &&
@@ -6968,6 +7045,23 @@ void OnTick(void)
 void OnTimer(void)
   {
    AxObserveGapHour();
+   // Persist the active single-position snapshot on the timer, not every tick.
+   // Multi-position lifecycle remains quarantined until independent managers
+   // and close-accounting paths are complete for every leg.
+   if(g_haveOpenPosition && g_posState.active && g_positionIdentifier>0 &&
+      g_positionStateRegistryReady && PositionSelectByTicket(g_posState.ticket) &&
+      (ulong)PositionGetInteger(POSITION_IDENTIFIER)==g_positionIdentifier)
+     {
+      if(!g_positionStateRegistry.Upsert(g_positionIdentifier,g_posState.ticket,_Symbol,
+                                         InpMagicNumber,g_posState) ||
+         !g_positionStateRegistry.IsPersisting())
+        {
+         g_recoveryReady=false;
+         g_hedgingLifecycleLock=true;
+         PrintFormat("FLIPDEMON POSITION STATE ERROR: timer checkpoint failed for identifier=%I64u; new entries blocked.",
+                     g_positionIdentifier);
+        }
+     }
    // Flush bounded snapshot batches outside the tick handler to keep file I/O off the hot path.
    if(InpEnableMarketSnapshots) g_marketSnapshotRecorder.Flush(1024);
 
