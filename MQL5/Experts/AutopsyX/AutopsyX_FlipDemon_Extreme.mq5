@@ -1807,6 +1807,12 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
    SAxTradeRecord rec;
    ZeroMemory(rec);
    rec.setupId=haveSetup ? setup.setupId : "";
+   rec.vwapPullbackBullBonus=haveSetup ? setup.vwapPullbackBullBonus : 0.0;
+   rec.vwapPullbackBearBonus=haveSetup ? setup.vwapPullbackBearBonus : 0.0;
+   rec.overnightBiasBullBonus=haveSetup ? setup.overnightBiasBullBonus : 0.0;
+   rec.overnightBiasBearBonus=haveSetup ? setup.overnightBiasBearBonus : 0.0;
+   rec.twinContinuationBullBonus=haveSetup ? setup.twinContinuationBullBonus : 0.0;
+   rec.twinContinuationBearBonus=haveSetup ? setup.twinContinuationBearBonus : 0.0;
    rec.ticket=saved.ticket;
    rec.positionIdentifier=saved.positionIdentifier;
    rec.dealIdIn=firstEntryDeal;
@@ -4353,6 +4359,25 @@ void AxReconcileExistingPosition(void)
    g_posState.entryRegime                     = AX_REGIME_UNSAFE;
    g_posState.entryReason                      = "RECONCILED_ON_INIT";
    g_posState.setupId                           = "RESTART_RECOVERED";
+   SAxOpenSetupRecord recoveredSetup;
+   if(g_restartRecovery.FindByPositionIdentifier(g_positionIdentifier,recoveredSetup))
+     {
+      if(recoveredSetup.symbol==_Symbol && recoveredSetup.dir==g_posState.dir)
+        {
+         g_posState.setupId=recoveredSetup.setupId;
+         g_posState.vwapPullbackBullBonus=recoveredSetup.vwapPullbackBullBonus;
+         g_posState.vwapPullbackBearBonus=recoveredSetup.vwapPullbackBearBonus;
+         g_posState.overnightBiasBullBonus=recoveredSetup.overnightBiasBullBonus;
+         g_posState.overnightBiasBearBonus=recoveredSetup.overnightBiasBearBonus;
+         g_posState.twinContinuationBullBonus=recoveredSetup.twinContinuationBullBonus;
+         g_posState.twinContinuationBearBonus=recoveredSetup.twinContinuationBearBonus;
+        }
+      else
+        {
+         g_recoveryReady=false;
+         Print("FLIPDEMON RECOVERY ERROR: persisted strategy attribution does not match the live position; new entries remain blocked.");
+        }
+     }
    g_posState.entryDealId                        = 0;
    g_posState.vwapStateAtEntry                  = "DATA_UNAVAILABLE";
    g_posState.vpMacdStateAtEntry                = "DATA_UNAVAILABLE";
