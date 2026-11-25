@@ -67,9 +67,16 @@ private:
 
    bool StableParameters(void) const
      {
+      // Reject NaN/INF explicitly. Ordinary comparisons do not reject NaN.
+      if(!MathIsValidNumber(m_beta) ||
+         !MathIsValidNumber(m_muBuy) || !MathIsValidNumber(m_muSell) ||
+         !MathIsValidNumber(m_alphaBB) || !MathIsValidNumber(m_alphaBS) ||
+         !MathIsValidNumber(m_alphaSB) || !MathIsValidNumber(m_alphaSS) ||
+         !MathIsValidNumber(m_minMovePoints))
+         return(false);
       if(m_beta<=0.0 || m_muBuy<0.0 || m_muSell<0.0 ||
          m_alphaBB<0.0 || m_alphaBS<0.0 ||
-         m_alphaSB<0.0 || m_alphaSS<0.0)
+         m_alphaSB<0.0 || m_alphaSS<0.0 || m_minMovePoints<0.0)
          return(false);
       // Conservative sufficient stability bound for a non-negative
       // two-type branching matrix: maximum row sum divided by beta < 1.
@@ -96,9 +103,9 @@ public:
       m_alphaBB=alphaBB; m_alphaBS=alphaBS;
       m_alphaSB=alphaSB; m_alphaSS=alphaSS;
       m_beta=beta;
-      m_minEvents=MathMax(5,minEvents);
-      m_maxAgeMsc=MathMax((long)100,maxAgeMsc);
-      m_minMovePoints=MathMax(0.0,minMovePoints);
+      m_minEvents=(minEvents<5)?5:minEvents;
+      m_maxAgeMsc=(maxAgeMsc<100)?100:maxAgeMsc;
+      m_minMovePoints=minMovePoints;
       if(!StableParameters())
         {
          ClearSnapshot();
@@ -127,14 +134,14 @@ public:
       if(!md.GetSample(0,tick)) return(false);
       if(tick.timeMsc<=0 || tick.sequence==0)
         {
-         ClearSnapshot();
+         Reset();
          m_snapshot.status=AX_HAWKES_INVALID;
          return(false);
         }
       if(tick.sequence<=m_lastSequence) return(false);
       if(m_lastTimeMsc>0 && tick.timeMsc<m_lastTimeMsc)
         {
-         ClearSnapshot();
+         Reset();
          m_snapshot.status=AX_HAWKES_INVALID;
          return(false);
         }
@@ -199,7 +206,7 @@ public:
       m_snapshot.eventCount=m_eventCount;
       m_snapshot.timeMsc=tick.timeMsc;
       m_snapshot.confidence=AxClampD((double)m_eventCount/(double)m_minEvents,0.0,1.0);
-      m_snapshot.valid=(m_eventCount>=m_minEvents && totalBefore>=0.0);
+      m_snapshot.valid=(m_eventCount>=m_minEvents);
       m_snapshot.status=m_snapshot.valid?AX_HAWKES_READY:AX_HAWKES_WARMUP;
       return(true);
      }
