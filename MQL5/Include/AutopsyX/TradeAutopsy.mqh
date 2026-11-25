@@ -601,8 +601,12 @@ public:
       StringReplace(serverKey," ","_");
       ulong login=(ulong)AccountInfoInteger(ACCOUNT_LOGIN);
       m_magicNumber=magicNumber;
-      m_fileName = StringFormat("%s_%I64u_%s_%I64u_%s_TradeAutopsy_v6.csv",
-                                eaName,login,serverKey,m_magicNumber,symbol);
+      // ChartID isolates simultaneous writers using the same account, server,
+      // magic number and symbol. A new chart session may create a new shard;
+      // the account-wide reader must discover all matching shards.
+      long writerChartId=ChartID();
+      m_fileName = StringFormat("%s_%I64u_%s_%I64u_%I64d_%s_TradeAutopsy_v6.csv",
+                                eaName,login,serverKey,m_magicNumber,writerChartId,symbol);
       m_v4FileName = StringFormat("%s_%s_TradeAutopsy_v4.csv",eaName,symbol);
       m_legacyFileName = StringFormat("%s_%s_TradeAutopsy_v3.csv",eaName,symbol);
       m_fileHandle = FileOpen(m_fileName,FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ,',');
