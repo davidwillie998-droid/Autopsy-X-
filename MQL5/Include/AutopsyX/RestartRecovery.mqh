@@ -223,6 +223,23 @@ public:
          m_records[m_count].overnightBiasBearBonus=(n>=12)?StringToDouble(fields[9]):0.0;
          m_records[m_count].twinContinuationBullBonus=(n>=12)?StringToDouble(fields[10]):0.0;
          m_records[m_count].twinContinuationBearBonus=(n>=12)?StringToDouble(fields[11]):0.0;
+         if(!MathIsValidNumber(m_records[m_count].vwapPullbackBullBonus) ||
+            !MathIsValidNumber(m_records[m_count].vwapPullbackBearBonus) ||
+            !MathIsValidNumber(m_records[m_count].overnightBiasBullBonus) ||
+            !MathIsValidNumber(m_records[m_count].overnightBiasBearBonus) ||
+            !MathIsValidNumber(m_records[m_count].twinContinuationBullBonus) ||
+            !MathIsValidNumber(m_records[m_count].twinContinuationBearBonus) ||
+            m_records[m_count].vwapPullbackBullBonus<0.0 || m_records[m_count].vwapPullbackBullBonus>8.0 ||
+            m_records[m_count].vwapPullbackBearBonus<0.0 || m_records[m_count].vwapPullbackBearBonus>8.0 ||
+            m_records[m_count].overnightBiasBullBonus<0.0 || m_records[m_count].overnightBiasBullBonus>5.0 ||
+            m_records[m_count].overnightBiasBearBonus<0.0 || m_records[m_count].overnightBiasBearBonus>5.0 ||
+            m_records[m_count].twinContinuationBullBonus<0.0 || m_records[m_count].twinContinuationBullBonus>8.0 ||
+            m_records[m_count].twinContinuationBearBonus<0.0 || m_records[m_count].twinContinuationBearBonus>8.0)
+           {
+            PrintFormat("FLIPDEMON RECOVERY ERROR: invalid continuation attribution in %s; refusing registry rewrite.",m_fileName);
+            registryValid=false;
+            break;
+           }
          m_count++;
         }
       FileClose(readHandle);
@@ -253,7 +270,13 @@ public:
                                        const double twinBull,const double twinBear)
      {
       if(ticket==0 || positionIdentifier==0 || StringLen(setupId)==0 || StringLen(symbol)==0 || entryTime<=0 ||
-         (dir!=AX_DIR_BUY && dir!=AX_DIR_SELL))
+         (dir!=AX_DIR_BUY && dir!=AX_DIR_SELL) ||
+         !MathIsValidNumber(vwapBull) || !MathIsValidNumber(vwapBear) ||
+         !MathIsValidNumber(overnightBull) || !MathIsValidNumber(overnightBear) ||
+         !MathIsValidNumber(twinBull) || !MathIsValidNumber(twinBear) ||
+         vwapBull<0.0 || vwapBull>8.0 || vwapBear<0.0 || vwapBear>8.0 ||
+         overnightBull<0.0 || overnightBull>5.0 || overnightBear<0.0 || overnightBear>5.0 ||
+         twinBull<0.0 || twinBull>8.0 || twinBear<0.0 || twinBear>8.0)
         {
          Print("FLIPDEMON RECOVERY ERROR: invalid open-setup record rejected.");
          return(false);
