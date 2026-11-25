@@ -5297,7 +5297,7 @@ int OnInit(void)
    AxReconcileExistingPosition();
 
    // Establish the complete broker-owned position set before trusting single-position state.
-   // Multiple hedging legs remain quarantined from new entries until campaign-level exit orchestration is verified.
+   // Multiple hedging legs remain blocked from new entries until per-position exits are evaluated.
    if(!g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber))
      {
       g_hedgingLifecycleLock=true;
@@ -5533,6 +5533,10 @@ bool AxManageHedgingSignalExitTickets(const SAxScore &score,const bool vwapExitC
    return(true);
   }
 
+// Forward declaration: the exact-ticket close implementation follows the
+// campaign-level signal and risk-shutdown controllers.
+bool AxCloseHedgingPositionByTicket(const SAxManagedPosition &live);
+
 // Close one exact hedging leg during an account-level kill or daily-loss shutdown.
 // The next tick refreshes the broker set and advances to the next leg.
 bool AxCloseOneHedgingPositionForRiskShutdown(void)
@@ -5554,8 +5558,8 @@ bool AxCloseOneHedgingPositionForRiskShutdown(void)
 
 // Manage break-even independently for every leg in a hedging campaign.
 // The single-position ExitEngine remains responsible for the one-position path.
-// Exact-ticket full liquidation entry point for the campaign exit controller.
-// It is intentionally not called by the signal path until campaign exit policy ships.
+// Exact-ticket full liquidation entry point used by both signal and risk-shutdown
+// controllers. Every close is guarded by durable action state and broker confirmation.
 bool AxCloseHedgingPositionByTicket(const SAxManagedPosition &live)
   {
    if(!g_hedgingPositionManager.IsComplete() ||
@@ -6540,8 +6544,8 @@ void AxProcessTick(void)
      }
 
    // Audit every leg against its durable exit and campaign records. Ticket-specific
-   // break-even, trailing, partial-close and virtual SL/TP full-close actions are active.
-   // Signal-driven campaign exits remain quarantined pending per-position signal evaluation.
+   // protective exits remain active; signal exits are evaluated after this tick's
+   // blended score is available, with new entries held until the campaign resolves.
    SAxHedgingCampaignSnapshot hedgingSnapshot;
    if(!g_hedgingCampaignLifecycle.Evaluate(g_hedgingPositionManager,
                                             g_virtualExitRegistry,
