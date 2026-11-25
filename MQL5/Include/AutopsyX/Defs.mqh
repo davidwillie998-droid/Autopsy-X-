@@ -467,6 +467,10 @@ struct SAxTradeRecord
    double              overnightBiasBearBonus;
    double              twinContinuationBullBonus;
    double              twinContinuationBearBonus;
+   // Durable provenance keys for account-wide, cross-symbol journal consolidation.
+   ulong               accountLogin;
+   ulong               magicNumber;
+   string              accountServer;
   };
 
 //--- Formal Trade Thesis (FLIPDEMON EXTREME upgrade, spec section 3) - the frozen, auditable
