@@ -8,7 +8,7 @@
 #define AX_IQ200_TELEMETRY_MQH
 
 #define AX_IQ200_SCHEMA_VERSION 1
-#define AX_IQ200_QUEUE_CAPACITY 256
+#define AX_IQ200_QUEUE_CAPACITY 2048
 
 enum ENUM_AX_IQ200_EVENT
   {
@@ -185,16 +185,17 @@ private:
       e.missingMask=0;
      }
 
-   bool WriteLine(const string line)
+   bool WriteBatch(const string payload)
      {
-      if(m_handle==INVALID_HANDLE || !m_healthy) return(false);
+      if(m_handle==INVALID_HANDLE || !m_healthy || StringLen(payload)<=0)
+         return(false);
       if(!FileSeek(m_handle,0,SEEK_END)) return(false);
       ulong before=FileSize(m_handle);
-      uint expected=(uint)StringLen(line);
-      uint written=FileWriteString(m_handle,line);
+      uint expected=(uint)StringLen(payload);
+      uint written=FileWriteString(m_handle,payload);
       FileFlush(m_handle);
       ulong after=FileSize(m_handle);
-      return(written==expected && after>before);
+      return(written==expected && after==before+expected);
      }
 
    void LatchFailure(const string reason)
@@ -419,22 +420,28 @@ public:
 
    // Call only from OnTimer or another controlled non-hot-path callback.
    // Never call this from OnTick or OnTradeTransaction.
-   int Flush(const int maxRows=64)
+   int Flush(const int maxRows=1024)
      {
       if(!m_healthy || m_handle==INVALID_HANDLE || maxRows<=0) return(0);
-      int writtenRows=0;
-      while(m_count>0 && writtenRows<maxRows)
+      int batchRows=MathMin(m_count,maxRows);
+      if(batchRows>0)
         {
-         string line=Serialize(m_queue[m_head]);
-         if(!WriteLine(line))
+         // Serialize a bounded batch and append it with one seek/write/flush.
+         // Queue entries are removed only after the complete batch is verified.
+         string payload="";
+         for(int i=0;i<batchRows;i++)
            {
-            LatchFailure("append/flush verification failed");
-            return(writtenRows);
+            int slot=(m_head+i)%AX_IQ200_QUEUE_CAPACITY;
+            payload+=Serialize(m_queue[slot]);
            }
-         m_head=(m_head+1)%AX_IQ200_QUEUE_CAPACITY;
-         m_count--;
-         m_rowsWritten++;
-         writtenRows++;
+         if(!WriteBatch(payload))
+           {
+            LatchFailure("batched append/flush verification failed");
+            return(0);
+           }
+         m_head=(m_head+batchRows)%AX_IQ200_QUEUE_CAPACITY;
+         m_count-=batchRows;
+         m_rowsWritten+=(ulong)batchRows;
         }
       if(m_overflowPending && m_count<AX_IQ200_QUEUE_CAPACITY)
         {
@@ -445,7 +452,7 @@ public:
          overflow.missingMask=1;
          if(Enqueue(overflow)) m_overflowPending=false;
         }
-      return(writtenRows);
+      return(batchRows);
      }
 
    // Bind broker order identifiers to the strategy-approved setup identifier.
