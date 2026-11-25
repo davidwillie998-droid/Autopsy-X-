@@ -131,7 +131,8 @@ public:
    bool UpdateSample(const SAxTick &tick,const double point)
      {
       if(tick.timeMsc<=0 || tick.sequence==0 || !MathIsValidNumber(tick.mid) ||
-         !MathIsValidNumber(point) || point<=0.0)
+         !MathIsValidNumber(point) || point<=0.0 ||
+         tick.dir<-1 || tick.dir>1)
         {
          Reset();
          m_snapshot.status=AX_HAWKES_INVALID;
