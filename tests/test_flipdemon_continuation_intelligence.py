@@ -65,7 +65,7 @@ class ContinuationIntelligenceContractTests(unittest.TestCase):
         for field in fields:
             with self.subTest(field=field):
                 self.assertIn(field, DEFS)
-                self.assertRegex(SCORER, rf's\\.{field}\\s*=\\s*0\\.0;')
+                self.assertRegex(SCORER, rf's\.{field}\s*=\s*0\.0;')
                 self.assertIn(f'score.{field}=', EA)
 
     def test_each_contribution_is_recorded_only_after_w1_d1_agreement(self):
