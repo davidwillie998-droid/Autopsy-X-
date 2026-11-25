@@ -956,6 +956,12 @@ SAxTradeRecord AxBuildTradeRecord(const double closePrice,const double grossProf
    rec.buyScore      = g_posState.entryBuyScore;
    rec.sellScore     = g_posState.entrySellScore;
    rec.confidence    = g_posState.entryConfidence;
+   rec.vwapPullbackBullBonus=g_posState.vwapPullbackBullBonus;
+   rec.vwapPullbackBearBonus=g_posState.vwapPullbackBearBonus;
+   rec.overnightBiasBullBonus=g_posState.overnightBiasBullBonus;
+   rec.overnightBiasBearBonus=g_posState.overnightBiasBearBonus;
+   rec.twinContinuationBullBonus=g_posState.twinContinuationBullBonus;
+   rec.twinContinuationBearBonus=g_posState.twinContinuationBearBonus;
    rec.regime        = g_posState.entryRegime;
    rec.entryReason   = g_posState.entryReason;
    rec.exitReason    = reason;
@@ -2666,6 +2672,12 @@ void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double l
    g_posState.entryBuyScore      = score.buyScore;
    g_posState.entrySellScore     = score.sellScore;
    g_posState.entryConfidence    = score.confidence;
+   g_posState.vwapPullbackBullBonus=score.vwapPullbackBullBonus;
+   g_posState.vwapPullbackBearBonus=score.vwapPullbackBearBonus;
+   g_posState.overnightBiasBullBonus=score.overnightBiasBullBonus;
+   g_posState.overnightBiasBearBonus=score.overnightBiasBearBonus;
+   g_posState.twinContinuationBullBonus=score.twinContinuationBullBonus;
+   g_posState.twinContinuationBearBonus=score.twinContinuationBearBonus;
    g_posState.entryRegime        = score.regime;
    g_posState.entryReason        = entryReason;
    g_posState.setupId            = "";
@@ -3846,7 +3858,10 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
         }
      }
    bool recoverySaved = g_recoveryInitialized &&
-                        g_restartRecovery.RecordOpenSetup(newTicket,g_positionIdentifier,recoverySetupId,_Symbol,dir,TimeCurrent());
+                        g_restartRecovery.RecordOpenSetup(newTicket,g_positionIdentifier,recoverySetupId,_Symbol,dir,TimeCurrent(),
+                          g_posState.vwapPullbackBullBonus,g_posState.vwapPullbackBearBonus,
+                          g_posState.overnightBiasBullBonus,g_posState.overnightBiasBearBonus,
+                          g_posState.twinContinuationBullBonus,g_posState.twinContinuationBearBonus);
    if(!recoverySaved || !g_restartRecovery.IsPersisting())
      {
       g_recoveryReady = false;
@@ -4329,6 +4344,12 @@ void AxReconcileExistingPosition(void)
    g_posState.entryBuyScore                = 0;
    g_posState.entrySellScore                = 0;
    g_posState.entryConfidence                = 0;
+   g_posState.vwapPullbackBullBonus=0.0;
+   g_posState.vwapPullbackBearBonus=0.0;
+   g_posState.overnightBiasBullBonus=0.0;
+   g_posState.overnightBiasBearBonus=0.0;
+   g_posState.twinContinuationBullBonus=0.0;
+   g_posState.twinContinuationBearBonus=0.0;
    g_posState.entryRegime                     = AX_REGIME_UNSAFE;
    g_posState.entryReason                      = "RECONCILED_ON_INIT";
    g_posState.setupId                           = "RESTART_RECOVERED";
