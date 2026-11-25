@@ -985,6 +985,22 @@ public:
       out = m_records[i];
       return(true);
      }
+   bool              GetCampaignNetProfit(const ulong positionIdentifier,double &netProfit,bool &closed) const
+     {
+      netProfit=0.0;
+      closed=false;
+      if(positionIdentifier==0) return(false);
+      bool found=false;
+      for(int i=0;i<m_count;i++)
+        {
+         if(m_records[i].positionIdentifier!=positionIdentifier) continue;
+         found=true;
+         netProfit+=m_records[i].netProfit;
+         if(!m_records[i].isPartial) closed=true;
+        }
+      return(found && MathIsValidNumber(netProfit));
+     }
+
    string            FileName(void) const { return(m_fileName); }
    bool              IsPersisting(void) const { return(m_persistenceHealthy && m_fileHandle!=INVALID_HANDLE); }
 
