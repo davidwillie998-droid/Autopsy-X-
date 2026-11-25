@@ -9,6 +9,8 @@
 
 #define AX_IQ200_SCHEMA_VERSION 1
 #define AX_IQ200_QUEUE_CAPACITY 2048
+#define AX_IQ200_DEAL_DEDUPE_CAPACITY 4096
+#define AX_IQ200_THROUGHPUT_BUCKETS 120
 
 enum ENUM_AX_IQ200_EVENT
   {
@@ -84,9 +86,17 @@ private:
    ulong    m_rowsWritten;
    bool     m_healthy;
    bool     m_overflowPending;
-   ulong    m_seenDealTickets[512];
+   ulong    m_seenDealTickets[AX_IQ200_DEAL_DEDUPE_CAPACITY];
    int      m_seenDealCount;
    int      m_seenDealNext;
+   long     m_throughputSecond[AX_IQ200_THROUGHPUT_BUCKETS];
+   ulong    m_throughputCount[AX_IQ200_THROUGHPUT_BUCKETS];
+   double   m_throughputVolume[AX_IQ200_THROUGHPUT_BUCKETS];
+   ulong    m_confirmedEntryDealCount;
+   double   m_confirmedEntryVolume;
+   ulong    m_peakConfirmedEntryDealsPerSecond;
+   long     m_firstConfirmedEntryTimeMsc;
+   long     m_lastConfirmedEntryTimeMsc;
    ulong    m_orderTickets[256];
    string   m_orderDecisionIds[256];
    int      m_orderMapCount;
@@ -220,7 +230,18 @@ public:
       m_overflowPending=false;
       m_seenDealCount=0;
       m_seenDealNext=0;
-      for(int i=0;i<512;i++) m_seenDealTickets[i]=0;
+      for(int i=0;i<AX_IQ200_DEAL_DEDUPE_CAPACITY;i++) m_seenDealTickets[i]=0;
+      for(int i=0;i<AX_IQ200_THROUGHPUT_BUCKETS;i++)
+        {
+         m_throughputSecond[i]=0;
+         m_throughputCount[i]=0;
+         m_throughputVolume[i]=0.0;
+        }
+      m_confirmedEntryDealCount=0;
+      m_confirmedEntryVolume=0.0;
+      m_peakConfirmedEntryDealsPerSecond=0;
+      m_firstConfirmedEntryTimeMsc=0;
+      m_lastConfirmedEntryTimeMsc=0;
       m_orderMapCount=0;
       m_orderMapNext=0;
       m_markoutCount=0;
@@ -491,10 +512,55 @@ public:
       for(int i=0;i<m_seenDealCount;i++)
          if(m_seenDealTickets[i]==dealTicket) return(false);
       m_seenDealTickets[m_seenDealNext]=dealTicket;
-      m_seenDealNext=(m_seenDealNext+1)%512;
-      if(m_seenDealCount<512) m_seenDealCount++;
+      m_seenDealNext=(m_seenDealNext+1)%AX_IQ200_DEAL_DEDUPE_CAPACITY;
+      if(m_seenDealCount<AX_IQ200_DEAL_DEDUPE_CAPACITY) m_seenDealCount++;
       return(true);
      }
+
+   // Count only unique broker-confirmed ENTRY deal slices. This is observational
+   // throughput, not order-request rate and not completed-order count. Broker deal
+   // timestamps define the one-second buckets; delayed callbacks update their bucket
+   // when it is still resident in the bounded 120-second window.
+   bool RecordConfirmedEntryDeal(const ulong dealTicket,const long dealTimeMsc,
+                                 const double dealVolume)
+     {
+      if(dealTicket==0 || dealTimeMsc<=0 || !MathIsValidNumber(dealVolume) || dealVolume<=0.0)
+         return(false);
+      if(!MarkDealTicketSeen(dealTicket)) return(false);
+
+      m_confirmedEntryDealCount++;
+      m_confirmedEntryVolume+=dealVolume;
+      if(m_firstConfirmedEntryTimeMsc==0 || dealTimeMsc<m_firstConfirmedEntryTimeMsc)
+         m_firstConfirmedEntryTimeMsc=dealTimeMsc;
+      if(dealTimeMsc>m_lastConfirmedEntryTimeMsc)
+         m_lastConfirmedEntryTimeMsc=dealTimeMsc;
+
+      long second=dealTimeMsc/1000;
+      int slot=(int)(second%AX_IQ200_THROUGHPUT_BUCKETS);
+      if(slot<0) slot+=AX_IQ200_THROUGHPUT_BUCKETS;
+      if(m_throughputSecond[slot]==second)
+        {
+         m_throughputCount[slot]++;
+         m_throughputVolume[slot]+=dealVolume;
+        }
+      else if(m_throughputSecond[slot]<second)
+        {
+         m_throughputSecond[slot]=second;
+         m_throughputCount[slot]=1;
+         m_throughputVolume[slot]=dealVolume;
+        }
+      // If this is an older callback colliding with a newer bucket 120 seconds
+      // ahead, retain lifetime totals but do not corrupt the newer rate bucket.
+      if(m_throughputCount[slot]>m_peakConfirmedEntryDealsPerSecond)
+         m_peakConfirmedEntryDealsPerSecond=m_throughputCount[slot];
+      return(true);
+     }
+
+   ulong ConfirmedEntryDealCount(void) const { return(m_confirmedEntryDealCount); }
+   double ConfirmedEntryVolume(void) const { return(m_confirmedEntryVolume); }
+   ulong PeakConfirmedEntryDealsPerSecond(void) const { return(m_peakConfirmedEntryDealsPerSecond); }
+   long FirstConfirmedEntryTimeMsc(void) const { return(m_firstConfirmedEntryTimeMsc); }
+   long LastConfirmedEntryTimeMsc(void) const { return(m_lastConfirmedEntryTimeMsc); }
 
    bool IsHealthy(void) const { return(m_healthy); }
    int PendingCount(void) const { return(m_count); }
