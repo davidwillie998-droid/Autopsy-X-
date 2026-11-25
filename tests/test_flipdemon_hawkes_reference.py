@@ -42,7 +42,7 @@ class HawkesReference:
         self.events = 0
 
     def update(self, msc, sequence, mid, point=1.0):
-        if not self.valid_config if hasattr(self, "valid_config") else False:
+        if not self.valid_config:
             return None
         if msc <= 0 or sequence <= self.last_seq or point <= 0:
             return None
