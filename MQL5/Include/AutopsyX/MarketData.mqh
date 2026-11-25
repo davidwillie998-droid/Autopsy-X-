@@ -34,6 +34,9 @@ private:
    SAxTick           m_ticks[AX_TICK_BUFFER_SIZE];
    int               m_count;      // number of valid samples (<=buffer size)
    int               m_head;       // index of most recent sample
+   ulong             m_nextSequence;
+   bool              m_haveLastTick;
+   MqlTick           m_lastTick;
 
    double            m_lastMid;
    bool              m_haveLast;
@@ -55,6 +58,9 @@ public:
      {
       m_count   = 0;
       m_head    = -1;
+      m_nextSequence = 0;
+      m_haveLastTick = false;
+      ZeroMemory(m_lastTick);
       m_haveLast= false;
       m_lastMid = 0.0;
      }
@@ -84,6 +90,16 @@ public:
       if(tick.bid<=0 || tick.ask<=0)
          return(false);
 
+      // A repeated callback can expose the same latest terminal tick more than once.
+      // Suppress only an exact repeat of the full broker tick snapshot. Same-millisecond
+      // ticks with changed quote/volume/flags remain distinct and retain arrival order.
+      if(m_haveLastTick &&
+         tick.time_msc==m_lastTick.time_msc &&
+         tick.bid==m_lastTick.bid && tick.ask==m_lastTick.ask &&
+         tick.last==m_lastTick.last && tick.volume==m_lastTick.volume &&
+         tick.volume_real==m_lastTick.volume_real && tick.flags==m_lastTick.flags)
+         return(false);
+
       double mid = (tick.bid+tick.ask)/2.0;
       int dir = 0;
       if(m_haveLast)
@@ -94,6 +110,8 @@ public:
 
       m_head = (m_head+1) % AX_TICK_BUFFER_SIZE;
       m_ticks[m_head].time      = tick.time;
+      m_ticks[m_head].timeMsc   = (tick.time_msc>0 ? tick.time_msc : (long)tick.time*1000);
+      m_ticks[m_head].sequence  = ++m_nextSequence;
       m_ticks[m_head].bid       = tick.bid;
       m_ticks[m_head].ask       = tick.ask;
       m_ticks[m_head].mid       = mid;
@@ -107,6 +125,8 @@ public:
       if(m_count<AX_TICK_BUFFER_SIZE) m_count++;
       m_lastMid  = mid;
       m_haveLast = true;
+      m_lastTick = tick;
+      m_haveLastTick = true;
       return(true);
      }
 
