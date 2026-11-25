@@ -167,7 +167,6 @@ public:
       if(m_requireBaseline || m_lastTimeMsc==0)
         {
          m_requireBaseline=false;
-        {
          m_lastTimeMsc=tick.timeMsc;
          m_lastSequence=tick.sequence;
          m_lastMid=tick.mid;
