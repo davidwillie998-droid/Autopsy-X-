@@ -275,8 +275,9 @@ require("g_positionIdentifier          = (ulong)PositionGetInteger(POSITION_IDEN
 autopsy = AUTOPSY.read_text(encoding="utf-8")
 require("!LoadRiskHistory() || !LoadTradeRecords()" in autopsy
         and "LoadTradeRecordsFile(m_legacyFileName,true" in autopsy
+        and "LoadTradeRecordsFile(m_v4FileName,false" in autopsy
         and "LoadTradeRecordsFile(m_fileName,false" in autopsy
-        and "if(ArraySize(fields)!=44)" in autopsy
+        and "fieldCount!=44 && fieldCount!=50" in autopsy
         and "HasLoadedDeal(record)" in autopsy
         and "rec.isPartial=isPartial;" in autopsy,
         "restart restores validated v3/v4 trade records, preserves partial flags and deduplicates broker deal identity")
@@ -287,6 +288,7 @@ require("legacyV3 && rMultiple==0.0" in autopsy
         "journal recovery rejects malformed numeric/boolean fields and quarantines unknown provenance from learning datasets")
 require("LastAccountedDealTicket(const ulong positionIdentifier)" in autopsy
         and "LastAccountedDealTicketInFile(m_legacyFileName,positionIdentifier)" in autopsy
+        and "LastAccountedDealTicketInFile(m_v4FileName,positionIdentifier)" in autopsy
         and "TradeAutopsy_v3.csv" in autopsy
         and "TradeAutopsy_v4.csv" in autopsy
         and "WriteHeaderIfNew(void)" in autopsy
@@ -296,6 +298,7 @@ require("LastAccountedDealTicket(const ulong positionIdentifier)" in autopsy
         and "PositionIdentifier" in autopsy,
         "versioned trade journal restores deal boundaries and persistent risk history across upgrades")
 require("ReadRiskHistoryFile(m_legacyFileName,true)" in autopsy
+        and "ReadRiskHistoryFile(m_v4FileName,false)" in autopsy
         and "ReadRiskHistoryFile(m_fileName,false)" in autopsy
         and 'fields[25]=="NA"' in autopsy
         and '(rec.rMultiple==EMPTY_VALUE ? "NA" : DoubleToString(rec.rMultiple,3))' in autopsy
@@ -726,6 +729,7 @@ require("OrderSend(" not in regime_journal_harness
 
 require("TradeAutopsy_v3.csv" in journal_harness
         and "TradeAutopsy_v4.csv" in journal_harness
+        and "TradeAutopsy_v5.csv" in journal_harness
         and "MakeTradeRow(1001,7001" in journal_harness,
         "journal harness covers both schema versions and cross-version deal duplication")
 require("MakeTradeRow(1002,7001,\"FORWARD_DEMO\",true" in journal_harness
