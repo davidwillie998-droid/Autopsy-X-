@@ -51,8 +51,10 @@ class InstitutionalFlowProxyContracts(unittest.TestCase):
 
     def test_mixed_volume_sources_use_comparable_tick_weights(self):
         self.assertIn("bool mixedVolumeSource=(sourceClasses>1)", ORDER_FLOW)
-        self.assertIn("mixedVolumeSource ? 1.0", ORDER_FLOW)
+        self.assertEqual(ORDER_FLOW.count("mixedVolumeSource ? 1.0"), 3)
         self.assertIn("Homogeneous windows retain their native feed-volume weighting", ORDER_FLOW)
+        self.assertIn("oldDelta+=vol", ORDER_FLOW)
+        self.assertIn("newDelta+=vol", ORDER_FLOW)
         self.assertIn("Session CVD and the footprint's per-tick input use unit tick weights", ORDER_FLOW)
 
     def test_volume_provenance_is_not_misrepresented_as_quality(self):
