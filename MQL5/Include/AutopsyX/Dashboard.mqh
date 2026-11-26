@@ -39,6 +39,11 @@ struct SAxDashboardExtras
    bool           orderFlowEnabled;
    double         sessionCvd;
    double         orderFlowImbalance;    // -1..+1
+   double         orderFlowPersistence;  // 0..100 aligned directional subwindows
+   double         orderFlowAbsorptionStrength; // 0..100 pressure without directional price progress
+   double         orderFlowDirectionalCoverage; // percentage of ticks with inferred direction
+   string         orderFlowEvidenceLabel; // explicit volume provenance and quote-direction caveat
+   bool           parentOrderPersistenceProxy; // behavioural proxy, never verified parent-order identity
    bool           bullAbsorption;
    bool           bearAbsorption;
    bool           volProfileValid;
@@ -342,7 +347,13 @@ public:
 
          string absorbStr = extras.bullAbsorption?"BULLISH":(extras.bearAbsorption?"BEARISH":"-");
          color absorbClr  = extras.bullAbsorption?clrLime:(extras.bearAbsorption?clrTomato:clrSilver);
-         MakeLabel("ABSORB",x,y,"ABSORPTION: "+absorbStr,absorbClr); y+=m_lineH;
+         MakeLabel("ABSORB",x,y,StringFormat("ABSORPTION: %s (%.0f%%)",absorbStr,extras.orderFlowAbsorptionStrength),absorbClr); y+=m_lineH;
+
+         string persistenceLabel=extras.parentOrderPersistenceProxy?"PERSISTENT FLOW PROXY":"NO PERSISTENT FLOW";
+         color persistenceClr=extras.orderFlowPersistence>=80.0?clrGold:clrSilver;
+         MakeLabel("FLOW PERSIST",x,y,StringFormat("FLOW PERSIST: %.0f%% | DIR COVER: %.0f%% | %s",
+                   extras.orderFlowPersistence,extras.orderFlowDirectionalCoverage,persistenceLabel),persistenceClr); y+=m_lineH;
+         MakeLabel("FLOW SOURCE",x,y,"FLOW SOURCE: "+extras.orderFlowEvidenceLabel,clrSilver); y+=m_lineH;
 
          string vpStr = !extras.volProfileValid ? "N/A" :
                         (extras.volProfilePosition>0 ? "ABOVE VALUE AREA" :
