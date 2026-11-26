@@ -61,3 +61,41 @@ def test_ea_wires_engine_as_observational_shadow_only():
     start = source.index("void AxApplyOrderFlowBonus")
     end = source.index("\n  }", start)
     assert "g_purePriceAction" not in source[start:end]
+
+
+
+def test_observation_journal_is_append_only_and_bar_deduplicated():
+    source = ENGINE.read_text(encoding="utf-8")
+    assert "FILE_READ|FILE_WRITE|FILE_CSV|FILE_SHARE_READ|FILE_SHARE_WRITE" in source
+    assert "FileSeek(handle,0,SEEK_END)" in source
+    assert "FileFlush(handle)" in source
+    assert "m_snapshot.barTime==m_lastJournalBar" in source
+    assert "m_lastJournalBar=m_snapshot.barTime" in source
+
+
+def test_journal_records_raw_features_and_provenance():
+    source = ENGINE.read_text(encoding="utf-8")
+    for field in (
+        '"bar_time"',
+        '"symbol"',
+        '"timeframe"',
+        '"body_ratio"',
+        '"upper_wick_ratio"',
+        '"lower_wick_ratio"',
+        '"close_location"',
+        '"prior_impulse_direction"',
+        '"prior_impulse_efficiency"',
+        '"pullback_depth"',
+        '"candle_state"',
+        '"reason"',
+    ):
+        assert field in source
+
+
+def test_journal_is_configurable_from_ea_without_trading_authority():
+    engine = ENGINE.read_text(encoding="utf-8")
+    ea = EA.read_text(encoding="utf-8")
+    assert "InpEnablePurePriceActionJournal = true" in ea
+    assert "InpEnablePurePriceActionJournal" in ea
+    assert "journalEnabled" in engine
+    assert "AppendJournal();" in engine
