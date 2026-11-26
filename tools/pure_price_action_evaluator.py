@@ -276,7 +276,12 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
     summaries = []
     p_records = []
     for (symbol, timeframe, split, horizon, feature, feature_value), rows in sorted(buckets.items()):
-        directional = [row for row in rows if row["signed_forward_return_pct"] != ""]
+        directional = sorted(
+            (row for row in rows if row["signed_forward_return_pct"] != ""),
+            key=lambda row: parse_time(row["bar_time"]),
+        )
+        # HAC autocovariances are meaningful only when observations are ordered
+        # chronologically, regardless of the input journal's row order.
         signed = [float(row["signed_forward_return_pct"]) for row in directional]
         # A horizon-H forward return overlaps the next H-1 observations.
         # The HAC bandwidth must cover at least that mechanical dependence.
