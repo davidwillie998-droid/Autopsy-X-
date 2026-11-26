@@ -59,5 +59,5 @@ def test_ea_wires_engine_as_observational_shadow_only():
     assert "g_purePriceAction.Update();" in source
     assert "if(InpVerboseLogging) Print(\"AUTOPSY X SHADOW: \"" in source
     start = source.index("void AxApplyOrderFlowBonus")
-    end = source.index("\\n  }", start)
+    end = source.index("\n  }", start)
     assert "g_purePriceAction" not in source[start:end]
