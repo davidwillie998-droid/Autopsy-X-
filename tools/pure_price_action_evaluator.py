@@ -102,8 +102,10 @@ def newey_west_mean_p(values: list[float]) -> float | None:
         covariance = sum(centered[t] * centered[t-k] for t in range(k, n)) / n
         weight = 1.0 - k / (lag + 1.0)
         variance += 2.0 * weight * covariance
+    # A zero HAC variance does not provide a usable standard error.
+    # Returning p=0 here would incorrectly label a constant series as significant.
     if variance <= 0:
-        return 1.0 if avg == 0 else 0.0
+        return None
     z = avg / math.sqrt(variance / n)
     return math.erfc(abs(z) / math.sqrt(2.0))
 
@@ -309,7 +311,13 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
             "directional_hit_rate_uplift_vs_complement_pp": mean(uplift_hit_deltas) if uplift_hit_deltas else None,
             "newey_west_p_value": p_value,
             "bh_adjusted_p_value": None,
-            "inference_status": "DESCRIPTIVE_ONLY_BELOW_30_DIRECTIONAL_OBSERVATIONS" if p_value is None else "EXPLORATORY_HAC_NOT_CONFIRMATORY",
+            "inference_status": (
+                "DESCRIPTIVE_ONLY_BELOW_30_DIRECTIONAL_OBSERVATIONS"
+                if len(signed) < MIN_INFERENCE_OBSERVATIONS
+                else "DESCRIPTIVE_ONLY_UNDEFINED_HAC_VARIANCE"
+                if p_value is None
+                else "EXPLORATORY_HAC_NOT_CONFIRMATORY"
+            ),
         }
         summaries.append(item)
         if p_value is not None:
