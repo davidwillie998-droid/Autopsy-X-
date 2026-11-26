@@ -49,6 +49,12 @@ class InstitutionalFlowProxyContracts(unittest.TestCase):
         self.assertIn("m_directionalCoveragePct/100.0", ORDER_FLOW)
         self.assertIn("score+=m_flowPersistence*0.25*coverage", ORDER_FLOW)
 
+    def test_mixed_volume_sources_use_comparable_tick_weights(self):
+        self.assertIn("bool mixedVolumeSource=(sourceClasses>1)", ORDER_FLOW)
+        self.assertIn("mixedVolumeSource ? 1.0", ORDER_FLOW)
+        self.assertIn("Homogeneous windows retain their native feed-volume weighting", ORDER_FLOW)
+        self.assertIn("Session CVD and the footprint's per-tick input use unit tick weights", ORDER_FLOW)
+
     def test_existing_engine_is_reused_and_dashboard_is_wired(self):
         self.assertIn("COrderFlowEngine      g_orderFlow", EA)
         self.assertIn("g_orderFlow.FlowPersistence()", EA)
