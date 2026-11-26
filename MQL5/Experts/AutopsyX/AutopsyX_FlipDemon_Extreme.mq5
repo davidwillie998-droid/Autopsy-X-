@@ -2229,19 +2229,50 @@ bool AxRecoverLockedHedgingFullCloseActions(void)
       !g_hedgingPositionManager.IsComplete() || !g_hedgingFullCloseLedgerReady ||
       !g_hedgingFullCloseLedger.IsPersisting())
       return(false);
+
+   // Never infer completion from a durable action lock or an old request result.
+   // Refresh broker truth before touching any actionCode=4 record.
+   if(!g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber))
+     {
+      g_virtualExitReady=false;
+      g_hedgingLifecycleLock=true;
+      g_recoveryReady=false;
+      g_engineState=AX_ENGINE_PAUSED;
+      Print("FLIPDEMON HEDGING FULL-CLOSE RECOVERY: broker snapshot incomplete; locked actions preserved.");
+      return(false);
+     }
+
    for(int i=0;i<g_virtualExitRegistry.Count();i++)
      {
       SAxVirtualExitRecord saved;
       if(!g_virtualExitRegistry.GetAt(i,saved)) return(false);
       if(!saved.actionLocked || saved.actionCode!=4) continue;
-      if(saved.actionBaselineVolume<=0.0 || saved.positionIdentifier==0 ||
-         !AxFinalizeHedgingFullClose(saved))
+
+      // A still-live identifier means the close is not proven complete. This
+      // includes unchanged volume, partial execution, and delayed broker fills.
+      // Keep the original action lock and do not submit another close request.
+      SAxManagedPosition stillLive;
+      if(saved.positionIdentifier==0 || saved.actionBaselineVolume<=0.0 ||
+         g_hedgingPositionManager.FindByIdentifier(saved.positionIdentifier,stillLive))
         {
          g_virtualExitReady=false;
          g_hedgingLifecycleLock=true;
          g_recoveryReady=false;
          g_engineState=AX_ENGINE_PAUSED;
-         PrintFormat("FLIPDEMON HEDGING FULL-CLOSE RECOVERY QUARANTINE: identifier=%I64u remains locked; no close retry issued.",
+         PrintFormat("FLIPDEMON HEDGING FULL-CLOSE RECOVERY QUARANTINE: identifier=%I64u still has live broker exposure or invalid baseline; action lock retained and no retry issued.",
+                     saved.positionIdentifier);
+         return(false);
+        }
+
+      // Broker absence is necessary but not sufficient. AxBuildHedgingFullCloseRecord
+      // independently requires complete, correctly attributed exit-deal volume.
+      if(!AxFinalizeHedgingFullClose(saved))
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         g_recoveryReady=false;
+         g_engineState=AX_ENGINE_PAUSED;
+         PrintFormat("FLIPDEMON HEDGING FULL-CLOSE RECOVERY QUARANTINE: identifier=%I64u has no live position but complete deal-history finalization is unavailable; action lock retained.",
                      saved.positionIdentifier);
          return(false);
         }
