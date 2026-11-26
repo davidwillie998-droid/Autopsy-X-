@@ -291,3 +291,40 @@ def test_feature_uplift_uses_complementary_categories_within_impulse_direction(t
     assert bullish["mean_signed_return_uplift_vs_complement_pct"] > 0
     assert bearish["mean_signed_return_uplift_vs_complement_pct"] < 0
     assert bullish["directional_hit_rate_uplift_vs_complement_pp"] > 0
+
+
+
+def test_constant_directional_returns_do_not_receive_zero_p_value():
+    assert EVALUATOR.newey_west_mean_p([0.01] * 40) is None
+    assert EVALUATOR.newey_west_mean_p([0.0] * 40) is None
+
+
+def test_undefined_hac_variance_is_reported_as_descriptive(tmp_path):
+    journal = tmp_path / "journal.csv"
+    ohlc = tmp_path / "ohlc.csv"
+    bars = []
+    journal_rows = []
+    for i in range(100):
+        stamp = f"2026.01.01 00:{i:02d}"
+        bars.append({
+            "timestamp": stamp, "symbol": "TEST", "timeframe": "PERIOD_M1",
+            "open": "100", "high": "101", "low": "99", "close": "100",
+        })
+        if i < 50:
+            journal_rows.append({
+                "bar_time": stamp, "symbol": "TEST", "timeframe": "PERIOD_M1",
+                "prior_impulse_direction": "1", "candle_state": "BALANCED",
+                "body_ratio": "0.5", "close_location": "0.5", "pullback_depth": "0.2",
+            })
+    write_csv(journal, journal_rows, ["bar_time", "symbol", "timeframe",
+        "prior_impulse_direction", "candle_state", "body_ratio",
+        "close_location", "pullback_depth"])
+    write_csv(ohlc, bars, ["timestamp", "symbol", "timeframe",
+        "open", "high", "low", "close"])
+
+    _, report = EVALUATOR.evaluate(journal, ohlc, [1])
+    train_baseline = next(g for g in report["groups"]
+                          if g["feature"] == "BASELINE" and g["split"] == "train")
+    assert train_baseline["directional_observations"] >= 30
+    assert train_baseline["newey_west_p_value"] is None
+    assert train_baseline["inference_status"] == "DESCRIPTIVE_ONLY_UNDEFINED_HAC_VARIANCE"
