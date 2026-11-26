@@ -244,9 +244,14 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
     for row in output:
         base = (row["symbol"], row["timeframe"], row["split"], row["horizon_bars"])
         buckets[base + ("BASELINE", "PRIOR_IMPULSE")].append(row)
-        for feature in ("candle_state", "prior_impulse", "pullback_depth_bucket",
+        buckets[base + ("IMPULSE_BASELINE", row["prior_impulse"])].append(row)
+        for feature in ("candle_state", "pullback_depth_bucket",
                         "body_ratio_bucket", "close_location_bucket"):
             buckets[base + (feature, row[feature])].append(row)
+            # Conditional groups compare candle features while holding the
+            # prior-impulse direction fixed, reducing directional-mix confounding.
+            conditional_value = feature + "=" + row[feature] + "|impulse=" + row["prior_impulse"]
+            buckets[base + (feature + "_GIVEN_IMPULSE", conditional_value)].append(row)
 
     summaries = []
     p_records = []
@@ -284,7 +289,7 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
         "evaluated_observation_horizons": len(output),
         "exclusions": dict(exclusions),
         "split_policy": "For streams with at least 10 OHLC bars: first 60% train, next 20% validation, final 20% test, with forward windows crossing boundaries purged. Shorter streams are labelled insufficient_sample and are descriptive only.",
-        "feature_policy": "Predeclared fixed bins: pullback depth <0, [0,.25), [.25,.50), [.50,.75), >=.75; body ratio [0,.25), [.25,.50), [.50,.75), [.75,1]; close location [0,.20), [.20,.40), [.40,.60), [.60,.80), [.80,1]. Exact candle-state labels are preserved. Each feature is evaluated separately against the prior-impulse baseline.",
+        "feature_policy": "Predeclared fixed bins: pullback depth <0, [0,.25), [.25,.50), [.50,.75), >=.75; body ratio [0,.25), [.25,.50), [.50,.75), [.75,1]; close location [0,.20), [.20,.40), [.40,.60), [.60,.80), [.80,1]. Exact candle-state labels are preserved. Each feature is reported both unconditionally and conditional on prior-impulse direction, alongside overall and direction-stratified impulse baselines.",
         "minimum_directional_observations_for_inference": MIN_INFERENCE_OBSERVATIONS,
         "timestamp_policy": "Journal and OHLC timestamps are parsed as naive wall-clock values. They must use the same broker/server timezone; UTC and broker-local timestamps must not be mixed.",
         "interpretation": (
