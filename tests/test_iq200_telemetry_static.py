@@ -145,7 +145,7 @@ def test_iq200_markouts_run_from_timer_not_hot_callbacks():
     )
     assert "g_iq200Telemetry.ProcessDueMarkouts(markoutValues,markoutValid);" in ea
     assert ea.index("g_iq200Telemetry.ProcessDueMarkouts(markoutValues,markoutValid);") < ea.index(
-        "g_iq200Telemetry.Flush(64);"
+        "g_iq200Telemetry.Flush(1024);"
     )
     assert "markoutBasis.fillPrice=dealPrice;" in ea
     assert "markoutBasis.confirmedVolume=dealVolume;" in ea
