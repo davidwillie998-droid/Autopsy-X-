@@ -41,7 +41,7 @@ def test_verified_multi_leg_state_does_not_latch_the_integrity_quarantine():
     assert "g_hedgingLifecycleLock=true" not in block
     assert "g_engineState=AX_ENGINE_PAUSED;" in block
     assert "AxManageHedgingVirtualExitTickets()" in EA
-    assert "fresh entries are blocked until the multi-leg set is resolved" in block
+    assert "fresh entries and legacy single-position orchestration remain" in block
 
 
 def test_startup_multi_leg_detection_does_not_latch_sticky_lock():
