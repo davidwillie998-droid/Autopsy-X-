@@ -226,10 +226,11 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
         "journal_rows": len(journal),
         "evaluated_observation_horizons": len(output),
         "exclusions": dict(exclusions),
+        "split_policy": "Chronological OHLC bars: first 60% train, next 20% validation, final 20% test. Forward windows crossing a split boundary are purged.",
         "interpretation": (
             "Forward OHLC movement only. Not net trading PnL, not a trade simulation, "
             "and not evidence of causality. Overlapping horizons and serial dependence "
-            "remain limitations; confirm findings on chronological holdout data."
+            "remain limitations; train is exploratory, validation is for selection, and test must remain untouched until the analysis plan is frozen."
         ),
     }
     return output, {"groups": summaries, "metadata": metadata}
