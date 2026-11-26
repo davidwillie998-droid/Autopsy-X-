@@ -393,3 +393,32 @@ def test_hac_result_is_invariant_to_journal_row_order(tmp_path):
     group_a = next(g for g in report_a["groups"] if g["feature"] == "BASELINE" and g["split"] == "train")
     group_b = next(g for g in report_b["groups"] if g["feature"] == "BASELINE" and g["split"] == "train")
     assert group_a["newey_west_p_value"] == group_b["newey_west_p_value"]
+
+
+def test_mt5_semicolon_journal_is_read_with_comma_ohlc(tmp_path):
+    journal = tmp_path / "mt5_journal.csv"
+    ohlc = tmp_path / "ohlc.csv"
+    journal.write_text(
+        "bar_time;symbol;timeframe;candle_range;body_ratio;upper_wick_ratio;"
+        "lower_wick_ratio;close_location;prior_impulse_direction;"
+        "prior_impulse_efficiency;pullback_depth;candle_state;reason\\n"
+        "2026.01.01 00:00;TEST;PERIOD_M5;2.0;0.7;0.1;0.2;0.8;1;0.75;0.1;2;CLOSED_OHLC_ONLY\\n",
+        encoding="utf-8",
+    )
+    write_csv(ohlc, [
+        {"timestamp": "2026.01.01 00:00", "symbol": "TEST", "timeframe": "PERIOD_M5",
+         "open": "100", "high": "102", "low": "99", "close": "101"},
+        {"timestamp": "2026.01.01 00:05", "symbol": "TEST", "timeframe": "PERIOD_M5",
+         "open": "101", "high": "103", "low": "100", "close": "102"},
+        {"timestamp": "2026.01.01 00:10", "symbol": "TEST", "timeframe": "PERIOD_M5",
+         "open": "102", "high": "104", "low": "101", "close": "103"},
+    ], ["timestamp", "symbol", "timeframe", "open", "high", "low", "close"])
+
+    rows = EVALUATOR.read_csv(journal)
+    assert len(rows) == 1
+    assert rows[0]["symbol"] == "TEST"
+    assert rows[0]["candle_state"] == "2"
+    observations, report = EVALUATOR.evaluate(journal, ohlc, [1])
+    assert len(observations) == 1
+    assert observations[0]["directional_hit"] == 1
+    assert report["metadata"]["journal_rows"] == 1
