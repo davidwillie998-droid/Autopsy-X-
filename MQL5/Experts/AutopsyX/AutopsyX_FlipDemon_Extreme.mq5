@@ -118,6 +118,7 @@ input bool            InpEnablePyramidExecution    = false;  // Explicit opt-in;
 input group "=== PURE PRICE ACTION DIAGNOSTICS (SHADOW ONLY) ===";
 input bool InpEnablePurePriceActionDiagnostics = true; // OHLC-only candle and impulse diagnostics; never affects entries or scores
 input int InpPurePriceActionLookback = 5;
+input bool InpEnablePurePriceActionJournal = true; // Append one OHLC-only observation per completed bar to MQL5/Files
 
 input group "=== M15 PRECISION DISPLACEMENT CONFIRMATION ===";
 input ENUM_TIMEFRAMES InpPrecisionTimeframe = PERIOD_M15;
@@ -5117,7 +5118,7 @@ int OnInit(void)
      }
    if(InpEnablePurePriceActionDiagnostics)
      {
-      g_purePriceActionReady=g_purePriceAction.Init(_Symbol,InpRegimeTimeframe,InpPurePriceActionLookback);
+      g_purePriceActionReady=g_purePriceAction.Init(_Symbol,InpRegimeTimeframe,InpPurePriceActionLookback,InpEnablePurePriceActionJournal);
       if(!g_purePriceActionReady)
          Print("AUTOPSY X: pure price-action diagnostics unavailable; no trading decision is affected.");
      }
