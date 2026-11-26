@@ -1278,7 +1278,8 @@ public:
          if(!OrderSelect(ticket))
            {
             if(HistoryOrderSelect(ticket) &&
-               (ENUM_ORDER_STATE)HistoryOrderGetInteger(ticket,ORDER_STATE)==ORDER_STATE_FILLED)
+               ((ENUM_ORDER_STATE)HistoryOrderGetInteger(ticket,ORDER_STATE)==ORDER_STATE_FILLED ||
+                (ENUM_ORDER_STATE)HistoryOrderGetInteger(ticket,ORDER_STATE)==ORDER_STATE_PARTIAL))
               {
                errorReason="Pending order filled before cancellation; broker position reconciliation required";
                return(false);
@@ -1292,7 +1293,8 @@ public:
          if(!OrderSelect(ticket))
            {
             if(HistoryOrderSelect(ticket) &&
-               (ENUM_ORDER_STATE)HistoryOrderGetInteger(ticket,ORDER_STATE)==ORDER_STATE_FILLED)
+               ((ENUM_ORDER_STATE)HistoryOrderGetInteger(ticket,ORDER_STATE)==ORDER_STATE_FILLED ||
+                (ENUM_ORDER_STATE)HistoryOrderGetInteger(ticket,ORDER_STATE)==ORDER_STATE_PARTIAL))
               {
                errorReason="Pending order filled during cancellation; broker position reconciliation required";
                return(false);
