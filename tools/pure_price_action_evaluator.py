@@ -39,8 +39,13 @@ def parse_time(value: str) -> datetime:
 
 
 def read_csv(path: Path) -> list[dict[str, str]]:
+    """Read comma-delimited exports and the semicolon-delimited MT5 journal."""
     with path.open("r", newline="", encoding="utf-8-sig") as handle:
-        return list(csv.DictReader(handle))
+        sample = handle.read(8192)
+        handle.seek(0)
+        first_line = sample.splitlines()[0] if sample.splitlines() else ""
+        delimiter = ";" if first_line.count(";") > first_line.count(",") else ","
+        return list(csv.DictReader(handle, delimiter=delimiter))
 
 
 def number(row: dict[str, str], key: str) -> float:
