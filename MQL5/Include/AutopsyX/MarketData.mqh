@@ -117,10 +117,24 @@ public:
       m_ticks[m_head].mid       = mid;
       m_ticks[m_head].spreadPts = (m_point>0) ? (tick.ask-tick.bid)/m_point : 0.0;
       m_ticks[m_head].dir       = dir;
-      // real traded size when the feed provides it, else a per-tick count proxy - either way a
-      // consistent >=1 weight so order-flow/footprint volume sums are never silently zero
-      m_ticks[m_head].volume    = (tick.volume_real>0) ? (long)MathRound(tick.volume_real)
-                                                        : (tick.volume>0 ? tick.volume : 1);
+      // Preserve volume provenance. A positive real-volume field is preferred; otherwise retain
+      // the broker integer volume field; only then use a one-unit tick-count proxy. Downstream
+      // flow logic must never relabel the latter two as exchange aggressor volume.
+      if(tick.volume_real>0.0)
+        {
+         m_ticks[m_head].volume=(long)MathRound(tick.volume_real);
+         m_ticks[m_head].volumeSource=AX_VOLUME_SOURCE_REAL;
+        }
+      else if(tick.volume>0)
+        {
+         m_ticks[m_head].volume=tick.volume;
+         m_ticks[m_head].volumeSource=AX_VOLUME_SOURCE_TICK_VOLUME;
+        }
+      else
+        {
+         m_ticks[m_head].volume=1;
+         m_ticks[m_head].volumeSource=AX_VOLUME_SOURCE_TICK_COUNT;
+        }
 
       if(m_count<AX_TICK_BUFFER_SIZE) m_count++;
       m_lastMid  = mid;
