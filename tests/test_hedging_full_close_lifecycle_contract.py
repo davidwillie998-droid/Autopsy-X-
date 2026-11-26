@@ -73,7 +73,7 @@ class HedgingFullCloseLifecycleTests(unittest.TestCase):
         self.assertIn("saved.actionCode!=4", body)
         self.assertIn("AxFinalizeHedgingFullClose(saved)", body)
         self.assertNotIn("ClosePositionByTicket", body)
-        self.assertIn("no close retry issued", body)
+        self.assertIn("no retry issued", body)
 
     def test_startup_and_tick_recover_full_closes_before_normal_reconciliation(self):
         self.assertIn("AxRecoverLockedHedgingFullCloseActions() &&", EA)
