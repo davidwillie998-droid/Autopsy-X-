@@ -291,7 +291,7 @@ class Mql5SourceHygieneTests(unittest.TestCase):
         source = self.text[path]
         bare_calls = re.findall(r"^\s*ArrayResize\s*\([^;]*\);\s*$", source, re.MULTILINE)
         self.assertEqual([], bare_calls, "TradeAutopsy contains unchecked standalone ArrayResize calls")
-        self.assertIn("if(ArrayResize(m_records,m_count+1)!=m_count+1)", source)
+        self.assertIn("if(ArrayResize(m_records,m_count+1,256)!=m_count+1)", source)
         self.assertIn("m_persistenceHealthy=false;", source)
         self.assertIn("if(!AddRiskHistory(", source)
         self.assertIn("if(ArrayResize(out,found+1)!=found+1) return(-1);", source)
