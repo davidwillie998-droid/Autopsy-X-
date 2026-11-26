@@ -7520,9 +7520,9 @@ void OnTick(void)
 void OnTimer(void)
   {
    AxObserveGapHour();
-   // Persist the active single-position snapshot on the timer, not every tick.
-   // Multi-position lifecycle remains quarantined until independent managers
-   // and close-accounting paths are complete for every leg.
+   // Checkpoint only the legacy single-position snapshot outside the tick path.
+   // Hedging legs persist through their identifier-keyed state, exit and close ledgers;
+   // this timer must never checkpoint a multi-position campaign through g_posState.
    if(g_haveOpenPosition && g_posState.active && g_positionIdentifier>0 &&
       g_positionStateRegistryReady && PositionSelectByTicket(g_posState.ticket) &&
       (ulong)PositionGetInteger(POSITION_IDENTIFIER)==g_positionIdentifier)
