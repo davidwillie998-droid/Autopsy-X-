@@ -329,3 +329,26 @@ def test_undefined_hac_variance_is_reported_as_descriptive(tmp_path):
     assert train_baseline["directional_observations"] >= 30
     assert train_baseline["newey_west_p_value"] is None
     assert train_baseline["inference_status"] == "DESCRIPTIVE_ONLY_UNDEFINED_HAC_VARIANCE"
+
+
+
+def test_benjamini_yekutieli_is_monotone_and_no_less_conservative_than_bh():
+    p_values = [0.01, 0.04, 0.03, 0.20]
+    by = EVALUATOR.benjamini_yekutieli(p_values)
+    bh = EVALUATOR.benjamini_hochberg(p_values)
+    assert all(0 <= value <= 1 for value in by)
+    assert by[0] <= by[2] <= by[1] <= by[3]
+    assert all(by_value >= bh_value for by_value, bh_value in zip(by, bh))
+
+
+def test_newey_west_bandwidth_honours_forward_horizon_overlap():
+    values = [0.02, -0.01, 0.03, -0.02, 0.01, 0.04, -0.03,
+              0.02, -0.01, 0.03, -0.02, 0.01, 0.04, -0.03,
+              0.02, -0.01, 0.03, -0.02, 0.01, 0.04, -0.03,
+              0.02, -0.01, 0.03, -0.02, 0.01, 0.04, -0.03,
+              0.02, -0.01, 0.03, -0.02, 0.01, 0.04, -0.03]
+    automatic = EVALUATOR.newey_west_mean_p(values)
+    overlap_adjusted = EVALUATOR.newey_west_mean_p(values, minimum_lag=9)
+    assert automatic is not None
+    assert overlap_adjusted is not None
+    assert overlap_adjusted != automatic
