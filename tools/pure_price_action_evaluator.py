@@ -154,8 +154,8 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
                 "horizon_bars": horizon,
                 "prior_impulse_direction": int(impulse),
                 "raw_forward_return_pct": raw_return * 100.0,
-                "mfe_pct": (highest / entry - 1.0) * 100.0,
-                "mae_pct": (lowest / entry - 1.0) * 100.0,
+                "directional_mfe_pct": ((highest / entry - 1.0) * 100.0) if impulse > 0 else ((entry / lowest - 1.0) * 100.0 if impulse < 0 else ""),
+                "directional_mae_pct": ((lowest / entry - 1.0) * 100.0) if impulse > 0 else ((entry / highest - 1.0) * 100.0 if impulse < 0 else ""),
                 "signed_forward_return_pct": raw_return * impulse * 100.0 if impulse else "",
                 "directional_hit": int(raw_return * impulse > 0) if impulse else "",
                 "candle_state": row.get("candle_state", ""),
@@ -182,8 +182,8 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
             "observations": len(rows),
             "directional_observations": len(directional),
             "mean_raw_forward_return_pct": mean(float(row["raw_forward_return_pct"]) for row in rows),
-            "mean_mfe_pct": mean(float(row["mfe_pct"]) for row in rows),
-            "mean_mae_pct": mean(float(row["mae_pct"]) for row in rows),
+            "mean_directional_mfe_pct": mean(float(row["directional_mfe_pct"]) for row in rows if row["directional_mfe_pct"] != "") if any(row["directional_mfe_pct"] != "" for row in rows) else None,
+            "mean_directional_mae_pct": mean(float(row["directional_mae_pct"]) for row in rows if row["directional_mae_pct"] != "") if any(row["directional_mae_pct"] != "" for row in rows) else None,
             "directional_hit_rate_pct": (100.0 * mean(int(row["directional_hit"]) for row in directional)) if directional else None,
             "mean_signed_forward_return_pct": mean(signed) if signed else None,
             "newey_west_p_value": p_value,
@@ -225,7 +225,7 @@ def main() -> int:
     with (args.out / "price_action_forward_observations.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(observations[0]) if observations else [
             "bar_time", "symbol", "timeframe", "horizon_bars", "prior_impulse_direction",
-            "raw_forward_return_pct", "mfe_pct", "mae_pct", "signed_forward_return_pct",
+            "raw_forward_return_pct", "directional_mfe_pct", "directional_mae_pct", "signed_forward_return_pct",
             "directional_hit", "candle_state", "body_ratio", "close_location", "pullback_depth"
         ])
         writer.writeheader()
