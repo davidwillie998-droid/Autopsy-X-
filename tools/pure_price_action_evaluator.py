@@ -74,8 +74,25 @@ def load_bars(path: Path) -> dict[tuple[str, str], list[dict]]:
     return grouped
 
 
+def benjamini_yekutieli(p_values: list[float]) -> list[float]:
+    """Return dependence-robust Benjamini-Yekutieli adjusted p-values."""
+    count = len(p_values)
+    if count == 0:
+        return []
+    harmonic_factor = sum(1.0 / rank for rank in range(1, count + 1))
+    order = sorted(range(count), key=lambda i: p_values[i])
+    adjusted = [1.0] * count
+    running = 1.0
+    for reverse_rank in range(count - 1, -1, -1):
+        index = order[reverse_rank]
+        rank = reverse_rank + 1
+        running = min(running, p_values[index] * count * harmonic_factor / rank)
+        adjusted[index] = min(1.0, running)
+    return adjusted
+
+
 def benjamini_hochberg(p_values: list[float]) -> list[float]:
-    """Return monotone Benjamini-Hochberg adjusted p-values."""
+    """Retained for unit comparison; not used for dependent report families."""
     count = len(p_values)
     order = sorted(range(count), key=lambda i: p_values[i])
     adjusted = [1.0] * count
@@ -88,14 +105,15 @@ def benjamini_hochberg(p_values: list[float]) -> list[float]:
     return adjusted
 
 
-def newey_west_mean_p(values: list[float]) -> float | None:
-    """Two-sided normal-approximation p-value using a Newey-West mean variance."""
+def newey_west_mean_p(values: list[float], minimum_lag: int = 0) -> float | None:
+    """Two-sided normal-approximation p-value with horizon-aware HAC bandwidth."""
     n = len(values)
     if n < 10:
         return None
     avg = mean(values)
     centered = [value - avg for value in values]
-    lag = max(1, int(4 * (n / 100) ** (2 / 9)))
+    automatic_lag = max(1, int(4 * (n / 100) ** (2 / 9)))
+    lag = min(n - 1, max(automatic_lag, minimum_lag))
     gamma0 = sum(x * x for x in centered) / n
     variance = gamma0
     for k in range(1, min(lag, n - 1) + 1):
@@ -260,7 +278,12 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
     for (symbol, timeframe, split, horizon, feature, feature_value), rows in sorted(buckets.items()):
         directional = [row for row in rows if row["signed_forward_return_pct"] != ""]
         signed = [float(row["signed_forward_return_pct"]) for row in directional]
-        p_value = newey_west_mean_p(signed) if len(signed) >= MIN_INFERENCE_OBSERVATIONS else None
+        # A horizon-H forward return overlaps the next H-1 observations.
+        # The HAC bandwidth must cover at least that mechanical dependence.
+        p_value = (
+            newey_west_mean_p(signed, minimum_lag=horizon - 1)
+            if len(signed) >= MIN_INFERENCE_OBSERVATIONS else None
+        )
 
         # Compare each feature category with its complementary categories,
         # holding symbol, timeframe, split, horizon and impulse direction fixed.
@@ -310,7 +333,7 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
             "mean_signed_return_uplift_vs_complement_pct": mean(uplift_deltas) if uplift_deltas else None,
             "directional_hit_rate_uplift_vs_complement_pp": mean(uplift_hit_deltas) if uplift_hit_deltas else None,
             "newey_west_p_value": p_value,
-            "bh_adjusted_p_value": None,
+            "by_adjusted_p_value": None,
             "inference_status": (
                 "DESCRIPTIVE_ONLY_BELOW_30_DIRECTIONAL_OBSERVATIONS"
                 if len(signed) < MIN_INFERENCE_OBSERVATIONS
@@ -323,9 +346,9 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
         if p_value is not None:
             p_records.append((len(summaries) - 1, p_value))
 
-    adjusted = benjamini_hochberg([p for _, p in p_records])
+    adjusted = benjamini_yekutieli([p for _, p in p_records])
     for (summary_index, _), q_value in zip(p_records, adjusted):
-        summaries[summary_index]["bh_adjusted_p_value"] = q_value
+        summaries[summary_index]["by_adjusted_p_value"] = q_value
     metadata = {
         "journal_rows": len(journal),
         "evaluated_observation_horizons": len(output),
@@ -333,11 +356,19 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
         "split_policy": "For streams with at least 10 OHLC bars: first 60% train, next 20% validation, final 20% test, with forward windows crossing boundaries purged. Shorter streams are labelled insufficient_sample and are descriptive only.",
         "feature_policy": "Predeclared fixed bins: pullback depth <0, [0,.25), [.25,.50), [.50,.75), >=.75; body ratio [0,.25), [.25,.50), [.50,.75), [.75,1]; close location [0,.20), [.20,.40), [.40,.60), [.60,.80), [.80,1]. Exact candle-state labels are preserved. Each feature is reported both unconditionally and conditional on prior-impulse direction, alongside overall and direction-stratified impulse baselines.",
         "minimum_directional_observations_for_inference": MIN_INFERENCE_OBSERVATIONS,
+        "hac_bandwidth_policy": "For each horizon H, Newey-West lag bandwidth is at least H-1 bars to cover mechanical overlap of forward-return windows; the automatic bandwidth may increase it. This is a conservative dependence adjustment, not a guarantee of correct model specification.",
+        "multiple_testing_policy": "Benjamini-Yekutieli adjustment is used across the complete set of reported estimable group p-values because feature groups and horizons can be dependent. Adjusted values remain exploratory and do not establish predictive edge.",
         "timestamp_policy": "Journal and OHLC timestamps are parsed as naive wall-clock values. They must use the same broker/server timezone; UTC and broker-local timestamps must not be mixed.",
         "interpretation": (
             "Forward OHLC movement only. Not net trading PnL, not a trade simulation, "
-            "and not evidence of causality. Overlapping horizons and serial dependence "
-            "remain limitations. HAC p-values are suppressed below 30 directional observations and remain exploratory above that threshold. Feature groups are univariate descriptions, not proof of incremental predictive value. Train is exploratory, validation is for selection, and test must remain untouched until the analysis plan is frozen."
+            "and not evidence of causality. Horizon-aware HAC bandwidth accounts for "
+            "mechanical overlap, while residual dependence and model misspecification "
+            "remain possible. Benjamini-Yekutieli adjusts the reported p-value family "
+            "under arbitrary dependence. HAC p-values are suppressed below 30 directional "
+            "observations and remain exploratory above that threshold. Feature groups "
+            "are univariate descriptions, not proof of incremental predictive value. "
+            "Train is exploratory, validation is for selection, and test must remain "
+            "untouched until the analysis plan is frozen."
         ),
     }
     return output, {"groups": summaries, "metadata": metadata}
