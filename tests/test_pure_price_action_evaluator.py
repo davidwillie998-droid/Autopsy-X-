@@ -218,7 +218,10 @@ def test_feature_groups_are_reported_separately_by_split_and_horizon(tmp_path):
 
     _, report = EVALUATOR.evaluate(journal, ohlc, [1, 3])
     candle_groups = [g for g in report["groups"] if g["feature"] == "candle_state"]
+    conditional_groups = [g for g in report["groups"] if g["feature"] == "candle_state_GIVEN_IMPULSE"]
     assert candle_groups
+    assert conditional_groups
+    assert all("|impulse=BULLISH" in g["feature_value"] for g in conditional_groups)
     assert {g["split"] for g in candle_groups} <= {"train", "validation", "test"}
     assert {g["horizon_bars"] for g in candle_groups} == {1, 3}
     assert all(g["feature_value"] == "BULL_BODY" for g in candle_groups)
