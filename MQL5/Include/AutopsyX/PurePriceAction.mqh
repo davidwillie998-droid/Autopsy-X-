@@ -46,6 +46,7 @@ private:
    datetime m_lastBar;
    datetime m_lastJournalBar;
    int m_journalFailures;
+   bool m_journalEnabled;
    SAxPurePriceActionSnapshot m_snapshot;
 
    string JournalFileName(void) const
@@ -55,7 +56,7 @@ private:
 
    bool AppendJournal(void)
      {
-      if(!m_snapshot.available || m_snapshot.barTime<=0 ||
+      if(!m_journalEnabled || !m_snapshot.available || m_snapshot.barTime<=0 ||
          m_snapshot.barTime==m_lastJournalBar)
          return(false);
       int handle=FileOpen(JournalFileName(),
@@ -114,10 +115,11 @@ public:
       m_lastBar=0;
       m_lastJournalBar=0;
       m_journalFailures=0;
+      m_journalEnabled=true;
       Reset("NOT_INITIALIZED");
      }
 
-   bool Init(const string symbol,const ENUM_TIMEFRAMES timeframe,const int lookback=5)
+   bool Init(const string symbol,const ENUM_TIMEFRAMES timeframe,const int lookback=5,const bool journalEnabled=true)
      {
       m_symbol=symbol;
       m_timeframe=timeframe;
@@ -125,6 +127,7 @@ public:
       m_lastBar=0;
       m_lastJournalBar=0;
       m_journalFailures=0;
+      m_journalEnabled=journalEnabled;
       Reset("WAITING_FOR_CLOSED_BARS");
       return(symbol!="" && PeriodSeconds(timeframe)>0);
      }
