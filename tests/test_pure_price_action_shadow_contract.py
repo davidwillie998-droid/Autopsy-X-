@@ -77,6 +77,7 @@ def test_journal_records_raw_features_and_provenance():
     source = ENGINE.read_text(encoding="utf-8")
     for field in (
         '"bar_time"',
+        '"candle_range"',
         '"symbol"',
         '"timeframe"',
         '"body_ratio"',
@@ -99,3 +100,10 @@ def test_journal_is_configurable_from_ea_without_trading_authority():
     assert "InpEnablePurePriceActionJournal" in ea
     assert "journalEnabled" in engine
     assert "AppendJournal();" in engine
+
+
+def test_journal_failure_is_visible_in_diagnostics():
+    source = ENGINE.read_text(encoding="utf-8")
+    assert "JournalFailureCount(void)" in source
+    assert "journalFailures=%d" in source
+    assert "SymbolInfoInteger(m_symbol,SYMBOL_DIGITS)" in source
