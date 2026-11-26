@@ -446,14 +446,7 @@ same thing as a genuine exchange trade-and-quote feed, and stacked-imbalance
 or absorption readings should be read as "the price action *looked like*
 this," not as ground truth about actual buyer/seller identity.
 
-- **Order flow** (`COrderFlowEngine`). A session cumulative delta (CVD,
-  resets at the broker's midnight) plus a rolling-window buy/sell volume
-  imbalance ratio (-1..+1). Also flags **absorption**: heavy one-sided
-  volume that *failed* to move price — heavy selling that didn't push
-  price down implies hidden buying strength (bullish absorption), and the
-  mirror case for bearish. Volume weight is the feed's real traded size
-  when available, else a per-tick count proxy, so CVD stays meaningful
-  even on a broker reporting flat "1 per tick" volume.
+- **Order flow and institutional-execution behaviour proxies** (`COrderFlowEngine`). The engine retains session CVD and rolling signed-volume imbalance, and now records volume provenance separately: broker real-volume field, integer broker volume field, or one-unit tick-count fallback. Direction remains inferred from accepted mid-price changes unless a genuine aggressor feed is added. The engine measures directional coverage, five-bucket flow persistence, price-path efficiency, signed price displacement per feed-volume unit, and absorption strength based on whether inferred directional pressure produces corresponding price progress. A persistent-execution flag is explicitly a **parent-order behaviour proxy**, not proof of a specific institution or parent order. Dashboard labels expose both the proxy state and data provenance. These measurements are advisory and are not independent evidence from the footprint/CVD family.
 - **Footprints** (`CFootprintEngine`). Bins order flow's per-tick
   buy/sell classification into price levels *within the currently forming
   bar* — the actual definition of a footprint, and the one thing volume
