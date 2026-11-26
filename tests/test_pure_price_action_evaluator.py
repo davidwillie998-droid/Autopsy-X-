@@ -352,3 +352,44 @@ def test_newey_west_bandwidth_honours_forward_horizon_overlap():
     assert automatic is not None
     assert overlap_adjusted is not None
     assert overlap_adjusted != automatic
+
+
+
+def test_hac_result_is_invariant_to_journal_row_order(tmp_path):
+    import random
+
+    ohlc = tmp_path / "ohlc.csv"
+    journal_a = tmp_path / "journal_a.csv"
+    journal_b = tmp_path / "journal_b.csv"
+    bars = []
+    journal_rows = []
+    close = 100.0
+    for i in range(100):
+        hour, minute = divmod(i, 60)
+        stamp = f"2026.01.01 {hour:02d}:{minute:02d}"
+        next_close = close * (1.002 if i % 3 else 0.997)
+        bars.append({
+            "timestamp": stamp, "symbol": "TEST", "timeframe": "PERIOD_M1",
+            "open": str(close), "high": str(max(close, next_close) + 0.1),
+            "low": str(min(close, next_close) - 0.1), "close": str(next_close),
+        })
+        if i < 55:
+            journal_rows.append({
+                "bar_time": stamp, "symbol": "TEST", "timeframe": "PERIOD_M1",
+                "prior_impulse_direction": "1", "candle_state": "BALANCED",
+                "body_ratio": "0.5", "close_location": "0.5", "pullback_depth": "0.2",
+            })
+        close = next_close
+    fields = ["bar_time", "symbol", "timeframe", "prior_impulse_direction",
+              "candle_state", "body_ratio", "close_location", "pullback_depth"]
+    write_csv(ohlc, bars, ["timestamp", "symbol", "timeframe", "open", "high", "low", "close"])
+    write_csv(journal_a, journal_rows, fields)
+    shuffled = list(journal_rows)
+    random.Random(7).shuffle(shuffled)
+    write_csv(journal_b, shuffled, fields)
+
+    _, report_a = EVALUATOR.evaluate(journal_a, ohlc, [1])
+    _, report_b = EVALUATOR.evaluate(journal_b, ohlc, [1])
+    group_a = next(g for g in report_a["groups"] if g["feature"] == "BASELINE" and g["split"] == "train")
+    group_b = next(g for g in report_b["groups"] if g["feature"] == "BASELINE" and g["split"] == "train")
+    assert group_a["newey_west_p_value"] == group_b["newey_west_p_value"]
