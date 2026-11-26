@@ -144,7 +144,10 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
         n_bars = len(bars)
         train_end = int(n_bars * 0.60)
         validation_end = int(n_bars * 0.80)
-        if index < train_end:
+        if n_bars < 10:
+            split = "insufficient_sample"
+            split_end = n_bars
+        elif index < train_end:
             split = "train"
             split_end = train_end
         elif index < validation_end:
@@ -226,7 +229,7 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
         "journal_rows": len(journal),
         "evaluated_observation_horizons": len(output),
         "exclusions": dict(exclusions),
-        "split_policy": "Chronological OHLC bars: first 60% train, next 20% validation, final 20% test. Forward windows crossing a split boundary are purged.",
+        "split_policy": "For streams with at least 10 OHLC bars: first 60% train, next 20% validation, final 20% test, with forward windows crossing boundaries purged. Shorter streams are labelled insufficient_sample and are descriptive only.",
         "interpretation": (
             "Forward OHLC movement only. Not net trading PnL, not a trade simulation, "
             "and not evidence of causality. Overlapping horizons and serial dependence "
