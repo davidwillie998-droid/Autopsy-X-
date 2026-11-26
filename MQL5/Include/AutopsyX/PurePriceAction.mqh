@@ -68,23 +68,43 @@ private:
          return(false);
         }
       bool header=(FileSize(handle)==0);
-      FileSeek(handle,0,SEEK_END);
+      if(!FileSeek(handle,0,SEEK_END))
+        {
+         m_journalFailures++;
+         FileClose(handle);
+         return(false);
+        }
       if(header)
-         FileWrite(handle,"bar_time","symbol","timeframe","candle_range",
-                   "body_ratio","upper_wick_ratio","lower_wick_ratio",
-                   "close_location","prior_impulse_direction",
-                   "prior_impulse_efficiency","pullback_depth",
-                   "candle_state","reason");
-      FileWrite(handle,TimeToString(m_snapshot.barTime,TIME_DATE|TIME_MINUTES),
-                m_symbol,EnumToString(m_timeframe),DoubleToString(m_snapshot.range,(int)SymbolInfoInteger(m_symbol,SYMBOL_DIGITS)),
-                DoubleToString(m_snapshot.bodyRatio,6),
-                DoubleToString(m_snapshot.upperWickRatio,6),
-                DoubleToString(m_snapshot.lowerWickRatio,6),
-                DoubleToString(m_snapshot.closeLocation,6),
-                DoubleToString(m_snapshot.priorImpulseDirection,0),
-                DoubleToString(m_snapshot.priorImpulseEfficiency,6),
-                DoubleToString(m_snapshot.pullbackDepth,6),
-                IntegerToString((int)m_snapshot.candleState),m_snapshot.reason);
+        {
+         uint headerBytes=FileWrite(handle,"bar_time","symbol","timeframe","candle_range",
+                                    "body_ratio","upper_wick_ratio","lower_wick_ratio",
+                                    "close_location","prior_impulse_direction",
+                                    "prior_impulse_efficiency","pullback_depth",
+                                    "candle_state","reason");
+         if(headerBytes==0)
+           {
+            m_journalFailures++;
+            FileClose(handle);
+            return(false);
+           }
+        }
+      uint rowBytes=FileWrite(handle,TimeToString(m_snapshot.barTime,TIME_DATE|TIME_MINUTES),
+                              m_symbol,EnumToString(m_timeframe),
+                              DoubleToString(m_snapshot.range,(int)SymbolInfoInteger(m_symbol,SYMBOL_DIGITS)),
+                              DoubleToString(m_snapshot.bodyRatio,6),
+                              DoubleToString(m_snapshot.upperWickRatio,6),
+                              DoubleToString(m_snapshot.lowerWickRatio,6),
+                              DoubleToString(m_snapshot.closeLocation,6),
+                              DoubleToString(m_snapshot.priorImpulseDirection,0),
+                              DoubleToString(m_snapshot.priorImpulseEfficiency,6),
+                              DoubleToString(m_snapshot.pullbackDepth,6),
+                              IntegerToString((int)m_snapshot.candleState),m_snapshot.reason);
+      if(rowBytes==0)
+        {
+         m_journalFailures++;
+         FileClose(handle);
+         return(false);
+        }
       FileFlush(handle);
       FileClose(handle);
       m_lastJournalBar=m_snapshot.barTime;
@@ -182,13 +202,25 @@ public:
         {
          impulseHigh=MathMax(impulseHigh,rates[i].high);
          impulseLow=MathMin(impulseLow,rates[i].low);
-         double r=rates[i].high-rates[i].low;
-         if(!MathIsValidNumber(r) || r<0.0)
+         double priorClose=rates[i+1].close;
+         if(rates[i].high<MathMax(rates[i].open,rates[i].close) ||
+            rates[i].low>MathMin(rates[i].open,rates[i].close) ||
+            rates[i].high<rates[i].low ||
+            rates[i].open<=0.0 || rates[i].close<=0.0 ||
+            !MathIsValidNumber(priorClose) || priorClose<=0.0)
            {
             Reset("INVALID_PRIOR_IMPULSE_OHLC");
             return(false);
            }
-         summedRanges+=r;
+         double trueRange=MathMax(rates[i].high-rates[i].low,
+                                  MathMax(MathAbs(rates[i].high-priorClose),
+                                          MathAbs(rates[i].low-priorClose)));
+         if(!MathIsValidNumber(trueRange) || trueRange<0.0)
+           {
+            Reset("INVALID_PRIOR_IMPULSE_TRUE_RANGE");
+            return(false);
+           }
+         summedRanges+=trueRange;
         }
 
       double impulseRange=impulseHigh-impulseLow;
