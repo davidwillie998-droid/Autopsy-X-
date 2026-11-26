@@ -75,7 +75,7 @@ class DistributedRiskRestartJournalTests(unittest.TestCase):
     def test_timer_retries_recovery_without_dashboard(self):
         timer = self.expert[self.expert.index("void OnTimer(void)"):self.expert.index("//====================================================================\n// CHART EVENTS")]
         self.assertLess(timer.index("g_distributedRiskCoordinator.RecoverPending("), timer.index("if(!InpShowDashboard) return;"))
-        self.assertIn("g_iq200Telemetry.Flush(64);", timer)
+        self.assertIn("g_iq200Telemetry.Flush(1024);", timer)
         self.assertNotIn("EventKillTimer();", timer)
 
     def test_pending_recovery_blocks_new_entries(self):
