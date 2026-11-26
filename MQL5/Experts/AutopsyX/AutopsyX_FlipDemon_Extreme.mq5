@@ -34,6 +34,7 @@
 #include <AutopsyX/RegimeClassifierEngine.mqh>
 #include <AutopsyX/RegimeResearchJournal.mqh>
 #include <AutopsyX/StructureEngine.mqh>
+#include <AutopsyX/PurePriceAction.mqh>
 #include <AutopsyX/W1InstitutionalDirection.mqh>
 #include <AutopsyX/D1InstitutionalLevels.mqh>
 #include <AutopsyX/PremiumDiscountEngine.mqh>
@@ -113,6 +114,10 @@ input double          InpPyramidLotMultiplier     = 1.5;    // Each tier must ex
 input double          InpPyramidAtrGapMultiplier  = 0.75;   // Minimum favorable continuation distance from the last confirmed tier fill
 input double          InpPyramidMinProfitMoney    = 0.01;   // Require positive broker-reported floating P/L plus swap before considering an add
 input bool            InpEnablePyramidExecution    = false;  // Explicit opt-in; ANALYSIS_ONLY remains the default
+
+input group "=== PURE PRICE ACTION DIAGNOSTICS (SHADOW ONLY) ===";
+input bool InpEnablePurePriceActionDiagnostics = true; // OHLC-only candle and impulse diagnostics; never affects entries or scores
+input int InpPurePriceActionLookback = 5;
 
 input group "=== M15 PRECISION DISPLACEMENT CONFIRMATION ===";
 input ENUM_TIMEFRAMES InpPrecisionTimeframe = PERIOD_M15;
@@ -462,6 +467,8 @@ bool                  g_regimeJournalReady = false;
 bool                  g_volatilityReady = false;
 bool                  g_regimeClassificationAvailable = false;
 CStructureEngine      g_structure;
+CPurePriceAction      g_purePriceAction;
+bool                  g_purePriceActionReady = false;
 CW1InstitutionalDirection g_w1Institutional;
 CD1InstitutionalLevels g_d1Institutional;
 CInstitutionalEvidenceAdapter g_institutionalEvidenceAdapter;
@@ -5108,6 +5115,12 @@ int OnInit(void)
       Print("AUTOPSY X: failed to initialize closed-bar structure engine");
       return(INIT_FAILED);
      }
+   if(InpEnablePurePriceActionDiagnostics)
+     {
+      g_purePriceActionReady=g_purePriceAction.Init(_Symbol,InpRegimeTimeframe,InpPurePriceActionLookback);
+      if(!g_purePriceActionReady)
+         Print("AUTOPSY X: pure price-action diagnostics unavailable; no trading decision is affected.");
+     }
    if(!g_w1Institutional.Init(_Symbol,260,30))
       PrintFormat("AUTOPSY X: W1 institutional data unavailable at startup; all new directional entries remain blocked (%s).",
                   g_w1Institutional.Summary());
@@ -5158,6 +5171,11 @@ int OnInit(void)
    g_regime.Update();
    g_regimeHtf.Update();
    g_structure.Update();
+   if(g_purePriceActionReady)
+     {
+      g_purePriceAction.Update(true);
+      if(InpVerboseLogging) Print("AUTOPSY X SHADOW: ",g_purePriceAction.Summary());
+     }
    g_w1Institutional.Update(true);
    g_d1Institutional.Update(true);
    if(InpUsePremiumDiscountEngine) g_premiumDiscount.Update(true);
@@ -6922,6 +6940,11 @@ void AxProcessTick(void)
            }
         }
       g_structure.Update();
+      if(g_purePriceActionReady)
+        {
+         g_purePriceAction.Update();
+         if(InpVerboseLogging) Print("AUTOPSY X SHADOW: ",g_purePriceAction.Summary());
+        }
       if(InpUseOrderBlockEngine)
          g_orderBlock.Update(g_md.CurrentMid(),g_structure.LastEvent(),
                              g_structure.LastEventTime(),g_structure.IsDisplacement());
