@@ -92,17 +92,35 @@ public:
       SAxTick newest;
       if(!md.GetSample(0,newest)) return;
 
-      double newestVol=(double)MathMax((long)1,newest.volume);
-      if(newest.dir>0)      { m_sessionCvd+=newestVol; m_lastTickBuyVol=newestVol; }
-      else if(newest.dir<0) { m_sessionCvd-=newestVol; m_lastTickSellVol=newestVol; }
+      // Session CVD and the footprint's per-tick input use unit tick weights.
+      // This prevents a broker changing volume fields mid-session from mixing units.
+      if(newest.dir>0)      { m_sessionCvd+=1.0; m_lastTickBuyVol=1.0; }
+      else if(newest.dir<0) { m_sessionCvd-=1.0; m_lastTickSellVol=1.0; }
 
       int n=MathMin(md.Count(),AX_OF_WINDOW);
       if(n<5) return;
 
+      // Determine source homogeneity before calculating the window. Real volume,
+      // broker tick volume and one-tick fallback counts are not interchangeable.
+      int sourceClasses=0;
+      int realSamples=0, tickVolumeSamples=0, proxySamples=0;
+      for(int i=0;i<n;i++)
+        {
+         SAxTick t;
+         if(!md.GetSample(i,t)) return;
+         if(t.volumeSource==AX_VOLUME_SOURCE_REAL) realSamples++;
+         else if(t.volumeSource==AX_VOLUME_SOURCE_TICK_VOLUME) tickVolumeSamples++;
+         else if(t.volumeSource==AX_VOLUME_SOURCE_TICK_COUNT) proxySamples++;
+        }
+      if(realSamples>0) sourceClasses++;
+      if(tickVolumeSamples>0) sourceClasses++;
+      if(proxySamples>0) sourceClasses++;
+      bool mixedVolumeSource=(sourceClasses>1);
+
       double buyVol=0.0, sellVol=0.0;
       double hi=-DBL_MAX, lo=DBL_MAX;
       double previousMid=0.0;
-      int directionalSamples=0, realSamples=0, tickVolumeSamples=0, proxySamples=0;
+      int directionalSamples=0;
       double bucketDelta[AX_OF_PERSISTENCE_BUCKETS];
       double bucketVolume[AX_OF_PERSISTENCE_BUCKETS];
       ArrayInitialize(bucketDelta,0.0);
@@ -114,11 +132,9 @@ public:
          if(!md.GetSample(i,t)) return; // incomplete windows are not scored
 
          m_validWindowSamples++;
-         if(t.volumeSource==AX_VOLUME_SOURCE_REAL) realSamples++;
-         else if(t.volumeSource==AX_VOLUME_SOURCE_TICK_VOLUME) tickVolumeSamples++;
-         else if(t.volumeSource==AX_VOLUME_SOURCE_TICK_COUNT) proxySamples++;
-
-         double vol=(double)MathMax((long)1,t.volume);
+         // Mixed-source windows are normalized to one observation per tick.
+         // Homogeneous windows retain their native feed-volume weighting.
+         double vol=(mixedVolumeSource ? 1.0 : (double)MathMax((long)1,t.volume));
          if(t.dir>0)
            {
             buyVol+=vol;
@@ -231,7 +247,7 @@ public:
             if(!md.GetSample(i,t)) return;
             if(t.mid>oldHigh) oldHigh=t.mid;
             if(t.mid<oldLow) oldLow=t.mid;
-            double vol=(double)MathMax((long)1,t.volume);
+            double vol=(mixedVolumeSource ? 1.0 : (double)MathMax((long)1,t.volume));
             if(t.dir>0) { oldDelta+=vol; oldVolume+=vol; oldDirectional++; }
             else if(t.dir<0) { oldDelta-=vol; oldVolume+=vol; oldDirectional++; }
            }
