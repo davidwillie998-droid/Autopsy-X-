@@ -428,6 +428,13 @@ enum ENUM_AX_LIFECYCLE_STATE
   };
 
 //--- One microstructure/momentum tick sample ---------------------------------
+enum ENUM_AX_VOLUME_SOURCE
+  {
+   AX_VOLUME_SOURCE_TICK_COUNT = 0, // one-unit fallback; not traded volume
+   AX_VOLUME_SOURCE_TICK_VOLUME = 1, // broker integer tick/deal volume field
+   AX_VOLUME_SOURCE_REAL = 2 // broker real-volume field
+  };
+
 struct SAxTick
   {
    datetime time;
@@ -438,10 +445,8 @@ struct SAxTick
    double   mid;
    double   spreadPts;
    int      dir;          // +1 up, -1 down, 0 flat (vs previous mid)
-   long     volume;        // broker tick volume for this sample (>=1 - most feeds report at least
-                            // a tick-count proxy even without real traded size); used to weight
-                            // order-flow/footprint/volume-profile calculations rather than treating
-                            // every tick as equal
+   long     volume;        // source-weighted sample volume; may be a tick-count proxy
+   int      volumeSource;  // ENUM_AX_VOLUME_SOURCE; provenance is retained for downstream scoring
   };
 
 //--- Independent BUY/SELL score bundle ---------------------------------------
