@@ -254,7 +254,7 @@ public:
             if(!md.GetSample(i,t)) return;
             if(t.mid>newHigh) newHigh=t.mid;
             if(t.mid<newLow) newLow=t.mid;
-            double vol=(double)MathMax((long)1,t.volume);
+            double vol=(mixedVolumeSource ? 1.0 : (double)MathMax((long)1,t.volume));
             if(t.dir>0) { newDelta+=vol; newVolume+=vol; newDirectional++; }
             else if(t.dir<0) { newDelta-=vol; newVolume+=vol; newDirectional++; }
            }
