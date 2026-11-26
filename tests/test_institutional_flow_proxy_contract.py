@@ -55,6 +55,14 @@ class InstitutionalFlowProxyContracts(unittest.TestCase):
         self.assertIn("Homogeneous windows retain their native feed-volume weighting", ORDER_FLOW)
         self.assertIn("Session CVD and the footprint's per-tick input use unit tick weights", ORDER_FLOW)
 
+    def test_volume_provenance_is_not_misrepresented_as_quality(self):
+        self.assertNotIn("m_volumeSourceGradePct", ORDER_FLOW)
+        self.assertNotIn("VolumeSourceGradePct", ORDER_FLOW)
+        self.assertIn("m_realVolumeSharePct", ORDER_FLOW)
+        self.assertIn("m_tickVolumeSharePct", ORDER_FLOW)
+        self.assertIn("m_tickCountProxySharePct", ORDER_FLOW)
+        self.assertIn("These shares describe feed composition, not data quality", ORDER_FLOW)
+
     def test_existing_engine_is_reused_and_dashboard_is_wired(self):
         self.assertIn("COrderFlowEngine      g_orderFlow", EA)
         self.assertIn("g_orderFlow.FlowPersistence()", EA)
