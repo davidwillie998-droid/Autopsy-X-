@@ -259,6 +259,37 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
         directional = [row for row in rows if row["signed_forward_return_pct"] != ""]
         signed = [float(row["signed_forward_return_pct"]) for row in directional]
         p_value = newey_west_mean_p(signed) if len(signed) >= MIN_INFERENCE_OBSERVATIONS else None
+
+        # Compare each feature category with its complementary categories,
+        # holding symbol, timeframe, split, horizon and impulse direction fixed.
+        comparison_feature = feature.removesuffix("_GIVEN_IMPULSE")
+        category_value = feature_value.split("|impulse=")[0].split("=", 1)[-1] if feature.endswith("_GIVEN_IMPULSE") else feature_value
+        uplift_deltas = []
+        uplift_hit_deltas = []
+        comparison_n = 0
+        if comparison_feature in ("candle_state", "pullback_depth_bucket", "body_ratio_bucket", "close_location_bucket"):
+            for direction in (-1, 1):
+                subgroup = [r for r in directional if r["prior_impulse_direction"] == direction]
+                if not subgroup:
+                    continue
+                complement = [
+                    candidate for candidate in output
+                    if candidate["symbol"] == symbol
+                    and candidate["timeframe"] == timeframe
+                    and candidate["split"] == split
+                    and candidate["horizon_bars"] == horizon
+                    and candidate["prior_impulse_direction"] == direction
+                    and candidate[comparison_feature] != category_value
+                ]
+                if complement:
+                    baseline_mean = mean(float(r["signed_forward_return_pct"]) for r in complement)
+                    baseline_hit = 100.0 * mean(int(r["directional_hit"]) for r in complement)
+                    subgroup_mean = mean(float(r["signed_forward_return_pct"]) for r in subgroup)
+                    subgroup_hit = 100.0 * mean(int(r["directional_hit"]) for r in subgroup)
+                    uplift_deltas.extend([subgroup_mean - baseline_mean] * len(subgroup))
+                    uplift_hit_deltas.extend([subgroup_hit - baseline_hit] * len(subgroup))
+                    comparison_n += len(complement)
+
         item = {
             "symbol": symbol,
             "feature": feature,
@@ -273,6 +304,9 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
             "mean_directional_mae_pct": mean(float(row["directional_mae_pct"]) for row in rows if row["directional_mae_pct"] != "") if any(row["directional_mae_pct"] != "" for row in rows) else None,
             "directional_hit_rate_pct": (100.0 * mean(int(row["directional_hit"]) for row in directional)) if directional else None,
             "mean_signed_forward_return_pct": mean(signed) if signed else None,
+            "complementary_baseline_observations": comparison_n,
+            "mean_signed_return_uplift_vs_complement_pct": mean(uplift_deltas) if uplift_deltas else None,
+            "directional_hit_rate_uplift_vs_complement_pp": mean(uplift_hit_deltas) if uplift_hit_deltas else None,
             "newey_west_p_value": p_value,
             "bh_adjusted_p_value": None,
             "inference_status": "DESCRIPTIVE_ONLY_BELOW_30_DIRECTIONAL_OBSERVATIONS" if p_value is None else "EXPLORATORY_HAC_NOT_CONFIRMATORY",
