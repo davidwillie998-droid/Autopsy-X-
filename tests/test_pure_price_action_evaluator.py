@@ -305,7 +305,8 @@ def test_undefined_hac_variance_is_reported_as_descriptive(tmp_path):
     bars = []
     journal_rows = []
     for i in range(100):
-        stamp = f"2026.01.01 00:{i:02d}"
+        hour, minute = divmod(i, 60)
+        stamp = f"2026.01.01 {hour:02d}:{minute:02d}"
         bars.append({
             "timestamp": stamp, "symbol": "TEST", "timeframe": "PERIOD_M1",
             "open": "100", "high": "101", "low": "99", "close": "100",
