@@ -401,8 +401,8 @@ def test_mt5_semicolon_journal_is_read_with_comma_ohlc(tmp_path):
     journal.write_text(
         "bar_time;symbol;timeframe;candle_range;body_ratio;upper_wick_ratio;"
         "lower_wick_ratio;close_location;prior_impulse_direction;"
-        "prior_impulse_efficiency;pullback_depth;candle_state;reason\\n"
-        "2026.01.01 00:00;TEST;PERIOD_M5;2.0;0.7;0.1;0.2;0.8;1;0.75;0.1;2;CLOSED_OHLC_ONLY\\n",
+        "prior_impulse_efficiency;pullback_depth;candle_state;reason\n"
+        "2026.01.01 00:00;TEST;PERIOD_M5;2.0;0.7;0.1;0.2;0.8;1;0.75;0.1;2;CLOSED_OHLC_ONLY\n",
         encoding="utf-8",
     )
     write_csv(ohlc, [
