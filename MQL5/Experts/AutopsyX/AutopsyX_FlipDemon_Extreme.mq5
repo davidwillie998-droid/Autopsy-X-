@@ -3861,15 +3861,26 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    double entryFlowImbalance = g_orderFlow.ImbalanceRatio();
    double entrySessionCvd = g_orderFlow.SessionCvd();
    double entryFlowVolume = g_orderFlow.WindowVolume();
-   if(!MathIsValidNumber(entryFlowImbalance) || !MathIsValidNumber(entrySessionCvd) ||
-      !MathIsValidNumber(entryFlowVolume) || entryFlowVolume<=0.0)
-      g_posState.orderFlowStateAtEntry = "DATA_UNAVAILABLE";
-   else if(entryFlowImbalance>0.0 && entrySessionCvd>0.0)
-      g_posState.orderFlowStateAtEntry = "BUY_DOMINANT";
-   else if(entryFlowImbalance<0.0 && entrySessionCvd<0.0)
-      g_posState.orderFlowStateAtEntry = "SELL_DOMINANT";
+   string entryFlowDirection="DATA_UNAVAILABLE";
+   if(MathIsValidNumber(entryFlowImbalance) && MathIsValidNumber(entrySessionCvd) &&
+      MathIsValidNumber(entryFlowVolume) && entryFlowVolume>0.0)
+     {
+      if(entryFlowImbalance>0.0 && entrySessionCvd>0.0)
+         entryFlowDirection="BUY_DOMINANT";
+      else if(entryFlowImbalance<0.0 && entrySessionCvd<0.0)
+         entryFlowDirection="SELL_DOMINANT";
+      else
+         entryFlowDirection="MIXED";
+      // Freeze feature values at confirmed fill time. This extends the existing
+      // journal field without changing its CSV schema or any production score.
+      g_posState.orderFlowStateAtEntry=StringFormat(
+         "%s;PERSISTENCE=%.2f;ABSORPTION=%.2f;COVERAGE=%.2f;VOLUME_SOURCE=%s",
+         entryFlowDirection,g_orderFlow.FlowPersistence(),
+         g_orderFlow.AbsorptionStrength(),g_orderFlow.DirectionalCoveragePct(),
+         g_orderFlow.VolumeEvidenceLabel());
+     }
    else
-      g_posState.orderFlowStateAtEntry = "MIXED";
+      g_posState.orderFlowStateAtEntry="DATA_UNAVAILABLE";
    g_posState.structureStateAtEntry = g_structure.StateSummary();
    bool entryLiquidityReady = (dir==AX_DIR_BUY)
                               ? g_liq.BullishAttackReady(g_mom.DisplacementPts())
