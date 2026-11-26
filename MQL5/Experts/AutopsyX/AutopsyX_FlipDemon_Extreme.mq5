@@ -3874,9 +3874,10 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       // Freeze feature values at confirmed fill time. This extends the existing
       // journal field without changing its CSV schema or any production score.
       g_posState.orderFlowStateAtEntry=StringFormat(
-         "%s;PERSISTENCE=%.2f;ABSORPTION=%.2f;COVERAGE=%.2f;VOLUME_SOURCE=%s",
-         entryFlowDirection,g_orderFlow.FlowPersistence(),
-         g_orderFlow.AbsorptionStrength(),g_orderFlow.DirectionalCoveragePct(),
+         "%s;IMBALANCE=%.4f;PERSISTENCE=%.2f;ABSORPTION=%.2f;BULL_ABS=%d;BEAR_ABS=%d;COVERAGE=%.2f;VOLUME_SOURCE=%s",
+         entryFlowDirection,entryFlowImbalance,g_orderFlow.FlowPersistence(),
+         g_orderFlow.AbsorptionStrength(),(int)g_orderFlow.BullishAbsorption(),
+         (int)g_orderFlow.BearishAbsorption(),g_orderFlow.DirectionalCoveragePct(),
          g_orderFlow.VolumeEvidenceLabel());
      }
    else
