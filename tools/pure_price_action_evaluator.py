@@ -69,6 +69,8 @@ def load_bars(path: Path) -> dict[tuple[str, str], list[dict]]:
         grouped[(symbol, timeframe)].append(bar)
     for bars in grouped.values():
         bars.sort(key=lambda item: item["time"])
+        if len({bar["time"] for bar in bars}) != len(bars):
+            raise ValueError("Duplicate OHLC timestamps within a symbol/timeframe stream")
     return grouped
 
 
@@ -111,6 +113,7 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
     journal = read_csv(journal_path)
     output: list[dict] = []
     exclusions: dict[str, int] = defaultdict(int)
+    seen = set()
     for row in journal:
         symbol = row.get("symbol", "").strip()
         timeframe = row.get("timeframe", "").strip()
@@ -124,6 +127,11 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
             continue
         try:
             stamp = parse_time(row["bar_time"])
+            dedupe_key = (symbol, timeframe, stamp)
+            if dedupe_key in seen:
+                exclusions["duplicate_journal_observation"] += 1
+                continue
+            seen.add(dedupe_key)
             impulse = number(row, "prior_impulse_direction")
         except (KeyError, ValueError):
             exclusions["invalid_journal_row"] += 1
@@ -133,6 +141,18 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
         if index is None:
             exclusions["journal_bar_not_found_in_ohlc"] += 1
             continue
+        n_bars = len(bars)
+        train_end = int(n_bars * 0.60)
+        validation_end = int(n_bars * 0.80)
+        if index < train_end:
+            split = "train"
+            split_end = train_end
+        elif index < validation_end:
+            split = "validation"
+            split_end = validation_end
+        else:
+            split = "test"
+            split_end = n_bars
         entry = bars[index]["close"]
         if entry <= 0:
             exclusions["invalid_entry_price"] += 1
@@ -141,6 +161,9 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
             end = index + horizon
             if end >= len(bars):
                 exclusions["insufficient_forward_bars"] += 1
+                continue
+            if end >= split_end:
+                exclusions["forward_window_crosses_split_boundary"] += 1
                 continue
             future = bars[index + 1:end + 1]
             end_close = future[-1]["close"]
@@ -151,6 +174,7 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
                 "bar_time": stamp.strftime("%Y-%m-%d %H:%M:%S"),
                 "symbol": symbol,
                 "timeframe": timeframe,
+                "split": split,
                 "horizon_bars": horizon,
                 "prior_impulse_direction": int(impulse),
                 "raw_forward_return_pct": raw_return * 100.0,
@@ -165,19 +189,20 @@ def evaluate(journal_path: Path, ohlc_path: Path, horizons: list[int]) -> tuple[
             }
             output.append(row_out)
 
-    buckets: dict[tuple[str, str, int], list[dict]] = defaultdict(list)
+    buckets: dict[tuple[str, str, str, int], list[dict]] = defaultdict(list)
     for row in output:
-        buckets[(row["symbol"], row["timeframe"], row["horizon_bars"])].append(row)
+        buckets[(row["symbol"], row["timeframe"], row["split"], row["horizon_bars"])].append(row)
 
     summaries = []
     p_records = []
-    for (symbol, timeframe, horizon), rows in sorted(buckets.items()):
+    for (symbol, timeframe, split, horizon), rows in sorted(buckets.items()):
         directional = [row for row in rows if row["signed_forward_return_pct"] != ""]
         signed = [float(row["signed_forward_return_pct"]) for row in directional]
         p_value = newey_west_mean_p(signed)
         item = {
             "symbol": symbol,
             "timeframe": timeframe,
+            "split": split,
             "horizon_bars": horizon,
             "observations": len(rows),
             "directional_observations": len(directional),
@@ -224,7 +249,7 @@ def main() -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     with (args.out / "price_action_forward_observations.csv").open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(observations[0]) if observations else [
-            "bar_time", "symbol", "timeframe", "horizon_bars", "prior_impulse_direction",
+            "bar_time", "symbol", "timeframe", "split", "horizon_bars", "prior_impulse_direction",
             "raw_forward_return_pct", "directional_mfe_pct", "directional_mae_pct", "signed_forward_return_pct",
             "directional_hit", "candle_state", "body_ratio", "close_location", "pullback_depth"
         ])
