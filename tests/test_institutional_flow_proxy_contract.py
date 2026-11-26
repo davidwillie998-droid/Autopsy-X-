@@ -42,7 +42,7 @@ class InstitutionalFlowProxyContracts(unittest.TestCase):
     def test_parent_order_label_is_only_a_behavioural_proxy(self):
         self.assertIn("m_parentOrderPersistenceProxy", ORDER_FLOW)
         self.assertIn("ParentOrderPersistenceProxy", ORDER_FLOW)
-        self.assertIn("not proof of a specific institution or parent order", ORDER_FLOW)
+        self.assertIn("does not prove that one institution or one parent order generated the observed sequence", ORDER_FLOW)
         self.assertIn("PERSISTENT FLOW PROXY", DASHBOARD)
 
     def test_score_is_adjusted_for_directional_sample_coverage(self):
