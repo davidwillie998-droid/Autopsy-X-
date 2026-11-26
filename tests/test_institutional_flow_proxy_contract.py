@@ -71,6 +71,15 @@ class InstitutionalFlowProxyContracts(unittest.TestCase):
         self.assertIn("g_orderFlow.VolumeEvidenceLabel()", EA)
         self.assertNotIn("CInstitutionalOrderFlowEngine", EA)
 
+    def test_ablation_features_are_frozen_at_confirmed_entry(self):
+        self.assertIn("PERSISTENCE=%.2f;ABSORPTION=%.2f;COVERAGE=%.2f;VOLUME_SOURCE=%s", EA)
+        self.assertIn("g_orderFlow.FlowPersistence()", EA)
+        self.assertIn("g_orderFlow.AbsorptionStrength()", EA)
+        self.assertIn("g_orderFlow.DirectionalCoveragePct()", EA)
+        self.assertIn("g_orderFlow.VolumeEvidenceLabel()", EA)
+        self.assertIn("confirmed fill time", EA)
+        self.assertIn('g_posState.orderFlowStateAtEntry="DATA_UNAVAILABLE"', EA)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
