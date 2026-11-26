@@ -153,3 +153,91 @@ def test_duplicate_ohlc_timestamps_are_rejected(tmp_path):
         assert "Duplicate OHLC timestamps" in str(error)
     else:
         raise AssertionError("Duplicate OHLC timestamps must be rejected")
+
+
+
+def test_feature_buckets_use_fixed_predeclared_boundaries():
+    assert EVALUATOR.fixed_bucket("-0.01", [0.0, 0.25, 0.5, 0.75],
+                                  ["NEGATIVE", "0_TO_025", "025_TO_050", "050_TO_075", "GE_075"]) == "NEGATIVE"
+    assert EVALUATOR.fixed_bucket("0.25", [0.0, 0.25, 0.5, 0.75],
+                                  ["NEGATIVE", "0_TO_025", "025_TO_050", "050_TO_075", "GE_075"]) == "025_TO_050"
+    assert EVALUATOR.fixed_bucket("", [0.25, 0.5], ["LOW", "MID", "HIGH"]) == "UNAVAILABLE"
+
+
+def test_inference_is_suppressed_below_thirty_directional_observations(tmp_path):
+    journal = tmp_path / "journal.csv"
+    ohlc = tmp_path / "ohlc.csv"
+    journal_rows = []
+    bars = []
+    for i in range(40):
+        stamp = f"2026.01.01 00:{i:02d}"
+        bars.append({
+            "timestamp": stamp, "symbol": "TEST", "timeframe": "PERIOD_M1",
+            "open": str(100 + i), "high": str(102 + i),
+            "low": str(99 + i), "close": str(101 + i),
+        })
+        if i < 20:
+            journal_rows.append({
+                "bar_time": stamp, "symbol": "TEST", "timeframe": "PERIOD_M1",
+                "prior_impulse_direction": "1", "candle_state": "BULL_BODY",
+                "body_ratio": "0.7", "close_location": "0.8", "pullback_depth": "0.1",
+            })
+    fields = ["bar_time", "symbol", "timeframe", "prior_impulse_direction",
+              "candle_state", "body_ratio", "close_location", "pullback_depth"]
+    write_csv(journal, journal_rows, fields)
+    write_csv(ohlc, bars, ["timestamp", "symbol", "timeframe", "open", "high", "low", "close"])
+
+    _, report = EVALUATOR.evaluate(journal, ohlc, [1])
+    baseline = next(group for group in report["groups"] if group["feature"] == "BASELINE")
+    assert baseline["directional_observations"] < 30
+    assert baseline["newey_west_p_value"] is None
+    assert baseline["inference_status"].startswith("DESCRIPTIVE_ONLY")
+
+
+def test_feature_groups_are_reported_separately_by_split_and_horizon(tmp_path):
+    journal = tmp_path / "journal.csv"
+    ohlc = tmp_path / "ohlc.csv"
+    journal_rows = []
+    bars = []
+    for i in range(50):
+        stamp = f"2026.01.01 00:{i:02d}"
+        bars.append({
+            "timestamp": stamp, "symbol": "TEST", "timeframe": "PERIOD_M1",
+            "open": str(100 + i), "high": str(102 + i),
+            "low": str(99 + i), "close": str(101 + i),
+        })
+        if i < 45:
+            journal_rows.append({
+                "bar_time": stamp, "symbol": "TEST", "timeframe": "PERIOD_M1",
+                "prior_impulse_direction": "1", "candle_state": "BULL_BODY",
+                "body_ratio": "0.7", "close_location": "0.8", "pullback_depth": "0.1",
+            })
+    write_csv(journal, journal_rows, ["bar_time", "symbol", "timeframe", "prior_impulse_direction",
+                                      "candle_state", "body_ratio", "close_location", "pullback_depth"])
+    write_csv(ohlc, bars, ["timestamp", "symbol", "timeframe", "open", "high", "low", "close"])
+
+    _, report = EVALUATOR.evaluate(journal, ohlc, [1, 3])
+    candle_groups = [g for g in report["groups"] if g["feature"] == "candle_state"]
+    assert candle_groups
+    assert {g["split"] for g in candle_groups} <= {"train", "validation", "test"}
+    assert {g["horizon_bars"] for g in candle_groups} == {1, 3}
+    assert all(g["feature_value"] == "BULL_BODY" for g in candle_groups)
+    assert report["metadata"]["minimum_directional_observations_for_inference"] == 30
+    assert "same broker/server timezone" in report["metadata"]["timestamp_policy"]
+
+
+def test_invalid_impulse_encoding_is_excluded(tmp_path):
+    journal = tmp_path / "journal.csv"
+    ohlc = tmp_path / "ohlc.csv"
+    write_csv(journal, [{
+        "bar_time": "2026.01.01 00:00", "symbol": "TEST",
+        "timeframe": "PERIOD_M1", "prior_impulse_direction": "2",
+    }], ["bar_time", "symbol", "timeframe", "prior_impulse_direction"])
+    write_csv(ohlc, [{
+        "timestamp": "2026.01.01 00:00", "symbol": "TEST", "timeframe": "PERIOD_M1",
+        "open": "100", "high": "101", "low": "99", "close": "100",
+    }], ["timestamp", "symbol", "timeframe", "open", "high", "low", "close"])
+
+    observations, report = EVALUATOR.evaluate(journal, ohlc, [1])
+    assert observations == []
+    assert report["metadata"]["exclusions"]["invalid_journal_row"] == 1
