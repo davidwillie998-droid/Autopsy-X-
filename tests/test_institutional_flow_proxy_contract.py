@@ -72,7 +72,7 @@ class InstitutionalFlowProxyContracts(unittest.TestCase):
         self.assertNotIn("CInstitutionalOrderFlowEngine", EA)
 
     def test_ablation_features_are_frozen_at_confirmed_entry(self):
-        self.assertIn("PERSISTENCE=%.2f;ABSORPTION=%.2f;COVERAGE=%.2f;VOLUME_SOURCE=%s", EA)
+        self.assertIn("IMBALANCE=%.4f;PERSISTENCE=%.2f;ABSORPTION=%.2f;BULL_ABS=%d;BEAR_ABS=%d;COVERAGE=%.2f;VOLUME_SOURCE=%s", EA)
         self.assertIn("g_orderFlow.FlowPersistence()", EA)
         self.assertIn("g_orderFlow.AbsorptionStrength()", EA)
         self.assertIn("g_orderFlow.DirectionalCoveragePct()", EA)
