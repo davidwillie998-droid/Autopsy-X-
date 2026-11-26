@@ -112,3 +112,44 @@ def test_bearish_excursions_reverse_high_low_roles(tmp_path):
     observations, _ = EVALUATOR.evaluate(journal, ohlc, [1])
     assert round(observations[0]["directional_mfe_pct"], 6) == round((100 / 95 - 1) * 100, 6)
     assert round(observations[0]["directional_mae_pct"], 6) == round((100 / 103 - 1) * 100, 6)
+
+
+def test_chronological_splits_purge_forward_windows_and_deduplicate(tmp_path):
+    journal = tmp_path / "journal.csv"
+    ohlc = tmp_path / "ohlc.csv"
+    rows = []
+    for i in range(10):
+        stamp = f"2026.01.01 00:{i:02d}"
+        rows.append({
+            "timestamp": stamp, "symbol": "TEST", "timeframe": "PERIOD_M1",
+            "open": str(100 + i), "high": str(102 + i),
+            "low": str(99 + i), "close": str(101 + i),
+        })
+    write_csv(ohlc, rows, ["timestamp", "symbol", "timeframe", "open", "high", "low", "close"])
+    observations = [
+        {"bar_time": "2026.01.01 00:05", "symbol": "TEST", "timeframe": "PERIOD_M1", "prior_impulse_direction": "1"},
+        {"bar_time": "2026.01.01 00:05", "symbol": "TEST", "timeframe": "PERIOD_M1", "prior_impulse_direction": "1"},
+        {"bar_time": "2026.01.01 00:06", "symbol": "TEST", "timeframe": "PERIOD_M1", "prior_impulse_direction": "1"},
+        {"bar_time": "2026.01.01 00:08", "symbol": "TEST", "timeframe": "PERIOD_M1", "prior_impulse_direction": "1"},
+    ]
+    write_csv(journal, observations, ["bar_time", "symbol", "timeframe", "prior_impulse_direction"])
+
+    evaluated, report = EVALUATOR.evaluate(journal, ohlc, [1])
+    assert len(evaluated) == 2
+    assert {row["split"] for row in evaluated} == {"validation", "test"}
+    assert report["metadata"]["exclusions"]["duplicate_journal_observation"] == 1
+    assert report["metadata"]["exclusions"]["forward_window_crosses_split_boundary"] == 1
+    assert "first 60% train" in report["metadata"]["split_policy"]
+
+
+def test_duplicate_ohlc_timestamps_are_rejected(tmp_path):
+    ohlc = tmp_path / "ohlc.csv"
+    row = {"timestamp": "2026.01.01 00:00", "symbol": "TEST", "timeframe": "M1",
+           "open": "100", "high": "101", "low": "99", "close": "100"}
+    write_csv(ohlc, [row, row], ["timestamp", "symbol", "timeframe", "open", "high", "low", "close"])
+    try:
+        EVALUATOR.load_bars(ohlc)
+    except ValueError as error:
+        assert "Duplicate OHLC timestamps" in str(error)
+    else:
+        raise AssertionError("Duplicate OHLC timestamps must be rejected")
