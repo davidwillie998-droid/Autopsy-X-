@@ -244,3 +244,50 @@ def test_invalid_impulse_encoding_is_excluded(tmp_path):
     observations, report = EVALUATOR.evaluate(journal, ohlc, [1])
     assert observations == []
     assert report["metadata"]["exclusions"]["invalid_journal_row"] == 1
+
+
+
+def test_feature_uplift_uses_complementary_categories_within_impulse_direction(tmp_path):
+    journal = tmp_path / "journal.csv"
+    ohlc = tmp_path / "ohlc.csv"
+    bars = []
+    closes = [100.0]
+    for i in range(39):
+        next_close = closes[-1] * (1.01 if i % 2 == 0 else 0.99)
+        closes.append(next_close)
+    for i, close in enumerate(closes):
+        open_price = closes[i - 1] if i else close
+        bars.append({
+            "timestamp": f"2026.01.01 00:{i:02d}",
+            "symbol": "TEST", "timeframe": "PERIOD_M1",
+            "open": str(open_price),
+            "high": str(max(open_price, close) + 0.1),
+            "low": str(min(open_price, close) - 0.1),
+            "close": str(close),
+        })
+    journal_rows = []
+    for i in range(23):
+        journal_rows.append({
+            "bar_time": f"2026.01.01 00:{i:02d}",
+            "symbol": "TEST", "timeframe": "PERIOD_M1",
+            "prior_impulse_direction": "1",
+            "candle_state": "BULL_BODY" if i % 2 == 0 else "BEAR_BODY",
+            "body_ratio": "0.7" if i % 2 == 0 else "0.2",
+            "close_location": "0.8" if i % 2 == 0 else "0.2",
+            "pullback_depth": "0.1" if i % 2 == 0 else "0.6",
+        })
+    write_csv(journal, journal_rows, ["bar_time", "symbol", "timeframe",
+        "prior_impulse_direction", "candle_state", "body_ratio",
+        "close_location", "pullback_depth"])
+    write_csv(ohlc, bars, ["timestamp", "symbol", "timeframe",
+        "open", "high", "low", "close"])
+
+    _, report = EVALUATOR.evaluate(journal, ohlc, [1])
+    groups = [g for g in report["groups"]
+              if g["feature"] == "candle_state" and g["split"] == "train"]
+    bullish = next(g for g in groups if g["feature_value"] == "BULL_BODY")
+    bearish = next(g for g in groups if g["feature_value"] == "BEAR_BODY")
+    assert bullish["complementary_baseline_observations"] > 0
+    assert bullish["mean_signed_return_uplift_vs_complement_pct"] > 0
+    assert bearish["mean_signed_return_uplift_vs_complement_pct"] < 0
+    assert bullish["directional_hit_rate_uplift_vs_complement_pp"] > 0
