@@ -35,7 +35,7 @@ class RegimeConditionedOrderFlowTests(unittest.TestCase):
         )[0]
         self.assertIn("if(n<5) return;", update)
         self.assertIn("if(!md.GetSample(i,t)) return;", update)
-        self.assertIn("if(validSamples!=n || hi<=-DBL_MAX || lo>=DBL_MAX) return;", update)
+        self.assertIn("if(m_validWindowSamples!=n || hi<=-DBL_MAX || lo>=DBL_MAX) return;", update)
         self.assertNotIn("if(!md.GetSample(i,t)) continue;", update)
 
     def test_regime_weight_function_covers_all_existing_regimes(self):
