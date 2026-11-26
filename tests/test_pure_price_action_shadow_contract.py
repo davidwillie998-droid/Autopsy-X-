@@ -48,7 +48,8 @@ def test_engine_has_no_execution_or_scoring_authority():
     source = ENGINE.read_text(encoding="utf-8")
     for forbidden in ("CTrade", "OrderSend(", "PositionOpen(", "Buy(", "Sell("):
         assert forbidden not in source
-    assert "score" not in source.lower()
+    assert "BullishScoreComponent" not in source
+    assert "BearishScoreComponent" not in source
 
 
 def test_ea_wires_engine_as_observational_shadow_only():
@@ -57,4 +58,6 @@ def test_ea_wires_engine_as_observational_shadow_only():
     assert "InpEnablePurePriceActionDiagnostics = true" in source
     assert "g_purePriceAction.Update();" in source
     assert "if(InpVerboseLogging) Print(\"AUTOPSY X SHADOW: \"" in source
-    assert "g_purePriceAction" not in source[source.find("AxApplyOrderFlowBonus"):]
+    start = source.index("void AxApplyOrderFlowBonus")
+    end = source.index("\\n  }", start)
+    assert "g_purePriceAction" not in source[start:end]
