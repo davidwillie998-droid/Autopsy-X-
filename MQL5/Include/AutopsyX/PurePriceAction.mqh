@@ -17,7 +17,8 @@ enum ENUM_AX_PA_CANDLE_STATE
    AX_PA_CANDLE_BEAR_BODY,
    AX_PA_CANDLE_LOWER_REJECTION,
    AX_PA_CANDLE_UPPER_REJECTION,
-   AX_PA_CANDLE_EXPANSION
+   AX_PA_CANDLE_EXPANSION_BULL,
+   AX_PA_CANDLE_EXPANSION_BEAR
   };
 
 struct SAxPurePriceActionSnapshot
@@ -154,7 +155,9 @@ public:
 
       ENUM_AX_PA_CANDLE_STATE state=AX_PA_CANDLE_BALANCED;
       if(bodyRatio>=0.70 && closeLocation>=0.80)
-         state=AX_PA_CANDLE_EXPANSION;
+         state=AX_PA_CANDLE_EXPANSION_BULL;
+      else if(bodyRatio>=0.70 && closeLocation<=0.20)
+         state=AX_PA_CANDLE_EXPANSION_BEAR;
       else if(bodyRatio>=0.60 && latest.close>latest.open)
          state=AX_PA_CANDLE_BULL_BODY;
       else if(bodyRatio>=0.60 && latest.close<latest.open)
@@ -192,7 +195,8 @@ public:
          case AX_PA_CANDLE_BEAR_BODY: state="BEAR_BODY"; break;
          case AX_PA_CANDLE_LOWER_REJECTION: state="LOWER_REJECTION"; break;
          case AX_PA_CANDLE_UPPER_REJECTION: state="UPPER_REJECTION"; break;
-         case AX_PA_CANDLE_EXPANSION: state="EXPANSION"; break;
+         case AX_PA_CANDLE_EXPANSION_BULL: state="BULL_EXPANSION"; break;
+         case AX_PA_CANDLE_EXPANSION_BEAR: state="BEAR_EXPANSION"; break;
          default: state="BALANCED"; break;
         }
       return(StringFormat("PURE_PA=%s body=%.3f upperWick=%.3f lowerWick=%.3f CLV=%.3f priorImpulse=%.0f efficiency=%.3f pullback=%.3f",
