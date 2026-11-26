@@ -763,9 +763,9 @@ require("if(!m_persistenceHealthy || m_fileHandle==INVALID_HANDLE)" in RECORD_ME
         and "fileSizeAfter<=fileSizeBefore" in RECORD_METHOD,
         "trade journal append and flush are checked before accepting the record")
 require(RECORD_METHOD.index("FileWrite(m_fileHandle")
-        < RECORD_METHOD.index("m_records[m_count] = rec")
+        < RECORD_METHOD.index("m_records[m_count]=rec")
         and RECORD_METHOD.index("FileFlush(m_fileHandle)")
-        < RECORD_METHOD.index("m_records[m_count] = rec")
+        < RECORD_METHOD.index("m_records[m_count]=rec")
         and RECORD_METHOD.index("FileFlush(m_fileHandle)")
         < RECORD_METHOD.index("AddRiskHistory("),
         "in-memory and risk-history datasets update only after verified journal append")
