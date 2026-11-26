@@ -2298,9 +2298,12 @@ bool AxRecoverLockedPartialCloseActions(void)
       !g_hedgingPositionManager.IsComplete())
       return(false);
 
-   // Multi-position accounts use the independent per-leg ledger. Never route
-   // their partial-close recovery through g_posState or the single-trade journal.
-   if(g_hedgingPositionManager.HasMultiplePositions())
+   // Account mode, not the current leg count, selects the recovery ledger.
+   // A hedging account may have only one surviving leg after other positions close.
+   // Never route any hedging-account partial close through the legacy single-trade journal.
+   long marginMode=AccountInfoInteger(ACCOUNT_MARGIN_MODE);
+   bool hedgingAccount=(marginMode==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING);
+   if(hedgingAccount)
      {
       for(int i=0;i<g_virtualExitRegistry.Count();i++)
         {
