@@ -67,6 +67,17 @@ def test_single_leg_handoff_rehydrates_exact_remaining_identifier():
     assert "g_haveOpenPosition=true;" in handoff
     assert "g_positionIdentifier=0;" in handoff
 
+def test_single_leg_hedging_partial_recovery_uses_account_mode_not_position_count():
+    start = EA.index("bool AxRecoverLockedPartialCloseActions(void)")
+    end = EA.index("bool AxReconcilePyramidCampaignTickets(void)", start)
+    recovery = EA[start:end]
+    assert "long marginMode=AccountInfoInteger(ACCOUNT_MARGIN_MODE);" in recovery
+    assert "bool hedgingAccount=(marginMode==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING);" in recovery
+    assert "if(hedgingAccount)" in recovery
+    assert "if(g_hedgingPositionManager.HasMultiplePositions())" not in recovery
+    assert "AxRecoverHedgingPartialCloseAction(hedged)" in recovery
+
+
 def test_virtual_exit_reconciliation_accepts_missing_broker_stop_only_with_persisted_levels():
     start = EA.index("bool AxReconcileVirtualExitTickets(const bool removeStaleRecords)")
     end = EA.index("bool AxRecoverFullyClosedPosition(", start)
