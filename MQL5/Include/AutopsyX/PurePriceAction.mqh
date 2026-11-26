@@ -70,13 +70,13 @@ private:
       bool header=(FileSize(handle)==0);
       FileSeek(handle,0,SEEK_END);
       if(header)
-         FileWrite(handle,"bar_time","symbol","timeframe","open_range",
+         FileWrite(handle,"bar_time","symbol","timeframe","candle_range",
                    "body_ratio","upper_wick_ratio","lower_wick_ratio",
                    "close_location","prior_impulse_direction",
                    "prior_impulse_efficiency","pullback_depth",
                    "candle_state","reason");
       FileWrite(handle,TimeToString(m_snapshot.barTime,TIME_DATE|TIME_MINUTES),
-                m_symbol,EnumToString(m_timeframe),DoubleToString(m_snapshot.range,_Digits),
+                m_symbol,EnumToString(m_timeframe),DoubleToString(m_snapshot.range,(int)SymbolInfoInteger(m_symbol,SYMBOL_DIGITS)),
                 DoubleToString(m_snapshot.bodyRatio,6),
                 DoubleToString(m_snapshot.upperWickRatio,6),
                 DoubleToString(m_snapshot.lowerWickRatio,6),
@@ -253,11 +253,11 @@ public:
          case AX_PA_CANDLE_EXPANSION_BEAR: state="BEAR_EXPANSION"; break;
          default: state="BALANCED"; break;
         }
-      return(StringFormat("PURE_PA=%s body=%.3f upperWick=%.3f lowerWick=%.3f CLV=%.3f priorImpulse=%.0f efficiency=%.3f pullback=%.3f",
+      return(StringFormat("PURE_PA=%s body=%.3f upperWick=%.3f lowerWick=%.3f CLV=%.3f priorImpulse=%.0f efficiency=%.3f pullback=%.3f journalFailures=%d",
                           state,m_snapshot.bodyRatio,m_snapshot.upperWickRatio,
                           m_snapshot.lowerWickRatio,m_snapshot.closeLocation,
                           m_snapshot.priorImpulseDirection,m_snapshot.priorImpulseEfficiency,
-                          m_snapshot.pullbackDepth));
+                          m_snapshot.pullbackDepth,m_journalFailures));
      }
   };
 #endif
