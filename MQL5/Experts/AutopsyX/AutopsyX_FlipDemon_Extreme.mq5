@@ -7661,6 +7661,11 @@ void OnTimer(void)
    extras.orderFlowEnabled      = InpUseOrderFlow;
    extras.sessionCvd            = g_orderFlow.SessionCvd();
    extras.orderFlowImbalance    = g_orderFlow.ImbalanceRatio();
+   extras.orderFlowPersistence  = g_orderFlow.FlowPersistence();
+   extras.orderFlowAbsorptionStrength = g_orderFlow.AbsorptionStrength();
+   extras.orderFlowDirectionalCoverage = g_orderFlow.DirectionalCoveragePct();
+   extras.orderFlowEvidenceLabel = g_orderFlow.VolumeEvidenceLabel();
+   extras.parentOrderPersistenceProxy = g_orderFlow.ParentOrderPersistenceProxy();
    extras.bullAbsorption        = g_orderFlow.BullishAbsorption();
    extras.bearAbsorption        = g_orderFlow.BearishAbsorption();
    extras.volProfileValid       = g_volProfile.IsValid();
