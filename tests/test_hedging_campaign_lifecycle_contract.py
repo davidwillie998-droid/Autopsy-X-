@@ -66,3 +66,41 @@ def test_single_leg_handoff_rehydrates_exact_remaining_identifier():
     assert "g_posState=remainingState.state;" in handoff
     assert "g_haveOpenPosition=true;" in handoff
     assert "g_positionIdentifier=0;" in handoff
+
+def test_virtual_exit_reconciliation_accepts_missing_broker_stop_only_with_persisted_levels():
+    start = EA.index("bool AxReconcileVirtualExitTickets(const bool removeStaleRecords)")
+    end = EA.index("bool AxRecoverFullyClosedPosition(", start)
+    reconcile = EA[start:end]
+    assert "(live.hasValidBrokerStop && MathAbs(saved.emergencySlPrice-live.stopLoss)" in reconcile
+    assert "(!live.hasValidBrokerStop && (saved.emergencySlPrice<=0.0 || saved.virtualSlPrice<=0.0))" in reconcile
+    assert "saved.virtualSlPrice<=0.0 || saved.entryTime<=0" in reconcile
+
+
+def test_virtual_sl_tp_runs_before_managers_that_require_broker_stop():
+    start = EA.index("void AxProcessTick(void)")
+    end = EA.index("void OnTick(void)", start)
+    tick = EA[start:end]
+    virtual_exit = tick.index("AxManageHedgingVirtualExitTickets()")
+    break_even = tick.index("AxManageHedgingBreakEvenTickets()")
+    trailing = tick.index("AxManageHedgingTrailingTickets()")
+    partial = tick.index("AxManageHedgingPartialCloseTickets()")
+    assert virtual_exit < break_even < trailing < partial
+
+
+def test_unprotected_legs_skip_stop_modification_and_scaleout_without_claiming_protection():
+    be_start = EA.index("bool AxManageHedgingBreakEvenTickets(void)")
+    be_end = EA.index("bool AxManageHedgingTrailingTickets(void)", be_start)
+    be = EA[be_start:be_end]
+    trail_start = be_end
+    trail_end = EA.index("void AxProcessTick(void)", trail_start)
+    trail = EA[trail_start:trail_end]
+    partial_start = EA.index("bool AxManageHedgingPartialCloseTickets(void)")
+    partial_end = be_start
+    partial = EA[partial_start:partial_end]
+    for manager in (be, trail, partial):
+        assert "if(!live.hasValidBrokerStop)" in manager
+        assert "continue;" in manager
+    assert "broker protection is absent" in be
+    assert "trailing modification skipped" in trail
+    assert "scale-out skipped" in partial
+
