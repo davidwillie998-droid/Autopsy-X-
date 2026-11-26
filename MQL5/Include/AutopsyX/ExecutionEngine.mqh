@@ -1202,65 +1202,112 @@ public:
       return(false);
      }
 
-   //--- pending stop entry (spec section 19: "OPTIONAL BUY STOP / OPTIONAL SELL STOP"). Confirms   ---
-   //--- the order genuinely exists in the terminal's order list afterward via OrderSelect - a       ---
-   //--- successful CTrade send() result alone is never trusted, same discipline as OpenMarket. ---
+   //--- pending stop entry. Submit once, then confirm the exact broker order.
+   //--- Accepted or ambiguous responses are never resent without reconciliation.
    bool              OpenPendingStop(const string symbol,const ENUM_AX_DIR dir,const double lots,
                                       const double triggerPrice,const double slPrice,const double tpPrice,
                                       const string comment,ulong &ticketOut,string &errorReason)
      {
-      if(dir==AX_DIR_NONE || lots<=0 || triggerPrice<=0)
+      ticketOut=0;
+      errorReason="";
+      if((dir!=AX_DIR_BUY && dir!=AX_DIR_SELL) || lots<=0.0 ||
+         !MathIsValidNumber(lots) || triggerPrice<=0.0 ||
+         !MathIsValidNumber(triggerPrice))
         { errorReason="Invalid direction/lots/trigger price"; return(false); }
 
-      bool ok=false;
-      for(int attempt=0; attempt<=m_maxRetries; attempt++)
+      double tickSize=SymbolInfoDouble(symbol,SYMBOL_TRADE_TICK_SIZE);
+      double volumeStep=SymbolInfoDouble(symbol,SYMBOL_VOLUME_STEP);
+      if(tickSize<=0.0 || volumeStep<=0.0)
+        { errorReason="Pending stop broker tick/volume metadata unavailable"; return(false); }
+
+      bool sent=(dir==AX_DIR_BUY)
+                ?m_trade.BuyStop(lots,triggerPrice,symbol,slPrice,tpPrice,ORDER_TIME_GTC,0,comment)
+                :m_trade.SellStop(lots,triggerPrice,symbol,slPrice,tpPrice,ORDER_TIME_GTC,0,comment);
+      uint retcode=m_trade.ResultRetcode();
+      ulong orderTicket=m_trade.ResultOrder();
+      if(orderTicket>0) ticketOut=orderTicket;
+
+      bool accepted=(retcode==TRADE_RETCODE_PLACED ||
+                     retcode==TRADE_RETCODE_DONE ||
+                     retcode==TRADE_RETCODE_DONE_PARTIAL || sent);
+      bool ambiguous=(retcode==TRADE_RETCODE_TIMEOUT ||
+                      retcode==TRADE_RETCODE_CONNECTION || retcode==0);
+
+      if(orderTicket>0 && OrderSelect(orderTicket))
         {
-         if(attempt>0) Sleep(m_retryDelayMs);
+         ENUM_ORDER_TYPE expected=(dir==AX_DIR_BUY)?ORDER_TYPE_BUY_STOP:ORDER_TYPE_SELL_STOP;
+         double volumeTolerance=MathMax(volumeStep*0.51,0.00000001);
+         double priceTolerance=MathMax(tickSize*0.51,0.000000001);
+         bool identityOk=(OrderGetString(ORDER_SYMBOL)==symbol &&
+                          (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE)==expected &&
+                          (ulong)OrderGetInteger(ORDER_MAGIC)==m_magic &&
+                          MathAbs(OrderGetDouble(ORDER_VOLUME_INITIAL)-lots)<=volumeTolerance &&
+                          MathAbs(OrderGetDouble(ORDER_PRICE_OPEN)-triggerPrice)<=priceTolerance &&
+                          MathAbs(OrderGetDouble(ORDER_SL)-slPrice)<=priceTolerance &&
+                          MathAbs(OrderGetDouble(ORDER_TP)-tpPrice)<=priceTolerance);
+         if(identityOk)
+           { errorReason=""; return(true); }
 
-         if(dir==AX_DIR_BUY)
-            ok = m_trade.BuyStop(lots,triggerPrice,symbol,slPrice,tpPrice,ORDER_TIME_GTC,0,comment);
-         else
-            ok = m_trade.SellStop(lots,triggerPrice,symbol,slPrice,tpPrice,ORDER_TIME_GTC,0,comment);
-
-         if(ok)
-           {
-            ulong ticket = m_trade.ResultOrder();
-            //--- write ticketOut even on the unconfirmed branch below - the broker may well have   ---
-            //--- accepted the order (ticket>0) while the terminal's local order cache just hasn't   ---
-            //--- synced yet; leaving ticketOut unset would strand the caller with no handle to later ---
-            //--- verify or cancel an order that could actually be live (code-review finding). ---
-            if(ticket>0) ticketOut=ticket;
-            if(ticket>0 && OrderSelect(ticket))
-              {
-               errorReason=""; return(true);
-              }
-            errorReason="Pending order send reported success but order did not confirm in the order list";
-            return(false);
-           }
-
-         uint retcode = m_trade.ResultRetcode();
-         errorReason = StringFormat("Pending order send failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
-         if(!RetryableRetcode(retcode)) return(false);
+         errorReason="PENDING_STOP_ACCEPTED_BUT_BROKER_ORDER_IDENTITY_OR_PROTECTION_MISMATCH";
+         return(false);
         }
+
+      if(accepted || ambiguous)
+        {
+         errorReason=StringFormat("PENDING_STOP_OUTCOME_UNCONFIRMED order=%I64u retcode=%u %s; no resend permitted",
+                                  orderTicket,retcode,m_trade.ResultRetcodeDescription());
+         return(false);
+        }
+
+      errorReason=StringFormat("PENDING_STOP_REJECTED retcode=%u %s",
+                               retcode,m_trade.ResultRetcodeDescription());
       return(false);
      }
 
-   //--- cancels a pending order; treats an already-gone order (triggered, expired, manually removed) ---
-   //--- as a successful outcome rather than an error - the caller's INTENT (no pending order should ---
-   //--- remain) is satisfied either way. ---
+   //--- cancel by exact ticket. An order that filled is not a successful cancellation:
+   //--- the caller must reconcile the resulting position before continuing.
    bool              CancelPendingOrder(const ulong ticket,string &errorReason)
      {
-      bool ok=false;
+      errorReason="";
+      if(ticket==0)
+        { errorReason="Invalid pending-order ticket"; return(false); }
+
       for(int attempt=0; attempt<=m_maxRetries; attempt++)
         {
          if(attempt>0) Sleep(m_retryDelayMs);
-         if(!OrderSelect(ticket)) { errorReason=""; return(true); } // already gone - intent satisfied
+         if(!OrderSelect(ticket))
+           {
+            if(HistoryOrderSelect(ticket) &&
+               (ENUM_ORDER_STATE)HistoryOrderGetInteger(ticket,ORDER_STATE)==ORDER_STATE_FILLED)
+              {
+               errorReason="Pending order filled before cancellation; broker position reconciliation required";
+               return(false);
+              }
+            errorReason="";
+            return(true);
+           }
 
-         ok = m_trade.OrderDelete(ticket);
-         if(ok) { errorReason=""; return(true); }
+         bool sent=m_trade.OrderDelete(ticket);
+         uint retcode=m_trade.ResultRetcode();
+         if(!OrderSelect(ticket))
+           {
+            if(HistoryOrderSelect(ticket) &&
+               (ENUM_ORDER_STATE)HistoryOrderGetInteger(ticket,ORDER_STATE)==ORDER_STATE_FILLED)
+              {
+               errorReason="Pending order filled during cancellation; broker position reconciliation required";
+               return(false);
+              }
+            errorReason="";
+            return(true);
+           }
 
-         uint retcode = m_trade.ResultRetcode();
-         errorReason = StringFormat("Pending order delete failed: %u %s",retcode,m_trade.ResultRetcodeDescription());
+         errorReason=StringFormat("Pending order delete not confirmed (local=%s retcode=%u %s)",
+                                  sent?"true":"false",retcode,m_trade.ResultRetcodeDescription());
+         if(sent || retcode==TRADE_RETCODE_DONE ||
+            retcode==TRADE_RETCODE_PLACED ||
+            retcode==TRADE_RETCODE_TIMEOUT ||
+            retcode==TRADE_RETCODE_CONNECTION || retcode==0)
+            return(false);
          if(!RetryableRetcode(retcode)) return(false);
         }
       return(false);
