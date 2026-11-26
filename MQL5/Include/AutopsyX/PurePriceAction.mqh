@@ -44,7 +44,51 @@ private:
    ENUM_TIMEFRAMES m_timeframe;
    int m_lookback;
    datetime m_lastBar;
+   datetime m_lastJournalBar;
+   int m_journalFailures;
    SAxPurePriceActionSnapshot m_snapshot;
+
+   string JournalFileName(void) const
+     {
+      return("AutopsyX_PurePriceAction_"+m_symbol+"_"+EnumToString(m_timeframe)+".csv");
+     }
+
+   bool AppendJournal(void)
+     {
+      if(!m_snapshot.available || m_snapshot.barTime<=0 ||
+         m_snapshot.barTime==m_lastJournalBar)
+         return(false);
+      int handle=FileOpen(JournalFileName(),
+                          FILE_READ|FILE_WRITE|FILE_CSV|FILE_SHARE_READ|FILE_SHARE_WRITE,
+                          ';');
+      if(handle==INVALID_HANDLE)
+        {
+         m_journalFailures++;
+         return(false);
+        }
+      bool header=(FileSize(handle)==0);
+      FileSeek(handle,0,SEEK_END);
+      if(header)
+         FileWrite(handle,"bar_time","symbol","timeframe","open_range",
+                   "body_ratio","upper_wick_ratio","lower_wick_ratio",
+                   "close_location","prior_impulse_direction",
+                   "prior_impulse_efficiency","pullback_depth",
+                   "candle_state","reason");
+      FileWrite(handle,TimeToString(m_snapshot.barTime,TIME_DATE|TIME_MINUTES),
+                m_symbol,EnumToString(m_timeframe),DoubleToString(m_snapshot.range,_Digits),
+                DoubleToString(m_snapshot.bodyRatio,6),
+                DoubleToString(m_snapshot.upperWickRatio,6),
+                DoubleToString(m_snapshot.lowerWickRatio,6),
+                DoubleToString(m_snapshot.closeLocation,6),
+                DoubleToString(m_snapshot.priorImpulseDirection,0),
+                DoubleToString(m_snapshot.priorImpulseEfficiency,6),
+                DoubleToString(m_snapshot.pullbackDepth,6),
+                IntegerToString((int)m_snapshot.candleState),m_snapshot.reason);
+      FileFlush(handle);
+      FileClose(handle);
+      m_lastJournalBar=m_snapshot.barTime;
+      return(true);
+     }
 
    void Reset(const string reason)
      {
@@ -68,6 +112,8 @@ public:
       m_timeframe=PERIOD_CURRENT;
       m_lookback=5;
       m_lastBar=0;
+      m_lastJournalBar=0;
+      m_journalFailures=0;
       Reset("NOT_INITIALIZED");
      }
 
@@ -77,6 +123,8 @@ public:
       m_timeframe=timeframe;
       m_lookback=(int)AxClampD(lookback,3,20);
       m_lastBar=0;
+      m_lastJournalBar=0;
+      m_journalFailures=0;
       Reset("WAITING_FOR_CLOSED_BARS");
       return(symbol!="" && PeriodSeconds(timeframe)>0);
      }
@@ -180,10 +228,13 @@ public:
       m_snapshot.candleState=state;
       m_snapshot.reason="CLOSED_OHLC_ONLY";
       m_lastBar=closedTime;
+      AppendJournal();
       return(true);
      }
 
    SAxPurePriceActionSnapshot Read(void) const { return(m_snapshot); }
+   int JournalFailureCount(void) const { return(m_journalFailures); }
+   string JournalFile(void) const { return(JournalFileName()); }
 
    string Summary(void) const
      {
