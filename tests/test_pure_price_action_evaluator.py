@@ -44,7 +44,8 @@ def test_forward_outcomes_use_only_bars_after_observation(tmp_path):
     assert len(observations) == 2
     one_bar = next(row for row in observations if row["horizon_bars"] == 1)
     assert round(one_bar["raw_forward_return_pct"], 6) == round((106 / 102 - 1) * 100, 6)
-    assert round(one_bar["mfe_pct"], 6) == round((108 / 102 - 1) * 100, 6)
+    assert round(one_bar["directional_mfe_pct"], 6) == round((108 / 102 - 1) * 100, 6)
+    assert round(one_bar["directional_mae_pct"], 6) == round((101 / 102 - 1) * 100, 6)
     assert one_bar["directional_hit"] == 1
     assert report["metadata"]["journal_rows"] == 1
 
@@ -91,3 +92,23 @@ def test_benjamini_hochberg_adjustment_is_monotone():
     assert len(adjusted) == 3
     assert adjusted[0] <= adjusted[2] <= adjusted[1]
     assert all(0 <= value <= 1 for value in adjusted)
+
+
+
+def test_bearish_excursions_reverse_high_low_roles(tmp_path):
+    journal = tmp_path / "journal.csv"
+    ohlc = tmp_path / "ohlc.csv"
+    write_csv(journal, [{
+        "bar_time": "2026.01.01 00:00", "symbol": "TEST",
+        "timeframe": "PERIOD_M5", "prior_impulse_direction": "-1",
+    }], ["bar_time", "symbol", "timeframe", "prior_impulse_direction"])
+    write_csv(ohlc, [
+        {"timestamp": "2026.01.01 00:00", "symbol": "TEST", "timeframe": "PERIOD_M5",
+         "open": "100", "high": "101", "low": "99", "close": "100"},
+        {"timestamp": "2026.01.01 00:05", "symbol": "TEST", "timeframe": "PERIOD_M5",
+         "open": "100", "high": "103", "low": "95", "close": "97"},
+    ], ["timestamp", "symbol", "timeframe", "open", "high", "low", "close"])
+
+    observations, _ = EVALUATOR.evaluate(journal, ohlc, [1])
+    assert round(observations[0]["directional_mfe_pct"], 6) == round((100 / 95 - 1) * 100, 6)
+    assert round(observations[0]["directional_mae_pct"], 6) == round((100 / 103 - 1) * 100, 6)
