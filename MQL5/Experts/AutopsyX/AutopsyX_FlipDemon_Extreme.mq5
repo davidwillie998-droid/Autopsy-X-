@@ -1681,8 +1681,9 @@ bool AxReconcileVirtualExitTickets(const bool removeStaleRecords)
 
       double tickSize=SymbolInfoDouble(live.symbol,SYMBOL_TRADE_TICK_SIZE);
       if(tickSize<=0.0 || saved.symbol!=live.symbol ||
-         saved.dir!=live.direction || !live.hasValidBrokerStop ||
-         MathAbs(saved.emergencySlPrice-live.stopLoss)>tickSize*0.5 ||
+         saved.dir!=live.direction ||
+         (live.hasValidBrokerStop && MathAbs(saved.emergencySlPrice-live.stopLoss)>tickSize*0.5) ||
+          (!live.hasValidBrokerStop && (saved.emergencySlPrice<=0.0 || saved.virtualSlPrice<=0.0)) ||
          saved.initialSlPrice<=0.0 || saved.originalRiskDistance<=0.0 ||
          saved.virtualSlPrice<=0.0 || saved.entryTime<=0)
         {
@@ -5834,7 +5835,7 @@ bool AxManageHedgingPartialCloseTickets(void)
       if(!g_virtualExitRegistry.Find(live.positionIdentifier,saved) ||
          saved.actionLocked || saved.symbol!=live.symbol || saved.dir!=live.direction ||
          saved.ticket!=live.ticket || saved.entryTime<=0 || saved.entryPrice<=0.0 ||
-         saved.entryVolume<=0.0 || saved.originalRiskDistance<=0.0 || !live.hasValidBrokerStop)
+         saved.entryVolume<=0.0 || saved.originalRiskDistance<=0.0 )
         {
          g_virtualExitReady=false;
          g_hedgingLifecycleLock=true;
@@ -5844,6 +5845,12 @@ bool AxManageHedgingPartialCloseTickets(void)
          return(false);
         }
 
+      if(!live.hasValidBrokerStop)
+        {
+         if(InpVerboseLogging)
+            PrintFormat("FLIPDEMON HEDGING PARTIAL: ticket=%I64u lacks broker stop; scale-out skipped while virtual exit remains active.",live.ticket);
+         continue;
+        }
       // This phase deliberately permits one scale-out per leg. A completed slice
       // must still match its independent ledger row before it is treated as settled.
       if(saved.partialCloseCount>0 || saved.partialClosedVolume>volumeTolerance ||
@@ -6117,8 +6124,7 @@ bool AxManageHedgingBreakEvenTickets(void)
       if(!g_virtualExitRegistry.Find(live.positionIdentifier,saved) ||
          saved.actionLocked || saved.symbol!=live.symbol ||
          saved.dir!=live.direction || saved.ticket!=live.ticket ||
-         saved.originalRiskDistance<=0.0 || saved.initialSlPrice<=0.0 ||
-         !live.hasValidBrokerStop)
+         saved.originalRiskDistance<=0.0 || saved.initialSlPrice<=0.0)
         {
          g_virtualExitReady=false;
          g_hedgingLifecycleLock=true;
@@ -6126,6 +6132,12 @@ bool AxManageHedgingBreakEvenTickets(void)
          PrintFormat("FLIPDEMON HEDGING BREAK-EVEN: durable state mismatch or unresolved action, ticket=%I64u id=%I64u; campaign quarantined.",
                      live.ticket,live.positionIdentifier);
          return(false);
+        }
+      if(!live.hasValidBrokerStop)
+        {
+         if(InpVerboseLogging)
+            PrintFormat("FLIPDEMON HEDGING BREAK-EVEN: ticket=%I64u lacks broker stop; virtual exit remains active, broker protection is absent.",live.ticket);
+         continue;
         }
       if(saved.breakEvenDone) continue;
 
@@ -6329,7 +6341,7 @@ bool AxManageHedgingTrailingTickets(void)
       if(!g_virtualExitRegistry.Find(live.positionIdentifier,saved) ||
          saved.actionLocked || saved.symbol!=live.symbol ||
          saved.dir!=live.direction || saved.ticket!=live.ticket ||
-         saved.originalRiskDistance<=0.0 || !live.hasValidBrokerStop)
+         saved.originalRiskDistance<=0.0 )
         {
          g_virtualExitReady=false;
          g_hedgingLifecycleLock=true;
@@ -6339,6 +6351,12 @@ bool AxManageHedgingTrailingTickets(void)
          return(false);
         }
 
+      if(!live.hasValidBrokerStop)
+        {
+         if(InpVerboseLogging)
+            PrintFormat("FLIPDEMON HEDGING TRAIL: ticket=%I64u lacks broker stop; trailing modification skipped while virtual exit remains active.",live.ticket);
+         continue;
+        }
       MqlTick quote;
       if(!SymbolInfoTick(live.symbol,quote) || quote.bid<=0.0 ||
          quote.ask<quote.bid || quote.ask<=0.0)
@@ -6578,13 +6596,9 @@ void AxProcessTick(void)
    // evaluation before the multi-position quarantine blocks further execution.
    if(g_hedgingPositionManager.HasMultiplePositions())
      {
-      if(!AxManageHedgingBreakEvenTickets())
-         return;
-      if(!AxManageHedgingTrailingTickets())
-         return;
-      if(!AxManageHedgingPartialCloseTickets())
-         return;
-      if(!AxManageHedgingVirtualExitTickets())
+      // Persisted virtual SL/TP is checked before managers requiring a broker-side stop.
+       // A missing broker stop remains explicitly unprotected, but virtual exits still run.
+       if(!AxManageHedgingVirtualExitTickets())
         {
          g_virtualExitReady=false;
          g_hedgingLifecycleLock=true;
@@ -6592,6 +6606,12 @@ void AxProcessTick(void)
          Print("FLIPDEMON HEDGING VIRTUAL EXIT: ticket-specific full-close orchestration failed; campaign quarantined.");
          return;
         }
+       if(!AxManageHedgingBreakEvenTickets())
+         return;
+      if(!AxManageHedgingTrailingTickets())
+         return;
+      if(!AxManageHedgingPartialCloseTickets())
+         return;
       // Stop/partial-close requests invalidate the earlier broker snapshot.
       // Refresh every leg and reconcile durable cursors before campaign audit.
       if(!g_hedgingPositionManager.Refresh(_Symbol,InpMagicNumber) ||
