@@ -5835,7 +5835,7 @@ bool AxManageHedgingPartialCloseTickets(void)
       if(!g_virtualExitRegistry.Find(live.positionIdentifier,saved) ||
          saved.actionLocked || saved.symbol!=live.symbol || saved.dir!=live.direction ||
          saved.ticket!=live.ticket || saved.entryTime<=0 || saved.entryPrice<=0.0 ||
-         saved.entryVolume<=0.0 || saved.originalRiskDistance<=0.0 )
+         saved.entryVolume<=0.0 || saved.originalRiskDistance<=0.0)
         {
          g_virtualExitReady=false;
          g_hedgingLifecycleLock=true;
