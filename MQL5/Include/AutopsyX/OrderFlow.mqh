@@ -35,7 +35,6 @@ private:
    double            m_flowPersistence;       // 0..100, share of usable subwindows aligned with dominant flow
    double            m_absorptionStrength;    // 0..100, pressure not matched by directional price progress
    double            m_directionalCoveragePct;
-   double            m_volumeSourceGradePct;  // provenance index, NOT a probability of institutional activity
    double            m_realVolumeSharePct;
    double            m_tickVolumeSharePct;
    double            m_tickCountProxySharePct;
@@ -61,7 +60,7 @@ public:
       m_windowNetMovePts=0; m_windowPathPts=0; m_pricePathEfficiency=0;
       m_priceImpactPtsPerVolume=0;
       m_flowPersistence=0; m_absorptionStrength=0; m_directionalCoveragePct=0;
-      m_volumeSourceGradePct=0; m_realVolumeSharePct=0; m_tickVolumeSharePct=0;
+      m_realVolumeSharePct=0; m_tickVolumeSharePct=0;
       m_tickCountProxySharePct=0; m_validWindowSamples=0; m_validPersistenceBuckets=0;
       m_parentOrderPersistenceProxy=false;
       m_lastTickBuyVol=0; m_lastTickSellVol=0;
@@ -82,7 +81,7 @@ public:
       m_windowNetMovePts=0; m_windowPathPts=0; m_pricePathEfficiency=0;
       m_priceImpactPtsPerVolume=0;
       m_flowPersistence=0; m_absorptionStrength=0; m_directionalCoveragePct=0;
-      m_volumeSourceGradePct=0; m_realVolumeSharePct=0; m_tickVolumeSharePct=0;
+      m_realVolumeSharePct=0; m_tickVolumeSharePct=0;
       m_tickCountProxySharePct=0; m_validWindowSamples=0; m_validPersistenceBuckets=0;
       m_parentOrderPersistenceProxy=false;
       m_bullAbsorption=false; m_bearAbsorption=false;
@@ -183,11 +182,8 @@ public:
       m_realVolumeSharePct=100.0*(double)realSamples/(double)n;
       m_tickVolumeSharePct=100.0*(double)tickVolumeSamples/(double)n;
       m_tickCountProxySharePct=100.0*(double)proxySamples/(double)n;
-      // This is a source-provenance index, not a statistical confidence estimate:
-      // real-volume field=100, integer broker volume=65, one-tick fallback=35.
-      m_volumeSourceGradePct=(100.0*(double)realSamples+
-                              65.0*(double)tickVolumeSamples+
-                              35.0*(double)proxySamples)/(double)n;
+      // These shares describe feed composition, not data quality,
+      // reliability, institutional origin or predictive value.
 
       // Persistence is measured across five chronological subwindows. A valid bucket must
       // contain directional volume and at least 5% absolute imbalance; flat/noisy buckets
@@ -288,7 +284,6 @@ public:
    double FlowPersistence(void) const { return(m_flowPersistence); }
    double AbsorptionStrength(void) const { return(m_absorptionStrength); }
    double DirectionalCoveragePct(void) const { return(m_directionalCoveragePct); }
-   double VolumeSourceGradePct(void) const { return(m_volumeSourceGradePct); }
    double RealVolumeSharePct(void) const { return(m_realVolumeSharePct); }
    double TickVolumeSharePct(void) const { return(m_tickVolumeSharePct); }
    double TickCountProxySharePct(void) const { return(m_tickCountProxySharePct); }
