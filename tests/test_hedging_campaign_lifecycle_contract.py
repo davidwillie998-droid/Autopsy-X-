@@ -36,7 +36,7 @@ def test_ticket_lifecycle_is_observation_only_and_does_not_authorize_multi_leg_e
 def test_verified_multi_leg_state_does_not_latch_the_integrity_quarantine():
     audit = EA.index("// Audit every leg against its durable exit", EA.index("void AxProcessTick(void)"))
     start = EA.index("if(g_hedgingPositionManager.HasMultiplePositions())", audit)
-    end = EA.index("if(g_hedgingLifecycleLock)", start)
+    end = EA.index("// Rehydrate the legacy single-position controller", start)
     block = EA[start:end]
     assert "g_hedgingLifecycleLock=true" not in block
     assert "g_engineState=AX_ENGINE_PAUSED;" in block
