@@ -359,6 +359,13 @@ require("m_riskPercent               = AxClampD(riskPercent,0.05,m_maxRiskPercen
 ACCOUNT_RISK = ROOT / "MQL5/Include/AutopsyX/AccountRiskCalculator.mqh"
 require(ACCOUNT_RISK.is_file(), "dedicated account-wide risk calculator exists")
 account_risk = ACCOUNT_RISK.read_text(encoding="utf-8")
+RISK_ENGINE = ROOT / "MQL5/Include/AutopsyX/RiskEngine.mqh"
+require(RISK_ENGINE.is_file(), "strategy risk engine exists")
+risk_engine = RISK_ENGINE.read_text(encoding="utf-8")
+require("m_riskPercent=1.0; m_maxRiskPercent=2.0;" in risk_engine
+        and "m_maxRiskPercent            = 2.0;" in risk_engine
+        and "AxClampD(maxRiskPercent,0.05,100.0)" not in risk_engine,
+        "strategy sizing engine cannot raise the fixed 2.0 percent risk maximum")
 require("m_maxAccountRiskPercent" in account_risk and "ConfigureMaxRiskPercent" in account_risk
         and "AX_IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT 2.0" in account_risk
         and "m_maxAccountRiskPercent=AX_IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT" in account_risk,
