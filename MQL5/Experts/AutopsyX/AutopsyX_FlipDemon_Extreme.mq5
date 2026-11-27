@@ -100,7 +100,8 @@ input bool          InpEnableMarketSnapshots = true; // Export timestamped marke
 input ENUM_AX_MODE   InpMode                    = AX_MODE_AGGRESSIVE; // Strategy aggression and stop-risk sizing mode
 input ENUM_AX_MARGIN_PROFILE InpMarginProfile = AX_MARGIN_MEDIUM; // Independent account margin utilisation profile
 input double         InpExtremeRiskPercent      = 5.0;                // EXTREME mode stop-risk % per trade
-input double         InpMaxAccountStopRiskPercent = 10.0;              // Configurable per-entry and aggregate stop-risk ceiling, independent of margin profile (0.05..100%)
+// Account-wide stop-risk ceiling is fixed in AccountRiskCalculator.mqh at 2.0%.
+   // It is not an input and cannot be raised by a terminal user.
 
 input group "=== ACCOUNT FLIP GROWTH ===";
 input bool            InpEnableAccountFlipEngine = true;   // Equity milestones adapt sizing within configured stop-risk and broker limits
@@ -4932,7 +4933,7 @@ int OnInit(void)
       return(INIT_PARAMETERS_INCORRECT);
      }
    // Configure the account-wide calculator before startup reconciliation or any Scan call.
-   g_accountRisk.ConfigureMaxRiskPercent(InpMaxAccountStopRiskPercent);
+   g_accountRisk.ConfigureMaxRiskPercent(2.0);
 
    // Account-wide order approval is serialized across every FLIPDEMON instance
    // attached to this MT5 terminal. Separate terminals require an external coordinator.
