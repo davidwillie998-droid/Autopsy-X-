@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { openRiskLedger, RiskLedgerError } from '../risk-ledger.js';
 
 function fixture(options = {}) {
@@ -27,6 +28,45 @@ function fixture(options = {}) {
 function expectCode(fn, code) {
   assert.throws(fn, error => error instanceof RiskLedgerError && error.code === code);
 }
+
+test('migrates previously persisted configurable account caps down to the immutable two-percent ceiling', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ax-risk-ledger-migration-'));
+  const path = join(dir, 'risk.sqlite');
+  const now = 1_800_000_000_000;
+  const legacy = new DatabaseSync(path);
+  legacy.exec(`
+    CREATE TABLE risk_account_snapshots (
+      account_key TEXT PRIMARY KEY, login TEXT NOT NULL, server TEXT NOT NULL,
+      equity REAL NOT NULL CHECK (equity > 0),
+      broker_risk_money REAL NOT NULL CHECK (broker_risk_money >= 0),
+      hard_cap_money REAL NOT NULL CHECK (hard_cap_money >= 0),
+      max_stop_risk_percent REAL NOT NULL DEFAULT 10.0
+        CHECK (max_stop_risk_percent >= 0.05 AND max_stop_risk_percent <= 100.0),
+      snapshot_at_ms INTEGER NOT NULL, snapshot_id TEXT NOT NULL, updated_at_ms INTEGER NOT NULL
+    );
+  `);
+  legacy.prepare(`INSERT INTO risk_account_snapshots
+    (account_key,login,server,equity,broker_risk_money,hard_cap_money,
+     max_stop_risk_percent,snapshot_at_ms,snapshot_id,updated_at_ms)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
+      '12345678@broker-live','12345678','Broker-Live',10000,0,1000,10,
+      now,'legacy-10-percent',now);
+  legacy.close();
+
+  const ledger = openRiskLedger(path, { clock: () => now });
+  try {
+    const result = ledger.reconcile({
+      login: '12345678', server: 'Broker-Live', equity: 10000,
+      existingRiskMoney: 0, maxStopRiskPercent: 2.0,
+      snapshotAtMs: now + 1, snapshotId: 'migrated-fixed-cap',
+    });
+    assert.equal(result.maxStopRiskPercent, 2.0);
+    assert.equal(result.hardCapMoney, 200);
+  } finally {
+    ledger.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('requires a fresh broker snapshot before any reservation', () => {
   const f = fixture();
