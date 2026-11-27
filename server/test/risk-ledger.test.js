@@ -36,7 +36,7 @@ test('requires a fresh broker snapshot before any reservation', () => {
   } finally { f.close(); }
 });
 
-test('reconciles broker risk and derives the selected stop-risk budget from equity server-side', () => {
+test('reconciles broker risk and derives the immutable two-percent budget from equity server-side', () => {
   const f = fixture();
   try {
     const result = f.ledger.reconcile({ ...f.base, existingRiskMoney: 30 });
@@ -46,21 +46,23 @@ test('reconciles broker risk and derives the selected stop-risk budget from equi
   } finally { f.close(); }
 });
 
-test('uses the configured stop-risk percentage instead of a fixed two-percent ceiling', () => {
+test('rejects attempts to raise the immutable two-percent account-wide ceiling', () => {
   const f = fixture();
   try {
-    const configured = { ...f.base, maxStopRiskPercent: 10.0 };
-    const result = f.ledger.reconcile(configured);
-    assert.equal(result.hardCapMoney, 1000);
-    const first = f.ledger.reserve({ ...configured, instanceId: 'terminal-a',
-      idempotencyKey: 'config-entry-0001', riskMoney: 800 });
+    expectCode(() => f.ledger.reconcile({ ...f.base, maxStopRiskPercent: 10.0 }),
+      'IMMUTABLE_ACCOUNT_RISK_CEILING');
+    const result = f.ledger.reconcile(f.base);
+    assert.equal(result.maxStopRiskPercent, 2.0);
+    assert.equal(result.hardCapMoney, 200);
+    const first = f.ledger.reserve({ ...f.base, instanceId: 'terminal-a',
+      idempotencyKey: 'fixed-cap-entry-0001', riskMoney: 150 });
     assert.equal(first.ok, true);
-    expectCode(() => f.ledger.reserve({ ...configured, instanceId: 'terminal-b',
-      idempotencyKey: 'config-entry-0002', riskMoney: 201 }), 'ACCOUNT_RISK_BUDGET_EXCEEDED');
+    expectCode(() => f.ledger.reserve({ ...f.base, instanceId: 'terminal-b',
+      idempotencyKey: 'fixed-cap-entry-0002', riskMoney: 51 }), 'ACCOUNT_RISK_BUDGET_EXCEEDED');
   } finally { f.close(); }
 });
 
-test('prevents stop-risk policy changes while an order reservation is unresolved', () => {
+test('rejects all client attempts to change the immutable ceiling while a reservation is unresolved', () => {
   const f = fixture();
   try {
     f.ledger.reconcile(f.base);
@@ -69,16 +71,16 @@ test('prevents stop-risk policy changes while an order reservation is unresolved
     f.setNow(f.base.snapshotAtMs + 1);
     expectCode(() => f.ledger.reconcile({ ...f.base, maxStopRiskPercent: 10.0,
       snapshotAtMs: f.base.snapshotAtMs + 1, snapshotId: 'policy-change-0002' }),
-    'STOP_RISK_POLICY_CHANGE_WITH_ACTIVE_RESERVATIONS');
+    'IMMUTABLE_ACCOUNT_RISK_CEILING');
   } finally { f.close(); }
 });
 
 test('rejects invalid configured stop-risk percentages', () => {
   const f = fixture();
   try {
-    for (const value of [0, -1, 100.01, Number.NaN]) {
+    for (const value of [0, -1, 1.99, 2.01, 10.0, 100.01, Number.NaN]) {
       expectCode(() => f.ledger.reconcile({ ...f.base, maxStopRiskPercent: value }),
-        'INVALID_MAX_STOP_RISK_PERCENT');
+        'IMMUTABLE_ACCOUNT_RISK_CEILING');
     }
   } finally { f.close(); }
 });
