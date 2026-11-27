@@ -603,7 +603,7 @@ datetime              g_lastAccSignalTime = 0;
 //====================================================================
 double AxRiskPercentForMode(void)
   {
-   double maximumRisk=AxClampD(InpMaxAccountStopRiskPercent,0.05,100.0);
+   const double maximumRisk=2.0;
    if(InpMode==AX_MODE_NORMAL)      return(MathMin(0.5,maximumRisk));
    if(InpMode==AX_MODE_AGGRESSIVE)  return(MathMin(1.0,maximumRisk));
    return(AxClampD(InpExtremeRiskPercent,0.05,maximumRisk));
@@ -4926,10 +4926,9 @@ void AxObserveGapHour(void)
 //====================================================================
 int OnInit(void)
   {
-   if(!MathIsValidNumber(InpMaxAccountStopRiskPercent) || InpMaxAccountStopRiskPercent<0.05 || InpMaxAccountStopRiskPercent>100.0 ||
-      !MathIsValidNumber(InpExtremeRiskPercent) || InpExtremeRiskPercent<0.05)
+   if(!MathIsValidNumber(InpExtremeRiskPercent) || InpExtremeRiskPercent<0.05)
      {
-      Print("FLIPDEMON INIT FAILED: stop-risk maximum must be 0.05..100%, and Extreme risk must be finite and >=0.05%.");
+      Print("FLIPDEMON INIT FAILED: Extreme mode risk must be finite and >=0.05%; the account-wide ceiling is fixed at 2.0%.");
       return(INIT_PARAMETERS_INCORRECT);
      }
    // Configure the account-wide calculator before startup reconciliation or any Scan call.
@@ -5225,7 +5224,7 @@ int OnInit(void)
                      InpMaxTradesPerRollingPeriod,InpRollingPeriodSeconds,
                      InpMaxSpreadPoints,InpMaxSlippagePoints,InpMinFreeMarginPercent,
                      InpWeeklyLossLimitPercent,InpMaxPositionsPerSymbol,
-                     InpMaxExecutionFailures,InpMaxAccountStopRiskPercent);
+                     InpMaxExecutionFailures,2.0);
    g_emergency.Configure(InpExecutionMode,InpEnableTrading,InpEnableLong,InpEnableShort);
 
    //--- IMMEDIATE and CONFIRMED_CROSS_PLUS_STRUCTURE VWAP exit modes need live-price and structure-
