@@ -95,7 +95,7 @@ private:
 public:
                      CRiskEngine(void)
      {
-      m_riskPercent=1.0; m_maxRiskPercent=10.0; m_dailyLossLimitPercent=8.0; m_maxConsecutiveLosses=5;
+      m_riskPercent=1.0; m_maxRiskPercent=2.0; m_dailyLossLimitPercent=8.0; m_maxConsecutiveLosses=5;
       m_maxOpenPositions=1; m_maxFlipsPerDay=20;
       m_maxTradesPerRollingPeriod=10; m_rollingPeriodSec=300;
       m_maxSpreadPts=250; m_maxSlippagePts=30; m_minFreeMarginPercent=150.0;
@@ -115,9 +115,12 @@ public:
                                 const double weeklyLossLimitPercent=15.0,
                                 const int maxPositionsPerSymbol=1,
                                 const int maxExecutionFailures=5,
-                                const double maxRiskPercent=10.0)
+                                const double maxRiskPercent=2.0)
      {
-      m_maxRiskPercent            = AxClampD(maxRiskPercent,0.05,100.0);
+      if(!MathIsValidNumber(maxRiskPercent) || MathAbs(maxRiskPercent-2.0)>0.000001)
+         PrintFormat("FLIPDEMON RISK ENGINE: requested maximum %.4f%% rejected; immutable account-wide ceiling remains 2.0%%.",
+                     maxRiskPercent);
+      m_maxRiskPercent            = 2.0;
       m_riskPercent               = AxClampD(riskPercent,0.05,m_maxRiskPercent);
       m_dailyLossLimitPercent     = dailyLossLimitPercent;
       m_maxConsecutiveLosses      = maxConsecutiveLosses;
