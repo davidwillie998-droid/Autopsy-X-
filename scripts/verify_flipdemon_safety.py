@@ -359,10 +359,22 @@ require("m_riskPercent               = AxClampD(riskPercent,0.05,m_maxRiskPercen
 ACCOUNT_RISK = ROOT / "MQL5/Include/AutopsyX/AccountRiskCalculator.mqh"
 require(ACCOUNT_RISK.is_file(), "dedicated account-wide risk calculator exists")
 account_risk = ACCOUNT_RISK.read_text(encoding="utf-8")
-require("m_maxAccountRiskPercent" in account_risk and "ConfigureMaxRiskPercent" in account_risk,
-        "account-wide monetary stop-risk uses the configurable maximum")
-require("InpMaxAccountStopRiskPercent" in ea and "ConfigureMaxRiskPercent(InpMaxAccountStopRiskPercent)" in ea,
-        "EA exposes and applies a configurable stop-risk maximum independently of margin profiles")
+require("m_maxAccountRiskPercent" in account_risk and "ConfigureMaxRiskPercent" in account_risk
+        and "AX_IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT 2.0" in account_risk
+        and "m_maxAccountRiskPercent=AX_IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT" in account_risk,
+        "account-wide monetary stop-risk is locked to the immutable 2.0 percent ceiling")
+require("InpMaxAccountStopRiskPercent" not in ea and "ConfigureMaxRiskPercent(2.0)" in ea,
+        "EA exposes no user override and configures the immutable 2.0 percent account-wide ceiling")
+RISK_LEDGER = ROOT / "server/risk-ledger.js"
+require(RISK_LEDGER.is_file(), "persistent server-side account risk ledger exists")
+risk_ledger = RISK_LEDGER.read_text(encoding="utf-8")
+require("IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT = 2.0" in risk_ledger
+        and "IMMUTABLE_ACCOUNT_RISK_CEILING" in risk_ledger
+        and "UPDATE risk_account_snapshots SET max_stop_risk_percent = ?, hard_cap_money = equity * ?" in risk_ledger,
+        "server rejects client policy overrides and migrates legacy account rows to the fixed 2.0 percent ceiling")
+require("MathAbs(snapshot.maxRiskPercent-2.0)" in distributed
+        and '"\\\\\\"maxStopRiskPercent\\\\\\":2.0' in distributed,
+        "distributed reservations transmit only the immutable 2.0 percent policy")
 require("PositionsTotal()" in account_risk and "PositionGetTicket(i)" in account_risk
         and "POSITION_SL" in account_risk and "POSITION_PRICE_OPEN" in account_risk,
         "all broker-confirmed open positions and protective stops are enumerated")
