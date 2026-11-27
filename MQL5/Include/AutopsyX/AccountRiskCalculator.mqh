@@ -7,6 +7,8 @@
 #ifndef AX_ACCOUNTRISKCALCULATOR_MQH
 #define AX_ACCOUNTRISKCALCULATOR_MQH
 
+#define AX_IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT 2.0
+
 
 struct SAxAccountRiskSnapshot
   {
@@ -270,7 +272,7 @@ private:
          reason=pending?"INVALID_PENDING_LIMIT_VOLUME_OR_PRICE":"INVALID_PROPOSED_VOLUME_OR_PRICE";
       else if(!ValidNumber(perEntryRiskPercent) || perEntryRiskPercent<=0.0)
          reason="INVALID_PER_ENTRY_RISK_LIMIT";
-      else if(!ValidNumber(m_maxAccountRiskPercent) || m_maxAccountRiskPercent<0.05 || m_maxAccountRiskPercent>100.0)
+      else if(!ValidNumber(m_maxAccountRiskPercent) || MathAbs(m_maxAccountRiskPercent-AX_IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT)>0.000001)
          reason="ACCOUNT_STOP_RISK_LIMIT_NOT_CONFIGURED";
       else if(perEntryRiskPercent>m_maxAccountRiskPercent)
          reason="PER_ENTRY_RISK_LIMIT_EXCEEDS_CONFIGURED_MAXIMUM";
@@ -349,12 +351,16 @@ public:
      {
       m_auditFile=StringFormat("FlipDemon_AccountRisk_%I64d.csv",
                                AccountInfoInteger(ACCOUNT_LOGIN));
-      m_maxAccountRiskPercent=10.0;
+      m_maxAccountRiskPercent=AX_IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT;
      }
 
    void              ConfigureMaxRiskPercent(const double maximumRiskPercent)
      {
-      m_maxAccountRiskPercent=maximumRiskPercent;
+      if(!ValidNumber(maximumRiskPercent) ||
+         MathAbs(maximumRiskPercent-AX_IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT)>0.000001)
+         PrintFormat("FLIPDEMON RISK POLICY: requested %.4f%% rejected; immutable account-wide ceiling remains 2.0%%.",
+                     maximumRiskPercent);
+      m_maxAccountRiskPercent=AX_IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT;
      }
 
    bool              Scan(SAxAccountRiskSnapshot &snapshot) const
@@ -375,7 +381,7 @@ public:
          snapshot.failureReason="INVALID_ACCOUNT_EQUITY";
          return(false);
         }
-      if(!ValidNumber(m_maxAccountRiskPercent) || m_maxAccountRiskPercent<0.05 || m_maxAccountRiskPercent>100.0)
+      if(!ValidNumber(m_maxAccountRiskPercent) || MathAbs(m_maxAccountRiskPercent-AX_IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT)>0.000001)
         {
          snapshot.failureReason="INVALID_CONFIGURED_ACCOUNT_STOP_RISK_MAXIMUM";
          return(false);
