@@ -380,9 +380,8 @@ require("IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT = 2.0" in risk_ledger
         and "UPDATE risk_account_snapshots SET max_stop_risk_percent = ?, hard_cap_money = equity * ?" in risk_ledger,
         "server rejects client policy overrides and migrates legacy account rows to the fixed 2.0 percent ceiling")
 require("MathAbs(snapshot.maxRiskPercent-2.0)" in distributed
-        and "maxStopRiskPercent" in distributed
-        and "DoubleToString(snapshot.maxRiskPercent,4)" not in distributed
-        and "2.0" in distributed,
+        and 'maxStopRiskPercent\\":2.0,' in distributed
+        and "DoubleToString(snapshot.maxRiskPercent,4)" not in distributed,
         "distributed reservations transmit only the immutable 2.0 percent policy")
 require("PositionsTotal()" in account_risk and "PositionGetTicket(i)" in account_risk
         and "POSITION_SL" in account_risk and "POSITION_PRICE_OPEN" in account_risk,
