@@ -2993,7 +2993,7 @@ void AxApplyOrderBlockScoreBonus(SAxScore &score)
                   buyBonus,sellBonus,g_orderBlock.Summary());
   }
 
-//--- 
+//---
  //--- Complete Market Maker Buy/Sell delivery-cycle confirmation.
  //--- W1/D1 remain directional authorities; this cannot bypass risk or execution gates.
  void AxApplyMarketMakerModelScoreBonus(SAxScore &score)
