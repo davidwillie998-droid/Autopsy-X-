@@ -220,8 +220,8 @@ private:
          !MathIsValidNumber(snapshot.equity) ||
          snapshot.existingRiskMoney<0.0 ||
          !MathIsValidNumber(snapshot.existingRiskMoney) ||
-         snapshot.maxRiskPercent<0.05 || snapshot.maxRiskPercent>100.0 ||
-         !MathIsValidNumber(snapshot.maxRiskPercent))
+         !MathIsValidNumber(snapshot.maxRiskPercent) ||
+         MathAbs(snapshot.maxRiskPercent-2.0)>0.000001)
         {
          error="DISTRIBUTED_RISK_SNAPSHOT_UNKNOWN_OR_INVALID";
          return(false);
