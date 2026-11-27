@@ -69,7 +69,7 @@ def test_single_leg_handoff_rehydrates_exact_remaining_identifier():
 
 def test_single_leg_hedging_partial_recovery_uses_account_mode_not_position_count():
     start = EA.index("bool AxRecoverLockedPartialCloseActions(void)")
-    end = EA.index("bool AxReconcilePyramidCampaignTickets(void)", start)
+    end = EA.index("bool AxReconcilePyramidCampaignTickets(", start)
     recovery = EA[start:end]
     assert "long marginMode=AccountInfoInteger(ACCOUNT_MARGIN_MODE);" in recovery
     assert "bool hedgingAccount=(marginMode==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING);" in recovery
