@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from math import isfinite
 import unittest
 
-DEFAULT_MAX_STOP_RISK_PCT = 10.0
+DEFAULT_MAX_STOP_RISK_PCT = 2.0
 
 
 @dataclass(frozen=True)
@@ -109,8 +109,8 @@ def scan(positions: list[Exposure], pending: list[Exposure], equity: float,
          max_stop_risk_pct: float = DEFAULT_MAX_STOP_RISK_PCT) -> tuple[float, float]:
     if not isfinite(equity) or equity <= 0:
         raise ValueError("INVALID_EQUITY")
-    if not isfinite(max_stop_risk_pct) or not 0.05 <= max_stop_risk_pct <= 100.0:
-        raise ValueError("INVALID_CONFIGURED_STOP_RISK_MAXIMUM")
+    if not isfinite(max_stop_risk_pct) or abs(max_stop_risk_pct - 2.0) > 1e-9:
+        raise ValueError("IMMUTABLE_ACCOUNT_RISK_CEILING")
     if not hedging:
         symbols = [p.symbol for p in positions]
         if len(symbols) != len(set(symbols)):
@@ -124,7 +124,7 @@ def approve(equity: float, existing: float, proposed: float,
             max_stop_risk_pct: float = DEFAULT_MAX_STOP_RISK_PCT) -> bool:
     if not all(isfinite(x) for x in (equity, existing, proposed, per_entry_pct, max_stop_risk_pct)):
         return False
-    if equity <= 0 or existing < 0 or proposed < 0 or per_entry_pct <= 0 or not 0.05 <= max_stop_risk_pct <= 100.0:
+    if equity <= 0 or existing < 0 or proposed < 0 or per_entry_pct <= 0 or abs(max_stop_risk_pct - 2.0) > 1e-9:
         return False
     return (per_entry_pct <= max_stop_risk_pct
             and existing <= equity * max_stop_risk_pct / 100.0 + 0.01
@@ -137,7 +137,7 @@ def post_fill_within_cap(equity: float, broker_confirmed_risk: float,
     """Only retain a new fill when broker-confirmed aggregate stop risk is known and capped."""
     if not snapshot_known or not all(isfinite(x) for x in (equity, broker_confirmed_risk, hard_cap_pct)):
         return False
-    if equity <= 0 or broker_confirmed_risk < 0 or not 0.05 <= hard_cap_pct <= 100.0:
+    if equity <= 0 or broker_confirmed_risk < 0 or abs(hard_cap_pct - 2.0) > 1e-9:
         return False
     return broker_confirmed_risk <= equity * hard_cap_pct / 100.0 + 0.01
 
@@ -162,7 +162,7 @@ class AccountRiskCalculatorTests(unittest.TestCase):
         p = Exposure("EURUSD", "BUY", 0.1, 1.10, 1.099)
         risk, remaining = scan([p], [], 10000, self.rates)
         self.assertAlmostEqual(risk, 10.0)
-        self.assertAlmostEqual(remaining, 990.0)
+        self.assertAlmostEqual(remaining, 190.0)
 
     def test_multiple_symbols_aggregate_under_configured_maximum(self):
         positions = [
@@ -171,7 +171,7 @@ class AccountRiskCalculatorTests(unittest.TestCase):
         ]
         risk, _ = scan(positions, [], 10000, self.rates)
         self.assertGreater(risk, 200.0)
-        self.assertFalse(approve(10000, risk, 1.0, max_stop_risk_pct=10.0))
+        self.assertFalse(approve(10000, risk, 1.0, max_stop_risk_pct=2.0))
 
     def test_proposed_entry_exceeding_remaining_budget_is_rejected(self):
         self.assertFalse(approve(10000, 990, 20, per_entry_pct=1.0, max_stop_risk_pct=10.0))
@@ -349,13 +349,13 @@ class AccountRiskCalculatorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "INVALID_EQUITY"):
                 scan([], [], equity, self.rates)
 
-    def test_configured_stop_risk_maximum_is_independent_and_variable(self):
+    def test_account_wide_stop_risk_ceiling_is_immutable_at_two_percent(self):
         self.assertTrue(approve(10000, 400, 50, per_entry_pct=5.0, max_stop_risk_pct=10.0))
         self.assertFalse(approve(10000, 400, 50, per_entry_pct=5.0, max_stop_risk_pct=4.0))
 
     def test_invalid_configured_stop_risk_maximum_fails_closed(self):
-        for value in (0.0, -1.0, 100.1, float("nan")):
-            with self.assertRaisesRegex(ValueError, "INVALID_CONFIGURED_STOP_RISK_MAXIMUM"):
+        for value in (0.0, -1.0, 1.99, 2.01, 10.0, 100.1, float("nan")):
+            with self.assertRaisesRegex(ValueError, "IMMUTABLE_ACCOUNT_RISK_CEILING"):
                 scan([], [], 10000, self.rates, max_stop_risk_pct=value)
 
 
