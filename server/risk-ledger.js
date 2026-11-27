@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { isAbsolute } from 'node:path';
 
+const IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT = 2.0;
+
 export class RiskLedgerError extends Error {
   constructor(status, code, message) {
     super(message);
@@ -34,11 +36,15 @@ function accountIdentity(input) {
 function snapshotFields(input, now, maxAgeMs) {
   const equity = finiteNumber(input?.equity, 'equity', { min: 0, exclusive: true });
   const brokerRiskMoney = finiteNumber(input?.existingRiskMoney, 'existingRiskMoney');
-  const maxStopRiskPercent = input?.maxStopRiskPercent;
-  if (typeof maxStopRiskPercent !== 'number' || !Number.isFinite(maxStopRiskPercent) ||
-      maxStopRiskPercent < 0.05 || maxStopRiskPercent > 100.0) {
-    fail(400, 'INVALID_MAX_STOP_RISK_PERCENT', 'maxStopRiskPercent must be a finite percentage from 0.05 to 100.');
+  const requestedMaxStopRiskPercent = input?.maxStopRiskPercent;
+  if (requestedMaxStopRiskPercent !== undefined &&
+      (typeof requestedMaxStopRiskPercent !== 'number' ||
+       !Number.isFinite(requestedMaxStopRiskPercent) ||
+       Math.abs(requestedMaxStopRiskPercent - IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT) > 0.000001)) {
+    fail(400, 'IMMUTABLE_ACCOUNT_RISK_CEILING',
+      'The account-wide stop-risk ceiling is immutable at 2.0 percent. Client-supplied policy changes are rejected.');
   }
+  const maxStopRiskPercent = IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT;
   const snapshotAtMs = finiteNumber(input?.snapshotAtMs, 'snapshotAtMs', { min: 0, exclusive: true });
   const snapshotId = String(input?.snapshotId ?? '').trim();
   if (!snapshotId || snapshotId.length > 160) {
@@ -92,7 +98,7 @@ export function openRiskLedger(path, {
       equity REAL NOT NULL CHECK (equity > 0),
       broker_risk_money REAL NOT NULL CHECK (broker_risk_money >= 0),
       hard_cap_money REAL NOT NULL CHECK (hard_cap_money >= 0),
-      max_stop_risk_percent REAL NOT NULL DEFAULT 10.0 CHECK (max_stop_risk_percent >= 0.05 AND max_stop_risk_percent <= 100.0),
+      max_stop_risk_percent REAL NOT NULL DEFAULT 2.0 CHECK (max_stop_risk_percent = 2.0),
       snapshot_at_ms INTEGER NOT NULL,
       snapshot_id TEXT NOT NULL,
       updated_at_ms INTEGER NOT NULL
@@ -115,8 +121,14 @@ export function openRiskLedger(path, {
 
   const snapshotColumns = db.prepare('PRAGMA table_info(risk_account_snapshots)').all();
   if (!snapshotColumns.some(column => column.name === 'max_stop_risk_percent')) {
-    db.exec('ALTER TABLE risk_account_snapshots ADD COLUMN max_stop_risk_percent REAL NOT NULL DEFAULT 10.0 CHECK (max_stop_risk_percent >= 0.05 AND max_stop_risk_percent <= 100.0)');
+    db.exec('ALTER TABLE risk_account_snapshots ADD COLUMN max_stop_risk_percent REAL NOT NULL DEFAULT 2.0 CHECK (max_stop_risk_percent = 2.0)');
   }
+
+  // Migrate existing installations from the former configurable policy. This
+  // is deliberately performed at startup so a stale 10%-100% row can never
+  // authorize a reservation after the fixed policy is deployed.
+  db.prepare('UPDATE risk_account_snapshots SET max_stop_risk_percent = ?, hard_cap_money = equity * ?')
+    .run(IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT, IMMUTABLE_ACCOUNT_STOP_RISK_PERCENT / 100.0);
 
   const getSnapshot = db.prepare('SELECT * FROM risk_account_snapshots WHERE account_key = ?');
   const insertSnapshot = db.prepare(`
@@ -133,15 +145,6 @@ export function openRiskLedger(path, {
   function storeSnapshot(identity, input, now) {
     const fields = snapshotFields(input, now, maxSnapshotAgeMs);
     const previous = getSnapshot.get(identity.accountKey);
-    if (previous && fields.maxStopRiskPercent !== previous.max_stop_risk_percent) {
-      const activeReservations = db.prepare(
-        "SELECT COUNT(*) AS total FROM risk_reservations WHERE account_key=? AND status='active'"
-      ).get(identity.accountKey).total;
-      if (activeReservations > 0) {
-        fail(409, 'STOP_RISK_POLICY_CHANGE_WITH_ACTIVE_RESERVATIONS',
-          'The account stop-risk maximum cannot change while broker outcomes remain reserved.');
-      }
-    }
     if (previous && fields.snapshotAtMs <= previous.snapshot_at_ms) {
       if (fields.snapshotId === previous.snapshot_id &&
           fields.equity === previous.equity &&
@@ -225,7 +228,7 @@ export function openRiskLedger(path, {
       const totalAfterReservation = snapshot.broker_risk_money + pending + riskMoney;
       if (snapshot.broker_risk_money > snapshot.hard_cap_money + 0.01 ||
           totalAfterReservation > snapshot.hard_cap_money + 0.01) {
-        fail(409, 'ACCOUNT_RISK_BUDGET_EXCEEDED', 'Broker exposure plus active reservations would exceed the configured account stop-risk maximum.');
+        fail(409, 'ACCOUNT_RISK_BUDGET_EXCEEDED', 'Broker exposure plus active reservations would exceed the immutable 2.0 percent account-wide stop-risk ceiling.');
       }
 
       const reservationId = randomUUID();
