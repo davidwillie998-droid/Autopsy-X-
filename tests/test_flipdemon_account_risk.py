@@ -174,7 +174,7 @@ class AccountRiskCalculatorTests(unittest.TestCase):
         self.assertFalse(approve(10000, risk, 1.0, max_stop_risk_pct=2.0))
 
     def test_proposed_entry_exceeding_remaining_budget_is_rejected(self):
-        self.assertFalse(approve(10000, 990, 20, per_entry_pct=1.0, max_stop_risk_pct=10.0))
+        self.assertFalse(approve(10000, 990, 20, per_entry_pct=1.0, max_stop_risk_pct=2.0))
 
     def test_missing_stop_is_unknown_not_zero(self):
         with self.assertRaisesRegex(ValueError, "UNKNOWN_STOP"):
@@ -342,7 +342,7 @@ class AccountRiskCalculatorTests(unittest.TestCase):
         self.assertTrue(terminal_b.acquire("chart-B"))
 
     def test_existing_exposure_above_configured_maximum_rejects_any_new_order(self):
-        self.assertFalse(approve(10000, 1001, 0.01, max_stop_risk_pct=10.0))
+        self.assertFalse(approve(10000, 1001, 0.01, max_stop_risk_pct=2.0))
 
     def test_zero_or_invalid_equity_fails_closed(self):
         for equity in (0, -1, float("nan")):
@@ -350,8 +350,9 @@ class AccountRiskCalculatorTests(unittest.TestCase):
                 scan([], [], equity, self.rates)
 
     def test_account_wide_stop_risk_ceiling_is_immutable_at_two_percent(self):
-        self.assertTrue(approve(10000, 400, 50, per_entry_pct=5.0, max_stop_risk_pct=10.0))
-        self.assertFalse(approve(10000, 400, 50, per_entry_pct=5.0, max_stop_risk_pct=4.0))
+        self.assertTrue(approve(10000, 100, 50, per_entry_pct=1.0, max_stop_risk_pct=2.0))
+        self.assertFalse(approve(10000, 100, 50, per_entry_pct=1.0, max_stop_risk_pct=10.0))
+        self.assertFalse(approve(10000, 100, 50, per_entry_pct=2.1, max_stop_risk_pct=2.0))
 
     def test_invalid_configured_stop_risk_maximum_fails_closed(self):
         for value in (0.0, -1.0, 1.99, 2.01, 10.0, 100.1, float("nan")):
