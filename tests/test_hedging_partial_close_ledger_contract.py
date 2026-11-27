@@ -90,10 +90,14 @@ class HedgingPartialCloseLedgerTests(unittest.TestCase):
         start = EA.index("bool AxRecoverLockedPartialCloseActions(void)")
         end = EA.index("bool AxReconcilePyramidCampaignTickets(", start)
         recovery = EA[start:end]
-        multi = recovery.index("if(g_hedgingPositionManager.HasMultiplePositions())")
+        account_mode = recovery.index("AccountInfoInteger(ACCOUNT_MARGIN_MODE)")
+        hedging_branch = recovery.index("if(hedgingAccount)")
         single_journal = recovery.index("g_autopsy.LastAccountedRecord(")
-        self.assertLess(multi, single_journal)
+        self.assertLess(account_mode, hedging_branch)
+        self.assertLess(hedging_branch, single_journal)
+        self.assertIn("ACCOUNT_MARGIN_MODE_RETAIL_HEDGING", recovery)
         self.assertIn("AxRecoverHedgingPartialCloseAction(hedged)", recovery)
+        self.assertNotIn("HasMultiplePositions()", recovery)
         self.assertIn("g_engineState=AX_ENGINE_PAUSED", recovery)
 
     def test_ticket_partial_close_manager_uses_per_leg_state_and_exact_ticket(self):
