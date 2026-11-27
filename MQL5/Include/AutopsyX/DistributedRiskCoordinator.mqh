@@ -231,7 +231,7 @@ private:
       body="{"+AccountFields()+","+
            "\"equity\":"+DoubleToString(snapshot.equity,8)+","+
            "\"existingRiskMoney\":"+DoubleToString(snapshot.existingRiskMoney,8)+","+
-           "\"maxStopRiskPercent\":"+2.0+","+
+           "\"maxStopRiskPercent\":"2.0,"+
            "\"snapshotAtMs\":"+(string)snapshotAtMs+","+
            "\"snapshotId\":\""+snapshotId+"\"}";
       return(true);
