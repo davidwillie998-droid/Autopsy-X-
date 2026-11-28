@@ -2682,6 +2682,45 @@ bool AxReconcilePyramidCampaignTickets(const bool removeStaleRecords)
          return(false);
         }
 
+      // A broker entry transaction or an accepted-but-unacknowledged add marks the
+      // campaign dirty. Rebuild tier count, last deal, actual filled volume and weighted
+      // fill price from the complete position history before allowing another scale-in.
+      if(g_pyramidReconcilePending)
+        {
+         if(!PositionSelectByTicket(live.ticket) ||
+            (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=live.positionIdentifier ||
+            PositionGetString(POSITION_SYMBOL)!=live.symbol ||
+            (ulong)PositionGetInteger(POSITION_MAGIC)!=live.magic)
+           {
+            g_pyramidReady=false;
+            PrintFormat("FLIPDEMON PYRAMID ERROR: pending campaign reconciliation could not reselect exact ticket=%I64u identifier=%I64u.",
+                        live.ticket,live.positionIdentifier);
+            return(false);
+           }
+         double brokerOpen=PositionGetDouble(POSITION_PRICE_OPEN);
+         double brokerSl=PositionGetDouble(POSITION_SL);
+         long brokerType=PositionGetInteger(POSITION_TYPE);
+         bool brokerProtected=(brokerSl>0.0 &&
+            ((brokerType==POSITION_TYPE_BUY && brokerSl<brokerOpen) ||
+             (brokerType==POSITION_TYPE_SELL && brokerSl>brokerOpen)));
+         if(!brokerProtected)
+           {
+            g_pyramidReady=false;
+            PrintFormat("FLIPDEMON PYRAMID ERROR: pending add has no valid broker protective stop, ticket=%I64u; reconciliation remains pending.",
+                        live.ticket);
+            return(false);
+           }
+         bool reconciled=false;
+         if(!g_pyramidCampaignRegistry.ReconcileLivePosition(live.ticket,reconciled) ||
+            !reconciled)
+           {
+            g_pyramidReady=false;
+            PrintFormat("FLIPDEMON PYRAMID ERROR: pending add history could not be reconciled for ticket=%I64u identifier=%I64u; no retry permitted.",
+                        live.ticket,live.positionIdentifier);
+            return(false);
+           }
+        }
+
       SAxPyramidCampaignRecord campaign;
       if(!g_pyramidCampaignRegistry.Find(live.positionIdentifier,campaign))
         {
@@ -2757,6 +2796,11 @@ bool AxReconcilePyramidCampaignTickets(const bool removeStaleRecords)
         }
      }
 
+   if(g_pyramidReconcilePending && liveCount>0)
+     {
+      g_pyramidReconcilePending=false;
+      Print("FLIPDEMON PYRAMID: pending broker campaign history reconciled and durably saved; scale-in gate may reopen after remaining risk checks.");
+     }
    g_pyramidReady=true;
    return(true);
   }
