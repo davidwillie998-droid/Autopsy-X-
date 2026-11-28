@@ -84,3 +84,20 @@ def test_uncertain_partial_recovery_never_submits_another_close_request():
     assert "ClosePartial(" not in body
     assert "OrderSend(" not in body
     assert "CTrade" not in body
+
+def test_verified_full_close_removes_all_durable_lifecycle_indexes():
+    source = _source()
+    body = _function_body(
+        source,
+        "bool AxFinalizeHedgingFullClose(",
+        "// Restart/tick recovery for actionCode=4",
+    )
+    ledger_commit = body.find("g_hedgingFullCloseLedger.Record(finalRecord)")
+    setup_remove = body.find("RemoveOpenSetupByPositionIdentifier")
+    position_remove = body.find("g_positionStateRegistry.Remove(saved.positionIdentifier)")
+    exit_remove = body.find("g_virtualExitRegistry.Remove(saved.positionIdentifier)")
+    assert min(ledger_commit, setup_remove, position_remove, exit_remove) >= 0
+    assert ledger_commit < setup_remove < position_remove < exit_remove
+    assert "!g_recoveryInitialized" in body
+    assert "!g_restartRecovery.IsPersisting()" in body
+
