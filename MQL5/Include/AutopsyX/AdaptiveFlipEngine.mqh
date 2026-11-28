@@ -423,15 +423,14 @@ public:
                                                const double sessionVolumeLots,
                                                const double riskCurrency,
                                                const double rewardRisk,
+                                               const double winProbability,
                                                double &expectedValueR,double &costR) const
      {
       expectedValueR=EMPTY_VALUE;
       costR=EMPTY_VALUE;
-      if(!m_enabled || lots<=0.0 || riskCurrency<=0.0 ||
-         rewardRisk<=0.0 || !MathIsValidNumber(riskCurrency) ||
-         !MathIsValidNumber(rewardRisk) ||
-         !MathIsValidNumber(m_lastWinProbability) ||
-         m_lastWinProbability<=0.0 || m_lastWinProbability>=1.0)
+      if(lots<=0.0 || riskCurrency<=0.0 || rewardRisk<=0.0 ||
+         !MathIsValidNumber(riskCurrency) || !MathIsValidNumber(rewardRisk) ||
+         !MathIsValidNumber(winProbability) || winProbability<=0.0 || winProbability>=1.0)
          return(false);
       double costCurrency=CalculateExpectedCost(symbol,dir,lots,point,tickSize,tickValue,
                                                  volatilityPts,projectedHoldSeconds,
@@ -439,8 +438,7 @@ public:
       if(!MathIsValidNumber(costCurrency) || costCurrency<0.0) return(false);
       costR=costCurrency/riskCurrency;
       if(!MathIsValidNumber(costR) || costR<0.0) return(false);
-      expectedValueR=m_lastWinProbability*rewardRisk-
-                     (1.0-m_lastWinProbability)-costR;
+      expectedValueR=winProbability*rewardRisk-(1.0-winProbability)-costR;
       return(MathIsValidNumber(expectedValueR));
      }
 
