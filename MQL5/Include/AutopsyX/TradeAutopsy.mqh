@@ -1184,30 +1184,43 @@ public:
            }
         }
 
-      double winSum=0.0;
-      double lossSum=0.0;
+      // AFE consumes reward:risk, not account-currency averages. Recover the
+      // original stop-risk denominator from the final record's persisted R.
+      // If that denominator cannot be established, exclude the campaign from
+      // both the sample count and the win/loss distribution.
+      double winSumR=0.0;
+      double lossSumR=0.0;
       for(int i=0;i<campaignCount;i++)
         {
          SAxCampaignAggregate campaign=campaigns[i];
          if(campaign.finalRecordIndex<0 || !campaign.entryModelConsistent ||
             !campaign.provenanceConsistent || campaign.entryModel!=model ||
             campaign.provenance!=provenance) continue;
+         SAxTradeRecord finalRec=m_records[campaign.finalRecordIndex];
+         if(finalRec.rMultiple==EMPTY_VALUE || !MathIsValidNumber(finalRec.rMultiple) ||
+            MathAbs(finalRec.rMultiple)<=0.0000001 ||
+            MathAbs(finalRec.netProfit)<=0.0000001) continue;
+         double originalRiskMoney=finalRec.netProfit/finalRec.rMultiple;
+         if(!MathIsValidNumber(originalRiskMoney) || originalRiskMoney<=0.0) continue;
+         double campaignR=campaign.net/originalRiskMoney;
+         if(!MathIsValidNumber(campaignR)) continue;
+
          totalTrades++;
-         if(campaign.net>0.0)
+         if(campaignR>0.0)
            {
             wins++;
-            winSum+=campaign.net;
+            winSumR+=campaignR;
            }
-         else if(campaign.net<0.0)
+         else if(campaignR<0.0)
            {
             losses++;
-            lossSum+=campaign.net;
+            lossSumR+=campaignR;
            }
         }
       int decisive=wins+losses;
       winRate=(decisive>0)?100.0*(double)wins/(double)decisive:0.0;
-      avgWin=(wins>0)?winSum/(double)wins:0.0;
-      avgLoss=(losses>0)?lossSum/(double)losses:0.0;
+      avgWin=(wins>0)?winSumR/(double)wins:0.0;
+      avgLoss=(losses>0)?lossSumR/(double)losses:0.0;
       int minCount=(minimumSamples<1)?1:minimumSamples;
       return(totalTrades>=minCount && decisive>=minCount);
      }
