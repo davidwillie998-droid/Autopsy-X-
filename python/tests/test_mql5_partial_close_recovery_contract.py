@@ -164,3 +164,28 @@ def test_single_position_unconfirmed_stop_keeps_action_lock_and_quarantines():
     assert "g_engineState=AX_ENGINE_PAUSED" in body
     assert "action lock retained" in body
     assert "ResolveAction" not in body
+
+
+def test_initial_virtual_exit_state_uses_exact_confirmed_fill_ticket():
+    source = _source()
+    start = source.find("bool AxSaveVirtualExitState(const ulong expectedTicket")
+    assert start >= 0
+    end = source.find("// Recover interrupted stop-modification actions", start)
+    body = source[start:end]
+    assert "PositionSelectByTicket(expectedTicket)" in body
+    assert "POSITION_TICKET)!=expectedTicket" in body
+    assert "POSITION_SYMBOL)!=_Symbol" in body
+    assert "POSITION_MAGIC)!=InpMagicNumber" in body
+    assert "!isNewFill || !stopOnLossSide" in body
+    assert "AxSaveVirtualExitState(newTicket,true)" in source
+
+
+def test_initial_position_protection_rejects_missing_or_wrong_side_stop():
+    source = _source()
+    start = source.find("bool AxSaveVirtualExitState(const ulong expectedTicket")
+    end = source.find("// Recover interrupted stop-modification actions", start)
+    body = source[start:end]
+    assert "brokerSl<=0.0" in body
+    assert "dir==AX_DIR_BUY" in body
+    assert "dir==AX_DIR_SELL" in body
+    assert "riskDistance<=tickSize*0.5" in body
