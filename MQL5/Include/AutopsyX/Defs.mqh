@@ -20,6 +20,10 @@ struct SAxCampaignAggregate
    int      finalRecordIndex;
    int      firstRecordIndex;
    datetime finalExitTime;
+   string   entryModel;
+   bool     entryModelConsistent;
+   int      provenance;
+   bool     provenanceConsistent;
   };
 
 bool AxCampaignKeyGreater(const SAxCampaignKey &a,const SAxCampaignKey &b)
