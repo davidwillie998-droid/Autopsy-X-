@@ -3485,6 +3485,24 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    if(InpUseAdaptiveFlipEngine)
      {
       SAxStatsSnapshot afeStats = g_stats.Compute(g_autopsy,g_risk.DayStartEquity()>0?g_risk.DayStartEquity():AccountInfoDouble(ACCOUNT_EQUITY));
+      // Replace the account-wide outcome distribution only when this exact entry model
+      // has enough completed, internally consistent campaigns in the active dataset.
+      // Otherwise retain the AFE's existing cold-start signal-confidence path.
+      int modelTrades=0,modelWins=0,modelLosses=0;
+      double modelWinRate=0.0,modelAvgWin=0.0,modelAvgLoss=0.0;
+      if(g_autopsy.GetEntryModelStats(tag,(int)AxDetectProvenance(),
+                                      InpMinTradesForValidation,modelTrades,
+                                      modelWins,modelLosses,modelWinRate,
+                                      modelAvgWin,modelAvgLoss))
+        {
+         afeStats.totalTrades=modelTrades;
+         afeStats.wins=modelWins;
+         afeStats.losses=modelLosses;
+         afeStats.decisiveTrades=modelWins+modelLosses;
+         afeStats.winRate=modelWinRate;
+         afeStats.avgWin=modelAvgWin;
+         afeStats.avgLoss=modelAvgLoss;
+        }
       // volatility reused from CRegimeEngine's own ATR (never duplicated here), converted to points
       // to match CalculateExpectedCost's point-based cost math. Session volume is a real MT5 API
       // field, often 0/unavailable on OTC forex-CFD symbols with no consolidated tape - the impact
