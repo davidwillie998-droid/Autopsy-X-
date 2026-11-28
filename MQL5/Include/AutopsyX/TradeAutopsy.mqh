@@ -1119,6 +1119,99 @@ public:
       return(true);
      }
 
+   // Return completed campaign statistics for one exact model and provenance.
+   // Partial exits are folded into POSITION_IDENTIFIER; ambiguous model/provenance
+   // campaigns are excluded rather than leaking into a named strategy cohort.
+   bool              GetEntryModelStats(const string model,const int provenance,
+                                         const int minimumSamples,int &totalTrades,
+                                         int &wins,int &losses,double &winRate,
+                                         double &avgWin,double &avgLoss) const
+     {
+      totalTrades=0;
+      wins=0;
+      losses=0;
+      winRate=0.0;
+      avgWin=0.0;
+      avgLoss=0.0;
+      if(model=="" || model=="UNKNOWN" || provenance<0) return(false);
+
+      SAxCampaignKey keys[];
+      if(ArrayResize(keys,m_count)!=m_count) return(false);
+      int keyCount=0;
+      for(int i=0;i<m_count;i++)
+        {
+         if(m_records[i].positionIdentifier==0) continue;
+         keys[keyCount].positionIdentifier=m_records[i].positionIdentifier;
+         keys[keyCount].recordIndex=i;
+         keyCount++;
+        }
+      if(keyCount>1) AxSortCampaignKeys(keys,keyCount);
+
+      SAxCampaignAggregate campaigns[];
+      if(ArrayResize(campaigns,keyCount)!=keyCount) return(false);
+      int campaignCount=0;
+      for(int k=0;k<keyCount;k++)
+        {
+         SAxTradeRecord rec=m_records[keys[k].recordIndex];
+         if(campaignCount==0 ||
+            campaigns[campaignCount-1].positionIdentifier!=rec.positionIdentifier)
+           {
+            campaigns[campaignCount].positionIdentifier=rec.positionIdentifier;
+            campaigns[campaignCount].net=0.0;
+            campaigns[campaignCount].gross=0.0;
+            campaigns[campaignCount].finalRecordIndex=-1;
+            campaigns[campaignCount].firstRecordIndex=keys[k].recordIndex;
+            campaigns[campaignCount].finalExitTime=0;
+            campaigns[campaignCount].entryModel=rec.entryModel;
+            campaigns[campaignCount].entryModelConsistent=(rec.entryModel!="" && rec.entryModel!="UNKNOWN");
+            campaigns[campaignCount].provenance=(int)rec.provenance;
+            campaigns[campaignCount].provenanceConsistent=true;
+            campaignCount++;
+           }
+         int group=campaignCount-1;
+         if(rec.entryModel=="" || rec.entryModel=="UNKNOWN" ||
+            rec.entryModel!=campaigns[group].entryModel)
+            campaigns[group].entryModelConsistent=false;
+         if((int)rec.provenance!=campaigns[group].provenance)
+            campaigns[group].provenanceConsistent=false;
+         campaigns[group].net+=rec.netProfit;
+         if(!rec.isPartial &&
+            (campaigns[group].finalRecordIndex<0 ||
+             rec.exitTime>=campaigns[group].finalExitTime))
+           {
+            campaigns[group].finalRecordIndex=keys[k].recordIndex;
+            campaigns[group].finalExitTime=rec.exitTime;
+           }
+        }
+
+      double winSum=0.0;
+      double lossSum=0.0;
+      for(int i=0;i<campaignCount;i++)
+        {
+         SAxCampaignAggregate campaign=campaigns[i];
+         if(campaign.finalRecordIndex<0 || !campaign.entryModelConsistent ||
+            !campaign.provenanceConsistent || campaign.entryModel!=model ||
+            campaign.provenance!=provenance) continue;
+         totalTrades++;
+         if(campaign.net>0.0)
+           {
+            wins++;
+            winSum+=campaign.net;
+           }
+         else if(campaign.net<0.0)
+           {
+            losses++;
+            lossSum+=campaign.net;
+           }
+        }
+      int decisive=wins+losses;
+      winRate=(decisive>0)?100.0*(double)wins/(double)decisive:0.0;
+      avgWin=(wins>0)?winSum/(double)wins:0.0;
+      avgLoss=(losses>0)?lossSum/(double)losses:0.0;
+      int minCount=(minimumSamples<1)?1:minimumSamples;
+      return(totalTrades>=minCount && decisive>=minCount);
+     }
+
    int               Count(void) const { return(m_count); }
    bool              GetRecord(const int i,SAxTradeRecord &out) const
      {
