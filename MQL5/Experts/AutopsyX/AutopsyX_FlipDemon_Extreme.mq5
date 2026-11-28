@@ -2767,8 +2767,12 @@ bool AxReconcilePyramidCampaignTickets(const bool removeStaleRecords)
         }
      }
 
+   // A complete flat broker snapshot also resolves an add that filled and then
+   // closed before the next tick. Remove its now-stale campaign rows durably; never
+   // leave the pending flag stuck merely because there is no longer a live ticket.
+   bool resolveClosedPending=(g_pyramidReconcilePending && liveCount==0);
    // Stale campaign rows are removed only after a complete position snapshot.
-   if(removeStaleRecords)
+   if(removeStaleRecords || resolveClosedPending)
      {
       for(int index=g_pyramidCampaignRegistry.Count()-1;index>=0;index--)
         {
@@ -2796,10 +2800,25 @@ bool AxReconcilePyramidCampaignTickets(const bool removeStaleRecords)
         }
      }
 
-   if(g_pyramidReconcilePending && liveCount>0)
+   if(g_pyramidReconcilePending)
      {
-      g_pyramidReconcilePending=false;
-      Print("FLIPDEMON PYRAMID: pending broker campaign history reconciled and durably saved; scale-in gate may reopen after remaining risk checks.");
+      if(liveCount>0)
+        {
+         g_pyramidReconcilePending=false;
+         Print("FLIPDEMON PYRAMID: pending broker campaign history reconciled and durably saved; scale-in gate may reopen after remaining risk checks.");
+        }
+      else if(resolveClosedPending && g_pyramidCampaignRegistry.Count()==0 &&
+              g_pyramidCampaignRegistry.IsPersisting())
+        {
+         g_pyramidReconcilePending=false;
+         Print("FLIPDEMON PYRAMID: pending add resolved against a complete flat broker snapshot; closed campaign rows durably cleared. Account-risk reconciliation remains independently required.");
+        }
+      else
+        {
+         g_pyramidReady=false;
+         Print("FLIPDEMON PYRAMID ERROR: flat broker snapshot did not produce an empty durable campaign registry; pending add remains quarantined.");
+         return(false);
+        }
      }
    g_pyramidReady=true;
    return(true);
