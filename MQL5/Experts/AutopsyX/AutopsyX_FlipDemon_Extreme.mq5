@@ -1711,6 +1711,45 @@ bool AxReconcileVirtualExitTickets(const bool removeStaleRecords)
          PrintFormat("FLIPDEMON VIRTUAL EXIT: refreshed broker ticket %I64u -> %I64u using stable identifier=%I64u.",
                      oldTicket,live.ticket,live.positionIdentifier);
         }
+
+      // POSITION_IDENTIFIER is the durable key, but every execution manager
+      // submits the current broker ticket. Refresh the position-state index in
+      // the same pass so a legitimate ticket change cannot strand signal,
+      // partial-close or stop-management orchestration behind a stale ticket.
+      SAxPositionLifecycleRecord positionState;
+      if(!g_positionStateRegistryReady ||
+         !g_positionStateRegistry.IsPersisting() ||
+         !g_positionStateRegistry.FindByIdentifier(live.positionIdentifier,positionState) ||
+         !positionState.state.active ||
+         positionState.positionIdentifier!=live.positionIdentifier ||
+         positionState.symbol!=live.symbol || positionState.magic!=live.magic ||
+         positionState.state.dir!=live.direction)
+        {
+         g_virtualExitReady=false;
+         g_hedgingLifecycleLock=true;
+         PrintFormat("FLIPDEMON POSITION STATE ERROR: no matching durable state for refreshed broker ticket=%I64u identifier=%I64u; execution remains blocked.",
+                     live.ticket,live.positionIdentifier);
+         return(false);
+        }
+      if(positionState.ticket!=live.ticket || positionState.state.ticket!=live.ticket)
+        {
+         ulong previousStateTicket=positionState.ticket;
+         positionState.state.ticket=live.ticket;
+         if(!g_positionStateRegistry.Upsert(live.positionIdentifier,live.ticket,
+                                             live.symbol,live.magic,positionState.state) ||
+            !g_positionStateRegistry.IsPersisting())
+           {
+            g_virtualExitReady=false;
+            g_hedgingLifecycleLock=true;
+            PrintFormat("FLIPDEMON POSITION STATE ERROR: could not persist refreshed ticket=%I64u (previous=%I64u identifier=%I64u).",
+                        live.ticket,previousStateTicket,live.positionIdentifier);
+            return(false);
+           }
+         if(live.positionIdentifier==g_positionIdentifier)
+            g_posState.ticket=live.ticket;
+         PrintFormat("FLIPDEMON POSITION STATE: refreshed broker ticket %I64u -> %I64u using stable identifier=%I64u.",
+                     previousStateTicket,live.ticket,live.positionIdentifier);
+        }
      }
 
    // Remove a stale row only after a complete broker snapshot proves its
