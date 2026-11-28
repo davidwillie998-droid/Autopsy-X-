@@ -3698,9 +3698,37 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
                              ? thesisRewardDistance/thesisRiskDistance : 0.0;
    executionThesis.spreadPts=g_md.CurrentSpreadPts();
    executionThesis.estimatedImpactCostPct=impactCostPct;
-   // No calibrated per-setup EV estimator is wired into this path yet. Keep it explicitly
-   // neutral instead of presenting the AFE portfolio estimate as a setup-specific forecast.
-   executionThesis.expectedValueR=0.0;
+   // Recompute setup EV with the final broker-approved lots and the actual monetary
+   // loss at this thesis stop. The AFE's earlier portfolio sizing estimate is not reused.
+   double candidateStopPnl=0.0;
+   ENUM_ORDER_TYPE candidateRiskOrder=(dir==AX_DIR_BUY)?ORDER_TYPE_BUY:ORDER_TYPE_SELL;
+   if(!OrderCalcProfit(candidateRiskOrder,_Symbol,lots,marginPrice,slPrice,candidateStopPnl) ||
+      !MathIsValidNumber(candidateStopPnl) || candidateStopPnl>=0.0)
+     {
+      PrintFormat("FLIPDEMON EV BLOCK: cannot calculate final stop risk for %s lots=%.8f entry=%.10g stop=%.10g; entry blocked.",
+                  _Symbol,lots,marginPrice,slPrice);
+      return(false);
+     }
+   double candidateWinProbability=InpUseAdaptiveFlipEngine
+                                  ? g_afe.WinProbability()
+                                  : AxClampD(score.confidence/100.0,0.05,0.95);
+   double candidateCostR=EMPTY_VALUE;
+   executionThesis.expectedValueR=EMPTY_VALUE;
+   if(!g_afe.CandidateExpectedValueR(_Symbol,dir,lots,point,
+                                     g_md.TickSize(),g_md.TickValue(),
+                                     afeVolatilityPts,InpMaxHoldSeconds,
+                                     afeSessionVolumeLots,MathAbs(candidateStopPnl),
+                                     executionThesis.initialRR,candidateWinProbability,
+                                     executionThesis.expectedValueR,candidateCostR))
+     {
+      PrintFormat("FLIPDEMON EV BLOCK: candidate cost or risk inputs unavailable for %s; entry blocked.",
+                  _Symbol);
+      return(false);
+     }
+   if(InpVerboseLogging)
+      PrintFormat("FLIPDEMON SETUP EV: model=%s p=%.3f RR=%.3f finalLots=%.8f stopRisk=%.2f cost=%.3fR EV=%.3fR",
+                  tag,candidateWinProbability,executionThesis.initialRR,lots,
+                  MathAbs(candidateStopPnl),candidateCostR,executionThesis.expectedValueR);
    executionThesis.newsState=g_newsDefense.State();
    executionThesis.session="NOT_CAPTURED";
    executionThesis.volatilityState=AxRegimeToString(score.regime);
