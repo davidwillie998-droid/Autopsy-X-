@@ -340,3 +340,49 @@ def test_closed_uncertain_pyramid_add_resolves_only_after_flat_snapshot_and_dura
     assert quarantine > durable
     assert "complete flat broker snapshot" in body
     assert "Account-risk reconciliation remains independently required" in body
+
+
+def test_market_regime_updates_from_completed_bars_and_conditions_live_scoring():
+    source = _source()
+    regime_path = ROOT / "MQL5" / "Include" / "AutopsyX" / "Regime.mqh"
+    regime = regime_path.read_text(encoding="utf-8")
+    scorer_path = ROOT / "MQL5" / "Include" / "AutopsyX" / "SignalScore.mqh"
+    scorer = scorer_path.read_text(encoding="utf-8")
+    assert "g_regime.Update();" in source
+    assert "if(barTime!=g_lastBarTime && barTime>0)" in source
+    assert "g_micro.Update(_Symbol,g_md,g_mom);" in source
+    assert "CopyBuffer(m_atrHandle,0,1,need,atrBuf)" in regime
+    assert "CopyClose(m_symbol,m_tf,1,AX_REGIME_TREND_BARS,closes)" in regime
+    assert "m_regime=AX_REGIME_UNSAFE" in regime
+    assert "return(m_regime!=AX_REGIME_UNSAFE)" in regime
+    assert "buy  = AxClampD(buy*mult,0,100)" in scorer
+    assert "sell = AxClampD(sell*mult,0,100)" in scorer
+
+
+def test_composite_market_condition_blocks_are_mandatory_for_live_entry():
+    source = _source()
+    composite_path = ROOT / "MQL5" / "Include" / "AutopsyX" / "CompositeDirection.mqh"
+    composite = composite_path.read_text(encoding="utf-8")
+    entry = _function_body(source, "bool AxAttemptEntry(", "//--- self-tuning:")
+    assert "g_compositeDirection.Configure(55.0,InpHtfMinR2ToBlock,InpExecutionMode==AX_EXEC_LIVE)" in source
+    assert "if(!spreadOk)" in composite
+    assert "if(antiChop.IsInCooldown())" in composite
+    assert 'if(newsState=="BLOCK")' in composite
+    assert "if(m_requireNewsData && newsState==\"DATA_UNAVAILABLE\")" in composite
+    assert "if(!execRegime.TradingAllowed())" in composite
+    assert "g_compositeDirection.Evaluate(" in entry
+    assert "if(!compositeDirectionMatches)" in entry
+    assert "AxHtfConfluenceOk(dir)" in entry
+    assert "g_executionEligibility.Check(" in entry
+    assert "eligibility!=AX_ELIGIBLE_LONG && eligibility!=AX_ELIGIBLE_SHORT" in entry
+
+
+def test_continuous_market_execution_constraints_are_applied_to_gap_routes():
+    source = _source()
+    spread_gate = _function_body(source, "bool AxSpreadCostAllowed(", "//====================================================================")
+    assert "g_gapMarketCondition.executionConditionsAcceptable" in spread_gate
+    assert "if(!g_gapMarketCondition.executionConditionsAcceptable)" in spread_gate
+    assert "g_spreadCost.Assess(" in spread_gate
+    assert "AxSpreadCostAllowed(gapEntryReason)" in source
+    assert "AxSpreadCostAllowed(finalReason)" in source
+    assert "g_newsDefense.Update(false)" in source
