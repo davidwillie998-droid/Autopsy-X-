@@ -134,3 +134,33 @@ def test_ticket_refresh_persistence_failure_keeps_execution_blocked():
     assert fail_closed > persistence_check
     assert return_false > fail_closed
 
+
+
+def test_single_position_stop_modification_requires_broker_sl_tp_confirmation():
+    source = _source()
+    start = source.find("bool recorded=isBreakEvenMove")
+    assert start >= 0
+    body = source[source.rfind("if(wantModify)", 0, start):start]
+    assert "PositionSelectByTicket(managed.ticket)" in body
+    assert "POSITION_IDENTIFIER" in body
+    assert "POSITION_MAGIC" in body
+    assert "double confirmedStop=PositionGetDouble(POSITION_SL)" in body
+    assert "double confirmedTakeProfit=PositionGetDouble(POSITION_TP)" in body
+    assert "takeProfitPreserved" in body
+    assert "confirmedStop>managed.stopLoss" in body
+    assert "confirmedStop<managed.stopLoss" in body
+    assert "RecordBreakEven(g_positionIdentifier,confirmedStop)" in body
+    assert "RecordTrailingStop(g_positionIdentifier,confirmedStop)" in body
+
+
+def test_single_position_unconfirmed_stop_keeps_action_lock_and_quarantines():
+    source = _source()
+    start = source.find("bool stopConfirmed=(managed.direction==AX_DIR_BUY)")
+    assert start >= 0
+    end = source.find("bool recorded=isBreakEvenMove", start)
+    body = source[start:end]
+    assert "if(!stopConfirmed || !takeProfitPreserved)" in body
+    assert "g_hedgingLifecycleLock=true" in body
+    assert "g_engineState=AX_ENGINE_PAUSED" in body
+    assert "action lock retained" in body
+    assert "ResolveAction" not in body
