@@ -272,3 +272,48 @@ def test_netting_pyramid_fill_reconciles_deals_volume_identity_and_retained_prot
     assert "EnsurePostFillProtection(symbol,dir,afterTicket,beforeSl,beforeTp" in body
     assert "positionTicketOut=afterTicket" in body
     assert "actualAddLotsOut=dealVolume" in body
+
+
+def test_pending_pyramid_add_reconciles_exact_live_position_and_durable_history():
+    source = _source()
+    body = _function_body(
+        source,
+        "bool AxReconcilePyramidCampaignTickets(",
+        "void AxInitPositionState(",
+    )
+    pending = body.find("if(g_pyramidReconcilePending)")
+    exact_ticket = body.find("PositionSelectByTicket(live.ticket)", pending)
+    identity = body.find("POSITION_IDENTIFIER", exact_ticket)
+    protection = body.find("bool brokerProtected=", identity)
+    history = body.find("g_pyramidCampaignRegistry.ReconcileLivePosition(live.ticket,reconciled)", protection)
+    durable_clear = body.find("g_pyramidReconcilePending=false", history)
+    assert pending >= 0
+    assert exact_ticket > pending
+    assert identity > exact_ticket
+    assert protection > identity
+    assert history > protection
+    assert "if(!reconciled)" in body[history:durable_clear]
+    assert "g_pyramidReady=false" in body[history:durable_clear]
+    assert durable_clear > history
+    assert "liveCount>0" in body[durable_clear:]
+
+
+def test_uncertain_pyramid_add_stays_blocked_until_history_reconciliation():
+    source = _source()
+    caller = _function_body(
+        source,
+        "bool AxExecutePyramidAdd(",
+        "//--- self-tuning:",
+    )
+    assert "if(outcomeUncertain)" in caller
+    assert "g_pyramidReconcilePending=true" in caller
+    assert "no retry permitted" in caller
+    assert "g_pyramidReady=false" in caller
+    reconciliation = _function_body(
+        source,
+        "bool AxReconcilePyramidCampaignTickets(",
+        "void AxInitPositionState(",
+    )
+    assert "if(g_pyramidReconcilePending)" in reconciliation
+    assert "ReconcileLivePosition(live.ticket,reconciled)" in reconciliation
+    assert "g_pyramidReconcilePending=false" in reconciliation
