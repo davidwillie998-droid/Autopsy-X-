@@ -3490,6 +3490,16 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
       // Otherwise retain the AFE's existing cold-start signal-confidence path.
       int modelTrades=0,modelWins=0,modelLosses=0;
       double modelWinRate=0.0,modelAvgWin=0.0,modelAvgLoss=0.0;
+      // Never let another model's history leak into this setup's probability or
+      // reward:risk estimate. Until this model has enough clean campaigns, AFE
+      // uses its explicit cold-start signal-confidence and configured-RR path.
+      afeStats.totalTrades=0;
+      afeStats.wins=0;
+      afeStats.losses=0;
+      afeStats.decisiveTrades=0;
+      afeStats.winRate=0.0;
+      afeStats.avgWin=0.0;
+      afeStats.avgLoss=0.0;
       if(g_autopsy.GetEntryModelStats(tag,(int)AxDetectProvenance(),
                                       InpMinTradesForValidation,modelTrades,
                                       modelWins,modelLosses,modelWinRate,
