@@ -44,13 +44,14 @@
 #include "Defs.mqh"
 
 #define AX_RECOVERY_MAX_ENTRIES 2048 // Supports large hedging campaigns; broker and EA risk limits remain authoritative
-#define AX_RECOVERY_FIELD_COUNT 12
+#define AX_RECOVERY_FIELD_COUNT 13
 
 struct SAxOpenSetupRecord
   {
    ulong       ticket;
    ulong       positionIdentifier; // stable across broker ticket changes
    string      setupId;
+   string      entryModel;
    string      symbol;
    ENUM_AX_DIR dir;
    datetime    entryTime;
@@ -90,10 +91,11 @@ private:
       bool writeOk=true;
       for(int i=0;i<m_count;i++)
         {
-         string line = StringFormat("%s|%s|%s|%s|%d|%s|%.6f|%.6f|%.6f|%.6f|%.6f|%.6f",
+         string line = StringFormat("%s|%s|%s|%s|%s|%d|%s|%.6f|%.6f|%.6f|%.6f|%.6f|%.6f",
                         IntegerToString((long)m_records[i].ticket),
                         IntegerToString((long)m_records[i].positionIdentifier),
                         m_records[i].setupId,
+                        m_records[i].entryModel,
                         m_records[i].symbol,
                         (int)m_records[i].dir,
                         TimeToString(m_records[i].entryTime,TIME_DATE|TIME_SECONDS),
@@ -179,18 +181,19 @@ public:
 
          string fields[];
          int n = StringSplit(line,'|',fields);
-         if(n!=6 && n!=AX_RECOVERY_FIELD_COUNT)
+         if(n!=6 && n!=12 && n!=AX_RECOVERY_FIELD_COUNT)
            {
             PrintFormat("FLIPDEMON RECOVERY ERROR: malformed registry row; refusing to rewrite %s.",m_fileName);
             registryValid=false;
             break;
            }
 
+         int offset=(n==13)?1:0;
          long ticketLong = StringToInteger(fields[0]);
          long positionIdLong = StringToInteger(fields[1]);
-         long dirLong = StringToInteger(fields[4]);
-         datetime entryTime = StringToTime(fields[5]);
-         if(ticketLong<=0 || positionIdLong<=0 || StringLen(fields[2])==0 || StringLen(fields[3])==0 ||
+         long dirLong = StringToInteger(fields[4+offset]);
+         datetime entryTime = StringToTime(fields[5+offset]);
+         if(ticketLong<=0 || positionIdLong<=0 || StringLen(fields[2])==0 || StringLen(fields[3+offset])==0 ||
             (dirLong!=(long)AX_DIR_BUY && dirLong!=(long)AX_DIR_SELL) || entryTime<=0)
            {
             PrintFormat("FLIPDEMON RECOVERY ERROR: invalid registry record; refusing to rewrite %s.",m_fileName);
@@ -214,15 +217,16 @@ public:
          m_records[m_count].ticket    = (ulong)ticketLong;
          m_records[m_count].positionIdentifier = (ulong)positionIdLong;
          m_records[m_count].setupId   = fields[2];
-         m_records[m_count].symbol    = fields[3];
+         m_records[m_count].entryModel=(n==13 && fields[3]!="")?fields[3]:"UNKNOWN";
+         m_records[m_count].symbol    = fields[3+offset];
          m_records[m_count].dir       = (ENUM_AX_DIR)dirLong;
          m_records[m_count].entryTime = entryTime;
-         m_records[m_count].vwapPullbackBullBonus=(n>=12)?StringToDouble(fields[6]):0.0;
-         m_records[m_count].vwapPullbackBearBonus=(n>=12)?StringToDouble(fields[7]):0.0;
-         m_records[m_count].overnightBiasBullBonus=(n>=12)?StringToDouble(fields[8]):0.0;
-         m_records[m_count].overnightBiasBearBonus=(n>=12)?StringToDouble(fields[9]):0.0;
-         m_records[m_count].twinContinuationBullBonus=(n>=12)?StringToDouble(fields[10]):0.0;
-         m_records[m_count].twinContinuationBearBonus=(n>=12)?StringToDouble(fields[11]):0.0;
+         m_records[m_count].vwapPullbackBullBonus=(n>=12)?StringToDouble(fields[6+offset]):0.0;
+         m_records[m_count].vwapPullbackBearBonus=(n>=12)?StringToDouble(fields[7+offset]):0.0;
+         m_records[m_count].overnightBiasBullBonus=(n>=12)?StringToDouble(fields[8+offset]):0.0;
+         m_records[m_count].overnightBiasBearBonus=(n>=12)?StringToDouble(fields[9+offset]):0.0;
+         m_records[m_count].twinContinuationBullBonus=(n>=12)?StringToDouble(fields[10+offset]):0.0;
+         m_records[m_count].twinContinuationBearBonus=(n>=12)?StringToDouble(fields[11+offset]):0.0;
          if(!MathIsValidNumber(m_records[m_count].vwapPullbackBullBonus) ||
             !MathIsValidNumber(m_records[m_count].vwapPullbackBearBonus) ||
             !MathIsValidNumber(m_records[m_count].overnightBiasBullBonus) ||
@@ -267,7 +271,7 @@ public:
                                        const ENUM_AX_DIR dir,const datetime entryTime,
                                        const double vwapBull,const double vwapBear,
                                        const double overnightBull,const double overnightBear,
-                                       const double twinBull,const double twinBear)
+                                       const double twinBull,const double twinBear,const string entryModel)
      {
       if(ticket==0 || positionIdentifier==0 || StringLen(setupId)==0 || StringLen(symbol)==0 || entryTime<=0 ||
          (dir!=AX_DIR_BUY && dir!=AX_DIR_SELL) ||
@@ -301,6 +305,7 @@ public:
 
       int previousCount=m_count;
       m_records[m_count].ticket=ticket; m_records[m_count].positionIdentifier=positionIdentifier; m_records[m_count].setupId=setupId;
+      m_records[m_count].entryModel=(entryModel=="")?"UNKNOWN":entryModel;
       m_records[m_count].symbol=symbol; m_records[m_count].dir=dir; m_records[m_count].entryTime=entryTime;
       m_records[m_count].vwapPullbackBullBonus=vwapBull; m_records[m_count].vwapPullbackBearBonus=vwapBear;
       m_records[m_count].overnightBiasBullBonus=overnightBull; m_records[m_count].overnightBiasBearBonus=overnightBear;
