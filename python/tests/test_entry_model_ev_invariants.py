@@ -80,6 +80,7 @@ def test_candidate_ev_uses_final_candidate_stop_risk_not_portfolio_risk_estimate
     )
     assert "riskCurrency<=0.0" in candidate
     assert "winProbability<=0.0 || winProbability>=1.0" in candidate
+    assert "costCurrency==EMPTY_VALUE" in candidate
     assert "costR=costCurrency/riskCurrency;" in candidate
     assert "expectedValueR=winProbability*rewardRisk-(1.0-winProbability)-costR;" in candidate
 
