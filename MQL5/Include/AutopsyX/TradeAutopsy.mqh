@@ -16,6 +16,7 @@ private:
    string            m_legacyFileName;
    string            m_v4FileName;
    string            m_v5FileName;
+   string            m_v6FileName;
    int               m_digits;
    ulong             m_magicNumber;
    SAxTradeRecord    m_records[];
@@ -41,7 +42,7 @@ private:
                 "VWAPPullbackBullBonus","VWAPPullbackBearBonus",
                 "OvernightBiasBullBonus","OvernightBiasBearBonus",
                 "TwinContinuationBullBonus","TwinContinuationBearBonus",
-                "AccountLogin","MagicNumber","AccountServer");
+                "AccountLogin","MagicNumber","AccountServer","EntryModel");
       FileFlush(m_fileHandle);
       return(headerWrite>0 && FileSize(m_fileHandle)>0);
      }
@@ -291,7 +292,7 @@ private:
                                               SAxTradeRecord &rec) const
      {
       int fieldCount=ArraySize(fields);
-      if(fieldCount!=44 && fieldCount!=50 && fieldCount!=53) return(false);
+      if(fieldCount!=44 && fieldCount!=50 && fieldCount!=53 && fieldCount!=54) return(false);
       double values[19];
       int numericIndexes[19]={7,8,9,10,11,13,14,15,19,20,21,22,23,24,30,31,32,33,34};
       for(int i=0;i<19;i++)
@@ -392,6 +393,7 @@ private:
          (!ParseUnsigned(fields[50],rec.accountLogin) ||
           !ParseUnsigned(fields[51],rec.magicNumber))) return(false);
       if(fieldCount>=53) rec.accountServer=fields[52];
+      rec.entryModel=(fieldCount>=54 && fields[53]!="")?fields[53]:"UNKNOWN";
       if(!MathIsValidNumber(rec.vwapPullbackBullBonus) || !MathIsValidNumber(rec.vwapPullbackBearBonus) ||
          !MathIsValidNumber(rec.overnightBiasBullBonus) || !MathIsValidNumber(rec.overnightBiasBearBonus) ||
          !MathIsValidNumber(rec.twinContinuationBullBonus) || !MathIsValidNumber(rec.twinContinuationBearBonus) ||
@@ -429,8 +431,9 @@ private:
       while(!FileIsEnding(handle))
         {
          bool rowRead=false;
-         int expectedFields=(StringFind(sourceFile,"_v6")>=0)?53:
-                            ((StringFind(sourceFile,"_v5")>=0)?50:44);
+         int expectedFields=(StringFind(sourceFile,"_v7")>=0)?54:
+                            ((StringFind(sourceFile,"_v6")>=0)?53:
+                            ((StringFind(sourceFile,"_v5")>=0)?50:44));
          if(ArrayResize(fields,expectedFields)!=expectedFields)
            {
             FileClose(handle);
@@ -486,6 +489,7 @@ private:
       if(!LoadTradeRecordsFile(m_legacyFileName,true,loaded,rejected)) return(false);
       if(!LoadTradeRecordsFile(m_v4FileName,false,loaded,rejected)) return(false);
       if(!LoadTradeRecordsFile(m_v5FileName,false,loaded,rejected)) return(false);
+      if(!LoadTradeRecordsFile(m_v6FileName,false,loaded,rejected)) return(false);
       if(!LoadTradeRecordsFile(m_fileName,false,loaded,rejected)) return(false);
       PrintFormat("FLIPDEMON AUTOPSY RECOVERY: restored=%d rejected=%d duplicate_deals_skipped; full_history=true.",
                   loaded,rejected);
@@ -519,8 +523,9 @@ private:
      {
       int handle=FileOpen(sourceFile,FILE_READ|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,',');
       if(handle==INVALID_HANDLE) return(true); // absent legacy file is not a startup failure
-      int fieldCount=(StringFind(sourceFile,"_v6")>=0)?53:
-                     ((StringFind(sourceFile,"_v5")>=0)?50:44);
+      int fieldCount=(StringFind(sourceFile,"_v7")>=0)?54:
+                     ((StringFind(sourceFile,"_v6")>=0)?53:
+                     ((StringFind(sourceFile,"_v5")>=0)?50:44));
       string fields[];
       if(ArrayResize(fields,fieldCount)!=fieldCount) return(false);
       bool header=true;
@@ -566,6 +571,7 @@ private:
       if(!ReadRiskHistoryFile(m_legacyFileName,true)) return(false);
       if(!ReadRiskHistoryFile(m_v4FileName,false)) return(false);
       if(!ReadRiskHistoryFile(m_v5FileName,false)) return(false);
+      if(!ReadRiskHistoryFile(m_v6FileName,false)) return(false);
       return(ReadRiskHistoryFile(m_fileName,false));
      }
 
@@ -576,7 +582,7 @@ public:
      {
       m_persistenceHealthy=false;
       m_digits = (int)SymbolInfoInteger(symbol,SYMBOL_DIGITS);
-      //--- v6 persists account/server/magic identity on every row. Legacy journals remain read-only.
+      //--- v7 adds a structured entry-model identifier. v3-v6 journals remain read-only.
       //--- Symbol files are durable shards; a later account-wide reader can safely consolidate by identity.
       string serverKey=AccountInfoString(ACCOUNT_SERVER);
       StringReplace(serverKey,"/","_"); StringReplace(serverKey,"\\","_");
@@ -588,8 +594,10 @@ public:
       // magic number and symbol. A new chart session may create a new shard;
       // the account-wide reader must discover all matching shards.
       long writerChartId=ChartID();
-      m_fileName = StringFormat("%s_%I64u_%s_%I64u_%I64d_%s_TradeAutopsy_v6.csv",
+      m_fileName = StringFormat("%s_%I64u_%s_%I64u_%I64d_%s_TradeAutopsy_v7.csv",
                                 eaName,login,serverKey,m_magicNumber,writerChartId,symbol);
+      m_v6FileName = StringFormat("%s_%I64u_%s_%I64u_%I64d_%s_TradeAutopsy_v6.csv",
+                                  eaName,login,serverKey,m_magicNumber,writerChartId,symbol);
       m_v4FileName = StringFormat("%s_%s_TradeAutopsy_v4.csv",eaName,symbol);
       m_legacyFileName = StringFormat("%s_%s_TradeAutopsy_v3.csv",eaName,symbol);
       m_fileHandle = FileOpen(m_fileName,FILE_READ|FILE_WRITE|FILE_CSV|FILE_ANSI|FILE_SHARE_READ,',');
@@ -711,7 +719,7 @@ public:
                    DoubleToString(rec.vwapPullbackBullBonus,3),DoubleToString(rec.vwapPullbackBearBonus,3),
                    DoubleToString(rec.overnightBiasBullBonus,3),DoubleToString(rec.overnightBiasBearBonus,3),
                    DoubleToString(rec.twinContinuationBullBonus,3),DoubleToString(rec.twinContinuationBearBonus,3),
-                   rec.accountLogin,rec.magicNumber,rec.accountServer);
+                   rec.accountLogin,rec.magicNumber,rec.accountServer,rec.entryModel);
       FileFlush(m_fileHandle);
       ulong fileSizeAfter=FileSize(m_fileHandle);
       if(writeResult==0 || fileSizeAfter<=fileSizeBefore)
