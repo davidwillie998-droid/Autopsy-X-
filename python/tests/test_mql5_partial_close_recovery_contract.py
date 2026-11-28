@@ -302,7 +302,7 @@ def test_uncertain_pyramid_add_stays_blocked_until_history_reconciliation():
     source = _source()
     caller = _function_body(
         source,
-        "bool AxExecutePyramidAdd(",
+        "bool AxAttemptPyramidNettingAdd(",
         "//--- self-tuning:",
     )
     assert "if(outcomeUncertain)" in caller
