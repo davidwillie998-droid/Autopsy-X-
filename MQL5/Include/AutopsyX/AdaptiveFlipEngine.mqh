@@ -198,12 +198,15 @@ public:
                                             const double volatilityPts,const int projectedHoldSeconds,
                                             const double sessionVolumeLots) const
      {
-      if(lots<=0 || point<=0 || tickSize<=0 || tickValue<=0) return(0.0);
+      if(symbol=="" || lots<=0.0 || point<=0.0 || tickSize<=0.0 || tickValue<=0.0)
+         return(EMPTY_VALUE);
 
-      double ptsToCurrency = point/tickSize*tickValue*lots; // currency value of 1 point of move, at this size
+      double ptsToCurrency = point/tickSize*tickValue*lots;
+      if(!MathIsValidNumber(ptsToCurrency) || ptsToCurrency<=0.0) return(EMPTY_VALUE);
 
-      //--- spread: the LIVE current spread, not a hardcoded constant ---
+      //--- spread: unavailable broker data is not silently treated as free execution ---
       long spreadPts = SymbolInfoInteger(symbol,SYMBOL_SPREAD);
+      if(spreadPts<0) return(EMPTY_VALUE);
       double spreadCost = (double)spreadPts*ptsToCurrency;
 
       //--- commission: user-configured from the broker's real schedule. MT5 exposes no universal   ---
@@ -408,6 +411,37 @@ public:
       riskMultiplierOut = m_lastRiskMultiplier;
       reasonOut = "";
       return(true);
+     }
+
+   // Calculate thesis EV after final volume normalization and stop-risk validation.
+   // riskCurrency must be the actual OrderCalcProfit loss at the approved stop and final lots.
+   bool              CandidateExpectedValueR(const string symbol,const ENUM_AX_DIR dir,
+                                               const double lots,const double point,
+                                               const double tickSize,const double tickValue,
+                                               const double volatilityPts,
+                                               const int projectedHoldSeconds,
+                                               const double sessionVolumeLots,
+                                               const double riskCurrency,
+                                               const double rewardRisk,
+                                               double &expectedValueR,double &costR) const
+     {
+      expectedValueR=EMPTY_VALUE;
+      costR=EMPTY_VALUE;
+      if(!m_enabled || lots<=0.0 || riskCurrency<=0.0 ||
+         rewardRisk<=0.0 || !MathIsValidNumber(riskCurrency) ||
+         !MathIsValidNumber(rewardRisk) ||
+         !MathIsValidNumber(m_lastWinProbability) ||
+         m_lastWinProbability<=0.0 || m_lastWinProbability>=1.0)
+         return(false);
+      double costCurrency=CalculateExpectedCost(symbol,dir,lots,point,tickSize,tickValue,
+                                                 volatilityPts,projectedHoldSeconds,
+                                                 sessionVolumeLots);
+      if(!MathIsValidNumber(costCurrency) || costCurrency<0.0) return(false);
+      costR=costCurrency/riskCurrency;
+      if(!MathIsValidNumber(costR) || costR<0.0) return(false);
+      expectedValueR=m_lastWinProbability*rewardRisk-
+                     (1.0-m_lastWinProbability)-costR;
+      return(MathIsValidNumber(expectedValueR));
      }
 
    //--- accessors for dashboard/autopsy ---
