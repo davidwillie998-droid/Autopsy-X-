@@ -289,9 +289,31 @@ public:
       for(int i=0;i<m_count;i++)
          if(m_records[i].positionIdentifier==positionIdentifier)
            {
-            if(m_records[i].symbol==symbol && m_records[i].dir==dir) return(true); // stable-identity idempotence
-            Print("FLIPDEMON RECOVERY ERROR: position identifier collision with conflicting metadata.");
-            m_persistOk=false;
+            if(m_records[i].symbol!=symbol || m_records[i].dir!=dir ||
+               m_records[i].setupId!=setupId)
+              {
+               Print("FLIPDEMON RECOVERY ERROR: position identifier collision with conflicting metadata.");
+               m_persistOk=false;
+               return(false);
+              }
+
+            string normalizedModel=(entryModel=="")?"UNKNOWN":entryModel;
+            if(m_records[i].entryModel==normalizedModel) return(true);
+
+            // Legacy registry rows have no model identifier. Upgrade UNKNOWN only
+            // when the stable position identity and setup ID match exactly.
+            if(m_records[i].entryModel!="UNKNOWN" || normalizedModel=="UNKNOWN")
+              {
+               Print("FLIPDEMON RECOVERY ERROR: conflicting entry-model attribution for an existing position.");
+               m_persistOk=false;
+               return(false);
+              }
+
+            string previousModel=m_records[i].entryModel;
+            m_records[i].entryModel=normalizedModel;
+            if(RewriteFile()) return(true);
+            m_records[i].entryModel=previousModel;
+            Print("FLIPDEMON RECOVERY ERROR: legacy entry-model upgrade could not be persisted.");
             return(false);
            }
 
