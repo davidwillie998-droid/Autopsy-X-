@@ -2221,6 +2221,17 @@ bool AxFinalizeHedgingFullClose(const SAxVirtualExitRecord &saved)
       MathAbs(verified.totalClosedVolume-finalRecord.totalClosedVolume)>0.0000001 ||
       MathAbs(verified.netProfit-finalRecord.netProfit)>0.0000001)
       return(false);
+   // The open-setup registry is a third durable lifecycle index. Remove it
+   // by POSITION_IDENTIFIER only after the immutable full-close record is
+   // verified. This is idempotent, so a later state-ledger retry is safe.
+   if(!g_recoveryInitialized || !g_restartRecovery.IsPersisting())
+      return(false);
+   SAxOpenSetupRecord recoveredSetup;
+   if(g_restartRecovery.FindByPositionIdentifier(saved.positionIdentifier,recoveredSetup) &&
+      (!g_restartRecovery.RemoveOpenSetupByPositionIdentifier(saved.positionIdentifier) ||
+       !g_restartRecovery.IsPersisting()))
+      return(false);
+
    // Keep the virtual-exit action lock until both durable lifecycle ledgers
    // have committed. A failed state removal must remain recoverable on restart.
    if(!g_positionStateRegistryReady ||
