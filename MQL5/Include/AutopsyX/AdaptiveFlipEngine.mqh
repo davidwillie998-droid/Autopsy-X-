@@ -435,7 +435,7 @@ public:
       double costCurrency=CalculateExpectedCost(symbol,dir,lots,point,tickSize,tickValue,
                                                  volatilityPts,projectedHoldSeconds,
                                                  sessionVolumeLots);
-      if(!MathIsValidNumber(costCurrency) || costCurrency<0.0) return(false);
+      if(costCurrency==EMPTY_VALUE || !MathIsValidNumber(costCurrency) || costCurrency<0.0) return(false);
       costR=costCurrency/riskCurrency;
       if(!MathIsValidNumber(costR) || costR<0.0) return(false);
       expectedValueR=winProbability*rewardRisk-(1.0-winProbability)-costR;
