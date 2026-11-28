@@ -53,9 +53,19 @@ require("if(thesis.expectedValueR<=m_minExpectedValueR)" in execution_eligibilit
 require("MathIsValidNumber(minExpectedValueR)" in execution_eligibility
         and "minExpectedValueR>=0.0" in execution_eligibility,
         "invalid or negative expectancy thresholds are normalized to a safe non-negative floor")
-require("executionThesis.expectedValueR=0.0;" in ea
-        and "No calibrated per-setup EV estimator is wired into this path yet." in ea,
-        "uncalibrated live-path expectancy remains explicitly unavailable until a measured estimator is wired")
+require("OrderCalcProfit(candidateRiskOrder,_Symbol,lots,marginPrice,slPrice,candidateStopPnl)" in ea
+        and "CandidateExpectedValueR(_Symbol,dir,lots" in ea
+        and "MathAbs(candidateStopPnl)" in ea,
+        "setup EV is recalculated from final approved lots and broker-calculated stop-risk")
+require("executionThesis.expectedValueR=EMPTY_VALUE;" in ea
+        and "candidate cost or risk inputs unavailable" in ea,
+        "unavailable candidate cost or stop-risk data blocks entry rather than becoming zero cost")
+require("GetEntryModelStats(tag,(int)AxDetectProvenance()" in ea
+        and "afeStats.totalTrades=0;" in ea,
+        "adaptive outcome statistics are isolated by entry model and dataset provenance")
+require("double campaignR=campaign.net/originalRiskMoney;" in autopsy
+        and "finalRec.rMultiple==EMPTY_VALUE" in autopsy,
+        "model-specific reward and loss averages use original-risk R and exclude unknown denominators")
 require("CopyBuffer(m_atrHandle,0,1,need,atrBuf)" in regime
         and "int need = AX_REGIME_ATR_LOOKBACK+1" in regime,
         "regime ATR uses the latest completed bar and a separate prior-bar reference window")
