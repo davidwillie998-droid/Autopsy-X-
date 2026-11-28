@@ -317,3 +317,26 @@ def test_uncertain_pyramid_add_stays_blocked_until_history_reconciliation():
     assert "if(g_pyramidReconcilePending)" in reconciliation
     assert "ReconcileLivePosition(live.ticket,reconciled)" in reconciliation
     assert "g_pyramidReconcilePending=false" in reconciliation
+
+
+def test_closed_uncertain_pyramid_add_resolves_only_after_flat_snapshot_and_durable_cleanup():
+    source = _source()
+    body = _function_body(
+        source,
+        "bool AxReconcilePyramidCampaignTickets(",
+        "void AxInitPositionState(",
+    )
+    flat_guard = body.find("bool resolveClosedPending=(g_pyramidReconcilePending && liveCount==0)")
+    cleanup = body.find("if(removeStaleRecords || resolveClosedPending)", flat_guard)
+    empty_registry = body.find("g_pyramidCampaignRegistry.Count()==0", cleanup)
+    durable = body.find("g_pyramidCampaignRegistry.IsPersisting()", empty_registry)
+    clear_pending = body.find("g_pyramidReconcilePending=false", empty_registry)
+    quarantine = body.find("g_pyramidReady=false", durable)
+    assert flat_guard >= 0
+    assert cleanup > flat_guard
+    assert empty_registry > cleanup
+    assert durable > empty_registry
+    assert clear_pending > durable
+    assert quarantine > durable
+    assert "complete flat broker snapshot" in body
+    assert "Account-risk reconciliation remains independently required" in body
