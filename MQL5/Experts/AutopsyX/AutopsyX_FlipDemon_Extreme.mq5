@@ -1977,8 +1977,10 @@ bool AxRecoverHedgingPartialCloseAction(const SAxVirtualExitRecord &saved)
       return(false);
 
    // Recover both crash windows: ledger durable before registry cursor, and
-   // registry cursor durable before action-lock release. The exact final deal,
-   // action timestamp, per-leg facts and live volume reduction must all agree.
+   // registry cursor durable before action-lock release. Rebuild the complete
+   // post-cursor broker-history slice and compare every aggregate with the
+   // durable row. Verifying only the final deal ticket is insufficient when a
+   // single close request is filled through several broker deals.
    if(ledgerHighWater>0 && ledgerHighWater>=saved.partialLastDealTicket)
      {
       SAxPartialCloseLedgerRecord accounted;
@@ -1990,28 +1992,28 @@ bool AxRecoverHedgingPartialCloseAction(const SAxVirtualExitRecord &saved)
          MathAbs(accounted.entryVolume-saved.entryVolume)>0.00000001 ||
          MathAbs(accounted.closedVolume-expectedReduction)>tolerance ||
          saved.partialClosedVolume+accounted.closedVolume>=saved.entryVolume-tolerance ||
-         accounted.closeTime<saved.actionStartedAt ||
-         !HistorySelectByPosition((long)saved.positionIdentifier))
+         accounted.closeTime<saved.actionStartedAt)
          return(false);
 
-      bool finalDealVerified=false;
-      for(int d=0;d<HistoryDealsTotal();d++)
-        {
-         ulong deal=HistoryDealGetTicket(d);
-         if(deal!=ledgerHighWater) continue;
-         long closeType=(saved.dir==AX_DIR_BUY)?DEAL_TYPE_SELL:DEAL_TYPE_BUY;
-         long entry=HistoryDealGetInteger(deal,DEAL_ENTRY);
-         datetime dealTime=(datetime)HistoryDealGetInteger(deal,DEAL_TIME);
-         if((ulong)HistoryDealGetInteger(deal,DEAL_POSITION_ID)==saved.positionIdentifier &&
-            HistoryDealGetString(deal,DEAL_SYMBOL)==saved.symbol &&
-            (ulong)HistoryDealGetInteger(deal,DEAL_MAGIC)==InpMagicNumber &&
-            HistoryDealGetInteger(deal,DEAL_TYPE)==closeType &&
-            (entry==DEAL_ENTRY_OUT || entry==DEAL_ENTRY_OUT_BY) &&
-            dealTime==accounted.closeTime)
-            finalDealVerified=true;
-         break;
-        }
-      if(!finalDealVerified)
+      double historyClosePrice=0.0,historyGross=0.0,historyCommission=0.0;
+      double historySwap=0.0,historyClosedVolume=0.0;
+      datetime historyCloseTime=0;
+      ulong historyLastDeal=saved.partialLastDealTicket;
+      if(!AxFetchCloseFinancialsByIdentifier(saved.positionIdentifier,saved.symbol,
+                                              InpMagicNumber,saved.dir,
+                                              saved.partialLastDealTicket,
+                                              historyClosePrice,historyGross,
+                                              historyCommission,historySwap,
+                                              historyCloseTime,historyLastDeal,
+                                              historyClosedVolume) ||
+         historyLastDeal!=ledgerHighWater ||
+         historyCloseTime!=accounted.closeTime ||
+         MathAbs(historyClosedVolume-accounted.closedVolume)>tolerance ||
+         MathAbs(historyClosePrice-accounted.closePrice)>
+            MathMax(SymbolInfoDouble(saved.symbol,SYMBOL_TRADE_TICK_SIZE)*0.51,0.00000001) ||
+         MathAbs(historyGross-accounted.grossProfit)>0.0000001 ||
+         MathAbs(historyCommission-accounted.commission)>0.0000001 ||
+         MathAbs(historySwap-accounted.swap)>0.0000001)
          return(false);
 
       // If the ledger write won the crash race, advance the durable virtual
@@ -2024,8 +2026,8 @@ bool AxRecoverHedgingPartialCloseAction(const SAxVirtualExitRecord &saved)
       if(!g_virtualExitRegistry.ResolveAction(saved.positionIdentifier,3) ||
          !g_virtualExitRegistry.IsPersisting())
          return(false);
-      PrintFormat("FLIPDEMON HEDGING PARTIAL RECOVERY: identifier=%I64u verified durable slice %.8f at deal=%I64u; action lock cleared.",
-                  saved.positionIdentifier,accounted.closedVolume,ledgerHighWater);
+      PrintFormat("FLIPDEMON HEDGING PARTIAL RECOVERY: identifier=%I64u verified broker slice %.8f at final deal=%I64u; action lock cleared.",
+                  saved.positionIdentifier,historyClosedVolume,ledgerHighWater);
       return(true);
      }
 
