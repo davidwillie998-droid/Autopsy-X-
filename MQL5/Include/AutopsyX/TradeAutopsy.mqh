@@ -795,10 +795,19 @@ public:
             campaigns[campaignCount].finalRecordIndex=-1;
             campaigns[campaignCount].firstRecordIndex=keys[k].recordIndex;
             campaigns[campaignCount].finalExitTime=0;
+            campaigns[campaignCount].entryModel=rec.entryModel;
+            campaigns[campaignCount].entryModelConsistent=(rec.entryModel!="" && rec.entryModel!="UNKNOWN");
+            campaigns[campaignCount].provenance=(int)rec.provenance;
+            campaigns[campaignCount].provenanceConsistent=true;
             campaignCount++;
            }
 
          int group=campaignCount-1;
+         if(rec.entryModel=="" || rec.entryModel=="UNKNOWN" ||
+            rec.entryModel!=campaigns[group].entryModel)
+            campaigns[group].entryModelConsistent=false;
+         if((int)rec.provenance!=campaigns[group].provenance)
+            campaigns[group].provenanceConsistent=false;
          campaigns[group].net+=rec.netProfit;
          campaigns[group].gross+=rec.commission;
          if(!rec.isPartial &&
@@ -911,7 +920,107 @@ public:
            }
         }
 
+      // Model attribution is campaign-scoped. A campaign is eligible only when
+      // every partial/final row has the same non-empty model and provenance.
+      string modelNames[];
+      int modelProvenance[];
+      int modelSamples[];
+      int modelWins[];
+      int modelLosses[];
+      double modelNet[];
+      double modelGrossWins[];
+      double modelGrossLosses[];
+      int modelGroupCount=0;
+      int excludedUnknownModel=0;
+      int excludedConflictingModel=0;
+      int excludedConflictingProvenance=0;
+      for(int i=0;i<completedCount;i++)
+        {
+         SAxCampaignAggregate campaign=completed[i];
+         if(!campaign.entryModelConsistent)
+           {
+            if(campaign.entryModel=="" || campaign.entryModel=="UNKNOWN")
+               excludedUnknownModel++;
+            else
+               excludedConflictingModel++;
+            continue;
+           }
+         if(!campaign.provenanceConsistent)
+           {
+            excludedConflictingProvenance++;
+            continue;
+           }
+
+         SAxTradeRecord finalRec=m_records[campaign.finalRecordIndex];
+         int provenance=3;
+         if(finalRec.provenance==AX_PROVENANCE_BACKTEST) provenance=0;
+         else if(finalRec.provenance==AX_PROVENANCE_FORWARD_DEMO) provenance=1;
+         else if(finalRec.provenance==AX_PROVENANCE_LIVE) provenance=2;
+
+         int slot=-1;
+         for(int j=0;j<modelGroupCount;j++)
+            if(modelNames[j]==campaign.entryModel && modelProvenance[j]==provenance)
+              {
+               slot=j;
+               break;
+              }
+         if(slot<0)
+           {
+            slot=modelGroupCount;
+            modelGroupCount++;
+            if(ArrayResize(modelNames,modelGroupCount)!=modelGroupCount ||
+               ArrayResize(modelProvenance,modelGroupCount)!=modelGroupCount ||
+               ArrayResize(modelSamples,modelGroupCount)!=modelGroupCount ||
+               ArrayResize(modelWins,modelGroupCount)!=modelGroupCount ||
+               ArrayResize(modelLosses,modelGroupCount)!=modelGroupCount ||
+               ArrayResize(modelNet,modelGroupCount)!=modelGroupCount ||
+               ArrayResize(modelGrossWins,modelGroupCount)!=modelGroupCount ||
+               ArrayResize(modelGrossLosses,modelGroupCount)!=modelGroupCount)
+              {
+               Print("FLIPDEMON MODEL RESEARCH WARNING: cohort allocation failed; model report aborted.");
+               return;
+              }
+            modelNames[slot]=campaign.entryModel;
+            modelProvenance[slot]=provenance;
+            modelSamples[slot]=0;
+            modelWins[slot]=0;
+            modelLosses[slot]=0;
+            modelNet[slot]=0.0;
+            modelGrossWins[slot]=0.0;
+            modelGrossLosses[slot]=0.0;
+           }
+
+         modelSamples[slot]++;
+         modelNet[slot]+=campaign.net;
+         if(campaign.net>0.0)
+           {
+            modelWins[slot]++;
+            modelGrossWins[slot]+=campaign.net;
+           }
+         else if(campaign.net<0.0)
+           {
+            modelLosses[slot]++;
+            modelGrossLosses[slot]+=MathAbs(campaign.net);
+           }
+        }
+
       string provenanceNames[4]={"BACKTEST","FORWARD_DEMO","LIVE","UNKNOWN_PROVENANCE"};
+      PrintFormat("FLIPDEMON ENTRY-MODEL RESEARCH | one sample per completed POSITION_IDENTIFIER | partial exits aggregated | unknown/conflicting attribution excluded | minimum samples=%d | excluded unknown=%d conflictingModel=%d conflictingProvenance=%d",
+                  minCount,excludedUnknownModel,excludedConflictingModel,excludedConflictingProvenance);
+      for(int i=0;i<modelGroupCount;i++)
+        {
+         int decided=modelWins[i]+modelLosses[i];
+         double winRate=(decided>0)?100.0*(double)modelWins[i]/(double)decided:0.0;
+         string pfText=(modelGrossLosses[i]>0.0)
+                       ?DoubleToString(modelGrossWins[i]/modelGrossLosses[i],3)
+                       :(modelGrossWins[i]>0.0?"INF":"N/A");
+         string state=(modelSamples[i]>=minCount)?"SAMPLE_THRESHOLD_MET":"INSUFFICIENT_SAMPLE";
+         double expectancy=modelNet[i]/(double)modelSamples[i];
+         PrintFormat("FLIPDEMON ENTRY-MODEL | model=%s provenance=%s campaigns=%d wins=%d losses=%d winRate=%.1f%% net=%.2f expectancyPerCampaign=%.2f PF=%s status=%s",
+                     modelNames[i],provenanceNames[modelProvenance[i]],modelSamples[i],
+                     modelWins[i],modelLosses[i],winRate,modelNet[i],expectancy,pfText,state);
+        }
+
       string cohortNames[3]={"ALIGNED","OPPOSED","NEUTRAL_OR_UNAVAILABLE"};
       PrintFormat("FLIPDEMON VWAP RESEARCH | symbol-scoped closed campaigns | minimum sample threshold=%d | partial exits aggregated | closed-PnL drawdown is account-currency, not percent",
                   minCount);
