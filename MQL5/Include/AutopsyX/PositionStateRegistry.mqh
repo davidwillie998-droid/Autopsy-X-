@@ -6,7 +6,7 @@
 #define AX_POSITIONSTATEREGISTRY_MQH
 #include "Defs.mqh"
 
-#define AX_POSITION_STATE_FIELD_COUNT 44
+#define AX_POSITION_STATE_FIELD_COUNT 45
 #define AX_POSITION_STATE_MAX_RECORDS 2048
 
 struct SAxPositionLifecycleRecord
@@ -131,6 +131,7 @@ private:
       fields[41]=N(s.afeRiskMultiplier);
       fields[42]=N(s.impactCostPct);
       fields[43]=s.vwapAlignedAtEntry?"1":"0";
+      fields[44]=Encode(s.entryModel);
       string line=fields[0];
       for(int i=1;i<AX_POSITION_STATE_FIELD_COUNT;i++) line+="|"+fields[i];
       return(line);
@@ -139,7 +140,8 @@ private:
    bool Deserialize(const string line,SAxPositionLifecycleRecord &r) const
      {
       string f[];
-      if(StringSplit(line,'|',f)!=AX_POSITION_STATE_FIELD_COUNT) return(false);
+      int fieldCount=StringSplit(line,'|',f);
+      if(fieldCount!=44 && fieldCount!=AX_POSITION_STATE_FIELD_COUNT) return(false);
       long id=StringToInteger(f[0]),ticket=StringToInteger(f[1]),magic=StringToInteger(f[3]);
       long stateTicket=StringToInteger(f[4]);
       if(id<=0 || ticket<=0 || magic<=0 || stateTicket<=0) return(false);
@@ -188,6 +190,7 @@ private:
       s.afeRiskMultiplier=StringToDouble(f[41]);
       s.impactCostPct=StringToDouble(f[42]);
       s.vwapAlignedAtEntry=(StringToInteger(f[43])==1);
+      s.entryModel=(fieldCount>=45 && f[44]!="")?Decode(f[44]):"UNKNOWN";
       r.state=s;
       return(ValidState(r));
      }
