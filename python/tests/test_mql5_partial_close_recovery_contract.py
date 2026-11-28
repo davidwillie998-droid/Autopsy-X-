@@ -189,3 +189,55 @@ def test_initial_position_protection_rejects_missing_or_wrong_side_stop():
     assert "dir==AX_DIR_BUY" in body
     assert "dir==AX_DIR_SELL" in body
     assert "riskDistance<=tickSize*0.5" in body
+
+
+def _execution_source() -> str:
+    path = ROOT / "MQL5" / "Include" / "AutopsyX" / "ExecutionEngine.mqh"
+    assert path.is_file(), f"Execution engine source not found: {path}"
+    return path.read_text(encoding="utf-8")
+
+
+def test_post_fill_protection_repair_verifies_exact_position_and_broker_levels():
+    source = _execution_source()
+    body = _function_body(
+        source,
+        "bool              EnsurePostFillProtection(",
+        "//--- confirm a fresh entry from its exact broker order",
+    )
+    assert "PositionSelectByTicket(positionTicket)" in body
+    assert "POSITION_IDENTIFIER" in body
+    assert "POSITION_MAGIC" in body
+    assert "m_trade.PositionModify(positionTicket,repairSl,repairTp)" in body
+    assert "repairRetcode==TRADE_RETCODE_DONE" in body
+    assert "MathAbs(verifiedSl-repairSl)<=tolerance" in body
+    assert "MathAbs(verifiedTp-repairTp)<=tolerance" in body
+
+
+def test_failed_protection_repair_closes_only_exact_ticket_and_verifies_flat():
+    source = _execution_source()
+    body = _function_body(
+        source,
+        "bool              EnsurePostFillProtection(",
+        "//--- confirm a fresh entry from its exact broker order",
+    )
+    assert "m_trade.PositionClose(positionTicket)" in body
+    assert "DEAL_ORDER)==closeOrder" in body
+    assert "DEAL_POSITION_ID)==positionId" in body
+    assert "DEAL_ENTRY_OUT" in body
+    assert "PositionSelectByTicket(positionTicket)" in body
+    assert "bool positionFlat=!PositionSelectByTicket(positionTicket)" in body
+    assert "closedVolume+volumeTolerance>=volumeBeforeClose" in body
+    assert "outcomeUncertain=true" in body
+
+
+def test_market_entry_cannot_succeed_before_post_fill_protection_is_verified():
+    source = _execution_source()
+    body = _function_body(
+        source,
+        "bool              OpenMarket(",
+        "//--- flip = close, confirm flat, then open opposite direction ---",
+    )
+    assert "ConfirmMarketOrder(" in body
+    assert "EnsurePostFillProtection(symbol,dir,ticketOut,alignedSl,alignedTp" in body
+    assert "if(!EnsurePostFillProtection" in body
+    assert "return(true); // confirmed fill and broker-retained protection" in body
