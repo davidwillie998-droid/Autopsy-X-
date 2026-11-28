@@ -953,6 +953,7 @@ SAxTradeRecord AxBuildTradeRecord(const double closePrice,const double grossProf
   {
    SAxTradeRecord rec;
    rec.setupId       = g_posState.setupId;
+   rec.entryModel     = (g_posState.entryModel=="")?"UNKNOWN":g_posState.entryModel;
    rec.dealIdIn      = g_posState.entryDealId;
    rec.ticket        = g_posState.ticket;
    rec.positionIdentifier = g_positionIdentifier;
@@ -1820,6 +1821,7 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
    SAxTradeRecord rec;
    ZeroMemory(rec);
    rec.setupId=haveSetup ? setup.setupId : "";
+   rec.entryModel=haveSetup ? setup.entryModel : "UNKNOWN";
    rec.vwapPullbackBullBonus=haveSetup ? setup.vwapPullbackBullBonus : 0.0;
    rec.vwapPullbackBearBonus=haveSetup ? setup.vwapPullbackBearBonus : 0.0;
    rec.overnightBiasBullBonus=haveSetup ? setup.overnightBiasBullBonus : 0.0;
@@ -1839,6 +1841,7 @@ bool AxRecoverFullyClosedPosition(const SAxVirtualExitRecord &saved,
    rec.holdSeconds=(int)MathMax(0,(long)(rec.exitTime-rec.entryTime));
    rec.regime=AX_REGIME_UNSAFE; // entry regime was not durably captured; do not fabricate a normal regime.
    rec.entryReason="RESTART_RECOVERED | ENTRY_THESIS_UNAVAILABLE";
+   rec.entryModel=haveSetup ? setup.entryModel : "UNKNOWN";
    // Broker history is sufficient to prove the close and its financial result,
    // but this recovery path does not yet map every DEAL_REASON to an exit class.
    // Record NONE rather than falsely labelling a manual or external close as SL/TP.
@@ -2734,6 +2737,7 @@ void AxInitPositionState(const ulong ticket,const ENUM_AX_DIR dir,const double l
    g_posState.entryRegime        = score.regime;
    g_posState.entryReason        = entryReason;
    g_posState.setupId            = "";
+   g_posState.entryModel          = "UNKNOWN";
    g_posState.entryDealId         = 0;
    g_posState.vwapStateAtEntry   = "NOT_CAPTURED";
    g_posState.vpMacdStateAtEntry = "NOT_CAPTURED";
@@ -3868,6 +3872,7 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
    // immediately; if persistence fails, keep managing the open position but block every new entry.
    string recoverySetupId = lifecycleSetupId;
    g_posState.setupId = recoverySetupId;
+   g_posState.entryModel = executionThesis.entryModel;
    // Snapshot the actual engine states at fill time. Missing readings remain explicit.
    g_posState.vwapStateAtEntry = g_vwapTrend;
    g_posState.vpMacdStateAtEntry = g_vpMacd.State();
@@ -3926,7 +3931,8 @@ bool AxAttemptEntry(const ENUM_AX_DIR dir,const SAxScore &score,const int flipSe
                         g_restartRecovery.RecordOpenSetup(newTicket,g_positionIdentifier,recoverySetupId,_Symbol,dir,TimeCurrent(),
                           g_posState.vwapPullbackBullBonus,g_posState.vwapPullbackBearBonus,
                           g_posState.overnightBiasBullBonus,g_posState.overnightBiasBearBonus,
-                          g_posState.twinContinuationBullBonus,g_posState.twinContinuationBearBonus);
+                          g_posState.twinContinuationBullBonus,g_posState.twinContinuationBearBonus,
+                          g_posState.entryModel);
    if(!recoverySaved || !g_restartRecovery.IsPersisting())
      {
       g_recoveryReady = false;
@@ -4425,12 +4431,14 @@ void AxReconcileExistingPosition(void)
    g_posState.entryRegime                     = AX_REGIME_UNSAFE;
    g_posState.entryReason                      = "RECONCILED_ON_INIT";
    g_posState.setupId                           = "RESTART_RECOVERED";
+   g_posState.entryModel                         = "UNKNOWN";
    SAxOpenSetupRecord recoveredSetup;
    if(g_restartRecovery.FindByPositionIdentifier(g_positionIdentifier,recoveredSetup))
      {
       if(recoveredSetup.symbol==_Symbol && recoveredSetup.dir==g_posState.dir)
         {
          g_posState.setupId=recoveredSetup.setupId;
+         g_posState.entryModel=recoveredSetup.entryModel;
          g_posState.vwapPullbackBullBonus=recoveredSetup.vwapPullbackBullBonus;
          g_posState.vwapPullbackBearBonus=recoveredSetup.vwapPullbackBearBonus;
          g_posState.overnightBiasBullBonus=recoveredSetup.overnightBiasBullBonus;
