@@ -647,13 +647,15 @@ public:
 
       ulong afterTicket=(ulong)PositionGetInteger(POSITION_TICKET);
       ulong afterId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      ulong afterMagic=(ulong)PositionGetInteger(POSITION_MAGIC);
       long afterType=PositionGetInteger(POSITION_TYPE);
       double afterVolume=PositionGetDouble(POSITION_VOLUME);
       double volumeIncrease=afterVolume-beforeVolume;
       bool sameDirection=((dir==AX_DIR_BUY && afterType==POSITION_TYPE_BUY) ||
                           (dir==AX_DIR_SELL && afterType==POSITION_TYPE_SELL));
       bool fillMatchesPosition=(MathAbs(volumeIncrease-dealVolume)<=tolerance);
-      if(afterId!=beforeId || !sameDirection || afterVolume<=beforeVolume ||
+      if(afterTicket==0 || afterId!=beforeId || afterMagic!=expectedMagic ||
+         !sameDirection || afterVolume<=beforeVolume ||
          volumeIncrease>requestedLots+tolerance || !fillMatchesPosition)
         {
          outcomeUncertain=true;
