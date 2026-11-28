@@ -101,3 +101,36 @@ def test_verified_full_close_removes_all_durable_lifecycle_indexes():
     assert "!g_recoveryInitialized" in body
     assert "!g_restartRecovery.IsPersisting()" in body
 
+def test_broker_ticket_refresh_updates_durable_position_state_by_stable_identifier():
+    source = _source()
+    body = _function_body(
+        source,
+        "bool AxReconcileVirtualExitTickets(",
+        "// Reconstruct a completed position whose final close happened while the EA was offline.",
+    )
+    assert "FindByIdentifier(live.positionIdentifier,positionState)" in body
+    assert "positionState.positionIdentifier!=live.positionIdentifier" in body
+    assert "positionState.symbol!=live.symbol" in body
+    assert "positionState.magic!=live.magic" in body
+    assert "positionState.state.dir!=live.direction" in body
+    assert "positionState.ticket!=live.ticket || positionState.state.ticket!=live.ticket" in body
+    assert "Upsert(live.positionIdentifier,live.ticket" in body
+    assert "g_posState.ticket=live.ticket" in body
+
+
+def test_ticket_refresh_persistence_failure_keeps_execution_blocked():
+    source = _source()
+    body = _function_body(
+        source,
+        "bool AxReconcileVirtualExitTickets(",
+        "// Reconstruct a completed position whose final close happened while the EA was offline.",
+    )
+    refresh = body.find("Upsert(live.positionIdentifier,live.ticket")
+    persistence_check = body.find("!g_positionStateRegistry.IsPersisting()", refresh)
+    fail_closed = body.find("g_hedgingLifecycleLock=true", persistence_check)
+    return_false = body.find("return(false)", fail_closed)
+    assert refresh >= 0
+    assert persistence_check > refresh
+    assert fail_closed > persistence_check
+    assert return_false > fail_closed
+
