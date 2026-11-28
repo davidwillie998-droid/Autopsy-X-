@@ -515,6 +515,7 @@ struct SAxTradeRecord
    double              confidence;
    ENUM_AX_REGIME      regime;
    string              entryReason;
+   string              entryModel;
    ENUM_AX_EXIT_REASON exitReason;
    double              mfe;              // max favorable excursion, in account currency
    double              mae;              // max adverse excursion, in account currency
@@ -988,6 +989,7 @@ struct SAxPositionState
    string         entryReason;
    // Frozen engine evidence captured immediately after a broker-confirmed fill.
    string         setupId;
+   string         entryModel;
    ulong          entryDealId;
    string         vwapStateAtEntry;
    string         vpMacdStateAtEntry;
