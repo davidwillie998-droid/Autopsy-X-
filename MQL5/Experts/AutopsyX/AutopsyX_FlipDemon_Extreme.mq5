@@ -7487,16 +7487,54 @@ void AxProcessTick(void)
                   return;
                  }
 
+               // A successful trade-method return is not proof that the broker
+               // installed the requested stop. Re-select the exact stable position
+               // and compare its live SL/TP before changing durable virtual state.
+               double stopTickSize=SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
+               if(stopTickSize<=0.0 || !MathIsValidNumber(stopTickSize) ||
+                  !PositionSelectByTicket(managed.ticket) ||
+                  PositionGetString(POSITION_SYMBOL)!=managed.symbol ||
+                  (ulong)PositionGetInteger(POSITION_IDENTIFIER)!=managed.positionIdentifier ||
+                  (ulong)PositionGetInteger(POSITION_MAGIC)!=managed.magic)
+                 {
+                  g_virtualExitReady=false;
+                  g_hedgingLifecycleLock=true;
+                  g_engineState=AX_ENGINE_PAUSED;
+                  PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: accepted stop request could not be verified against the exact broker position, ticket=%I64u; action lock retained.",
+                              managed.ticket);
+                  return;
+                 }
+
+               double confirmedStop=PositionGetDouble(POSITION_SL);
+               double confirmedTakeProfit=PositionGetDouble(POSITION_TP);
+               bool stopConfirmed=(managed.direction==AX_DIR_BUY)
+                                  ?(confirmedStop+stopTickSize*0.5>=newSl &&
+                                    confirmedStop>managed.stopLoss)
+                                  :(managed.direction==AX_DIR_SELL)
+                                    ?(confirmedStop-stopTickSize*0.5<=newSl &&
+                                      confirmedStop<managed.stopLoss):false;
+               bool takeProfitPreserved=
+                  MathAbs(confirmedTakeProfit-managed.takeProfit)<=stopTickSize*0.5;
+               if(!stopConfirmed || !takeProfitPreserved)
+                 {
+                  g_virtualExitReady=false;
+                  g_hedgingLifecycleLock=true;
+                  g_engineState=AX_ENGINE_PAUSED;
+                  PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: broker stop/TP does not confirm requested modification, ticket=%I64u requestedSL=%.10f liveSL=%.10f liveTP=%.10f; action lock retained.",
+                              managed.ticket,newSl,confirmedStop,confirmedTakeProfit);
+                  return;
+                 }
+
                bool recorded=isBreakEvenMove
-                             ? g_virtualExitRegistry.RecordBreakEven(g_positionIdentifier,newSl)
-                             : g_virtualExitRegistry.RecordTrailingStop(g_positionIdentifier,newSl);
+                             ? g_virtualExitRegistry.RecordBreakEven(g_positionIdentifier,confirmedStop)
+                             : g_virtualExitRegistry.RecordTrailingStop(g_positionIdentifier,confirmedStop);
                if(!recorded || !g_virtualExitRegistry.IsPersisting())
                  {
                   g_virtualExitReady=false;
                   g_hedgingLifecycleLock=true;
                   g_engineState=AX_ENGINE_PAUSED;
-                  PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: broker confirmed stop %.10f but durable lifecycle record failed; action lock retained.",
-                              newSl);
+                  PrintFormat("FLIPDEMON VIRTUAL EXIT ERROR: broker-confirmed stop %.10f could not be persisted; action lock retained.",
+                              confirmedStop);
                   return;
                  }
 
