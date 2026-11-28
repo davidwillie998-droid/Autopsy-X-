@@ -946,38 +946,56 @@ public:
    ulong             LastAccountedDealTicket(const ulong positionIdentifier) const
      {
       ulong currentLast=LastAccountedDealTicketInFile(m_fileName,positionIdentifier);
-      ulong v4Last=LastAccountedDealTicketInFile(m_v4FileName,positionIdentifier);
+      ulong v6Last=LastAccountedDealTicketInFile(m_v6FileName,positionIdentifier);
       ulong v5Last=LastAccountedDealTicketInFile(m_v5FileName,positionIdentifier);
+      ulong v4Last=LastAccountedDealTicketInFile(m_v4FileName,positionIdentifier);
       ulong legacyLast=LastAccountedDealTicketInFile(m_legacyFileName,positionIdentifier);
-      return(MathMax(currentLast,MathMax(v5Last,MathMax(v4Last,legacyLast))));
+      return(MathMax(currentLast,MathMax(v6Last,MathMax(v5Last,MathMax(v4Last,legacyLast)))));
      }
 
    bool              LastAccountedRecord(const ulong positionIdentifier,
                                           ulong &dealTicket,bool &isPartial,
                                           double &lots,double &netProfit) const
      {
-      ulong currentTicket=0,v4Ticket=0,v5Ticket=0,legacyTicket=0;
-      bool currentPartial=false,v4Partial=false,v5Partial=false,legacyPartial=false;
-      double currentLots=0.0,v4Lots=0.0,v5Lots=0.0,legacyLots=0.0;
-      double currentNet=0.0,v4Net=0.0,v5Net=0.0,legacyNet=0.0;
+      ulong currentTicket=0,v6Ticket=0,v5Ticket=0,v4Ticket=0,legacyTicket=0;
+      bool currentPartial=false,v6Partial=false,v5Partial=false,v4Partial=false,legacyPartial=false;
+      double currentLots=0.0,v6Lots=0.0,v5Lots=0.0,v4Lots=0.0,legacyLots=0.0;
+      double currentNet=0.0,v6Net=0.0,v5Net=0.0,v4Net=0.0,legacyNet=0.0;
       bool currentFound=LastAccountedRecordInFile(m_fileName,positionIdentifier,
                                                    currentTicket,currentPartial,currentLots,currentNet);
-      bool v4Found=LastAccountedRecordInFile(m_v4FileName,positionIdentifier,
-                                              v4Ticket,v4Partial,v4Lots,v4Net);
+      bool v6Found=LastAccountedRecordInFile(m_v6FileName,positionIdentifier,
+                                              v6Ticket,v6Partial,v6Lots,v6Net);
       bool v5Found=LastAccountedRecordInFile(m_v5FileName,positionIdentifier,
                                               v5Ticket,v5Partial,v5Lots,v5Net);
+      bool v4Found=LastAccountedRecordInFile(m_v4FileName,positionIdentifier,
+                                              v4Ticket,v4Partial,v4Lots,v4Net);
       bool legacyFound=LastAccountedRecordInFile(m_legacyFileName,positionIdentifier,
                                                   legacyTicket,legacyPartial,legacyLots,legacyNet);
-      if(!currentFound && !v4Found && !v5Found && !legacyFound) return(false);
-      if(currentFound && currentTicket>=v4Ticket && currentTicket>=v5Ticket && currentTicket>=legacyTicket)
-        { dealTicket=currentTicket; isPartial=currentPartial; lots=currentLots; netProfit=currentNet; }
-      else if(v5Found && v5Ticket>=v4Ticket && v5Ticket>=legacyTicket)
-        { dealTicket=v5Ticket; isPartial=v5Partial; lots=v5Lots; netProfit=v5Net; }
-      else if(v4Found && v4Ticket>=legacyTicket)
-        { dealTicket=v4Ticket; isPartial=v4Partial; lots=v4Lots; netProfit=v4Net; }
-      else
-        { dealTicket=legacyTicket; isPartial=legacyPartial; lots=legacyLots; netProfit=legacyNet; }
-      return(true);
+      if(!currentFound && !v6Found && !v5Found && !v4Found && !legacyFound) return(false);
+
+      ulong bestTicket=0;
+      if(currentFound && currentTicket>=bestTicket)
+        {
+         bestTicket=currentTicket; isPartial=currentPartial; lots=currentLots; netProfit=currentNet;
+        }
+      if(v6Found && v6Ticket>bestTicket)
+        {
+         bestTicket=v6Ticket; isPartial=v6Partial; lots=v6Lots; netProfit=v6Net;
+        }
+      if(v5Found && v5Ticket>bestTicket)
+        {
+         bestTicket=v5Ticket; isPartial=v5Partial; lots=v5Lots; netProfit=v5Net;
+        }
+      if(v4Found && v4Ticket>bestTicket)
+        {
+         bestTicket=v4Ticket; isPartial=v4Partial; lots=v4Lots; netProfit=v4Net;
+        }
+      if(legacyFound && legacyTicket>bestTicket)
+        {
+         bestTicket=legacyTicket; isPartial=legacyPartial; lots=legacyLots; netProfit=legacyNet;
+        }
+      dealTicket=bestTicket;
+      return(bestTicket>0);
      }
 
    int               RiskHistoryCount(void) const { return(m_riskCount); }
