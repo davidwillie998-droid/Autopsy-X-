@@ -241,3 +241,34 @@ def test_market_entry_cannot_succeed_before_post_fill_protection_is_verified():
     assert "EnsurePostFillProtection(symbol,dir,ticketOut,alignedSl,alignedTp" in body
     assert "if(!EnsurePostFillProtection" in body
     assert "return(true); // confirmed fill and broker-retained protection" in body
+
+
+def test_netting_pyramid_add_requires_existing_protection_and_exact_campaign_identity():
+    source = _execution_source()
+    body = _function_body(
+        source,
+        "bool              AddToNettingPosition(",
+        "//--- close one exact broker position",
+    )
+    assert "beforeTicket!=expectedTicket" in body
+    assert "beforeId!=expectedPositionId" in body
+    assert "beforeMagic!=expectedMagic" in body
+    assert "beforeSl<=0.0" in body
+    assert "PrepareProtectionPrices(symbol,dir,beforeSl,beforeTp,false,0.0,0.0,errorReason)" in body
+
+
+def test_netting_pyramid_fill_reconciles_deals_volume_identity_and_retained_protection():
+    source = _execution_source()
+    body = _function_body(
+        source,
+        "bool              AddToNettingPosition(",
+        "//--- close one exact broker position",
+    )
+    assert "DEAL_ORDER)!=orderTicketOut" in body
+    assert "DEAL_POSITION_ID)!=beforeId" in body
+    assert "dealVolume+=volume" in body
+    assert "MathAbs(volumeIncrease-dealVolume)<=tolerance" in body
+    assert "afterTicket==0 || afterId!=beforeId || afterMagic!=expectedMagic" in body
+    assert "EnsurePostFillProtection(symbol,dir,afterTicket,beforeSl,beforeTp" in body
+    assert "positionTicketOut=afterTicket" in body
+    assert "actualAddLotsOut=dealVolume" in body
